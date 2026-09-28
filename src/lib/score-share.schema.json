@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scoreflow.local/schemas/score-share-v1.json",
+  "title": "Scoreflow portable score and settings",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "score", "state"],
+  "properties": {
+    "version": { "const": 1 },
+    "score": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "format", "encoding", "data"],
+      "properties": {
+        "name": { "type": "string" },
+        "format": { "type": "string" },
+        "encoding": { "const": "gzip+base64url" },
+        "data": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" }
+      }
+    },
+    "state": { "$ref": "file-state.schema.json" }
+  }
+}

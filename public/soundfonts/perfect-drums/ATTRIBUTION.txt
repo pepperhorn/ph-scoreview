@@ -1,0 +1,9 @@
+Perfect Drums 1 samples (GM notes 35-70)
+Source: The Definitive Perfect Drums Soundfont (V2, Fixed Hi-Hats)
+Author: TEC Again; original soundfont by lukinhas
+Artifact: https://musical-artifacts.com/artifacts/8466
+License stated by artifact: WTFPL
+Source SF2 SHA-256: 1dc55f628ecd05b98617bebc4d01cbf50dcb4522bfab8dcb92507aedb43bada2
+
+These stereo MP3 files were encoded at 128 kb/s from bank 128, preset 0
+using scripts/prepare-perfect-drums.mjs. The source SF2 is not bundled.
