@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.astro/
+/examples/
+/tests/
+.env
+.env.*
+*.log
+*.tsbuildinfo
+.DS_Store

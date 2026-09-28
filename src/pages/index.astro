@@ -1,0 +1,17 @@
+---
+import Reader from '../components/Reader';
+import favicon from '../favicon.svg?url';
+import '../styles.css';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#fbfaf8" />
+    <link rel="icon" type="image/svg+xml" href={favicon} />
+    <title>Scoreflow — a quiet place to read music</title>
+  </head>
+  <body><Reader client:load /></body>
+</html>

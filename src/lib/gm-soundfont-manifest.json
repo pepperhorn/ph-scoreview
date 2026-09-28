@@ -1,0 +1,1035 @@
+{
+  "version": 1,
+  "source": "https://raw.githubusercontent.com/gleitz/midi-js-soundfonts/gh-pages/FluidR3_GM/names.json",
+  "programNumbering": "GM 1-128",
+  "icons": {
+    "piano": "src/icons/piano.svg",
+    "guitar": "src/icons/guitar.svg",
+    "bassguitar": "src/icons/bassguitar.svg",
+    "double-bass": "src/icons/double-bass.svg",
+    "drum-kit": "src/icons/drum-kit.svg",
+    "alto-saxophone": "src/icons/alto-saxophone.svg",
+    "tenor-saxophone": "src/icons/tenor-saxophone.svg",
+    "bari-saxophone": "src/icons/bari-saxophone.svg",
+    "flute": "src/icons/flute.svg",
+    "clarinet": "src/icons/clarinet.svg",
+    "trumpet": "src/icons/trumpet.svg",
+    "trombone": "src/icons/trombone.svg",
+    "violin": "src/icons/violin.svg",
+    "viola": "src/icons/viola.svg",
+    "cello": "src/icons/cello.svg",
+    "microphone": "src/icons/microphone.svg"
+  },
+  "programs": [
+    {
+      "program": 1,
+      "soundfont": "acoustic_grand_piano",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/acoustic_grand_piano.json",
+      "family": "Keyboard"
+    },
+    {
+      "program": 2,
+      "soundfont": "bright_acoustic_piano",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/bright_acoustic_piano.json",
+      "family": "Keyboard"
+    },
+    {
+      "program": 3,
+      "soundfont": "electric_grand_piano",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/electric_grand_piano.json",
+      "family": "Keyboard"
+    },
+    {
+      "program": 4,
+      "soundfont": "honkytonk_piano",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/honkytonk_piano.json",
+      "family": "Keyboard"
+    },
+    {
+      "program": 5,
+      "soundfont": "electric_piano_1",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/electric_piano_1.json",
+      "family": "Keyboard"
+    },
+    {
+      "program": 6,
+      "soundfont": "electric_piano_2",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/electric_piano_2.json",
+      "family": "Keyboard"
+    },
+    {
+      "program": 7,
+      "soundfont": "harpsichord",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/harpsichord.json",
+      "family": "Keyboard"
+    },
+    {
+      "program": 8,
+      "soundfont": "clavinet",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/clavinet.json",
+      "family": "Keyboard"
+    },
+    {
+      "program": 9,
+      "soundfont": "celesta",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/celesta.json",
+      "family": "Percussion"
+    },
+    {
+      "program": 10,
+      "soundfont": "glockenspiel",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/glockenspiel.json",
+      "family": "Percussion"
+    },
+    {
+      "program": 11,
+      "soundfont": "music_box",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/music_box.json",
+      "family": "Percussion"
+    },
+    {
+      "program": 12,
+      "soundfont": "vibraphone",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/vibraphone.json",
+      "family": "Percussion"
+    },
+    {
+      "program": 13,
+      "soundfont": "marimba",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/marimba.json",
+      "family": "Percussion"
+    },
+    {
+      "program": 14,
+      "soundfont": "xylophone",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/xylophone.json",
+      "family": "Percussion"
+    },
+    {
+      "program": 15,
+      "soundfont": "tubular_bells",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/tubular_bells.json",
+      "family": "Percussion"
+    },
+    {
+      "program": 16,
+      "soundfont": "dulcimer",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/dulcimer.json",
+      "family": "Percussion"
+    },
+    {
+      "program": 17,
+      "soundfont": "drawbar_organ",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/drawbar_organ.json",
+      "family": "Keyboard"
+    },
+    {
+      "program": 18,
+      "soundfont": "percussive_organ",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/percussive_organ.json",
+      "family": "Keyboard"
+    },
+    {
+      "program": 19,
+      "soundfont": "rock_organ",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/rock_organ.json",
+      "family": "Keyboard"
+    },
+    {
+      "program": 20,
+      "soundfont": "church_organ",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/church_organ.json",
+      "family": "Keyboard"
+    },
+    {
+      "program": 21,
+      "soundfont": "reed_organ",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/reed_organ.json",
+      "family": "Keyboard"
+    },
+    {
+      "program": 22,
+      "soundfont": "accordion",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/accordion.json",
+      "family": "Keyboard"
+    },
+    {
+      "program": 23,
+      "soundfont": "harmonica",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/harmonica.json",
+      "family": "Keyboard"
+    },
+    {
+      "program": 24,
+      "soundfont": "tango_accordion",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/tango_accordion.json",
+      "family": "Keyboard"
+    },
+    {
+      "program": 25,
+      "soundfont": "acoustic_guitar_nylon",
+      "icon": "guitar",
+      "localPack": "/soundfonts/fluidr3/acoustic_guitar_nylon.json",
+      "family": "Guitar"
+    },
+    {
+      "program": 26,
+      "soundfont": "acoustic_guitar_steel",
+      "icon": "guitar",
+      "localPack": "/soundfonts/fluidr3/acoustic_guitar_steel.json",
+      "family": "Guitar"
+    },
+    {
+      "program": 27,
+      "soundfont": "electric_guitar_jazz",
+      "icon": "guitar",
+      "localPack": "/soundfonts/fluidr3/electric_guitar_jazz.json",
+      "family": "Guitar"
+    },
+    {
+      "program": 28,
+      "soundfont": "electric_guitar_clean",
+      "icon": "guitar",
+      "localPack": "/soundfonts/fluidr3/electric_guitar_clean.json",
+      "family": "Guitar"
+    },
+    {
+      "program": 29,
+      "soundfont": "electric_guitar_muted",
+      "icon": "guitar",
+      "localPack": "/soundfonts/fluidr3/electric_guitar_muted.json",
+      "family": "Guitar"
+    },
+    {
+      "program": 30,
+      "soundfont": "overdriven_guitar",
+      "icon": "guitar",
+      "localPack": "/soundfonts/fluidr3/overdriven_guitar.json",
+      "family": "Guitar"
+    },
+    {
+      "program": 31,
+      "soundfont": "distortion_guitar",
+      "icon": "guitar",
+      "localPack": "/soundfonts/fluidr3/distortion_guitar.json",
+      "family": "Guitar"
+    },
+    {
+      "program": 32,
+      "soundfont": "guitar_harmonics",
+      "icon": "guitar",
+      "localPack": "/soundfonts/fluidr3/guitar_harmonics.json",
+      "family": "Guitar"
+    },
+    {
+      "program": 33,
+      "soundfont": "acoustic_bass",
+      "icon": "double-bass",
+      "localPack": "/soundfonts/fluidr3/acoustic_bass.json",
+      "family": "Strings"
+    },
+    {
+      "program": 34,
+      "soundfont": "electric_bass_finger",
+      "icon": "bassguitar",
+      "localPack": "/soundfonts/fluidr3/electric_bass_finger.json",
+      "family": "Strings"
+    },
+    {
+      "program": 35,
+      "soundfont": "electric_bass_pick",
+      "icon": "bassguitar",
+      "localPack": "/soundfonts/fluidr3/electric_bass_pick.json",
+      "family": "Strings"
+    },
+    {
+      "program": 36,
+      "soundfont": "fretless_bass",
+      "icon": "bassguitar",
+      "localPack": "/soundfonts/fluidr3/fretless_bass.json",
+      "family": "Strings"
+    },
+    {
+      "program": 37,
+      "soundfont": "slap_bass_1",
+      "icon": "bassguitar",
+      "localPack": "/soundfonts/fluidr3/slap_bass_1.json",
+      "family": "Strings"
+    },
+    {
+      "program": 38,
+      "soundfont": "slap_bass_2",
+      "icon": "bassguitar",
+      "localPack": "/soundfonts/fluidr3/slap_bass_2.json",
+      "family": "Strings"
+    },
+    {
+      "program": 39,
+      "soundfont": "synth_bass_1",
+      "icon": "bassguitar",
+      "localPack": "/soundfonts/fluidr3/synth_bass_1.json",
+      "family": "Strings"
+    },
+    {
+      "program": 40,
+      "soundfont": "synth_bass_2",
+      "icon": "bassguitar",
+      "localPack": "/soundfonts/fluidr3/synth_bass_2.json",
+      "family": "Strings"
+    },
+    {
+      "program": 41,
+      "soundfont": "violin",
+      "icon": "violin",
+      "localPack": "/soundfonts/fluidr3/violin.json",
+      "family": "Strings"
+    },
+    {
+      "program": 42,
+      "soundfont": "viola",
+      "icon": "viola",
+      "localPack": "/soundfonts/fluidr3/viola.json",
+      "family": "Strings"
+    },
+    {
+      "program": 43,
+      "soundfont": "cello",
+      "icon": "cello",
+      "localPack": "/soundfonts/fluidr3/cello.json",
+      "family": "Strings"
+    },
+    {
+      "program": 44,
+      "soundfont": "contrabass",
+      "icon": "double-bass",
+      "localPack": "/soundfonts/fluidr3/contrabass.json",
+      "family": "Strings"
+    },
+    {
+      "program": 45,
+      "soundfont": "tremolo_strings",
+      "icon": "violin",
+      "localPack": "/soundfonts/fluidr3/tremolo_strings.json",
+      "family": "Strings"
+    },
+    {
+      "program": 46,
+      "soundfont": "pizzicato_strings",
+      "icon": "violin",
+      "localPack": "/soundfonts/fluidr3/pizzicato_strings.json",
+      "family": "Strings"
+    },
+    {
+      "program": 47,
+      "soundfont": "orchestral_harp",
+      "icon": "violin",
+      "localPack": "/soundfonts/fluidr3/orchestral_harp.json",
+      "family": "Strings"
+    },
+    {
+      "program": 48,
+      "soundfont": "timpani",
+      "icon": "drum-kit",
+      "localPack": "/soundfonts/fluidr3/timpani.json",
+      "family": "Percussion"
+    },
+    {
+      "program": 49,
+      "soundfont": "string_ensemble_1",
+      "icon": "violin",
+      "localPack": "/soundfonts/fluidr3/string_ensemble_1.json",
+      "family": "Strings"
+    },
+    {
+      "program": 50,
+      "soundfont": "string_ensemble_2",
+      "icon": "violin",
+      "localPack": "/soundfonts/fluidr3/string_ensemble_2.json",
+      "family": "Strings"
+    },
+    {
+      "program": 51,
+      "soundfont": "synth_strings_1",
+      "icon": "violin",
+      "localPack": "/soundfonts/fluidr3/synth_strings_1.json",
+      "family": "Strings"
+    },
+    {
+      "program": 52,
+      "soundfont": "synth_strings_2",
+      "icon": "violin",
+      "localPack": "/soundfonts/fluidr3/synth_strings_2.json",
+      "family": "Strings"
+    },
+    {
+      "program": 53,
+      "soundfont": "choir_aahs",
+      "icon": "microphone",
+      "localPack": "/soundfonts/fluidr3/choir_aahs.json",
+      "family": "Voice"
+    },
+    {
+      "program": 54,
+      "soundfont": "voice_oohs",
+      "icon": "microphone",
+      "localPack": "/soundfonts/fluidr3/voice_oohs.json",
+      "family": "Voice"
+    },
+    {
+      "program": 55,
+      "soundfont": "synth_choir",
+      "icon": "microphone",
+      "localPack": "/soundfonts/fluidr3/synth_choir.json",
+      "family": "Voice"
+    },
+    {
+      "program": 56,
+      "soundfont": "orchestra_hit",
+      "icon": "drum-kit",
+      "localPack": "/soundfonts/fluidr3/orchestra_hit.json",
+      "family": "Percussion"
+    },
+    {
+      "program": 57,
+      "soundfont": "trumpet",
+      "icon": "trumpet",
+      "localPack": "/soundfonts/fluidr3/trumpet.json",
+      "family": "Brass"
+    },
+    {
+      "program": 58,
+      "soundfont": "trombone",
+      "icon": "trombone",
+      "localPack": "/soundfonts/fluidr3/trombone.json",
+      "family": "Brass"
+    },
+    {
+      "program": 59,
+      "soundfont": "tuba",
+      "icon": "trombone",
+      "localPack": "/soundfonts/fluidr3/tuba.json",
+      "family": "Brass"
+    },
+    {
+      "program": 60,
+      "soundfont": "muted_trumpet",
+      "icon": "trumpet",
+      "localPack": "/soundfonts/fluidr3/muted_trumpet.json",
+      "family": "Brass"
+    },
+    {
+      "program": 61,
+      "soundfont": "french_horn",
+      "icon": "trombone",
+      "localPack": "/soundfonts/fluidr3/french_horn.json",
+      "family": "Brass"
+    },
+    {
+      "program": 62,
+      "soundfont": "brass_section",
+      "icon": "trumpet",
+      "localPack": "/soundfonts/fluidr3/brass_section.json",
+      "family": "Brass"
+    },
+    {
+      "program": 63,
+      "soundfont": "synth_brass_1",
+      "icon": "trumpet",
+      "localPack": "/soundfonts/fluidr3/synth_brass_1.json",
+      "family": "Brass"
+    },
+    {
+      "program": 64,
+      "soundfont": "synth_brass_2",
+      "icon": "trumpet",
+      "localPack": "/soundfonts/fluidr3/synth_brass_2.json",
+      "family": "Brass"
+    },
+    {
+      "program": 65,
+      "soundfont": "soprano_sax",
+      "icon": "alto-saxophone",
+      "localPack": "/soundfonts/fluidr3/soprano_sax.json",
+      "family": "Woodwinds"
+    },
+    {
+      "program": 66,
+      "soundfont": "alto_sax",
+      "icon": "alto-saxophone",
+      "localPack": "/soundfonts/fluidr3/alto_sax.json",
+      "family": "Woodwinds"
+    },
+    {
+      "program": 67,
+      "soundfont": "tenor_sax",
+      "icon": "tenor-saxophone",
+      "localPack": "/soundfonts/fluidr3/tenor_sax.json",
+      "family": "Woodwinds"
+    },
+    {
+      "program": 68,
+      "soundfont": "baritone_sax",
+      "icon": "bari-saxophone",
+      "localPack": "/soundfonts/fluidr3/baritone_sax.json",
+      "family": "Woodwinds"
+    },
+    {
+      "program": 69,
+      "soundfont": "oboe",
+      "icon": "clarinet",
+      "localPack": "/soundfonts/fluidr3/oboe.json",
+      "family": "Woodwinds"
+    },
+    {
+      "program": 70,
+      "soundfont": "english_horn",
+      "icon": "clarinet",
+      "localPack": "/soundfonts/fluidr3/english_horn.json",
+      "family": "Woodwinds"
+    },
+    {
+      "program": 71,
+      "soundfont": "bassoon",
+      "icon": "clarinet",
+      "localPack": "/soundfonts/fluidr3/bassoon.json",
+      "family": "Woodwinds"
+    },
+    {
+      "program": 72,
+      "soundfont": "clarinet",
+      "icon": "clarinet",
+      "localPack": "/soundfonts/fluidr3/clarinet.json",
+      "family": "Woodwinds"
+    },
+    {
+      "program": 73,
+      "soundfont": "piccolo",
+      "icon": "flute",
+      "localPack": "/soundfonts/fluidr3/piccolo.json",
+      "family": "Woodwinds"
+    },
+    {
+      "program": 74,
+      "soundfont": "flute",
+      "icon": "flute",
+      "localPack": "/soundfonts/fluidr3/flute.json",
+      "family": "Woodwinds"
+    },
+    {
+      "program": 75,
+      "soundfont": "recorder",
+      "icon": "flute",
+      "localPack": "/soundfonts/fluidr3/recorder.json",
+      "family": "Woodwinds"
+    },
+    {
+      "program": 76,
+      "soundfont": "pan_flute",
+      "icon": "flute",
+      "localPack": "/soundfonts/fluidr3/pan_flute.json",
+      "family": "Woodwinds"
+    },
+    {
+      "program": 77,
+      "soundfont": "blown_bottle",
+      "icon": "flute",
+      "localPack": "/soundfonts/fluidr3/blown_bottle.json",
+      "family": "Woodwinds"
+    },
+    {
+      "program": 78,
+      "soundfont": "shakuhachi",
+      "icon": "flute",
+      "localPack": "/soundfonts/fluidr3/shakuhachi.json",
+      "family": "Woodwinds"
+    },
+    {
+      "program": 79,
+      "soundfont": "whistle",
+      "icon": "flute",
+      "localPack": "/soundfonts/fluidr3/whistle.json",
+      "family": "Woodwinds"
+    },
+    {
+      "program": 80,
+      "soundfont": "ocarina",
+      "icon": "flute",
+      "localPack": "/soundfonts/fluidr3/ocarina.json",
+      "family": "Woodwinds"
+    },
+    {
+      "program": 81,
+      "soundfont": "lead_1_square",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/lead_1_square.json",
+      "family": "FX / Other"
+    },
+    {
+      "program": 82,
+      "soundfont": "lead_2_sawtooth",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/lead_2_sawtooth.json",
+      "family": "FX / Other"
+    },
+    {
+      "program": 83,
+      "soundfont": "lead_3_calliope",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/lead_3_calliope.json",
+      "family": "FX / Other"
+    },
+    {
+      "program": 84,
+      "soundfont": "lead_4_chiff",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/lead_4_chiff.json",
+      "family": "FX / Other"
+    },
+    {
+      "program": 85,
+      "soundfont": "lead_5_charang",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/lead_5_charang.json",
+      "family": "FX / Other"
+    },
+    {
+      "program": 86,
+      "soundfont": "lead_6_voice",
+      "icon": "microphone",
+      "localPack": "/soundfonts/fluidr3/lead_6_voice.json",
+      "family": "Voice"
+    },
+    {
+      "program": 87,
+      "soundfont": "lead_7_fifths",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/lead_7_fifths.json",
+      "family": "FX / Other"
+    },
+    {
+      "program": 88,
+      "soundfont": "lead_8_bass__lead",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/lead_8_bass__lead.json",
+      "family": "FX / Other"
+    },
+    {
+      "program": 89,
+      "soundfont": "pad_1_new_age",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/pad_1_new_age.json",
+      "family": "FX / Other"
+    },
+    {
+      "program": 90,
+      "soundfont": "pad_2_warm",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/pad_2_warm.json",
+      "family": "FX / Other"
+    },
+    {
+      "program": 91,
+      "soundfont": "pad_3_polysynth",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/pad_3_polysynth.json",
+      "family": "FX / Other"
+    },
+    {
+      "program": 92,
+      "soundfont": "pad_4_choir",
+      "icon": "microphone",
+      "localPack": "/soundfonts/fluidr3/pad_4_choir.json",
+      "family": "Voice"
+    },
+    {
+      "program": 93,
+      "soundfont": "pad_5_bowed",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/pad_5_bowed.json",
+      "family": "FX / Other"
+    },
+    {
+      "program": 94,
+      "soundfont": "pad_6_metallic",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/pad_6_metallic.json",
+      "family": "FX / Other"
+    },
+    {
+      "program": 95,
+      "soundfont": "pad_7_halo",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/pad_7_halo.json",
+      "family": "FX / Other"
+    },
+    {
+      "program": 96,
+      "soundfont": "pad_8_sweep",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/pad_8_sweep.json",
+      "family": "FX / Other"
+    },
+    {
+      "program": 97,
+      "soundfont": "fx_1_rain",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/fx_1_rain.json",
+      "family": "FX / Other"
+    },
+    {
+      "program": 98,
+      "soundfont": "fx_2_soundtrack",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/fx_2_soundtrack.json",
+      "family": "FX / Other"
+    },
+    {
+      "program": 99,
+      "soundfont": "fx_3_crystal",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/fx_3_crystal.json",
+      "family": "FX / Other"
+    },
+    {
+      "program": 100,
+      "soundfont": "fx_4_atmosphere",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/fx_4_atmosphere.json",
+      "family": "FX / Other"
+    },
+    {
+      "program": 101,
+      "soundfont": "fx_5_brightness",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/fx_5_brightness.json",
+      "family": "FX / Other"
+    },
+    {
+      "program": 102,
+      "soundfont": "fx_6_goblins",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/fx_6_goblins.json",
+      "family": "FX / Other"
+    },
+    {
+      "program": 103,
+      "soundfont": "fx_7_echoes",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/fx_7_echoes.json",
+      "family": "FX / Other"
+    },
+    {
+      "program": 104,
+      "soundfont": "fx_8_scifi",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/fx_8_scifi.json",
+      "family": "FX / Other"
+    },
+    {
+      "program": 105,
+      "soundfont": "sitar",
+      "icon": "guitar",
+      "localPack": "/soundfonts/fluidr3/sitar.json",
+      "family": "Guitar"
+    },
+    {
+      "program": 106,
+      "soundfont": "banjo",
+      "icon": "guitar",
+      "localPack": "/soundfonts/fluidr3/banjo.json",
+      "family": "Guitar"
+    },
+    {
+      "program": 107,
+      "soundfont": "shamisen",
+      "icon": "guitar",
+      "localPack": "/soundfonts/fluidr3/shamisen.json",
+      "family": "Guitar"
+    },
+    {
+      "program": 108,
+      "soundfont": "koto",
+      "icon": "guitar",
+      "localPack": "/soundfonts/fluidr3/koto.json",
+      "family": "Guitar"
+    },
+    {
+      "program": 109,
+      "soundfont": "kalimba",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/kalimba.json",
+      "family": "FX / Other"
+    },
+    {
+      "program": 110,
+      "soundfont": "bagpipe",
+      "icon": "clarinet",
+      "localPack": "/soundfonts/fluidr3/bagpipe.json",
+      "family": "Woodwinds"
+    },
+    {
+      "program": 111,
+      "soundfont": "fiddle",
+      "icon": "violin",
+      "localPack": "/soundfonts/fluidr3/fiddle.json",
+      "family": "Strings"
+    },
+    {
+      "program": 112,
+      "soundfont": "shanai",
+      "icon": "clarinet",
+      "localPack": "/soundfonts/fluidr3/shanai.json",
+      "family": "Woodwinds"
+    },
+    {
+      "program": 113,
+      "soundfont": "tinkle_bell",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/tinkle_bell.json",
+      "family": "Percussion"
+    },
+    {
+      "program": 114,
+      "soundfont": "agogo",
+      "icon": "drum-kit",
+      "localPack": "/soundfonts/fluidr3/agogo.json",
+      "family": "Percussion"
+    },
+    {
+      "program": 115,
+      "soundfont": "steel_drums",
+      "icon": "drum-kit",
+      "localPack": "/soundfonts/fluidr3/steel_drums.json",
+      "family": "Percussion"
+    },
+    {
+      "program": 116,
+      "soundfont": "woodblock",
+      "icon": "drum-kit",
+      "localPack": "/soundfonts/fluidr3/woodblock.json",
+      "family": "Percussion"
+    },
+    {
+      "program": 117,
+      "soundfont": "taiko_drum",
+      "icon": "drum-kit",
+      "localPack": "/soundfonts/fluidr3/taiko_drum.json",
+      "family": "Drums"
+    },
+    {
+      "program": 118,
+      "soundfont": "melodic_tom",
+      "icon": "drum-kit",
+      "localPack": "/soundfonts/fluidr3/melodic_tom.json",
+      "family": "Drums"
+    },
+    {
+      "program": 119,
+      "soundfont": "synth_drum",
+      "icon": "drum-kit",
+      "localPack": "/soundfonts/fluidr3/synth_drum.json",
+      "family": "Drums"
+    },
+    {
+      "program": 120,
+      "soundfont": "reverse_cymbal",
+      "icon": "drum-kit",
+      "localPack": "/soundfonts/fluidr3/reverse_cymbal.json",
+      "family": "Drums"
+    },
+    {
+      "program": 121,
+      "soundfont": "guitar_fret_noise",
+      "icon": "guitar",
+      "localPack": "/soundfonts/fluidr3/guitar_fret_noise.json",
+      "family": "Guitar"
+    },
+    {
+      "program": 122,
+      "soundfont": "breath_noise",
+      "icon": "flute",
+      "localPack": "/soundfonts/fluidr3/breath_noise.json",
+      "family": "Woodwinds"
+    },
+    {
+      "program": 123,
+      "soundfont": "seashore",
+      "icon": "microphone",
+      "localPack": "/soundfonts/fluidr3/seashore.json",
+      "family": "FX / Other"
+    },
+    {
+      "program": 124,
+      "soundfont": "bird_tweet",
+      "icon": "flute",
+      "localPack": "/soundfonts/fluidr3/bird_tweet.json",
+      "family": "Woodwinds"
+    },
+    {
+      "program": 125,
+      "soundfont": "telephone_ring",
+      "icon": "piano",
+      "localPack": "/soundfonts/fluidr3/telephone_ring.json",
+      "family": "FX / Other"
+    },
+    {
+      "program": 126,
+      "soundfont": "helicopter",
+      "icon": "drum-kit",
+      "localPack": "/soundfonts/fluidr3/helicopter.json",
+      "family": "FX / Other"
+    },
+    {
+      "program": 127,
+      "soundfont": "applause",
+      "icon": "microphone",
+      "localPack": "/soundfonts/fluidr3/applause.json",
+      "family": "FX / Other"
+    },
+    {
+      "program": 128,
+      "soundfont": "gunshot",
+      "icon": "drum-kit",
+      "localPack": "/soundfonts/fluidr3/gunshot.json",
+      "family": "FX / Other"
+    }
+  ],
+  "voices": [
+    {
+      "id": "piano",
+      "label": "Piano",
+      "icon": "piano",
+      "program": 1,
+      "localPack": "/soundfonts/fluidr3/acoustic_grand_piano.json"
+    },
+    {
+      "id": "guitar",
+      "label": "Guitar",
+      "icon": "guitar",
+      "program": 25,
+      "localPack": "/soundfonts/fluidr3/acoustic_guitar_nylon.json"
+    },
+    {
+      "id": "bassguitar",
+      "label": "Bass Guitar",
+      "icon": "bassguitar",
+      "program": 34,
+      "localPack": "/soundfonts/fluidr3/electric_bass_finger.json"
+    },
+    {
+      "id": "double-bass",
+      "label": "Double Bass",
+      "icon": "double-bass",
+      "program": 33,
+      "localPack": "/soundfonts/fluidr3/acoustic_bass.json"
+    },
+    {
+      "id": "drum-kit",
+      "label": "Drum Kit",
+      "icon": "drum-kit",
+      "program": null,
+      "localPack": "/soundfonts/TimGM6mb.sf2"
+    },
+    {
+      "id": "alto-saxophone",
+      "label": "Alto Saxophone",
+      "icon": "alto-saxophone",
+      "program": 66,
+      "localPack": "/soundfonts/fluidr3/alto_sax.json"
+    },
+    {
+      "id": "tenor-saxophone",
+      "label": "Tenor Saxophone",
+      "icon": "tenor-saxophone",
+      "program": 67,
+      "localPack": "/soundfonts/fluidr3/tenor_sax.json"
+    },
+    {
+      "id": "bari-saxophone",
+      "label": "Baritone Saxophone",
+      "icon": "bari-saxophone",
+      "program": 68,
+      "localPack": "/soundfonts/fluidr3/baritone_sax.json"
+    },
+    {
+      "id": "flute",
+      "label": "Flute",
+      "icon": "flute",
+      "program": 74,
+      "localPack": "/soundfonts/fluidr3/flute.json"
+    },
+    {
+      "id": "clarinet",
+      "label": "Clarinet",
+      "icon": "clarinet",
+      "program": 72,
+      "localPack": "/soundfonts/fluidr3/clarinet.json"
+    },
+    {
+      "id": "trumpet",
+      "label": "Trumpet",
+      "icon": "trumpet",
+      "program": 57,
+      "localPack": "/soundfonts/fluidr3/trumpet.json"
+    },
+    {
+      "id": "trombone",
+      "label": "Trombone",
+      "icon": "trombone",
+      "program": 58,
+      "localPack": "/soundfonts/fluidr3/trombone.json"
+    },
+    {
+      "id": "violin",
+      "label": "Violin",
+      "icon": "violin",
+      "program": 41,
+      "localPack": "/soundfonts/fluidr3/violin.json"
+    },
+    {
+      "id": "viola",
+      "label": "Viola",
+      "icon": "viola",
+      "program": 42,
+      "localPack": "/soundfonts/fluidr3/viola.json"
+    },
+    {
+      "id": "cello",
+      "label": "Cello",
+      "icon": "cello",
+      "program": 43,
+      "localPack": "/soundfonts/fluidr3/cello.json"
+    },
+    {
+      "id": "microphone",
+      "label": "Voice",
+      "icon": "microphone",
+      "program": 54,
+      "localPack": "/soundfonts/fluidr3/voice_oohs.json"
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://scoreflow.local/schemas/file-state-v1.json",
+  "title": "Scoreflow file settings",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "source", "settings", "parts"],
+  "properties": {
+    "version": { "const": 1 },
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "size", "sha256", "format"],
+      "properties": {
+        "name": { "type": "string" },
+        "size": { "type": "integer", "minimum": 0 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "format": { "type": "string" }
+      }
+    },
+    "settings": {
+      "type": "object", "additionalProperties": false,
+      "required": ["mode", "notationFont", "barsPerLine", "overlap", "names", "chordSymbols", "inferChordSymbols", "counts", "subdivisions", "bpm", "zoom"],
+      "properties": {
+        "mode": { "enum": ["portrait", "landscape"] },
+        "notationFont": { "enum": ["Bravura", "Petaluma"] },
+        "barsPerLine": { "oneOf": [{ "const": "auto" }, { "type": "integer", "minimum": 1, "maximum": 4 }] },
+        "overlap": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "names": { "type": "boolean" },
+        "chordSymbols": { "type": "boolean" },
+        "inferChordSymbols": { "type": "boolean" },
+        "counts": { "type": "boolean" },
+        "subdivisions": { "type": "boolean" },
+        "annotationFont": { "enum": ["Sans", "Serif", "Mono"] },
+        "bpm": { "type": "number", "minimum": 30, "maximum": 240 },
+        "zoom": { "type": "number", "minimum": 0.5, "maximum": 4 },
+        "semitones": { "type": "integer", "minimum": -12, "maximum": 12 },
+        "scorePitch": { "enum": ["written", "concert"] }
+      }
+    },
+    "parts": {
+      "type": "object", "additionalProperties": {
+        "type": "object", "additionalProperties": false,
+        "required": ["visible", "instrument"],
+        "properties": {
+          "visible": { "type": "boolean" },
+          "instrument": { "enum": ["piano", "guitar", "bassguitar", "double-bass", "drum-kit", "alto-saxophone", "tenor-saxophone", "bari-saxophone", "flute", "clarinet", "trumpet", "trombone", "violin", "viola", "cello", "microphone"] },
+          "gmSoundfont": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+          "volume": { "type": "integer", "minimum": 0, "maximum": 100 }
+        }
+      }
+    }
+  }
+}
