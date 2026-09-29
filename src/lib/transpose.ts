@@ -36,9 +36,9 @@ function shiftPitch(source: Pitch, semitones: number, diatonic: number | undefin
     const octave = source.octave + Math.floor(index / 7);
     const step = steps[((index % 7) + 7) % 7];
     const alter = midi - pitch(step, octave).midi;
-    if (Math.abs(alter) <= 2) return pitch(step, octave, alter);
+    if (Math.abs(alter) <= 2) return { ...source, ...pitch(step, octave, alter), accidental: undefined, cautionary: undefined };
   }
-  return spellMidi(midi, key);
+  return { ...source, ...spellMidi(midi, key), accidental: undefined, cautionary: undefined };
 }
 
 function noteName(source: Pitch): string { return `${source.step}${source.alter > 0 ? '#'.repeat(source.alter) : 'b'.repeat(-source.alter)}`; }
@@ -72,10 +72,10 @@ export function scoreForView(score: Score, view: ScorePitchView, semitones: numb
       const transposition = sourceTransposition(part, measure);
       const viewSemitones = view === 'concert' && part.pitchBasis !== 'concert' ? transposition.semitones : view === 'written' && part.pitchBasis === 'concert' ? -transposition.semitones : 0;
       const diatonic = viewSemitones ? (view === 'concert' ? transposition.diatonic : transposition.diatonic === undefined ? undefined : -transposition.diatonic) : undefined;
-      const viewKey = transposeKey(sourceKey, viewSemitones);
+      const viewKey = transposeKey(measure.key ?? sourceKey, viewSemitones);
       const noteKey = transposeKey(viewKey, semitones);
       const shift = (source: Pitch) => shiftPitch(shiftPitch(source, viewSemitones, diatonic, viewKey), semitones, undefined, noteKey);
-      return { ...measure, notes: measure.notes.map(note => ({ ...note, pitches: note.pitches.map(shift), chordSymbol: note.chordSymbol ? shiftChordSymbol(note.chordSymbol, shift) : undefined })) };
+      return { ...measure, key: noteKey, notes: measure.notes.map(note => ({ ...note, pitches: note.pitches.map(shift), chordSymbol: note.chordSymbol ? shiftChordSymbol(note.chordSymbol, shift) : undefined })) };
     }) };
   }) };
 }

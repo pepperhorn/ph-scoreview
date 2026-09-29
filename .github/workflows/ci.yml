@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Check, build and validate (chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Playwright Chromium
+        run: npx playwright-core install --with-deps chromium
+      - name: Type check
+        run: npm run check
+      - name: Build
+        run: npm run build
+      - name: Verify GM soundfont manifest
+        run: npm run test:manifest
+      - name: Validation suite (document, performance, reader on chromium)
+        run: npm run test:validation
+        timeout-minutes: 10
+
+  reader:
+    name: Reader (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # chromium runs in the validate job via test:validation.
+        browser: [firefox, webkit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Playwright ${{ matrix.browser }}
+        run: npx playwright-core install --with-deps ${{ matrix.browser }}
+      - name: Build
+        run: npm run build
+      - name: Reader validation
+        run: npm run test:reader
+        timeout-minutes: 8
+        env:
+          BROWSER: ${{ matrix.browser }}

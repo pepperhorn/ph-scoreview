@@ -1,12 +1,14 @@
 import manifest from './gm-soundfont-manifest.json';
+import type { SourceDocument } from './notation/document';
 const iconUrls = import.meta.glob('../icons/*.svg', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
 
-export type Pitch = { step: string; octave: number; alter: number; midi: number };
+export type Pitch = { step: string; octave: number; alter: number; midi: number; sourceId?: string; unpitched?: boolean; displayStep?: string; displayOctave?: number; accidental?: string; cautionary?: boolean; tieStart?: boolean; tieStop?: boolean };
 export type Transposition = { semitones: number; diatonic?: number };
-export type ScoreNote = { id: string; start: number; duration: number; pitches: Pitch[]; chordSymbol?: string; lyric?: string; beamStart?: boolean; beamEnd?: boolean; rest?: boolean; dotted?: boolean; tieStart?: boolean; tieStop?: boolean };
-export type Measure = { index: number; beats: number; notes: ScoreNote[]; dynamics?: { start: number; symbol: string }[]; transposition?: Transposition };
+export type ScoreNote = { id: string; sourceId?: string; start: number; duration: number; pitches: Pitch[]; transposition?: Transposition; chordSymbol?: string; lyric?: string; beamStart?: boolean; beamEnd?: boolean; rest?: boolean; dotted?: boolean; dots?: number; writtenType?: string; voice?: string; stem?: string; grace?: boolean; tuplet?: { actual: number; normal: number; number: string; start?: boolean; stop?: boolean }; slurStart?: string[]; slurStop?: string[]; tieStart?: boolean; tieStop?: boolean };
+export type ScoreDirection = { start: number; symbols?: string[]; text?: string; placement?: 'above' | 'below'; voice?: string; wedge?: { type: string; number: string }; soundDynamics?: number; tempo?: number };
+export type Measure = { index: number; beats: number; notes: ScoreNote[]; dynamics?: { start: number; symbol: string }[]; directions?: ScoreDirection[]; nominalBeats?: number; number?: string; implicit?: boolean; key?: number; clef?: string; beatsPerBar?: number; beatType?: number; transposition?: Transposition };
 export type Part = { id: string; name: string; clef: string; key?: number; instrument: InstrumentId; gmProgram?: number; gmSoundfont?: string; pitchBasis?: 'written' | 'concert'; transposition?: Transposition; measures: Measure[] };
-export type Score = { title: string; subtitle?: string; composer?: string; credits?: string[]; source: string; tempo: number; beats: number; beatType: number; key: number; parts: Part[] };
+export type Score = { title: string; subtitle?: string; composer?: string; credits?: string[]; source: string; tempo: number; beats: number; beatType: number; key: number; parts: Part[]; document?: SourceDocument };
 export type InstrumentId = 'piano' | 'guitar' | 'bassguitar' | 'double-bass' | 'drum-kit' | 'alto-saxophone' | 'tenor-saxophone' | 'bari-saxophone' | 'flute' | 'clarinet' | 'trumpet' | 'trombone' | 'violin' | 'viola' | 'cello' | 'microphone';
 export const GM_FAMILIES = ['Keyboard', 'Guitar', 'Voice', 'Percussion', 'Drums', 'Woodwinds', 'Brass', 'Strings', 'FX / Other'] as const;
 export type GmFamily = typeof GM_FAMILIES[number];
