@@ -215,7 +215,145 @@ try {
     check(soundEnd(67) === 1, 'P6 pedal leaked into another part', ends(pianoTimeline));
     const sost = buildPerformanceTimeline(parseMusicXml(single([pedal('sostenuto') + whole('C')])), { bpm: 60 });
     check(sost.diagnostics.some(d => d.includes('Sostenuto')) && sost.events[0].soundEndSeconds === 4, 'P7 sostenuto diagnosed, not synthesized', sost.diagnostics);
-    return { failures, checks: 33 };
+
+    // N: format-neutral navigation. MEI and ABC repeats, endings and jumps drive the same traversal as MusicXML.
+    const { parseMei } = await import('/src/lib/import.ts');
+    const meiNote = (step, staff = 1) => `<staff n="${staff}"><layer n="1"><note pname="${step}" oct="4" dur="1"/></layer></staff>`;
+    const meiDoc = (body, staves = 1) => `<?xml version="1.0"?><mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.0"><music><body><mdiv><score><scoreDef meter.count="4" meter.unit="4"><staffGrp>${Array.from({ length: staves }, (_, i) => `<staffDef n="${i + 1}" lines="5" clef.shape="G" clef.line="2"/>`).join('')}</staffGrp></scoreDef><section>${body}</section></score></mdiv></body></music></mei>`;
+    const meiEndings = parseMei(meiDoc('<measure n="1" left="rptstart">' + meiNote('c') + '</measure><ending n="1"><measure n="2" right="rptend">' + meiNote('d') + '</measure></ending><ending n="2"><measure n="3">' + meiNote('e') + '</measure></ending><measure n="4" right="end">' + meiNote('f') + '</measure>'));
+    check(order(buildPerformanceTimeline(meiEndings, { bpm: 120 })) === '0,1,0,2,3', 'N1 MEI repeat with 1st/2nd endings', order(buildPerformanceTimeline(meiEndings, { bpm: 120 })));
+    check(meiEndings.parts[0].measures.map(m => m.number).join() === '1,2,3,4', 'N1 MEI measure @n labels', meiEndings.parts[0].measures.map(m => m.number));
+    const meiMulti = parseMei(meiDoc('<measure n="1" left="rptstart">' + meiNote('c') + '</measure><ending n="1, 2"><measure n="2" right="rptend">' + meiNote('d') + '</measure></ending><ending n="3"><measure n="3">' + meiNote('e') + '</measure></ending>'));
+    check(order(buildPerformanceTimeline(meiMulti, { bpm: 120 })) === '0,1,0,1,0,2', 'N1 MEI "1, 2" ending repeats until the third ending', order(buildPerformanceTimeline(meiMulti, { bpm: 120 })));
+    const meiBoth = parseMei(meiDoc('<measure n="1" right="rptboth">' + meiNote('c') + '</measure><measure n="2" right="rptend">' + meiNote('d') + '</measure><measure n="3">' + meiNote('e') + '</measure>'));
+    check(order(buildPerformanceTimeline(meiBoth, { bpm: 120 })) === '0,0,1,1,2', 'N1 MEI rptboth', order(buildPerformanceTimeline(meiBoth, { bpm: 120 })));
+    const meiDs = parseMei(meiDoc('<measure n="1">' + meiNote('c') + '</measure><measure n="2">' + meiNote('d') + '<repeatMark func="segno" tstamp="1" staff="1"/></measure><measure n="3">' + meiNote('e') + '<repeatMark func="fine" tstamp="4" staff="1"/></measure><measure n="4">' + meiNote('f') + '<dir tstamp="4" staff="1">D.S. al Fine</dir></measure><measure n="5">' + meiNote('g') + '</measure>'));
+    check(order(buildPerformanceTimeline(meiDs, { bpm: 120 })) === '0,1,2,3,1,2', 'N2 MEI D.S. al Fine (repeatMark + dir)', order(buildPerformanceTimeline(meiDs, { bpm: 120 })));
+    const meiCoda = parseMei(meiDoc('<measure n="1">' + meiNote('c') + '<repeatMark func="segno" tstamp="1" staff="1"/></measure><measure n="2">' + meiNote('d') + '<repeatMark func="coda" tstamp="4" staff="1"/></measure><measure n="3">' + meiNote('e') + '<repeatMark func="dalSegno" tstamp="4" staff="1"/></measure><measure n="4">' + meiNote('f') + '<repeatMark func="coda" tstamp="1" staff="1"/></measure><measure n="5">' + meiNote('g') + '<dir tstamp="1" staff="1">both hands</dir></measure>'));
+    check(order(buildPerformanceTimeline(meiCoda, { bpm: 120 })) === '0,1,2,0,1,3,4', 'N2 MEI D.S. al Coda (coda sign before the jump is To Coda)', order(buildPerformanceTimeline(meiCoda, { bpm: 120 })));
+    const meiHidden = parseMei(meiDoc(['c', 'd', 'e', 'f'].map((step, i) => `<measure n="${i + 1}"${i === 0 ? ' left="rptstart"' : i === 1 ? ' right="rptend"' : ''}>${meiNote(step, 1)}${meiNote(step, 2)}${i === 2 ? '<dir tstamp="4" staff="1">D.C. al Fine</dir>' : i === 1 ? '<dir tstamp="4" staff="1">Fine</dir>' : ''}</measure>`).join(''), 2));
+    const hiddenMei = buildPerformanceTimeline({ ...meiHidden, parts: meiHidden.parts.slice(1) }, { bpm: 120, fullScore: meiHidden });
+    check(order(hiddenMei) === '0,1,0,1,2,0,1' && order(buildPerformanceTimeline(meiHidden, { bpm: 120 })) === order(hiddenMei), 'N7 hiding the first staff keeps MEI navigation', order(hiddenMei));
+    check(hiddenMei.events.filter(e => e.measureIndex === 0).map(e => e.occurrence).join() === '0,1,2', 'N7 each visit is its own occurrence', hiddenMei.events.map(e => `${e.measureIndex}:${e.occurrence}`));
+
+    const abcOrder = async text => order(buildPerformanceTimeline(await parseAbc(`X:1\nM:4/4\nL:1/4\nK:C\n${text}\n`), { bpm: 120 }));
+    const abcEndings = await abcOrder('|:C4|1 D4:|2 E4|F4|]');
+    check(abcEndings === '0,1,0,2,3', 'N3 ABC |: :| with [1 [2', abcEndings);
+    const abcBracket = await abcOrder('|:C4|[1D4:|[2E4|]F4|]');
+    check(abcBracket === '0,1,0,2,3', 'N3 ABC [1 / [2 bracket spelling', abcBracket);
+    const abcMulti = await abcOrder('|:C4|[1,2 D4:|[3 E4|]');
+    check(abcMulti === '0,1,0,1,0,2', 'N3 ABC "1,2" ending', abcMulti);
+    const abcDc = await abcOrder('C4|"^Fine"D4|E4|"^D.C. al Fine"F4|G4|]');
+    check(abcDc === '0,1,2,3,0,1', 'N4 ABC D.C. al Fine (annotations)', abcDc);
+    const abcDcDecor = await abcOrder('C4|!fine!D4|E4|F4 !D.C.alfine!|G4|]');
+    check(abcDcDecor === '0,1,2,3,0,1', 'N4 ABC D.C. al Fine (decorations)', abcDcDecor);
+    const abcDbl = await abcOrder('|:C4::D4:|E4|]');
+    check(abcDbl === '0,0,1,1,2', 'N5 ABC :: double repeat', abcDbl);
+    const abcCoda = await abcOrder('C4|!segno!D4|"^To Coda"E4|"^D.S. al Coda"F4|!coda!G4|]');
+    check(abcCoda === '0,1,2,3,1,2,4', 'N6 ABC D.S. al Coda', abcCoda);
+    const abcTwoCodas = await abcOrder('C4|S D4|O E4|!D.S.alcoda!F4|O G4|]');
+    check(abcTwoCodas === '0,1,2,3,1,2,4', 'N6 ABC coda sign before D.S. is To Coda', abcTwoCodas);
+    const abcAnnotated = await parseAbc('X:1\nM:4/4\nL:1/4\nK:C\n"Am"C4|"^D.C."D4|]\n');
+    check(abcAnnotated.parts[0].measures[0].notes[0].chordSymbol === 'Am' && !abcAnnotated.parts[0].measures[1].notes[0].chordSymbol, 'N4 ABC navigation text is not a chord symbol', abcAnnotated.parts[0].measures.map(m => m.notes[0].chordSymbol));
+    const abcTwoVoices = await parseAbc('X:1\nM:4/4\nL:1/4\nK:C\nV:1\n|:C4:|D4|]\nV:2\n|:E4:|F4|]\n');
+    const hiddenAbc = buildPerformanceTimeline({ ...abcTwoVoices, parts: abcTwoVoices.parts.slice(1) }, { bpm: 120, fullScore: abcTwoVoices });
+    check(order(hiddenAbc) === '0,0,1' && hiddenAbc.events.map(e => e.midi).join() === '64,64,65', 'N7 ABC navigation with the first voice hidden', [order(hiddenAbc), hiddenAbc.events.map(e => e.midi)]);
+    // MusicXML navigation now lives on the Score; hiding the first part keeps it.
+    const mxlTwo = parseMusicXml(score('<score-part id="P1"><part-name>A</part-name></score-part><score-part id="P2"><part-name>B</part-name></score-part>',
+      `<part id="P1"><measure number="1">${attrs}${whole('C')}<barline location="right"><repeat direction="backward"/></barline></measure><measure number="2">${whole('D')}</measure></part><part id="P2"><measure number="1">${attrs}${whole('E')}</measure><measure number="2">${whole('F')}</measure></part>`));
+    check(mxlTwo.parts[1].measures[0].navigation?.repeatEnd === true, 'N8 MusicXML navigation is on every part', mxlTwo.parts.map(p => p.measures[0].navigation));
+    check(order(buildPerformanceTimeline({ ...mxlTwo, parts: mxlTwo.parts.slice(1), document: undefined }, { bpm: 120, fullScore: { ...mxlTwo, document: undefined } })) === '0,0,1', 'N8 MusicXML navigation read from the Score, not the XML', null);
+
+    // R: the roadmap is an explicit, JSON-serializable list of segments with exact sub-bar positions.
+    const { buildRoadmap } = await import('/src/lib/playback/roadmap.ts');
+    const json = value => JSON.stringify(value);
+    const seg = (fb, fbeat, tb, tbeat, extra = {}) => ({ from: { bar: fb, beat: fbeat }, to: { bar: tb, beat: tbeat }, ...extra });
+    const endingsScore = parseMusicXml(single([
+      '<barline location="left"><repeat direction="forward"/></barline>' + whole('C'),
+      '<barline location="left"><ending number="1" type="start"/></barline>' + whole('D') + '<barline location="right"><ending number="1" type="stop"/><repeat direction="backward"/></barline>',
+      '<barline location="left"><ending number="2" type="start"/></barline>' + whole('E') + '<barline location="right"><ending number="2" type="stop"/></barline>', whole('F')]));
+    check(json(buildRoadmap(endingsScore)) === json({ version: 1, segments: [seg(0, '0', 1, '4', { ending: 1 }), seg(0, '0', 0, '4', { pass: 2 }), seg(2, '0', 3, '4', { ending: 2, pass: 2 })] }), 'R1 MusicXML endings roadmap', buildRoadmap(endingsScore));
+    const dsScore = parseMusicXml(single([words('Segno') + whole('C'), words('To Coda') + whole('D'), words('D.S. al Coda') + whole('E'), words('Coda') + whole('F'), whole('G')]));
+    check(json(buildRoadmap(dsScore).segments) === json([seg(0, '0', 2, '4'), seg(0, '0', 1, '4'), seg(3, '0', 4, '4')]), 'R1 MusicXML D.S. al Coda roadmap', buildRoadmap(dsScore));
+    check(json(buildPerformanceTimeline(dsScore, { bpm: 120 }).roadmap) === json(buildRoadmap(dsScore)), 'R1 timeline reports its roadmap', null);
+    // Pickup-style mid-bar repeat: |: at beat 3 of bar 0, :| at beat 3 of bar 2 (a <barline location="middle">).
+    const q = step => one(step, 4, 4);
+    const midBar = parseMusicXml(single([q('C') + q('D') + q('E') + '<barline location="middle"><repeat direction="forward"/></barline>' + q('F'), q('G') + q('A') + q('B') + q('C'), q('D') + q('E') + q('F') + '<barline location="middle"><repeat direction="backward"/></barline>' + q('G')]));
+    check(json(midBar.parts[0].measures[2].navigation) === json({ barlines: [{ beat: '3', repeatEnd: true }] }), 'R2 middle barline keeps its exact offset', midBar.parts[0].measures.map(m => m.navigation));
+    check(json(buildRoadmap(midBar).segments) === json([seg(0, '0', 2, '3'), seg(0, '3', 2, '4', { pass: 2 })]), 'R2 mid-bar repeat roadmap', buildRoadmap(midBar));
+    const midTimeline = buildPerformanceTimeline(midBar, { bpm: 60 });
+    const midOrder = midTimeline.events.map(e => e.midi).join();
+    check(midOrder === '60,62,64,65,67,69,71,60,62,64,65,65,67,69,71,60,62,64,65,67' && approx(midTimeline.durationSeconds, 20), 'R2 mid-bar repeat event order', [midOrder, midTimeline.durationSeconds]);
+    check(midTimeline.events.filter(e => e.measureIndex === 0).map(e => e.occurrence).join() === '0,0,0,0,1', 'R2 mid-bar re-entry is a new occurrence', midTimeline.events.map(e => `${e.measureIndex}:${e.occurrence}`));
+    // A note sounding across a mid-bar segment end is cut there; a jump into the middle of a note does not re-attack it.
+    const crossing = parseMusicXml(single([q('C') + q('D') + q('E') + '<barline location="middle"><repeat direction="forward"/></barline>' + q('F'), q('G') + one('A', 4, 8, '', 'half') + q('B'), one('D', 4, 8, '', 'half') + '<barline location="middle"><repeat direction="backward"/></barline>' + one('E', 4, 8, '', 'half')]));
+    const timed = t => t.events.map(e => `${e.midi}@${e.startSeconds}-${e.endSeconds}`).join();
+    const cut = buildPerformanceTimeline(crossing, { bpm: 60, roadmap: { version: 1, segments: [seg(0, '0', 1, '2'), seg(2, '0', 2, '4'), seg(1, '2', 1, '4')] } });
+    check(timed(cut) === '60@0-1,62@1-2,64@2-3,65@3-4,67@4-5,69@5-6,62@6-8,64@8-10,71@11-12', 'R3 cut at a jump, no re-attack after a mid-note entry', timed(cut));
+    const continued = buildPerformanceTimeline(crossing, { bpm: 60, roadmap: { version: 1, segments: [seg(0, '0', 1, '2'), seg(1, '2', 2, '4')] } });
+    check(timed(continued) === timed(buildPerformanceTimeline(crossing, { bpm: 60, roadmap: { version: 1, segments: [seg(0, '0', 2, '4')] } })) && timed(continued).includes('69@5-7'), 'R3 a segment continuing at the same position sustains', timed(continued));
+    // Split-measure encoding: two implicit measures sharing one number, each carrying its own repeat barline.
+    const split = parseMusicXml(single([whole('C'), q('D') + q('E') + q('F') + '<barline location="right"><repeat direction="backward"/></barline>', q('G') + '<barline location="left"><repeat direction="forward"/></barline>', whole('A') + '<barline location="right"><repeat direction="backward"/></barline>']).replace('<measure number="2">', '<measure number="2" implicit="yes">').replace('<measure number="3">', '<measure number="2" implicit="yes">').replace('<measure number="4">', '<measure number="3">'));
+    check(split.parts[0].measures.map(m => `${m.number}:${m.beats}`).join() === '1:4,2:3,2:1,3:4', 'R4 split measure lengths', split.parts[0].measures.map(m => `${m.number}:${m.beats}`));
+    check(order(buildPerformanceTimeline(split, { bpm: 60 })) === '0,1,0,1,2,3,2,3' && json(buildRoadmap(split).segments) === json([seg(0, '0', 1, '3'), seg(0, '0', 3, '4', { pass: 2 }), seg(2, '0', 3, '4', { pass: 2 })]), 'R4 split-measure repeat', [order(buildPerformanceTimeline(split, { bpm: 60 })), buildRoadmap(split)]);
+    // MEI <barLine form="rptend"> inside a layer is a mid-bar repeat.
+    const meiMid = parseMei(meiDoc('<measure n="1"><staff n="1"><layer n="1"><note pname="c" oct="4" dur="2"/><barLine form="rptstart"/><note pname="d" oct="4" dur="2"/></layer></staff></measure><measure n="2"><staff n="1"><layer n="1"><note pname="e" oct="4" dur="4" dots="1"/><barLine form="rptend"/><note pname="f" oct="4" dur="8"/><note pname="g" oct="4" dur="2"/></layer></staff></measure>'));
+    check(json(buildRoadmap(meiMid).segments) === json([seg(0, '0', 1, '3/2'), seg(0, '2', 1, '4', { pass: 2 })]), 'R5 MEI mid-bar barLine roadmap', buildRoadmap(meiMid));
+    // ABC: a pickup is only as long as its notes, and |: right after it repeats from there.
+    const abcPickup = await parseAbc('X:1\nM:4/4\nL:1/4\nK:C\nG|:C4|D3 G:|E4|]\n');
+    check(abcPickup.parts[0].measures.map(m => m.beats).join() === '1,4,4,4' && order(buildPerformanceTimeline(abcPickup, { bpm: 60 })) === '0,1,2,1,2,3', 'R6 ABC pickup then |:', [abcPickup.parts[0].measures.map(m => m.beats), order(buildPerformanceTimeline(abcPickup, { bpm: 60 }))]);
+    const abcMid = await parseAbc('X:1\nM:4/4\nL:1/4\nK:C\nC D E|:F|G A B c|d e f:|g|]\n');
+    check(json(buildRoadmap(abcMid).segments) === json([seg(0, '0', 3, '3'), seg(1, '0', 4, '1', { pass: 2 })]), 'R6 ABC split bars around a mid-bar |:', buildRoadmap(abcMid));
+    // A user roadmap override replaces the written navigation; an invalid one is diagnosed and ignored.
+    const noRepeats = buildPerformanceTimeline(endingsScore, { bpm: 60, roadmap: { version: 1, segments: [seg(0, '0', 0, '4'), seg(2, '0', 3, '4')] } });
+    check(noRepeats.events.map(e => e.midi).join() === '60,64,65' && json(noRepeats.roadmap.segments) === json([seg(0, '0', 0, '4'), seg(2, '0', 3, '4')]), 'R7 roadmap override skips repeats', noRepeats.events.map(e => e.midi));
+    const reversed = buildPerformanceTimeline(endingsScore, { bpm: 60, roadmap: { version: 1, segments: [seg(3, '0', 3, '4'), seg(0, '0', 0, '4')] } });
+    check(reversed.events.map(e => e.midi).join() === '65,60', 'R7 roadmap override reorders', reversed.events.map(e => e.midi));
+    for (const [label, bad] of [['bar', seg(9, '0', 9, '4')], ['beat', seg(0, '0', 0, '9/2')], ['direction', seg(1, '0', 0, '4')], ['rational', seg(0, 'x', 0, '4')]]) {
+      const invalid = buildPerformanceTimeline(endingsScore, { bpm: 60, roadmap: { version: 1, segments: [bad] } });
+      check(order(invalid) === '0,1,0,2,3' && invalid.diagnostics.some(d => d.startsWith('Roadmap override ignored')), `R7 invalid override (${label}) falls back`, invalid.diagnostics);
+    }
+    const runaway = buildPerformanceTimeline(endingsScore, { bpm: 60, roadmap: { version: 1, segments: Array.from({ length: 300 }, () => seg(0, '0', 3, '4')) } });
+    check(runaway.diagnostics.some(d => d.includes('safety limit')) && order(runaway) === '0,1,0,2,3', 'R7 runaway override capped', runaway.diagnostics);
+    // F1: an ABC coda sign on a barline that resolves to To Coda jumps at that barline, not a bar later.
+    const abcBarCoda = await abcOrder('C4|D2 E2 !coda!|F4|G4 !D.C.!|]!coda!A4|]');
+    check(abcBarCoda === '0,1,2,3,0,1,4', 'F1 ABC barline coda sign jumps at the barline', abcBarCoda);
+    // ...while a coda sign on a barline that is the jump target still marks the start of the following measure.
+    const abcBarTarget = await abcOrder('C4|"^To Coda"D4|E4 !D.C.!|F4 !coda!|G4|]');
+    check(abcBarTarget === '0,1,2,0,1,4', 'F1 ABC barline coda target starts the next measure', abcBarTarget);
+    // F2: edge barlines. A repeat end at beat 0 closes the previous bar; a repeat start at the bar end opens the next.
+    const meiLayer = (body, extra = '') => `<staff n="1"><layer n="1">${body}</layer></staff>${extra}`;
+    const wholeMei = step => `<note pname="${step}" oct="4" dur="1"/>`;
+    const meiEdgeBoth = parseMei(meiDoc('<measure n="1">' + meiLayer(wholeMei('c') + '<barLine form="rptboth"/>') + '</measure><measure n="2" right="rptend">' + meiLayer(wholeMei('d')) + '</measure><measure n="3">' + meiLayer(wholeMei('e')) + '</measure>'));
+    const edgeBoth = buildPerformanceTimeline(meiEdgeBoth, { bpm: 120 });
+    check(order(edgeBoth) === '0,0,1,1,2', 'F2 MEI layer-final rptboth keeps its repeat start', [order(edgeBoth), buildRoadmap(meiEdgeBoth)]);
+    const meiEdgeEnd = parseMei(meiDoc('<measure n="1">' + meiLayer(wholeMei('c')) + '</measure><measure n="2">' + meiLayer('<barLine form="rptend"/>' + wholeMei('d')) + '</measure>'));
+    check(order(buildPerformanceTimeline(meiEdgeEnd, { bpm: 120 })) === '0,0,1', 'F2 MEI layer-initial rptend closes the previous bar', order(buildPerformanceTimeline(meiEdgeEnd, { bpm: 120 })));
+    const mxlEdgeStart = parseMusicXml(single([whole('C') + '<barline location="middle"><repeat direction="forward"/></barline>', whole('D') + '<barline location="right"><repeat direction="backward"/></barline>', whole('E')]));
+    check(order(buildPerformanceTimeline(mxlEdgeStart, { bpm: 120 })) === '0,1,1,2', 'F2 MusicXML middle forward repeat at the bar end opens the next bar', order(buildPerformanceTimeline(mxlEdgeStart, { bpm: 120 })));
+    const meiBoundary = parseMei(meiDoc('<measure n="1">' + meiLayer('<barLine form="rptend"/>' + wholeMei('c')) + '</measure><measure n="2">' + meiLayer(wholeMei('d') + '<barLine form="rptstart"/>') + '</measure>'));
+    const boundary = buildPerformanceTimeline(meiBoundary, { bpm: 120 });
+    check(order(boundary) === '0,1' && boundary.diagnostics.filter(d => /score (start|end)/.test(d)).length === 2, 'F2 edge repeats at score boundaries are diagnosed', [order(boundary), boundary.diagnostics]);
+    // F3: a generated roadmap is never rejected; zero-length stretches are skipped instead.
+    const zNote = (id, midi) => ({ id, start: 0, duration: 4, voice: '1', pitches: [{ midi, step: 'C', octave: 4, alter: 0 }] });
+    const emptyBar = { title: '', source: 'test', tempo: 60, beats: 4, beatType: 4, key: 0, parts: [{ id: 'a', name: 'a', clef: 'treble', instrument: 'piano', measures: [{ index: 0, beats: 4, notes: [zNote('z0', 60)] }, { index: 1, beats: 0, notes: [], navigation: { repeatStart: true, repeatEnd: true, daCapo: true } }, { index: 2, beats: 4, notes: [zNote('z2', 62)] }] }] };
+    const emptyTimeline = buildPerformanceTimeline(emptyBar, { bpm: 60 });
+    check(emptyTimeline.events.map(e => e.midi).join() === '60,60,62' && !emptyTimeline.diagnostics.some(d => d.includes('Roadmap override ignored')) && buildRoadmap(emptyBar).segments.every(s => json(s.from) !== json(s.to)), 'F3 zero-length generated segment is skipped, not rejected', [emptyTimeline.events.map(e => e.midi), emptyTimeline.diagnostics, buildRoadmap(emptyBar)]);
+    const rejected = buildPerformanceTimeline(emptyBar, { bpm: 60, roadmap: { version: 1, segments: [seg(1, '0', 1, '0')] } });
+    check(rejected.events.map(e => e.midi).join() === '60,60,62' && rejected.diagnostics.some(d => d.startsWith('Roadmap override ignored')) && json(rejected.roadmap) === json(buildRoadmap(emptyBar)), 'F3 rejected override falls back to the generated roadmap', [rejected.events.map(e => e.midi), rejected.diagnostics]);
+    // F4: a backward repeat with no forward repeat goes back to just after the previous repeat end, and never loops.
+    const abcSections = await abcOrder('|:A4:|B4|c4:|d4|]');
+    check(abcSections === '0,0,1,2,1,2,3', 'F4 orphan :| after a completed repeat restarts after it', abcSections);
+    const abcOrphan = await abcOrder('A4|B4:|c4|]');
+    check(abcOrphan === '0,1,0,1,2', 'F4 orphan :| with no earlier repeat restarts at the beginning', abcOrphan);
+    const back = (times = '') => '<barline location="right"><repeat direction="backward"' + times + '/></barline>';
+    const thrice = playOrder([whole('C'), whole('D') + back(' times="3"'), whole('E')]);
+    check(thrice === '0,1,0,1,0,1,2', 'F4 orphan :| times=3', thrice);
+    const thriceAfter = playOrder(['<barline location="left"><repeat direction="forward"/></barline>' + whole('C') + back(), whole('D'), whole('E') + back(' times="3"'), whole('F')]);
+    check(thriceAfter === '0,0,1,2,1,2,1,2,3', 'F4 orphan :| times=3 after a completed repeat', thriceAfter);
+    const abcSectionsDc = await abcOrder('|:A4:|B4|c4:|d4 !D.C.!|e4|]');
+    check(abcSectionsDc === '0,0,1,2,1,2,3,0,1,2,3,4', 'F4 repeats are not taken after a D.C.', abcSectionsDc);
+    return { failures, checks: 88 };
   }, { midiBytes });
   assert.deepEqual(review.failures, []);
   console.log(`Playback timeline: ${result.cases} browser fixtures and ${review.checks} review regressions passed; event counts ${result.eventCounts.join(', ')}.`);

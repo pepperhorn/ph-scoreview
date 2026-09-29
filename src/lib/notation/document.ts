@@ -204,6 +204,8 @@ export function scoreToMei(score: Score): string {
   const meter = `meter.count="${score.beats}" meter.unit="${score.beatType}"`;
   const key = score.key ? ` key.sig="${Math.abs(score.key)}${score.key > 0 ? 's' : 'f'}"` : ' key.sig="0"';
   const staffDefs = score.parts.map((part, index) => `<staffDef xml:id="${escape(staffDefXmlId(part.id))}" n="${index + 1}" lines="5" label="${escape(part.name)}" clef.shape="${part.clef === 'bass' ? 'F' : part.clef === 'alto' ? 'C' : part.clef === 'percussion' ? 'perc' : 'G'}" clef.line="${part.clef === 'bass' ? 4 : part.clef === 'alto' ? 3 : 2}"/>`).join('');
+  const navigation = Array.from({ length: count }, (_, index) => score.parts[0]?.measures[index]?.navigation);
+  const jumpTarget = navigation.some(nav => nav?.toCoda) ? ' al Coda' : navigation.some(nav => nav?.fine) ? ' al Fine' : '';
   const measures = Array.from({ length: count }, (_, measureIndex) => {
     const staves = score.parts.map((part, staffIndex) => {
       const measure = part.measures[measureIndex];
@@ -234,9 +236,36 @@ export function scoreToMei(score: Score): string {
     const harmonies = score.parts.flatMap((part, index) => part.measures[measureIndex]?.notes.filter(note => note.chordSymbol).map(note => `<harm staff="${index + 1}" tstamp="${1 + note.start}" >${escape(note.chordSymbol || '')}</harm>`) || []).join('');
     // A SMuFL quarter-note glyph (metNoteQuarterUp) followed by the beats per minute.
     const tempo = measureIndex === 0 ? `<tempo tstamp="1" staff="1" midi.bpm="${score.tempo}" mm="${score.tempo}" mm.unit="4"><rend glyph.auth="smufl">&#xE1D5;</rend> = ${score.tempo}</tempo>` : '';
-    return `<measure n="${measureIndex + 1}">${staves}${harmonies}${tempo}</measure>`;
-  }).join('');
-  return `<?xml version="1.0" encoding="utf-8"?><mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.0"><meiHead><fileDesc><titleStmt><title>${escape(score.title)}</title>${score.composer ? `<respStmt><persName role="composer">${escape(score.composer)}</persName></respStmt>` : ''}</titleStmt><pubStmt/></fileDesc></meiHead><music><body><mdiv><score><scoreDef ${meter}${key}><staffGrp>${staffDefs}</staffGrp></scoreDef><section>${measures}</section></score></mdiv></body></music></mei>`;
+    const nav = navigation[measureIndex] || {};
+    const reference = score.parts[0]?.measures[measureIndex];
+    const lastBeat = Math.max(1, Math.round(((reference?.beats || score.beats * 4 / score.beatType) * score.beatType / 4) * 1000) / 1000);
+    const text = (words: string, tstamp: number) => `<dir tstamp="${tstamp}" staff="1" place="above">${escape(words)}</dir>`;
+    const marks = [
+      nav.segno ? '<repeatMark func="segno" tstamp="1" staff="1" place="above"/>' : '',
+      nav.coda ? '<repeatMark func="coda" tstamp="1" staff="1" place="above"/>' : '',
+      nav.toCoda ? text('To Coda', lastBeat) : '',
+      nav.fine ? text('Fine', lastBeat) : '',
+      nav.daCapo ? text(`D.C.${jumpTarget}`, lastBeat) : '',
+      nav.dalSegno ? text(`D.S.${jumpTarget}`, lastBeat) : '',
+    ].join('');
+    // Repeat barlines: a repeat end followed by a repeat start is one rptboth barline.
+    const startsRepeat = nav.repeatStart && !navigation[measureIndex - 1]?.repeatEnd;
+    const right = nav.repeatEnd ? (navigation[measureIndex + 1]?.repeatStart ? 'rptboth' : 'rptend') : '';
+    const bars = `${startsRepeat ? ' left="rptstart"' : ''}${right ? ` right="${right}"` : ''}`;
+    return `<measure n="${measureIndex + 1}"${bars}>${staves}${harmonies}${tempo}${marks}</measure>`;
+  });
+  // Consecutive measures of one volta bracket are wrapped in an MEI <ending>.
+  let sectionXml = '';
+  for (let i = 0; i < measures.length;) {
+    const endings = navigation[i]?.endings;
+    if (!endings?.length) { sectionXml += measures[i++]; continue; }
+    const key = endings.join(',');
+    let j = i;
+    while (j < measures.length && navigation[j]?.endings?.join(',') === key) j++;
+    sectionXml += `<ending n="${key}" label="${escape(endings.join(', '))}.">${measures.slice(i, j).join('')}</ending>`;
+    i = j;
+  }
+  return `<?xml version="1.0" encoding="utf-8"?><mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.0"><meiHead><fileDesc><titleStmt><title>${escape(score.title)}</title>${score.composer ? `<respStmt><persName role="composer">${escape(score.composer)}</persName></respStmt>` : ''}</titleStmt><pubStmt/></fileDesc></meiHead><music><body><mdiv><score><scoreDef ${meter}${key}><staffGrp>${staffDefs}</staffGrp></scoreDef><section>${sectionXml}</section></score></mdiv></body></music></mei>`;
 }
 
 /** Attach a semantic MEI engraving document to a model-only score (for example the built-in sample). */

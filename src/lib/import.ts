@@ -1,6 +1,8 @@
 import { strFromU8, unzipSync } from 'fflate';
-import { gmProgramForNumber, gmProgramForVirtualName, instrumentForName, instrumentForProgram, midiPitch, pitch, ucfirst, type Measure, type Part, type Score, type ScoreNote, type Transposition } from './score';
-import { identifyMusicXmlNotes, identityForScore, makeSourceDocument, normalizeTimewiseMusicXml, scoreToMei, sha256 } from './notation/document';
+import { gmProgramForNumber, gmProgramForVirtualName, instrumentForName, instrumentForProgram, midiPitch, pitch, ucfirst, type BarlineNavigation, type Measure, type MeasureNavigation, type Part, type Score, type ScoreNote, type Transposition } from './score';
+import { identifyMusicXmlNotes, identityForScore, makeSourceDocument, normalizeTimewiseMusicXml, scoreToMei, sha256, type SourceDiagnostic } from './notation/document';
+import { abcDecorationWord, attachNavigation, endingNumbers, meiNavigation, musicXmlNavigation, navigationWord, resolveCodaSigns, type NavigationWord } from './notation/navigation';
+import { formatFraction, fromNumber } from './playback/fraction';
 
 const children = (node: Element, tag: string) => Array.from(node.children).filter(el => el.localName === tag);
 const child = (node: Element, tag: string) => children(node, tag)[0];
@@ -43,6 +45,8 @@ const normalized = (score: Score): Score => {
   if (!count || !score.parts.length) throw new Error('No readable notes or measures were found.');
   return score;
 };
+
+const navigationDiagnostics = (messages: string[]): SourceDiagnostic[] => [...new Set(messages)].map(message => ({ feature: 'navigation', status: 'unsupported', location: '/', message }));
 
 export function parseMusicXml(text: string): Score {
   const engravingText = identifyMusicXmlNotes(normalizeTimewiseMusicXml(text)).text;
@@ -232,7 +236,10 @@ export function parseMusicXml(text: string): Score {
     || (soundingSources.has(sourcePart(part)) && (direction.symbols?.length || direction.wedge || direction.soundDynamics !== undefined))));
   const playableParts = parts.filter(part => sounding(part) || shapesPlayback(part));
   const score = normalized({ title, subtitle, composer, credits: otherCredits, source: 'MusicXML', tempo, beats, beatType, key, parts: playableParts.length ? playableParts : parts });
-  score.document = makeSourceDocument({ format: 'musicxml', engravingFormat: 'musicxml', originalText: text, engravingText, identity: identityForScore(score) });
+  // Navigation is read once from the first source part and shared by every staff.
+  const navigationNotes: string[] = [];
+  attachNavigation(score, musicXmlNavigation(root, score.parts[0].measures.length, navigationNotes));
+  score.document = makeSourceDocument({ format: 'musicxml', engravingFormat: 'musicxml', originalText: text, engravingText, identity: identityForScore(score), diagnostics: navigationDiagnostics(navigationNotes) });
   return score;
 }
 
@@ -283,6 +290,8 @@ export function parseMei(text: string): Score {
   const key = openingKey ?? defaultKey ?? 0;
   const alteredByKey = (fifths: number, step: string) => fifths > 0 ? ('FCGDAEB'.slice(0, fifths).includes(step) ? 1 : 0) : ('BEADGCF'.slice(0, -fifths).includes(step) ? -1 : 0);
   const accidValues: Record<string, number> = { s: 1, f: -1, ss: 2, x: 2, ff: -2, xs: 3, sx: 3, ts: 3, tf: -3, n: 0, nf: -1, ns: 1 };
+  /** Repeat <barLine>s inside the first layer of the first staff, by measure index. */
+  const innerBarlines = new Map<number, BarlineNavigation[]>();
   const parts: Part[] = defs.map((def, i) => {
     const n = def.getAttribute('n') || String(i + 1);
     const name = def.getAttribute('label') || `Staff ${n}`;
@@ -292,7 +301,7 @@ export function parseMei(text: string): Score {
     return { id: n, name, clef, key: measureState[0]?.keys.get(n) ?? measureState[0]?.defaultKey ?? key, instrument: instrumentForName(name), pitchBasis: 'written', transposition, measures: measures.map((measure, index) => {
       const state = measureState[index] || { count: beats, unit: beatType, keys: new Map<string, number>(), defaultKey: key };
       const staffKey = state.keys.get(n) ?? state.defaultKey;
-      const out: Measure = { ...empty(index, state.count * 4 / state.unit), nominalBeats: state.count * 4 / state.unit, key: staffKey, beatsPerBar: state.count, beatType: state.unit };
+      const out: Measure = { ...empty(index, state.count * 4 / state.unit), nominalBeats: state.count * 4 / state.unit, number: measure.getAttribute('n') || String(index + 1), key: staffKey, beatsPerBar: state.count, beatType: state.unit };
       const staff = Array.from(measure.getElementsByTagName('*')).find(e => e.localName === 'staff' && e.getAttribute('n') === n);
       if (!staff) return out;
       // Written accidentals persist for the same step and octave until the barline.
@@ -303,9 +312,18 @@ export function parseMei(text: string): Score {
       for (const [layerIndex, layer] of (layers.length ? layers : [staff]).entries()) {
         let cursor = 0;
         const walk = (parent: Element, ratio = 1, beam = false, tuplet?: ScoreNote['tuplet']) => {
-          const events = Array.from(parent.children).filter(e => ['note', 'chord', 'rest', 'mRest', 'space', 'beam', 'tuplet'].includes(e.localName));
+          const events = Array.from(parent.children).filter(e => ['note', 'chord', 'rest', 'mRest', 'space', 'beam', 'tuplet', 'barLine'].includes(e.localName));
           for (const [eventIndex, el] of events.entries()) {
             const kind = el.localName;
+            if (kind === 'barLine') {
+              const form = el.getAttribute('form') || '';
+              if (i === 0 && layerIndex === 0 && /^rpt(start|end|both)$/.test(form)) {
+                const list = innerBarlines.get(index) || [];
+                list.push({ beat: formatFraction(fromNumber(cursor)), ...(form !== 'rptend' ? { repeatStart: true } : {}), ...(form !== 'rptstart' ? { repeatEnd: true } : {}) });
+                innerBarlines.set(index, list);
+              }
+              continue;
+            }
             if (kind === 'beam') { walk(el, ratio, true, tuplet); continue; }
             if (kind === 'tuplet') {
               const actual = Number(el.getAttribute('num')) || 3, normal = Number(el.getAttribute('numbase')) || 2;
@@ -356,6 +374,7 @@ export function parseMei(text: string): Score {
   const subtitle = titles.find(e => ['subordinate', 'subtitle'].includes(e.getAttribute('type') || ''))?.textContent?.trim() || '';
   const composer = all('composer')[0]?.textContent?.trim() || all('persName').find(e => e.getAttribute('role') === 'composer')?.textContent?.trim() || '';
   const score = normalized({ title, subtitle, composer, source: 'MEI', tempo: 100, beats, beatType, key, parts });
+  attachNavigation(score, meiNavigation(measures, innerBarlines));
   score.document = makeSourceDocument({ format: 'mei', engravingFormat: 'mei', originalText: text, engravingText: text, identity: identityForScore(score) });
   return score;
 }
@@ -377,9 +396,27 @@ export async function parseAbc(text: string): Promise<Score> {
     const part: Part = { id: `abc-${staffIndex}-${voiceIndex}`, name, clef, instrument: instrumentForName(name), measures: [] };
     parts.push(part); map.set(`${staffIndex}-${voiceIndex}`, part);
   }
+  // Navigation is read from the first voice: abcjs puts repeat/ending marks on bars
+  // (a bar ends one measure and may start the next) and D.C./Fine/segno on notes or bars.
+  const nav = (measure: Measure) => (measure.navigation ||= {});
+  let pendingStart: MeasureNavigation = {};
+  let openEnding: number[] | undefined;
+  let lastFilled: Measure | undefined;
+  /** Coda signs written on a barline: the measure the barline ends and the one it starts. */
+  const barlineCodas: { before: Measure; after?: Measure }[] = [];
+  let pendingBarlineCoda: { before: Measure; after?: Measure } | undefined;
+  const navigationWords = (item: any): NavigationWord[] => [
+    ...(item.decoration || []).map((name: string) => abcDecorationWord(name)),
+    ...(item.chord || []).map((chord: { name?: string }) => navigationWord(chord.name || '')),
+  ].filter(Boolean);
+  const applyWord = (word: NavigationWord, start: MeasureNavigation, end: MeasureNavigation | undefined) => {
+    if (word === 'segno' || word === 'coda') start[word] = true;
+    else if (end) end[word] = true;
+  };
   for (const line of tune.lines) for (const [staffIndex, staff] of (line.staff || []).entries()) for (const [voiceIndex, voice] of (staff.voices || []).entries()) {
     const part = map.get(`${staffIndex}-${voiceIndex}`);
     if (!part) continue;
+    const leading = part === parts[0];
     let current = part.measures.at(-1);
     if (!current || (current as any).closed) { current = empty(part.measures.length, beats * 4 / beatType); part.measures.push(current); }
     let cursor = current.notes.reduce((max, n) => Math.max(max, n.start + n.duration), 0);
@@ -388,6 +425,16 @@ export async function parseAbc(text: string): Promise<Score> {
     let triplet: { multiplier: number; remaining: number; actual: number; first: boolean } | undefined;
     for (const item of voice) {
       if (item.el_type === 'bar') {
+        if (leading) {
+          const end = lastFilled && nav(lastFilled);
+          if (end && ['bar_right_repeat', 'bar_dbl_repeat'].includes(item.type)) end.repeatEnd = true;
+          // A mark on a bar ends the measure before it, except segno/coda, which start the next one.
+          for (const word of navigationWords(item)) applyWord(word, pendingStart, end);
+          if (lastFilled && navigationWords(item).includes('coda')) barlineCodas.push(pendingBarlineCoda = { before: lastFilled });
+          if (item.endEnding) openEnding = undefined;
+          if (['bar_left_repeat', 'bar_dbl_repeat'].includes(item.type)) pendingStart.repeatStart = true;
+          if (item.startEnding) openEnding = endingNumbers(String(item.startEnding));
+        }
         if (current.notes.length) (current as any).closed = true;
         current = empty(part.measures.length, beats * 4 / beatType); part.measures.push(current);
         cursor = 0; accidentalMap.clear(); continue;
@@ -408,14 +455,47 @@ export async function parseAbc(text: string): Promise<Score> {
         const alter = accidentalMap.get(`${step}${octave}`) ?? (fromKey?.acc === 'sharp' ? 1 : fromKey?.acc === 'flat' ? -1 : 0);
         return { ...pitch(step, octave, alter), tieStart: Boolean(p.startTie), tieStop: Boolean(p.endTie) };
       });
-      const chordSymbol = item.chord?.find((chord: { name?: string; position?: string }) => chord.position !== 'below')?.name;
+      if (leading) {
+        if (!current.notes.length) {
+          Object.assign(nav(current), pendingStart);
+          pendingStart = {};
+          if (pendingBarlineCoda) { pendingBarlineCoda.after = current; pendingBarlineCoda = undefined; }
+          if (openEnding?.length) nav(current).endings = [...openEnding];
+        }
+        for (const word of navigationWords(item)) applyWord(word, nav(current), nav(current));
+        lastFilled = current;
+      }
+      // Navigation text ("^D.C. al Fine") is a jump instruction, never a chord symbol.
+      const chordSymbol = item.chord?.find((chord: { name?: string; position?: string }) => chord.position !== 'below' && !navigationWord(chord.name || ''))?.name;
       const lyric = item.lyric?.map((syllable: { syllable?: string; divider?: string }) => `${syllable.syllable || ''}${syllable.divider === '-' ? '-' : ''}`).filter(Boolean).join(' ');
       current.notes.push({ id: `abc-${staffIndex}-${voiceIndex}-${current.index}-${current.notes.length}`, start: cursor, duration, pitches, chordSymbol, lyric, beamStart: Boolean(item.startBeam), beamEnd: Boolean(item.endBeam), rest: !pitches.length, dotted: Boolean(item.dots), tuplet: tupletInfo, tieStart: pitches.some((p: { tieStart?: boolean }) => p.tieStart) || undefined, tieStop: pitches.some((p: { tieStop?: boolean }) => p.tieStop) || undefined });
       cursor += duration;
     }
   }
-  parts.forEach(part => { part.measures = part.measures.filter(m => m.notes.length); part.measures.forEach((m, i) => m.index = i); });
+  const nominal = beats * 4 / beatType;
+  parts.forEach(part => {
+    part.measures = part.measures.filter(m => m.notes.length);
+    part.measures.forEach((m, i) => {
+      m.index = i;
+      m.nominalBeats = nominal;
+      // ABC is literal: a pickup, or a bar split by a mid-measure repeat, is only as long as its notes.
+      const content = m.notes.reduce((max, note) => Math.max(max, note.start + note.duration), 0);
+      if (content > 1e-6 && content < nominal - 1e-6) { m.implicit = true; m.beats = content; }
+    });
+  });
+  const navigation = parts[0]?.measures.map(m => m.navigation || {}) || [];
+  const measureIndex = (measure?: Measure) => measure ? parts[0]?.measures.indexOf(measure) ?? -1 : -1;
+  const wasToCoda = barlineCodas.map(pair => Boolean(navigation[measureIndex(pair.after)]?.toCoda));
+  resolveCodaSigns(navigation);
+  // A barline coda sign that became To Coda is the jump at that barline: it ends the measure before it.
+  barlineCodas.forEach((pair, i) => {
+    const before = measureIndex(pair.before), after = measureIndex(pair.after);
+    if (before < 0 || after < 0 || wasToCoda[i] || !navigation[after].toCoda) return;
+    delete navigation[after].toCoda;
+    navigation[before].toCoda = true;
+  });
   const score = normalized({ title: tune.metaText?.title || '', subtitle: tune.lines.find((line: any) => line.subtitle)?.subtitle?.text || '', composer: tune.metaText?.composer || '', source: 'ABC', tempo: Number(tune.metaText?.tempo?.bpm) || 100, beats, beatType, key, parts });
+  attachNavigation(score, navigation);
   score.document = makeSourceDocument({ format: 'abc', engravingFormat: 'mei', originalText: text, engravingText: scoreToMei(score), identity: identityForScore(score) });
   return score;
 }

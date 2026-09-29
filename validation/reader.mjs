@@ -104,6 +104,17 @@ try {
   assert.equal(await page.locator('svg .tuplet').count(), 2, 'Two triplet groups engrave');
   assert.equal(await page.locator('svg .tuplet .note').count(), 6, 'Triplet notes sit inside their tuplets');
   assert.deepEqual(await page.locator('svg .tuplet .note').evaluateAll(notes => notes.map(note => note.closest('.tuplet').querySelectorAll('.note').length)), [3, 3, 3, 3, 3, 3]);
+  // ABC repeats, volta endings and jumps engrave natively through the MEI adapter.
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  await page.getByRole('textbox', { name: 'ABC notation' }).fill('X:1\nT:Repeats\nM:4/4\nL:1/4\nK:C\n|:C4|[1D4:|[2E4||!segno!F4|"^Fine"G4|"^D.S. al Fine"A4|]');
+  await page.getByRole('button', { name: 'View notation' }).click();
+  await page.waitForFunction(() => document.querySelector('h1')?.textContent === 'Repeats');
+  await ready();
+  // Verovio draws each <ending> as a system milestone plus one spanning bracket.
+  assert.equal(await page.locator('svg g.ending.systemMilestone').count(), 2, 'First and second endings engrave');
+  assert.equal(await page.locator('svg g.ending.spanning').count(), 2, 'Each ending bracket spans only its own measure');
+  assert.equal(await page.locator('svg g.repeatMark').count(), 1, 'Segno engraves');
+  assert.deepEqual((await page.locator('svg g.dir').allTextContents()).map(text => text.trim()), ['Fine', 'D.S. al Fine'], 'Fine and D.S. engrave');
   const fixture = resolve(root, 'validation/fixtures/ensemble.musicxml');
   await page.locator('input[type=file]').setInputFiles(fixture);
   await page.waitForFunction(() => document.querySelector('h1')?.textContent === 'Migration ensemble');

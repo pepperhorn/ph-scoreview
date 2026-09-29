@@ -73,7 +73,20 @@ try {
     const encoded = await importFile(new File([new Uint8Array(encodedArchive)], 'encoded.mxl'));
     let oversized = '';
     try { await importFile(new File([new Uint8Array(oversizedArchive)], 'big.mxl')); } catch (error) { oversized = error.message; }
+    // N: ABC navigation is engraved through the MEI adapter (repeat barlines, volta endings, segno/coda, D.C./D.S./Fine).
+    const { parseAbc } = await import('/src/lib/import.ts');
+    const { scoreToMei } = await import('/src/lib/notation/document.ts');
+    const repeats = await parseAbc('X:1\nM:4/4\nL:1/4\nK:C\n|:C4|[1D4:|[2E4|]\n');
+    const jumps = await parseAbc('X:1\nM:4/4\nL:1/4\nK:C\nC4|!segno!D4|"^To Coda"E4|"^Fine"F4|"^D.S. al Coda"G4|!coda!A4|]\n');
+    const both = await parseAbc('X:1\nM:4/4\nL:1/4\nK:C\n|:C4::D4:|\n');
+    const repeatMei = scoreToMei(repeats), jumpMei = scoreToMei(jumps), bothMei = scoreToMei(both);
+    const meiNav = parseMei('<?xml version="1.0"?><mei xmlns="http://www.music-encoding.org/ns/mei"><music><body><mdiv><score><scoreDef meter.count="4" meter.unit="4"><staffGrp><staffDef n="1"/></staffGrp></scoreDef><section><measure n="7a" left="rptstart"><staff n="1"><layer><note pname="c" oct="4" dur="1"/></layer></staff><repeatMark func="segno" tstamp="1" staff="1"/></measure><ending n="1-2"><measure n="8" right="rptend"><staff n="1"><layer><note pname="d" oct="4" dur="1"/></layer></staff></measure></ending></section></score></mdiv></body></music></mei>');
     return {
+      abcRepeatMei: [/<measure n="1" left="rptstart">/.test(repeatMei), /<ending n="1" label="1\."><measure n="2" right="rptend">/.test(repeatMei), /<ending n="2" label="2\."><measure n="3">/.test(repeatMei)],
+      abcJumpMei: ['<repeatMark func="segno"', '<repeatMark func="coda"', '>To Coda</dir>', '>Fine</dir>', '>D.S. al Coda</dir>'].map(text => jumpMei.includes(text)),
+      abcBothMei: /<measure n="1" left="rptstart" right="rptboth">.*<measure n="2" right="rptend">/.test(bothMei) && !/<measure n="2" left=/.test(bothMei),
+      abcChordText: jumps.parts[0].measures.map(m => m.notes[0].chordSymbol ?? '').join('|'),
+      meiNavigation: JSON.stringify(meiNav.parts[0].measures.map(m => [m.number, m.navigation])),
       drumInstrument: drum.parts[0].instrument, drumSoundfont: drum.parts[0].gmSoundfont ?? null, drumMidi: drum.parts[0].measures[0].notes[0].pitches[0].midi,
       meiMeter: `${mei.beats}/${mei.beatType}`, meiBeats: mei.parts[0].measures.map(m => m.beats).join(),
       meiMidi: mei.parts[0].measures.flatMap(m => m.notes.map(n => n.pitches[0].midi)).join(),
@@ -88,6 +101,11 @@ try {
   assert.equal(review.meiBeats, '3,3,2');
   assert.equal(review.meiMidi, '66,60,68,68,68,60,70,65');
   assert.equal(review.savedBpm, 240);
+  assert.deepEqual(review.abcRepeatMei, [true, true, true], 'ABC repeats/endings engrave as MEI rptstart/rptend and <ending>');
+  assert.deepEqual(review.abcJumpMei, [true, true, true, true, true], 'ABC segno/coda/To Coda/Fine/D.S. engrave as MEI repeatMark/dir');
+  assert.equal(review.abcBothMei, true, 'ABC :: engraves as one rptboth barline');
+  assert.equal(review.abcChordText, '|||||', 'ABC navigation text is not engraved as chord symbols');
+  assert.equal(review.meiNavigation, JSON.stringify([['7a', { repeatStart: true, segno: true }], ['8', { repeatEnd: true, endings: [1, 2] }]]), 'MEI navigation and measure labels');
   assert.equal(review.encodedTitle, 'Source retained');
   assert.ok(review.encodedNotes >= 1);
   assert.match(review.oversized, /larger than 8 MB uncompressed/);
@@ -105,7 +123,7 @@ try {
   assert.equal(actual.meiSame, true);
   assert.equal(actual.meiId, '1-0-0');
   console.log('Document import: timewise, MXL source bytes and hash, percussion, voices, ABC adapter and MEI identity passed');
-  console.log('Document review regressions: drum kit program, MEI accidentals/key/meter changes, saved BPM clamp, MXL encoded path and size bound passed');
+  console.log('Document review regressions: drum kit program, MEI accidentals/key/meter changes, saved BPM clamp, MXL encoded path and size bound, ABC/MEI navigation engraving passed');
 } finally {
   await browser?.close();
   server.kill('SIGTERM');
