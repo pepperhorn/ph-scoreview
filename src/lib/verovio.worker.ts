@@ -25,7 +25,7 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
     try {
       toolkit ??= new VerovioToolkit(await moduleReady());
       toolkit.resetOptions();
-      toolkit.resetXmlIdSeed(0);
+      // Stable generated IDs come from xmlIdChecksum; resetXmlIdSeed(0) would mean a random seed.
       toolkit.setOptions(request.operation === 'import'
         ? { breaks: 'none', inputFrom: 'auto', xmlIdChecksum: true }
         : request.options || {});

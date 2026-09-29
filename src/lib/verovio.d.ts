@@ -14,6 +14,5 @@ declare module 'verovio/esm' {
     renderToSVG(page?: number): string;
     renderToTimemap(options?: Record<string, unknown>): unknown;
     resetOptions(): void;
-    resetXmlIdSeed(seed: number): void;
   }
 }

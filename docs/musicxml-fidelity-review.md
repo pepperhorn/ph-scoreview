@@ -1,5 +1,20 @@
 # MusicXML fidelity review
 
+> **Status note, 2026-09-30.** This review describes the **pre-migration VexFlow 5.0.0 baseline** at `cc0f9fa`. Its file and line references point to code that has since been replaced. Scoreflow now engraves MusicXML, MXL and MEI directly with Verovio 6.3.0. Playback uses the timeline in `src/lib/playback/timeline.ts`. The current evidence and ledger are in [verovio-migration-plan.md, Implementation status](verovio-migration-plan.md#implementation-status). The status of each finding, checked against code and the tracked `validation/` suites:
+>
+> | Finding | Status after migration |
+> | --- | --- |
+> | 1. Written rhythm | Resolved by design: Verovio reads `<type>`, dots, `<time-modification>`, tuplets and grace notes from the source instead of a guessed lookup. Only ABC tuplet engraving is asserted; MusicXML tuplet and grace engraving is untested. Graces no longer take ordinary time in playback (asserted). |
+> | 2. Accidentals | Resolved by design for MusicXML/MEI engraving: Verovio uses source accidentals and measure state. Not asserted by a tracked SVG test. MEI accidental and key state in the playback model is asserted. |
+> | 3. Changing attributes and pickups | Largely resolved. Verovio imports attribute changes natively. The app model distinguishes zero from missing values, keeps `implicit` pickups and measure numbers, and builds a tempo map with mid-measure changes (asserted). MusicXML clef/key/time-change engraving is untested. |
+> | 4. Voice identity and staff alignment | Resolved by design: Verovio lays out voices and staves on a shared system. Voice identity in the import is asserted; beat alignment across staves is not measured. |
+> | 5. Ties and playback expression | Resolved. Ties sustain without re-attack, `<sound dynamics>` and dynamic symbols set velocity, and articulations, fermatas and damper pedal shape playback (all asserted). Slurs are engraved by Verovio but have no playback interpretation. |
+> | 6. Dynamics | Mostly resolved. Native Verovio dynamics are asserted; wedges and words are engraved by Verovio but untested. Wedge velocity interpolation is implemented but not asserted. |
+> | 7. Unpitched percussion | Resolved. Unpitched notes import and play (default drum mapping and channel-10 kits asserted). Percussion engraving details are untested. |
+> | 8. Regression coverage | Resolved. Tracked fixtures and suites live in `validation/` (`npm run test:validation`, `test:reader:firefox`, `test:reader:webkit`) and run in CI (`.github/workflows/ci.yml`). `test:example` remains local-only. |
+>
+> The "VexFlow route" column and the proposed implementation sequence below are historical.
+
 Review completed 2026-09-29. Reviewed repository HEAD `cc0f9fa` and installed VexFlow **5.0.0**. This document records findings and a proposed implementation sequence; it does not change the importer or renderer.
 
 ## Recommendation

@@ -9,7 +9,18 @@ npm install
 npm run dev   # binds to 0.0.0.0
 ```
 
-Open the URL printed by Astro. `npm run check` checks TypeScript and Astro; `npm run build` creates a static site in `dist/`; `npm run test:manifest` verifies the bundled sound packs. After a build, `node validation/reader.mjs` runs the browser reader checks (set `BROWSER=firefox` or `BROWSER=webkit` for other engines). The local-only `npm run test:example` script checks the uploaded Cielito Lindo MusicXML in Chromium. The `examples/` and `tests/` directories are excluded from Git, so that script requires the local test files and fixtures.
+Open the URL printed by Astro.
+
+| Script | Purpose |
+| --- | --- |
+| `npm run check` | Astro and TypeScript checks |
+| `npm run build` | Static site in `dist/` |
+| `npm run test:manifest` | Verifies the bundled GM sound packs |
+| `npm run test:validation` | Tracked suites: `test:document` (source retention, formats, identities), `test:performance` (playback timeline) and `test:reader` (the built reader in Chromium). Run `npm run build` first. |
+| `npm run test:reader:firefox`, `npm run test:reader:webkit` | Reader suite in Firefox or WebKit (`npm run test:browsers` installs the Playwright engines) |
+| `npm run test:example` | Local-only check of the Cielito Lindo MusicXML in Chromium; needs the Git-ignored `examples/` and `tests/` files |
+
+CI (`.github/workflows/ci.yml`) runs check, build, the manifest check and `test:validation` in Chromium. It also runs the reader suite in Firefox and WebKit. The small original fixtures in `validation/fixtures/` are tracked. Private scores stay in the ignored directories.
 
 ## Reading
 
@@ -26,7 +37,21 @@ Open the URL printed by Astro. `npm run check` checks TypeScript and Astro; `npm
 
 ## Import scope
 
-This first version handles core pitched notation, rests, chords, time and key signatures, and multiple MusicXML/MEI staves. ABC voices are shown as separate staves, with source beaming and `w:` lyrics. MusicXML primary beam groups (`<beam number="1">begin/continue/end</beam>`) and dynamic markings are preserved and engraved. Dynamics use the selected Bravura or Petaluma music font. Each bar is measured and widened as needed before the system scales to the viewport. Dense lyric syllables form a single line below their bar for readability. MIDI notes are quantized to sixteenth-note timing. Engraving uses Verovio: MusicXML (including MXL) and MEI originals are imported directly by Verovio, while ABC, MIDI and the built-in sample are serialized to MEI from the shared score model. Hidden staves, bar-per-line breaks, transposition and the written/concert view are applied as view transforms on Verovio's imported MEI; the source document is never modified. Scores whose MusicXML is already at concert pitch are always shown at concert pitch, because Verovio can only transpose written pitch to sounding pitch.
+Verovio engraves every format. MusicXML (partwise or timewise), compressed MXL and MEI originals are imported by Verovio directly, so its native notation support applies. That includes voices, tuplets, grace notes, accidentals, ties, slurs, dynamics, hairpins, articulations, lyrics, barlines and endings. ABC (through abcjs), MIDI (quantized to sixteenth notes) and the built-in sample are converted to MEI from the shared score model. ABC voices are shown as separate staves, with source beaming, triplets and `w:` lyrics. MIDI cannot recover original spelling, beaming or articulations.
+
+Hidden staves, bars-per-line breaks, transposition and the written/concert view are view transforms on Verovio's imported MEI. The original file is kept byte-for-byte and never modified. Bars are widened for dense notes and lyrics before a system scales to the viewport.
+
+Playback follows a single performance timeline, which also drives highlighting and scrolling. It covers:
+
+- tied notes, which sustain without re-attacking
+- dynamics, including MusicXML `<sound dynamics>` values
+- hairpins
+- staccato, tenuto, accents and fermatas
+- staggered grace notes and silent cue notes
+- tempo changes, including mid-bar changes
+- damper pedal
+- unpitched percussion on the drum kit
+- MusicXML repeats, endings, D.C., D.S., segno, coda and Fine
 
 MusicXML `<transpose>` and concert-score `<for-part>` intervals, and MEI `trans.semi`/`trans.diat`, drive the written/concert view. MIDI and ABC files without transposition metadata display identically in both views. 
 
@@ -43,7 +68,14 @@ import songXml from './scores/song.musicxml?raw';
 
 For a `File` selected elsewhere in your app, use `await file.text()` and pass that string. Changing the prop loads the new score and resets playback.
 
-The reader does not yet preserve all engraving details from the source. In particular, advanced MusicXML and MEI directions, cross-staff notation, non-ABC lyrics, tuplets, and repeat playback need more work. Concurrent MusicXML voices are drawn on the same staff; equal-duration chord pitches share a notehead group, while different durations remain separate timed events. MIDI cannot recover original spelling, beaming, or articulations.
+### Known limitations
+
+- Lyrics always use Times. Verovio spaces lyric syllables with Times metrics, so the stave text font setting does not apply to them.
+- Endless view is one unbroken system up to 160 bars. Longer scores are split into 120-bar sections that each repeat the clef and key.
+- Scores encoded at concert pitch cannot show a written (transposing) view.
+- Ornaments, tremolos, arpeggios, glissandi and the sostenuto pedal are not played back. Verovio engraves what it supports, and the timeline reports ornaments and sostenuto in its diagnostics.
+- Repeat and navigation playback reads MusicXML only. MEI, ABC and MIDI play straight through.
+- WebKit is validated only in CI. Many advanced notation families are engraved natively by Verovio but do not have tracked tests yet; see the capability ledger in [docs/verovio-migration-plan.md](docs/verovio-migration-plan.md#capability-ledger).
 
 ## Per-file state and sharing format
 
@@ -58,3 +90,7 @@ The [GM soundfont manifest](src/lib/gm-soundfont-manifest.json) lists all 128 Fl
 The 128 FluidR3 GM programs use local, reduced MP3 sample packs from [gleitz/midi-js-soundfonts](https://github.com/gleitz/midi-js-soundfonts). The packs total about 47 MB on disk, but only sounds used by the current score load in the browser, and only their required samples are decoded. FluidR3 samples are CC BY 3.0; attribution and details of the reduction are in [`public/soundfonts/fluidr3/ATTRIBUTION.txt`](public/soundfonts/fluidr3/ATTRIBUTION.txt). To regenerate the packs from upstream, run `node scripts/prepare-fluidr3.mjs`.
 
 The gleitz General MIDI set has no drum-kit bank. Drum notes 35–70 use a 2 MB local pack extracted from [Perfect Drums V2](https://musical-artifacts.com/artifacts/8466), the fixed hi-hat successor to the user's [V1 suggestion](https://musical-artifacts.com/artifacts/6554). The source SF2 is 244 MB and is not loaded by the browser. [Attribution and license](public/soundfonts/perfect-drums/ATTRIBUTION.txt) and the [preparation script](scripts/prepare-perfect-drums.mjs) are included. Other drum notes fall back to the local `TimGM6mb.sf2` kit through smplr; its GPL-2 license is in `public/soundfonts/COPYING.txt`. Pitched parts use Web Audio sample players. Playback schedules a short window ahead, and track gains feed a shared compressor. All playback assets are served from this app's origin.
+
+## License notes
+
+The score engraver is [Verovio](https://www.verovio.org/) (npm `verovio` 6.3.0), licensed under LGPL-3.0-or-later. It is bundled unmodified, with its WebAssembly module, into the Web Worker chunk. The Bravura and Petaluma fonts in `public/fonts/` are SIL Open Font License fonts from Steinberg.

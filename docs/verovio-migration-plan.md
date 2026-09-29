@@ -1,7 +1,85 @@
 # Verovio migration plan
 
-Date: 2026-09-29 · Status: proposed implementation plan, no renderer migration performed.
+Date: 2026-09-29 · Status: **implemented 2026-09-30** — Verovio is the only renderer and VexFlow has been removed (commits `2cb61df`, `0147751`, `7a7334b`, `887b0b0`, `f65038b`). See [Implementation status](#implementation-status) for outcomes, evidence and open limitations. The plan text below is kept as written on 2026-09-29; statements that no longer hold are marked *[Stale 2026-09-30]*.
 Branch: `plan/verovio-migration` · Base: `cc0f9fa7b9d5c49f25d5bd82ad3cf8af065f98f4`.
+
+## Implementation status
+
+Updated 2026-09-30 against `f65038b` (plus the test-only `96f80cf`). Verovio 6.3.0 is the sole renderer. Evidence below is limited to what the tracked validation suites assert and what the code does; anything else is marked untested. Upstream Verovio observations are collected separately in [verovio-upstream-notes.md](verovio-upstream-notes.md).
+
+### Stage outcomes
+
+| Stage | Outcome |
+| --- | --- |
+| 1. Baseline and feasibility | Done for feasibility: `verovio` 6.3.0 is pinned, and a Web Worker runs its WASM from the app's own bundle. Pre-migration screenshots, audio schedules and settings fixtures were **not** captured as committed baselines. |
+| 2. Document and engine boundary | Done. `src/lib/notation/document.ts` holds immutable source documents: original text or bytes, SHA-256, engraving text, a source→note identity map, a feature inventory and diagnostics. Timewise MusicXML is normalized to partwise for engraving only, and MXL extraction is bounded (8 MB uncompressed). One worker toolkit handles requests serially, and renders carry generation IDs so superseded results are discarded. ABC, MIDI and the sample go through `scoreToMei`. No VexFlow bridge or engine flag was built (see stale note above). |
+| 3. Reading parity | Done as covered by `validation/reader.mjs`. It checks Vertical 4 bars per line, Endless as one system, staff hiding and restore, controls aligned to their staves, note and count lanes, Petaluma, Mono text, the mixer and instrument picker, persisted state, a 320px top bar, preserving the previous score after a malformed import, and no remote requests. |
+| 4. Pitch and performance parity | Done in `src/lib/playback/timeline.ts`. The timeline is built from the app's parsed `Score` plus the source MusicXML (for navigation, articulations and pedals), not from Verovio's timemap. There is an optional `verovioTimemap` cross-check, but the reader does not pass it. Transposition is applied once, in Verovio for engraving and in the timeline for sound. |
+| 5. Coverage expansion | Partial. There are two tracked MusicXML fixtures (`validation/fixtures/ensemble.musicxml`, `expressive.musicxml`) plus inline cases in the scripts. The P0/P1 corpus in "Validation and completion criteria" is not complete, and P2 families were not systematically evaluated. |
+| 6. Cutover | Done for renderer default, VexFlow removal and the README, including the Verovio LGPL notice. A performance comparison against the VexFlow baseline was not done (see Performance). |
+
+### Tracked validation
+
+- `npm run test:validation` runs three suites:
+  - `validation/document.mjs`: source retention and hashing, timewise, MXL, MEI identity, the ABC→MEI adapter, drum-kit detection, MEI key/meter/accidental changes, the saved-BPM clamp and the MXL size bound.
+  - `validation/performance.mjs`: 9 timeline fixtures and 33 review regressions.
+  - `validation/reader.mjs`: the built `dist/` in Chromium.
+- `npm run test:reader:firefox` and `npm run test:reader:webkit` run the reader suite in the other engines.
+- CI in `.github/workflows/ci.yml` runs on every push and PR. It runs `check`, `build`, `test:manifest` and `test:validation` on Chromium, plus a matrix job that runs the reader suite in Firefox and WebKit.
+- On 2026-09-30, `test:validation` and the Firefox reader suite passed locally. WebKit has only been validated in CI.
+- `npm run test:example` (the Cielito integration check) is local-only because `tests/` and `examples/` are ignored.
+
+### Capability ledger
+
+Key:
+
+- **verified**: a tracked assertion covers it.
+- **partial**: some cases are asserted.
+- **untested**: implemented or expected natively from Verovio, but not asserted.
+- **no**: not implemented.
+- **n/a**: not applicable.
+
+"Source retained" is verified for every family: `document.mjs` asserts that the MusicXML/MEI text and the MXL bytes stay identical to the input, and nothing is rewritten.
+
+| Priority / family | Imported | Engraved | Transposed | Performed |
+| --- | --- | --- | --- | --- |
+| P0 Rhythm and structure | partial: two voices, implicit pickup measure, all 160 ensemble pitches | partial: ABC triplets as MEI tuplets. MusicXML tuplets, grace/cue notes and beams untested | n/a | verified: tie chains, staggered graces, ABC triplets, silent cues, MIDI barline ties, mid-measure tempo. Nested tuplets untested |
+| P0 Pitch and attributes | partial: MEI key, meter and accidental changes. MusicXML clef/key/time changes untested | untested beyond the sample | partial: sample +2 engraved exactly once; percussion never transposed. Written/concert view untested; unavailable for concert-pitch scores | verified for MEI accidental/key state |
+| P0 Ties and slurs | verified for ties (per-pitch, across repeats and endings) | untested (no SVG tie/slur assertion) | n/a | verified: ties sustain without re-attack. Slurs are not interpreted |
+| P0 Expression | verified: `<sound dynamics>`, symbol dynamics, staff/part scope, wedges | partial: native dynamics verified. Wedges and words untested | n/a | partial: dynamic precedence and scope, tempo map with hidden parts and anchored navigation words verified. Wedge interpolation (±22 velocity) implemented but not asserted |
+| P0 Ensemble and percussion | verified: 5-part ensemble, unpitched notes, channel-10 kits, staff identity aliases across reloads | partial: staff count, hiding and control alignment verified. Braces, groups, cross-staff and percussion noteheads untested | percussion fixed (verified) | verified: default drum-kit mapping, drum channel. `midi-unpitched` mapping untested |
+| P1 Text and harmony | partial: lyrics and source harmony parsed | partial: MusicXML lyrics (`.verse`) and the SMuFL tempo glyph verified. Harmony, rehearsal marks and multiple verses untested | untested for chord roots | n/a |
+| P1 Navigation | verified from MusicXML source only (MEI/ABC repeats are not traversed) | untested | n/a | verified: repeats, nested repeats, 1st/2nd endings, D.S. al Fine/Coda (words, `<sound>` and glyphs), endings after D.C., timewise repeats, per-occurrence replay. On-screen occurrence highlighting untested |
+| P1 Common markings | verified (via source note IDs) | partial: articulations (≥40 staccatos) verified. Fermatas, ornaments, tremolo, arpeggio and glissando untested | n/a | partial: staccato, tenuto, accents and fermata holds are implemented. Staccato and fermatas are asserted; accent velocity and tenuto are not. Ornaments, tremolo, arpeggio and glissando **no** (ornaments diagnosed) |
+| P1 Extended spans | partial: pedal from source XML | untested | n/a | partial: damper pedal start/stop/change, `<sound damper-pedal>`, same-part scope and per-occurrence scope verified. Sostenuto **no** (diagnosed). Octave shifts untested |
+
+### Known limitations
+
+- Lyrics are drawn in Times whatever the text-font setting. Verovio computes lyric spacing from Times metrics, and wider faces collide (`src/styles.css`).
+- Endless view is one unbroken system up to 160 bars. Longer scores are split into 120-bar chunks, and each chunk repeats its clef and key (`src/lib/render.ts`).
+- The written (transposing) view is unavailable for scores encoded at concert pitch, because Verovio can only transpose written pitch to sounding pitch. Such scores always display at concert pitch.
+- Ornaments and the sostenuto pedal are engraved but not synthesized. The timeline reports both in its diagnostics.
+- Repeat and navigation playback reads MusicXML only. MEI, ABC and MIDI play straight through.
+- The playback timeline does not use Verovio's timemap, so engraved and performed timing are not cross-checked at runtime.
+- WebKit has been validated only in CI, not locally. Touch/pinch, 844×320 landscape and many-staff fit have no tracked assertions.
+
+### Performance
+
+Only first useful paint was measured, on 2026-09-30. Setup: production `dist/` served locally, headless Chromium 153, 390×844 viewport, i7-9750H under WSL2. Paint was timed from navigation until the loading overlay cleared and the first engraved note appeared.
+
+| Measurement | Result |
+| --- | --- |
+| Default sample, cold (new browser profile) | 1.06–1.16 s over 3 runs |
+| Default sample, warm (reload with HTTP cache) | 0.91–0.94 s |
+| Import-to-paint for the 5-staff ensemble fixture | 0.60 s |
+| Verovio worker chunk (WASM inlined) | 8.2 MB, uncompressed |
+
+Not captured:
+
+- a VexFlow baseline on the same profile, so the "no more than 20% regression" budget is **unevaluated**
+- WASM load time separately from paint
+- reflow time, memory and long tasks
+- measurements on a phone
 
 ## Objective and baseline
 
@@ -9,7 +87,7 @@ Replace VexFlow with Verovio while retaining every current reader feature and pr
 
 This plan covers the current working tree, including pre-existing uncommitted changes to `src/lib/import.ts`, `render.ts`, and `score.ts`. Those changes add written durations, voices, grace/tuplet metadata, per-pitch accidentals/ties, directions, and changing measure attributes, with corresponding rendering work. Their presence is not proof of complete support. The existing `musicxml-fidelity-review.md` describes the earlier HEAD baseline; some findings have since been partially addressed. Reconcile each finding against fixtures before implementation, rather than treating that review as the current test result.
 
-Prior product decisions were checked in GBrain `default:projects/scoreflow-music-reader` and compared with the current README and implementation. Current playback still schedules notes individually at velocity 82 with a 0.92 duration factor; it does not yet turn the new tie/direction metadata into a complete performance model.
+Prior product decisions were checked in GBrain `default:projects/scoreflow-music-reader` and compared with the current README and implementation. Current playback still schedules notes individually at velocity 82 with a 0.92 duration factor; it does not yet turn the new tie/direction metadata into a complete performance model. *[Stale 2026-09-30: playback now uses the unified timeline in `src/lib/playback/timeline.ts`; see Implementation status.]*
 
 ## Architecture decision
 
@@ -56,7 +134,7 @@ Evaluate native ABC import later against the same compatibility fixtures. Do not
 
 ### Renderer boundary and lifetime
 
-Introduce an asynchronous renderer interface with `load`, `layout`, `render`, `getGeometry`, and `dispose`. During implementation, wrap VexFlow behind the same boundary and select the experimental Verovio engine with a development flag. Remove VexFlow only after the cutover gates pass.
+Introduce an asynchronous renderer interface with `load`, `layout`, `render`, `getGeometry`, and `dispose`. During implementation, wrap VexFlow behind the same boundary and select the experimental Verovio engine with a development flag. Remove VexFlow only after the cutover gates pass. *[Stale 2026-09-30: no dual-engine flag was built. Verovio replaced VexFlow directly and the `vexflow` dependency was removed in `0147751`; rollback is the pre-migration commit `f10f340`/`cc0f9fa` with its lockfile.]*
 
 Use a lazy, pinned npm release and locally served WASM/resources. The documented ESM entry points are `verovio/wasm` and `verovio/esm`. Confirm the actual release, wrapper signatures, assets, browser compatibility and license obligations in the first spike; do not depend on a moving CDN URL. [JavaScript/WASM integration](https://book.verovio.org/installing-or-building-from-sources/javascript-and-webassembly.html)
 
@@ -97,7 +175,7 @@ Bravura/Petaluma support must be checked in the selected WASM distribution. Exis
 
 ## MusicXML coverage targets
 
-Maintain a fixture-backed capability ledger with separate columns for **source retained**, **imported**, **engraved**, **transposed**, and **performed**. Use verified / partial / unsupported / untested / not applicable, with toolkit version and fixture links. No row below is a claim of verified Verovio support in this repository.
+Maintain a fixture-backed capability ledger with separate columns for **source retained**, **imported**, **engraved**, **transposed**, and **performed**. Use verified / partial / unsupported / untested / not applicable, with toolkit version and fixture links. No row below is a claim of verified Verovio support in this repository. *[2026-09-30: the evidence-based ledger is in [Implementation status](#capability-ledger).]*
 
 | Priority | Feature family | Cases and performance expectations |
 | --- | --- | --- |
@@ -167,7 +245,7 @@ Check semantics before screenshots: note/pitch counts, voice identities, exact d
 
 Exercise Chromium plus Firefox and WebKit where available, touch/pinch, 320px and 390px portrait, 844×320/390 landscape, desktop, and many-staff scores. Verify locally served assets under production build paths, no source upload, safe SVG/text insertion, bounded archive expansion, and useful diagnostics without logging entire private scores.
 
-Run `npm run check`, `npm run build`, `npm run test:manifest`, the new tracked suite, and locally `npm run test:example`. Capture cold/warm WASM load, import, first useful paint, reflow, memory and long tasks on the same device/profile as baseline. Target no more than 20% regression in first useful score paint or reflow and no UI freeze during engraving; any exception requires an explicit measured tradeoff before cutover. These are proposed budgets, not measurements from this planning turn.
+Run `npm run check`, `npm run build`, `npm run test:manifest`, the new tracked suite, and locally `npm run test:example`. Capture cold/warm WASM load, import, first useful paint, reflow, memory and long tasks on the same device/profile as baseline. Target no more than 20% regression in first useful score paint or reflow and no UI freeze during engraving; any exception requires an explicit measured tradeoff before cutover. These are proposed budgets, not measurements from this planning turn. *[2026-09-30: only first useful paint has been measured, without a VexFlow baseline; see [Performance](#performance).]*
 
 Completion means all existing-feature rows pass, P0/P1 fidelity is evidenced or an explicit scope decision is recorded, P2 results are documented, and the application can run from a fresh checkout. Original-source retention, import fidelity, engraving fidelity and performed interpretation must be reported separately.
 
@@ -180,4 +258,4 @@ Completion means all existing-feature rows pass, P0/P1 fidelity is evidenced or 
 - Which font/text metrics and annotation-lane method prevent collisions in both fonts?
 - Which MusicXML features in the actual corpus require repairs beyond native conversion?
 
-These are implementation investigations. No dependency installation or runtime migration is part of this planning change.
+These are implementation investigations. No dependency installation or runtime migration is part of this planning change. *[Stale 2026-09-30: the migration has since been implemented; see Implementation status. Answers in brief: pinned `verovio` 6.3.0 (LGPL-3.0-or-later) with the WASM bundled into the worker chunk; encoded breaks give exact 1–4 bars per line; Endless is one unbroken system up to 160 bars and 120-bar chunks beyond; Verovio IDs are kept stable with `xmlIdChecksum` and an ID-seed reset, with source IDs mapped through the document identity map; annotation lanes are placed below each staff after measuring staff content.]*
