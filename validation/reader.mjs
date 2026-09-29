@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { extname, resolve, sep } from 'node:path';
@@ -7,6 +8,10 @@ import { chromium, firefox, webkit } from 'playwright-core';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const dist = resolve(root, 'dist');
+const engine = process.env.BROWSER || 'chromium';
+const launcher = { chromium, firefox, webkit }[engine];
+if (!launcher) throw new Error(`BROWSER must be chromium, firefox or webkit (got "${engine}")`);
+if (!process.env.READER_URL && !existsSync(resolve(dist, 'index.html'))) throw new Error('dist/index.html is missing: run `npm run build` before validation/reader.mjs');
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.wasm': 'application/wasm' };
 const server = createServer(async (request, response) => {
   const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
@@ -17,8 +22,7 @@ const server = createServer(async (request, response) => {
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const url = process.env.READER_URL || `http://127.0.0.1:${server.address().port}`;
-const engine = process.env.BROWSER || 'chromium';
-const browser = await ({ chromium, firefox, webkit }[engine]).launch({ headless: true, ...(engine === 'chromium' ? { args: ['--no-sandbox'] } : {}) });
+const browser = await launcher.launch({ headless: true, ...(engine === 'chromium' ? { args: ['--no-sandbox'] } : {}) });
 try {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: engine !== 'firefox' });
   const errors = [], remote = [];
