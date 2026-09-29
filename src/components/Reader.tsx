@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, FileMusic, FolderOpen, Minus, Pause, Play, Plus, RotateCcw, SlidersHorizontal, Square, Settings2, X } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, FileMusic, FolderOpen, Minus, Pause, Play, Plus, RotateCcw, SlidersHorizontal, Square, Settings2, VolumeX, X } from 'lucide-react';
 import { exampleScore, gmSoundfontLabel, GM_FAMILIES, GM_SOUNDS, instrumentDetails, type GmFamily, type GmSound, type Part, type Score } from '../lib/score';
 import { importFile, parseAbc, parseMusicXml } from '../lib/import';
 import { portraitBarLimit, renderScore, type RenderResult } from '../lib/render';
@@ -20,6 +20,17 @@ const textFonts = { Sans: 'Poppins, Arial, sans-serif', Serif: 'Georgia, serif',
 const sampleAbc = `X:1\nT:A little room to play\nM:4/4\nL:1/4\nQ:1/4=96\nK:C\nC E G c | B A G E | C E G c | d2 c2 | G E D C | E G A G | F E D B, | C4 |`;
 const playbackSound = (part: Part) => part.gmSoundfont || (part.instrument === 'drum-kit' ? 'drum-kit' : instrumentDetails(part.instrument).soundfont!);
 const audioKey = (part: Part) => playbackSound(part) === 'drum-kit' ? `drum-kit:${part.id}` : playbackSound(part);
+const RESUME_TIMEOUT_MS = 1000;
+const SILENT_PLAYBACK_NOTICE = 'Audio couldn’t start on this device — playing silently.';
+// AudioContext.resume() can stay pending forever (no output device, autoplay policy), so give it a bounded wait.
+const resumeAudio = async (context: AudioContext) => {
+  if (context.state === 'running') return true;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try { await Promise.race([context.resume(), new Promise(resolve => { timer = setTimeout(resolve, RESUME_TIMEOUT_MS); })]); }
+  catch { /* a rejected resume means no sound; fall through to the state check */ }
+  finally { clearTimeout(timer); }
+  return (context.state as AudioContextState) === 'running'; // re-read: resume() changes it
+};
 type AudioPlayer = {
   fallback?: boolean;
   start(options: { note: number; time: number; duration: number; velocity: number; destination?: AudioNode }): () => void;
@@ -43,6 +54,7 @@ export default function Reader({ musicXml }: ReaderProps) {
   const [pickerPage, setPickerPage] = useState(0);
   const [abc, setAbc] = useState(sampleAbc);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [playing, setPlaying] = useState(false);
   const [loadingAudio, setLoadingAudio] = useState(false);
   const [loadingFont, setLoadingFont] = useState(false);
@@ -61,7 +73,7 @@ export default function Reader({ musicXml }: ReaderProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const renderRef = useRef<RenderResult | null>(null);
   const audioRef = useRef<{ context: AudioContext; master: DynamicsCompressorNode; players: Map<string, AudioPlayer[]>; trackGains: Map<string, GainNode>; mixScale: number } | null>(null);
-  const playRef = useRef<{ start: number; beat: number; frame: number; interval: ReturnType<typeof setInterval> } | null>(null);
+  const playRef = useRef<{ start: number; beat: number; frame: number; interval?: ReturnType<typeof setInterval> } | null>(null);
   const scheduledStopsRef = useRef<Array<{ stop: () => void; end: number }>>([]);
   const playRunRef = useRef(0);
   const importRunRef = useRef(0);
@@ -277,9 +289,12 @@ export default function Reader({ musicXml }: ReaderProps) {
     }
   }, [active, activeNotes, prefs.mode, painting]);
 
+  // Returns null when the device can't produce sound (no output device, autoplay blocked, resume() never settling),
+  // so playback falls back to a silent wall-clock run instead of hanging on a suspended AudioContext.
   const ensureAudio = async () => {
     if (!audioRef.current) {
-      const context = new AudioContext();
+      let context: AudioContext;
+      try { context = new AudioContext(); } catch { return null; }
       const master = context.createDynamicsCompressor();
       master.threshold.value = -15;
       master.knee.value = 12;
@@ -290,7 +305,7 @@ export default function Reader({ musicXml }: ReaderProps) {
       audioRef.current = { context, master, players: new Map(), trackGains: new Map(), mixScale: 1 };
     }
     const audio = audioRef.current;
-    await audio.context.resume();
+    if (!await resumeAudio(audio.context)) return null;
     audio.mixScale = .8 / Math.sqrt(Math.max(1, visibleScore.parts.length));
     for (const part of visibleScore.parts) {
       let gain = audio.trackGains.get(part.id);
@@ -333,12 +348,15 @@ export default function Reader({ musicXml }: ReaderProps) {
       const audio = await ensureAudio();
       if (run !== playRunRef.current) return;
       setLoadingAudio(false);
+      setNotice(audio ? '' : SILENT_PLAYBACK_NOTICE);
+      // One clock drives scheduling and the cursor: audio time when sound works, wall time when playing silently.
+      const now = audio ? () => audio.context.currentTime : () => performance.now() / 1000;
       const secondsStart = position;
-      const started = audio.context.currentTime + .09;
+      const started = now() + (audio ? .09 : 0);
       const parts = new Map(visibleScore.parts.map(part => [part.id, part]));
       const events = eventsFromSeconds(timeline, secondsStart);
       let nextEvent = 0;
-      const schedule = () => {
+      const schedule = audio && (() => {
         const horizon = audio.context.currentTime + .5;
         while (nextEvent < events.length) {
           const event = events[nextEvent];
@@ -351,16 +369,16 @@ export default function Reader({ musicXml }: ReaderProps) {
           nextEvent++;
         }
         scheduledStopsRef.current = scheduledStopsRef.current.filter(item => item.end > audio.context.currentTime);
-      };
-      schedule();
-      const interval = setInterval(schedule, 50);
+      });
+      schedule?.();
+      const interval = schedule ? setInterval(schedule, 50) : undefined;
       const tick = () => {
-        const now = secondsStart + Math.max(0, audio.context.currentTime - started);
-        if (now >= timeline.durationSeconds) { stop(true); return; }
-        const current = positionAtSeconds(timeline, now);
+        const seconds = secondsStart + Math.max(0, now() - started);
+        if (seconds >= timeline.durationSeconds) { stop(true); return; }
+        const current = positionAtSeconds(timeline, seconds);
         setActive(current.noteId);
         setActiveNotes(previous => previous.join('|') === current.activeNoteIds.join('|') ? previous : current.activeNoteIds);
-        setPosition(now);
+        setPosition(seconds);
         if (playRef.current) playRef.current.frame = requestAnimationFrame(tick);
       };
       playRef.current = { start: started, beat: secondsStart, frame: requestAnimationFrame(tick), interval };
@@ -481,6 +499,7 @@ export default function Reader({ musicXml }: ReaderProps) {
       {error && <div className="error" role="alert">{error}</div>}
       <div className="drawer-foot">SPACE / PAGE DOWN · next view &nbsp;&nbsp; PAGE UP · previous view <span>FluidR3 GM · CC BY 3.0; TimGM drums · GPL-2</span></div>
     </aside>
+    {notice && !drawer && <div className="playback-notice" role="status"><VolumeX className="playback-notice-icon" size={16}/><span className="playback-notice-text">{notice}</span><button className="playback-notice-dismiss" onClick={() => setNotice('')} aria-label="Dismiss playback notice"><X size={16}/></button></div>}
     {error && !drawer && <div className="toast" role="alert"><span>{error}</span><button onClick={() => setError('')} aria-label="Dismiss"><X size={16}/></button></div>}
   </main>;
 }

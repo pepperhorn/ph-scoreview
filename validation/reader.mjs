@@ -88,7 +88,7 @@ try {
   assert.equal(await page.locator('svg .chord .note.reader-note').count(), 0, 'No single chord notehead is the highlight target');
   await page.getByRole('button', { name: 'Play score', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('.chord.is-playing'), { timeout: 20000 }).catch(async error => {
-    const state = await page.evaluate(() => ({ contexts: window.__contexts.map(c => ({ state: c.state, time: c.currentTime })), starts: window.__audioStarts, playing: document.querySelectorAll('.is-playing').length, toasts: [...document.querySelectorAll('.toast')].map(t => t.textContent), loading: !!document.querySelector('.audio-loading, [aria-busy=true]') }));
+    const state = await page.evaluate(() => ({ contexts: window.__contexts.map(c => ({ state: c.state, time: c.currentTime })), starts: window.__audioStarts, playing: document.querySelectorAll('.is-playing').length, toasts: [...document.querySelectorAll('.toast')].map(t => t.textContent), notice: document.querySelector('.playback-notice')?.textContent ?? null, loading: !!document.querySelector('.audio-loading, [aria-busy=true]') }));
     throw new Error(`No chord highlighted after Play: ${JSON.stringify(state)}; console: ${consoleLines.slice(-10).join(' | ')}`, { cause: error });
   });
   const chordFills = await page.evaluate(() => [...document.querySelector('.chord.is-playing').querySelectorAll('.notehead')].map(head => getComputedStyle(head).fill));
@@ -160,8 +160,11 @@ try {
   assert.equal(await page.locator('.score-system svg g.clef').count(), 5, 'System-start clefs are not repeated');
   await assertControlsAligned(5);
   await page.getByRole('button', { name: 'Play score', exact: true }).click();
-  await page.waitForFunction(() => window.__audioStarts > 0 && document.querySelector('.playback-line'));
+  // Devices without a usable audio output (e.g. CI runners) fall back to silent playback, which must say so.
+  await page.waitForFunction(() => document.querySelector('.playback-line') && (window.__audioStarts > 0 || document.querySelector('.playback-notice')));
   assert.ok(await page.locator('.is-playing').count() > 0);
+  if (await page.locator('.playback-notice').count() === 0) assert.ok(await page.evaluate(() => window.__audioStarts) > 0, 'Audible playback starts audio sources');
+  else console.log(`${engine}: audio unavailable, reader playback ran silently`);
   await page.getByRole('button', { name: 'Pause playback', exact: true }).click();
   const stopped = await page.evaluate(() => window.__audioStarts);
   await page.waitForTimeout(650);
@@ -177,4 +180,42 @@ try {
   assert.deepEqual(errors, []);
   assert.deepEqual(remote, [], 'Scores and resources stay local');
   console.log(`${engine}: reader import, engraving, layout, annotations, fonts, mixer, persistence and playback passed`);
+
+  // Silent fallback: an AudioContext that never resumes must not hang playback.
+  const silentContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const silent = await silentContext.newPage();
+  const silentErrors = [];
+  silent.on('pageerror', e => silentErrors.push(e.message));
+  await silent.addInitScript(() => {
+    window.__audioStarts = 0;
+    Object.defineProperty(AudioContext.prototype, 'state', { configurable: true, get: () => 'suspended' });
+    AudioContext.prototype.resume = () => new Promise(() => {});
+    const start = AudioBufferSourceNode.prototype.start;
+    AudioBufferSourceNode.prototype.start = function (...args) { window.__audioStarts++; return start.apply(this, args); };
+  });
+  await silent.goto(url);
+  await silent.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg'), { timeout: 30000 });
+  const lineLeft = () => silent.evaluate(() => parseFloat(document.querySelector('.playback-line')?.style.left ?? 'NaN'));
+  await silent.getByRole('button', { name: 'Play score', exact: true }).click();
+  await silent.locator('.playback-notice').waitFor({ timeout: 5000 });
+  assert.match(await silent.locator('.playback-notice').textContent(), /playing silently/);
+  assert.equal(await silent.locator('.toast').count(), 0, 'Silent fallback is a notice, not an error toast');
+  await silent.waitForFunction(() => document.querySelector('.is-playing') && document.querySelector('.playback-line'), { timeout: 5000 });
+  const firstLeft = await lineLeft();
+  await silent.waitForFunction(first => parseFloat(document.querySelector('.playback-line')?.style.left ?? 'NaN') > first, firstLeft, { timeout: 5000 });
+  await silent.getByRole('button', { name: 'Pause playback', exact: true }).click();
+  await silent.getByRole('button', { name: 'Play score', exact: true }).waitFor();
+  const pausedLeft = await lineLeft();
+  await silent.waitForTimeout(800);
+  assert.equal(await lineLeft(), pausedLeft, 'Pause freezes the silent playhead');
+  await silent.getByRole('button', { name: 'Play score', exact: true }).click();
+  await silent.waitForFunction(paused => parseFloat(document.querySelector('.playback-line')?.style.left ?? 'NaN') > paused, pausedLeft, { timeout: 5000 });
+  await silent.getByRole('button', { name: 'Stop playback', exact: true }).click();
+  await silent.getByRole('button', { name: 'Play score', exact: true }).waitFor();
+  assert.equal(await silent.locator('.playback-line').count(), 0, 'Stop clears the silent playhead');
+  assert.equal(await silent.locator('.is-playing').count(), 0, 'Stop clears silent highlights');
+  assert.equal(await silent.evaluate(() => window.__audioStarts), 0, 'Silent playback schedules no audio');
+  assert.deepEqual(silentErrors, []);
+  await silentContext.close();
+  console.log(`${engine}: silent playback fallback passed`);
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
