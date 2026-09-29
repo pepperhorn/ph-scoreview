@@ -30,6 +30,8 @@ export type SourceDocument = Readonly<{
 
 const encoder = new TextEncoder();
 const xmlId = (id: string) => `n_${id.replace(/[^A-Za-z0-9_.-]/g, '_')}`;
+/** Deterministic MEI staffDef ID for a Score part, so views can hide staves by identity. */
+export const staffDefXmlId = (partId: string) => `staff_${partId.replace(/[^A-Za-z0-9_.-]/g, '_')}`;
 const escape = (value: string) => value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 export async function sha256(bytes: Uint8Array): Promise<string> {
@@ -155,17 +157,44 @@ function meiEvent(note: ScoreNote, continuation: number, dur: string, dots?: num
 function layerXml(segments: Segment[], beats: number): string {
   let cursor = 0;
   const tokens: string[] = [];
-  let beaming = false;
+  // Open beam/tuplet wrappers, innermost last. MEI needs proper nesting, so a beam that
+  // ends inside a tuplet is closed when that tuplet closes.
+  const open: ('beam' | 'tuplet')[] = [];
+  let tupletKey = '';
+  let beamEndPending = false;
+  const closeTop = () => { const top = open.pop(); if (top) tokens.push(`</${top}>`); if (top === 'tuplet') tupletKey = ''; };
+  const closeTuplet = () => {
+    if (!open.includes('tuplet')) return;
+    while (open.length && open.at(-1) !== 'tuplet') closeTop();
+    closeTop();
+    if (beamEndPending && open.at(-1) === 'beam') { closeTop(); beamEndPending = false; }
+  };
+  const closeBeam = () => {
+    if (!open.includes('beam')) return;
+    if (open.at(-1) === 'beam') closeTop(); else beamEndPending = true;
+  };
+  const rests = (length: number) => durationPieces(length).map(piece => `<rest dur="${piece.dur}"${piece.dots ? ` dots="${piece.dots}"` : ''}/>`);
   for (const segment of segments.sort((a, b) => a.start - b.start || a.note.id.localeCompare(b.note.id))) {
     const gap = Math.max(0, segment.start - cursor);
-    if (gap) tokens.push(...durationPieces(gap).map(piece => `<rest dur="${piece.dur}"${piece.dots ? ` dots="${piece.dots}"` : ''}/>`));
-    if (segment.note.beamStart && !beaming) { tokens.push('<beam>'); beaming = true; }
-    for (const [pieceIndex, piece] of durationPieces(segment.duration).entries()) tokens.push(meiEvent(segment.note, segment.continuation, piece.dur, piece.dots, pieceIndex));
-    if (segment.note.beamEnd && beaming) { tokens.push('</beam>'); beaming = false; }
+    if (gap > 1e-6) { closeTuplet(); tokens.push(...rests(gap)); }
+    const tuplet = segment.note.tuplet;
+    // Tuplet notes carry sounding durations; engrave their written value inside a <tuplet> wrapper.
+    const written = tuplet && tuplet.actual > 0 && tuplet.normal > 0 && !segment.continuation && Math.abs(segment.duration - segment.note.duration) < 1e-6
+      ? durationPieces(segment.duration * tuplet.actual / tuplet.normal) : undefined;
+    const inTuplet = !!written && written.length === 1;
+    const key = inTuplet ? `${tuplet!.actual}/${tuplet!.normal}` : '';
+    if (!inTuplet || (tuplet!.start && open.includes('tuplet')) || (tupletKey && tupletKey !== key)) closeTuplet();
+    if (segment.note.beamStart && !open.includes('beam')) { tokens.push('<beam>'); open.push('beam'); beamEndPending = false; }
+    if (inTuplet && !open.includes('tuplet')) { tokens.push(`<tuplet num="${tuplet!.actual}" numbase="${tuplet!.normal}">`); open.push('tuplet'); tupletKey = key; }
+    const pieces = inTuplet ? written! : durationPieces(segment.duration);
+    for (const [pieceIndex, piece] of pieces.entries()) tokens.push(meiEvent(segment.note, segment.continuation, piece.dur, piece.dots, pieceIndex));
+    if (inTuplet && tuplet!.stop) closeTuplet();
+    if (segment.note.beamEnd) closeBeam();
     cursor = Math.max(cursor, segment.start + segment.duration);
   }
-  if (beaming) tokens.push('</beam>');
-  if (beats - cursor > 1e-6) tokens.push(...durationPieces(beats - cursor).map(piece => `<rest dur="${piece.dur}"${piece.dots ? ` dots="${piece.dots}"` : ''}/>`));
+  closeTuplet();
+  while (open.length) closeTop();
+  if (beats - cursor > 1e-6) tokens.push(...rests(beats - cursor));
   return tokens.join('');
 }
 
@@ -174,7 +203,7 @@ export function scoreToMei(score: Score): string {
   const count = Math.max(0, ...score.parts.map(part => part.measures.length));
   const meter = `meter.count="${score.beats}" meter.unit="${score.beatType}"`;
   const key = score.key ? ` key.sig="${Math.abs(score.key)}${score.key > 0 ? 's' : 'f'}"` : ' key.sig="0"';
-  const staffDefs = score.parts.map((part, index) => `<staffDef n="${index + 1}" label="${escape(part.name)}" clef.shape="${part.clef === 'bass' ? 'F' : part.clef === 'alto' ? 'C' : part.clef === 'percussion' ? 'perc' : 'G'}" clef.line="${part.clef === 'bass' ? 4 : part.clef === 'alto' ? 3 : 2}"/>`).join('');
+  const staffDefs = score.parts.map((part, index) => `<staffDef xml:id="${escape(staffDefXmlId(part.id))}" n="${index + 1}" lines="5" label="${escape(part.name)}" clef.shape="${part.clef === 'bass' ? 'F' : part.clef === 'alto' ? 'C' : part.clef === 'percussion' ? 'perc' : 'G'}" clef.line="${part.clef === 'bass' ? 4 : part.clef === 'alto' ? 3 : 2}"/>`).join('');
   const measures = Array.from({ length: count }, (_, measureIndex) => {
     const staves = score.parts.map((part, staffIndex) => {
       const measure = part.measures[measureIndex];
@@ -203,10 +232,18 @@ export function scoreToMei(score: Score): string {
       return `<staff n="${staffIndex + 1}">${(layers.length ? layers : [[]]).map((layer, index) => `<layer n="${index + 1}">${layerXml(layer, beats)}</layer>`).join('')}</staff>`;
     }).join('');
     const harmonies = score.parts.flatMap((part, index) => part.measures[measureIndex]?.notes.filter(note => note.chordSymbol).map(note => `<harm staff="${index + 1}" tstamp="${1 + note.start}" >${escape(note.chordSymbol || '')}</harm>`) || []).join('');
-    const tempo = measureIndex === 0 ? `<tempo tstamp="1" midi.bpm="${score.tempo}">${score.tempo}</tempo>` : '';
+    // A SMuFL quarter-note glyph (metNoteQuarterUp) followed by the beats per minute.
+    const tempo = measureIndex === 0 ? `<tempo tstamp="1" staff="1" midi.bpm="${score.tempo}" mm="${score.tempo}" mm.unit="4"><rend glyph.auth="smufl">&#xE1D5;</rend> = ${score.tempo}</tempo>` : '';
     return `<measure n="${measureIndex + 1}">${staves}${harmonies}${tempo}</measure>`;
   }).join('');
   return `<?xml version="1.0" encoding="utf-8"?><mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.0"><meiHead><fileDesc><titleStmt><title>${escape(score.title)}</title>${score.composer ? `<respStmt><persName role="composer">${escape(score.composer)}</persName></respStmt>` : ''}</titleStmt><pubStmt/></fileDesc></meiHead><music><body><mdiv><score><scoreDef ${meter}${key}><staffGrp>${staffDefs}</staffGrp></scoreDef><section>${measures}</section></score></mdiv></body></music></mei>`;
+}
+
+/** Attach a semantic MEI engraving document to a model-only score (for example the built-in sample). */
+export function withEngravingDocument<T extends Score>(score: T, format: SourceFormat = 'sample'): T {
+  if (score.document) return score;
+  const engravingText = scoreToMei(score);
+  return { ...score, document: makeSourceDocument({ format, engravingFormat: 'mei', originalText: engravingText, engravingText, identity: identityForScore(score) }) };
 }
 
 export function identityForScore(score: Score): SourceIdentity {

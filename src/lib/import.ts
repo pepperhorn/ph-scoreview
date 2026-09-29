@@ -30,6 +30,9 @@ function musicXmlHarmony(element: Element): string {
   const bassStep = bass && value(bass, 'bass-step');
   return `${step}${accidental(number(root!, 'root-alter'))}${suffix}${bassStep ? `/${bassStep}${accidental(number(bass!, 'bass-alter'))}` : ''}`;
 }
+/** Common five-line drum-set staff positions mapped to General MIDI percussion keys. */
+const drumPositions: Record<string, number> = { D4: 44, E4: 35, F4: 36, G4: 41, A4: 43, B4: 45, C5: 38, D5: 47, E5: 48, F5: 51, G5: 42, A5: 49, B5: 57, C6: 49 };
+const defaultDrumMidi = (step: string, octave: number) => drumPositions[`${step.toUpperCase()}${octave}`] ?? 38;
 const normalized = (score: Score): Score => {
   const count = Math.max(...score.parts.map(p => p.measures.length), 0);
   score.parts.forEach(part => {
@@ -82,8 +85,11 @@ export function parseMusicXml(text: string): Score {
       const library = value(child(item, 'virtual-instrument') || item, 'virtual-library');
       return library && library.toLowerCase().replace(/[^a-z]/g, '') !== 'generalmidi';
     });
-    const midiProgram = !gmVirtual && !hasOtherVirtual ? children(definition || element, 'midi-instrument').map(item => gmProgramForNumber(number(item, 'midi-program', 0))).find(Boolean) : undefined;
-    const gm = gmVirtual || midiProgram;
+    // Drum kits are often exported as program 1 on channel 10; never map them to piano.
+    const drumKit = children(definition || element, 'midi-instrument').some(item => number(item, 'midi-channel') === 10)
+      || Array.from(element.getElementsByTagName('*')).some(el => el.localName === 'unpitched');
+    const midiProgram = !drumKit && !gmVirtual && !hasOtherVirtual ? children(definition || element, 'midi-instrument').map(item => gmProgramForNumber(number(item, 'midi-program', 0))).find(Boolean) : undefined;
+    const gm = drumKit ? undefined : gmVirtual || midiProgram;
     const staffMap = new Map<number, Part>();
     let divisions = 1;
     let partKey = key;
@@ -135,7 +141,7 @@ export function parseMusicXml(text: string): Score {
           const clefEl = attrs && children(attrs, 'clef').find(c => Number(c.getAttribute('number') || 1) === staff);
           const sign = clefEl ? value(clefEl, 'sign') : '';
           const clef = sign === 'F' ? 'bass' : sign === 'C' ? number(clefEl!, 'line', 3) === 4 ? 'tenor' : 'alto' : sign === 'percussion' ? 'percussion' : partClef || (/bass/i.test(name) ? 'bass' : 'treble');
-          staffMap.set(staff, { id: `${id}-${staff}`, name: staff === 1 ? name : `${name} · ${staff}`, clef, key: partKey, instrument: gm ? gm.icon as Part['instrument'] : instrumentForName(name), gmProgram: gm?.program, gmSoundfont: gm?.soundfont, pitchBasis: concertScore ? 'concert' : 'written', transposition, measures: Array.from({ length: index }, (_, i) => empty(i, measureBeats)) });
+          staffMap.set(staff, { id: `${id}-${staff}`, name: staff === 1 ? name : `${name} · ${staff}`, clef, key: partKey, instrument: drumKit ? 'drum-kit' : gm ? gm.icon as Part['instrument'] : instrumentForName(name), gmProgram: gm?.program, gmSoundfont: gm?.soundfont, pitchBasis: concertScore ? 'concert' : 'written', transposition, measures: Array.from({ length: index }, (_, i) => empty(i, measureBeats)) });
         }
         const p = staffMap.get(staff)!;
         if (!p.measures[index]) p.measures[index] = { ...empty(index, measureBeats), nominalBeats: measureBeats, number: m.getAttribute('number') || String(index + 1), implicit: m.getAttribute('implicit') === 'yes', key: partKey, clef: p.clef, beatsPerBar: partBeats, beatType: partBeatType };
@@ -187,7 +193,7 @@ export function parseMusicXml(text: string): Score {
         const midiUnpitched = midiInstrument ? number(midiInstrument, 'midi-unpitched', 0) : 0;
         const displayStep = unpitched ? value(unpitched, 'display-step') || 'C' : undefined;
         const displayOctave = unpitched ? number(unpitched, 'display-octave', 4) : undefined;
-        const basePitch = p ? pitch(value(p, 'step') || 'C', number(p, 'octave', 4), number(p, 'alter')) : unpitched ? { ...(midiUnpitched ? midiPitch(midiUnpitched - 1) : pitch(displayStep!, displayOctave!)), unpitched: true, displayStep, displayOctave } : undefined;
+        const basePitch = p ? pitch(value(p, 'step') || 'C', number(p, 'octave', 4), number(p, 'alter')) : unpitched ? { ...midiPitch(midiUnpitched ? midiUnpitched - 1 : defaultDrumMidi(displayStep!, displayOctave!)), unpitched: true, displayStep, displayOctave } : undefined;
         const notePitch = basePitch && !rest ? { ...basePitch, sourceId, accidental: accidentalElement?.textContent?.trim(), cautionary: accidentalElement?.getAttribute('cautionary') === 'yes' || accidentalElement?.getAttribute('parentheses') === 'yes', tieStart: children(item, 'tie').some(t => t.getAttribute('type') === 'start'), tieStop: children(item, 'tie').some(t => t.getAttribute('type') === 'stop') } : undefined;
         const notations = child(item, 'notations');
         const timeModification = child(item, 'time-modification');
@@ -225,25 +231,64 @@ export function parseMusicXml(text: string): Score {
 export function parseMei(text: string): Score {
   const doc = parseXml(text);
   if (doc.documentElement.localName !== 'mei') throw new Error('This file is not an MEI document.');
-  const all = (tag: string) => Array.from(doc.getElementsByTagName('*')).filter(e => e.localName === tag);
-  const defs = all('staffDef');
+  const everything = Array.from(doc.getElementsByTagName('*'));
+  const all = (tag: string) => everything.filter(e => e.localName === tag);
+  // One part per staff number; later staffDefs (score changes) only update state.
+  const defs = [...new Map(all('staffDef').map((def, i) => [def.getAttribute('n') || String(i + 1), def])).values()];
   const measures = all('measure');
-  const meter = all('scoreDef')[0];
-  const beats = Number(meter?.getAttribute('meter.count')) || 4;
-  const beatType = Number(meter?.getAttribute('meter.unit')) || 4;
-  const keySig = meter?.getAttribute('key.sig') || '';
-  const key = Number(keySig.replace(/[^0-9]/g, '')) * (keySig.includes('f') ? -1 : 1) || 0;
-  const alteredByKey = (step: string) => key > 0 ? ('FCGDAEB'.slice(0, key).includes(step) ? 1 : 0) : ('BEADGCF'.slice(0, -key).includes(step) ? -1 : 0);
+  // Walk the document in order so later <scoreDef>/<staffDef> key and meter
+  // changes (attributes or <keySig>/<meterSig> children) apply from that point.
+  const parseKey = (sig: string | null | undefined) => {
+    const match = /^(\d+)([sf])$/.exec((sig || '').trim());
+    return sig?.trim() === '0' ? 0 : match ? Number(match[1]) * (match[2] === 'f' ? -1 : 1) : undefined;
+  };
+  const defKey = (def: Element) => parseKey(def.getAttribute('key.sig')) ?? parseKey(children(def, 'keySig')[0]?.getAttribute('sig'));
+  const defMeter = (def: Element) => {
+    const sig = children(def, 'meterSig')[0];
+    const count = Number(def.getAttribute('meter.count') || sig?.getAttribute('count'));
+    const unit = Number(def.getAttribute('meter.unit') || sig?.getAttribute('unit'));
+    return count > 0 && unit > 0 ? { count, unit } : undefined;
+  };
+  let meterNow: { count: number; unit: number } | undefined;
+  let defaultKey: number | undefined;
+  const staffKeys = new Map<string, number>();
+  const measureState: { count: number; unit: number; keys: Map<string, number>; defaultKey: number }[] = [];
+  let openingMeter: { count: number; unit: number } | undefined;
+  let openingKey: number | undefined;
+  for (const el of everything) {
+    if (el.localName === 'scoreDef') {
+      const k = defKey(el);
+      if (k !== undefined) { defaultKey = k; staffKeys.clear(); }
+      meterNow = defMeter(el) || meterNow;
+    } else if (el.localName === 'staffDef') {
+      const k = defKey(el);
+      if (k !== undefined) staffKeys.set(el.getAttribute('n') || '1', k);
+      meterNow = defMeter(el) || meterNow;
+    } else if (el.localName === 'measure') {
+      openingMeter ||= meterNow;
+      if (openingKey === undefined) openingKey = staffKeys.values().next().value ?? defaultKey;
+      measureState.push({ count: meterNow?.count || 4, unit: meterNow?.unit || 4, keys: new Map(staffKeys), defaultKey: defaultKey || 0 });
+    }
+  }
+  const beats = openingMeter?.count || meterNow?.count || 4;
+  const beatType = openingMeter?.unit || meterNow?.unit || 4;
+  const key = openingKey ?? defaultKey ?? 0;
+  const alteredByKey = (fifths: number, step: string) => fifths > 0 ? ('FCGDAEB'.slice(0, fifths).includes(step) ? 1 : 0) : ('BEADGCF'.slice(0, -fifths).includes(step) ? -1 : 0);
+  const accidValues: Record<string, number> = { s: 1, f: -1, ss: 2, x: 2, ff: -2, xs: 3, sx: 3, ts: 3, tf: -3, n: 0, nf: -1, ns: 1 };
   const parts: Part[] = defs.map((def, i) => {
     const n = def.getAttribute('n') || String(i + 1);
     const name = def.getAttribute('label') || `Staff ${n}`;
     const sign = def.getAttribute('clef.shape');
     const clef = sign === 'F' ? 'bass' : sign === 'C' ? 'alto' : sign === 'perc' ? 'percussion' : 'treble';
     const transposition: Transposition = { semitones: Number(def.getAttribute('trans.semi')) || 0, diatonic: def.hasAttribute('trans.diat') ? Number(def.getAttribute('trans.diat')) : undefined };
-    return { id: n, name, clef, instrument: instrumentForName(name), pitchBasis: 'written', transposition, measures: measures.map((measure, index) => {
-      const out = empty(index, beats * 4 / beatType);
+    return { id: n, name, clef, key: measureState[0]?.keys.get(n) ?? measureState[0]?.defaultKey ?? key, instrument: instrumentForName(name), pitchBasis: 'written', transposition, measures: measures.map((measure, index) => {
+      const state = measureState[index] || { count: beats, unit: beatType, keys: new Map<string, number>(), defaultKey: key };
+      const staffKey = state.keys.get(n) ?? state.defaultKey;
+      const out: Measure = { ...empty(index, state.count * 4 / state.unit), nominalBeats: state.count * 4 / state.unit, key: staffKey, beatsPerBar: state.count, beatType: state.unit };
       const staff = Array.from(measure.getElementsByTagName('*')).find(e => e.localName === 'staff' && e.getAttribute('n') === n);
       if (!staff) return out;
+      // Written accidentals persist for the same step and octave until the barline.
+      const written = new Map<string, { time: number; alter: number }[]>();
       const bySourceId = new Map<string, ScoreNote>();
       const sourceId = (el: Element) => el.getAttribute('xml:id') || el.getAttributeNS('http://www.w3.org/XML/1998/namespace', 'id') || undefined;
       const layers = Array.from(staff.children).filter(e => e.localName === 'layer');
@@ -264,9 +309,16 @@ export function parseMei(text: string): Score {
             const noteEls = kind === 'chord' ? Array.from(el.children).filter(e => e.localName === 'note') : kind === 'note' ? [el] : [];
             const pitches = noteEls.map(e => {
               const step = (e.getAttribute('pname') || 'c').toUpperCase();
-              const explicit = ({ s: 1, f: -1, ss: 2, ff: -2, n: 0 } as Record<string, number>)[e.getAttribute('accid') || ''];
+              const octave = Number(e.getAttribute('oct') || 4);
+              const accidChild = children(e, 'accid')[0];
+              // MEI precedence: accid.ges > written accid (attribute or <accid>) > measure state > key.
+              const gestural = accidValues[e.getAttribute('accid.ges') || accidChild?.getAttribute('accid.ges') || ''];
+              const shown = accidValues[e.getAttribute('accid') || accidChild?.getAttribute('accid') || ''];
+              const pitchKey = `${step}${octave}`;
+              if (shown !== undefined) written.set(pitchKey, [...(written.get(pitchKey) || []), { time: cursor, alter: shown }]);
+              const prior = (written.get(pitchKey) || []).filter(entry => entry.time <= cursor + 1e-6).at(-1)?.alter;
               const tie = e.getAttribute('tie') || el.getAttribute('tie') || '';
-              return { ...pitch(step, Number(e.getAttribute('oct') || 4), explicit ?? alteredByKey(step)), sourceId: sourceId(e), tieStart: /[im]/.test(tie), tieStop: /[tm]/.test(tie) };
+              return { ...pitch(step, octave, gestural ?? shown ?? prior ?? alteredByKey(staffKey, step)), sourceId: sourceId(e), tieStart: /[im]/.test(tie), tieStop: /[tm]/.test(tie) };
             });
             const lyric = Array.from(el.getElementsByTagName('*')).filter(e => e.localName === 'syl').map(e => e.textContent?.trim() || '').filter(Boolean).join(' ');
             const parsed: ScoreNote = { id: `${n}-${index}-${out.notes.length}`, sourceId: sourceId(el), start: cursor, duration, pitches, rest: !pitches.length, voice: layer.getAttribute('n') || String(layerIndex + 1), beamStart: beam && eventIndex === 0, beamEnd: beam && eventIndex === events.length - 1, grace, tuplet, lyric: lyric || undefined };
@@ -324,6 +376,8 @@ export async function parseAbc(text: string): Promise<Score> {
     if (!current || (current as any).closed) { current = empty(part.measures.length, beats * 4 / beatType); part.measures.push(current); }
     let cursor = current.notes.reduce((max, n) => Math.max(max, n.start + n.duration), 0);
     const accidentalMap = new Map<string, number>();
+    // abcjs marks only the first note of a tuplet with its multiplier.
+    let triplet: { multiplier: number; remaining: number; actual: number; first: boolean } | undefined;
     for (const item of voice) {
       if (item.el_type === 'bar') {
         if (current.notes.length) (current as any).closed = true;
@@ -331,7 +385,10 @@ export async function parseAbc(text: string): Promise<Score> {
         cursor = 0; accidentalMap.clear(); continue;
       }
       if (item.el_type !== 'note') continue;
-      const duration = Number(item.duration || .25) * 4;
+      if (item.startTriplet && Number(item.tripletMultiplier) > 0) triplet = { multiplier: Number(item.tripletMultiplier), remaining: Number(item.tripletR || item.startTriplet) || 3, actual: Number(item.startTriplet) || 3, first: true };
+      const tupletInfo = triplet ? { actual: triplet.actual, normal: Math.max(1, Math.round(triplet.actual * triplet.multiplier)), number: '1', start: triplet.first, stop: Boolean(item.endTriplet) || triplet.remaining <= 1 } : undefined;
+      const duration = Number(item.duration || .25) * 4 * (triplet?.multiplier ?? 1);
+      if (triplet) { triplet.first = false; triplet.remaining--; if (item.endTriplet || triplet.remaining <= 0) triplet = undefined; }
       const pitches = (item.pitches || []).map((p: any) => {
         const degree = Number(p.pitch || 0);
         const steps = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
@@ -341,11 +398,11 @@ export async function parseAbc(text: string): Promise<Score> {
         if (explicit !== undefined) accidentalMap.set(`${step}${octave}`, explicit);
         const fromKey = keyAccidentals.find((a: any) => a.note.toUpperCase() === step);
         const alter = accidentalMap.get(`${step}${octave}`) ?? (fromKey?.acc === 'sharp' ? 1 : fromKey?.acc === 'flat' ? -1 : 0);
-        return pitch(step, octave, alter);
+        return { ...pitch(step, octave, alter), tieStart: Boolean(p.startTie), tieStop: Boolean(p.endTie) };
       });
       const chordSymbol = item.chord?.find((chord: { name?: string; position?: string }) => chord.position !== 'below')?.name;
       const lyric = item.lyric?.map((syllable: { syllable?: string; divider?: string }) => `${syllable.syllable || ''}${syllable.divider === '-' ? '-' : ''}`).filter(Boolean).join(' ');
-      current.notes.push({ id: `abc-${staffIndex}-${voiceIndex}-${current.index}-${current.notes.length}`, start: cursor, duration, pitches, chordSymbol, lyric, beamStart: Boolean(item.startBeam), beamEnd: Boolean(item.endBeam), rest: !pitches.length, dotted: Boolean(item.dots) });
+      current.notes.push({ id: `abc-${staffIndex}-${voiceIndex}-${current.index}-${current.notes.length}`, start: cursor, duration, pitches, chordSymbol, lyric, beamStart: Boolean(item.startBeam), beamEnd: Boolean(item.endBeam), rest: !pitches.length, dotted: Boolean(item.dots), tuplet: tupletInfo, tieStart: pitches.some((p: { tieStart?: boolean }) => p.tieStart) || undefined, tieStop: pitches.some((p: { tieStop?: boolean }) => p.tieStop) || undefined });
       cursor += duration;
     }
   }
@@ -370,19 +427,65 @@ export async function parseMidi(buffer: ArrayBuffer): Promise<Score> {
     for (const note of track.notes) {
       const absolute = Math.round(note.ticks / ppq * 4) / 4;
       const duration = Math.max(.25, Math.round(note.durationTicks / ppq * 4) / 4);
-      const index = Math.floor(absolute / measureSize);
-      const finalIndex = Math.floor(Math.max(absolute, absolute + duration - 1e-6) / measureSize);
-      while (measures.length <= finalIndex) measures.push(empty(measures.length, measureSize));
-      const m = measures[index], start = absolute - index * measureSize;
-      const chord = m.notes.find(n => Math.abs(n.start - start) < .001 && Math.abs(n.duration - duration) < .001);
-      if (chord) chord.pitches.push(midiPitch(note.midi));
-      else m.notes.push({ id: `midi-${ti}-${index}-${m.notes.length}`, start, duration, pitches: [midiPitch(note.midi)] });
+      // Notes crossing a barline become tied pieces so measures keep their nominal length.
+      let position = absolute, remaining = duration, piece = 0;
+      while (remaining > 1e-6) {
+        const index = Math.floor(position / measureSize + 1e-9);
+        const start = position - index * measureSize;
+        const length = Math.min(remaining, measureSize - start);
+        while (measures.length <= index) measures.push(empty(measures.length, measureSize));
+        const m = measures[index];
+        const tieStop = piece > 0, tieStart = remaining - length > 1e-6;
+        const sounding = { ...midiPitch(note.midi), ...(tieStart ? { tieStart } : {}), ...(tieStop ? { tieStop } : {}) };
+        const chord = m.notes.find(n => Math.abs(n.start - start) < .001 && Math.abs(n.duration - length) < .001);
+        if (chord) { chord.pitches.push(sounding); chord.tieStart ||= tieStart || undefined; chord.tieStop ||= tieStop || undefined; }
+        else m.notes.push({ id: `midi-${ti}-${index}-${m.notes.length}`, start, duration: length, pitches: [sounding], ...(tieStart ? { tieStart } : {}), ...(tieStop ? { tieStop } : {}) });
+        position += length; remaining -= length; piece++;
+      }
     }
     return { id: `midi-${ti}`, name, clef: track.instrument.percussion ? 'percussion' : /bass/i.test(name) ? 'bass' : 'treble', instrument: track.instrument.percussion ? 'drum-kit' : instrumentForProgram(track.instrument.number), pitchBasis: 'concert' as const, measures };
   });
   const score = normalized({ title: midi.name || '', source: 'MIDI · quantized', tempo, beats, beatType, key: 0, parts });
   score.document = makeSourceDocument({ format: 'midi', engravingFormat: 'mei', originalBytes: new Uint8Array(buffer), engravingText: scoreToMei(score), identity: identityForScore(score) });
   return score;
+}
+
+/** Uncompressed size limit for an MXL score member, matching the 8 MB file limit. */
+export const MXL_MAX_SCORE_BYTES = 8_000_000;
+/**
+ * Reads the MusicXML member of an MXL archive without inflating anything else:
+ * only META-INF/container.xml and the chosen score are decompressed, each with a
+ * declared-size bound (fflate never writes past the declared size).
+ */
+export function extractMxlScore(bytes: Uint8Array): string {
+  const entries: { name: string; originalSize: number }[] = [];
+  let listing: Record<string, Uint8Array>;
+  try {
+    listing = unzipSync(bytes, { filter: file => { entries.push({ name: file.name, originalSize: file.originalSize }); return file.name === 'META-INF/container.xml' && file.originalSize <= 1_000_000; } });
+  } catch { throw new Error('This MXL archive could not be opened.'); }
+  const container = listing['META-INF/container.xml'];
+  let path: string | undefined;
+  if (container) {
+    let declared: string | null | undefined;
+    try { declared = Array.from(parseXml(strFromU8(container)).getElementsByTagName('*')).find(el => el.localName === 'rootfile')?.getAttribute('full-path'); }
+    catch { throw new Error('This MXL archive has an unreadable META-INF/container.xml.'); }
+    if (declared) {
+      try { path = decodeURIComponent(declared.trim()); } catch { path = declared.trim(); }
+      path = path.replace(/^\.\//, '');
+      if (path.startsWith('/') || path.split(/[\\/]/).includes('..')) throw new Error('This MXL archive declares an unsafe score path.');
+      // Some writers percent-encode the path, others store it raw; accept either spelling.
+      if (!entries.some(entry => entry.name === path) && entries.some(entry => entry.name === declared!.trim())) path = declared.trim();
+    }
+  }
+  const target = path ? entries.find(entry => entry.name === path) : entries.find(entry => /\.(xml|musicxml)$/i.test(entry.name) && !entry.name.startsWith('META-INF/'));
+  if (!target) throw new Error(path ? `This MXL archive does not contain its declared score "${path}".` : 'This MXL archive has no MusicXML score.');
+  if (!(target.originalSize <= MXL_MAX_SCORE_BYTES)) throw new Error(`The score inside this MXL archive is larger than ${MXL_MAX_SCORE_BYTES / 1_000_000} MB uncompressed.`);
+  let files: Record<string, Uint8Array>;
+  try { files = unzipSync(bytes, { filter: file => file.name === target.name && file.originalSize <= MXL_MAX_SCORE_BYTES }); }
+  catch { throw new Error('The score inside this MXL archive could not be decompressed.'); }
+  const entry = files[target.name];
+  if (!entry || !entry.length) throw new Error('The score inside this MXL archive is empty.');
+  return strFromU8(entry);
 }
 
 export async function importFile(file: File): Promise<Score> {
@@ -393,14 +496,7 @@ export async function importFile(file: File): Promise<Score> {
   let score: Score;
   if (/\.(mid|midi)$/.test(name)) score = await parseMidi(bytes.buffer);
   else if (/\.mxl$/.test(name)) {
-    let files: Record<string, Uint8Array>;
-    try { files = unzipSync(bytes); } catch { throw new Error('This MXL archive could not be opened.'); }
-    const container = files['META-INF/container.xml'];
-    const path = container && parseXml(strFromU8(container)).querySelector('rootfile')?.getAttribute('full-path');
-    if (path && (path.startsWith('/') || path.split('/').includes('..'))) throw new Error('This MXL archive declares an unsafe score path.');
-    const entry = path ? files[path] : Object.entries(files).find(([key]) => /\.(xml|musicxml)$/i.test(key) && !key.startsWith('META-INF/'))?.[1];
-    if (!entry || entry.length > 8_000_000) throw new Error('This MXL archive has no readable score.');
-    const text = strFromU8(entry);
+    const text = extractMxlScore(bytes);
     score = parseMusicXml(text);
     score.document = makeSourceDocument({ format: 'mxl', engravingFormat: 'musicxml', originalBytes: bytes, originalText: text, engravingText: score.document!.engravingText, filename: file.name, sha256: hash, identity: score.document!.identity });
     return score;

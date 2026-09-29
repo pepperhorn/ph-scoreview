@@ -13,6 +13,9 @@ export type FileState = {
   parts: Record<string, { visible: boolean; instrument: InstrumentId; gmSoundfont?: string; volume?: number }>;
 };
 
+export const MIN_BPM = 30, MAX_BPM = 240;
+/** The reader's BPM control range; saved and source tempos outside it are clamped. */
+export const clampBpm = (bpm: number) => Math.max(MIN_BPM, Math.min(MAX_BPM, bpm));
 const storageKey = (hash: string) => `scoreflow-file-v1:${hash}`;
 const instruments = new Set<InstrumentId>(['piano', 'guitar', 'bassguitar', 'double-bass', 'drum-kit', 'alto-saxophone', 'tenor-saxophone', 'bari-saxophone', 'flute', 'clarinet', 'trumpet', 'trombone', 'violin', 'viola', 'cello', 'microphone']);
 const legacyInstruments: Record<string, InstrumentId> = { bass: 'double-bass', drums: 'drum-kit', saxophone: 'alto-saxophone' };
@@ -78,7 +81,9 @@ export function readFileState(source: FileSource): FileState | null {
     if (!Number.isFinite(state.settings.zoom) || state.settings.zoom < .5 || state.settings.zoom > 4) return null;
     if (state.settings.barsPerLine !== 'auto' && (!Number.isInteger(state.settings.barsPerLine) || state.settings.barsPerLine < 1 || state.settings.barsPerLine > 4)) return null;
     if (!Number.isInteger(state.settings.overlap) || state.settings.overlap < 0 || state.settings.overlap > 3) return null;
-    if (!Number.isFinite(state.settings.bpm) || state.settings.bpm < 30 || state.settings.bpm > 240) return null;
+    // Out-of-range tempos (e.g. cut-time 160 → 320 quarter BPM) are clamped, not a reason to drop the state.
+    if (!Number.isFinite(state.settings.bpm)) return null;
+    state.settings.bpm = clampBpm(state.settings.bpm);
     if (state.settings.semitones !== undefined && (!Number.isInteger(state.settings.semitones) || Math.abs(state.settings.semitones) > 12)) return null;
     if (state.settings.scorePitch !== undefined && !['written', 'concert'].includes(state.settings.scorePitch)) return null;
     if (state.settings.annotationFont !== undefined && !['Sans', 'Serif', 'Mono'].includes(state.settings.annotationFont)) return null;
@@ -93,7 +98,7 @@ export function writeFileState(source: FileSource, settings: FileSettings, score
   const hidden = new Set(hiddenIds);
   const parts: FileState['parts'] = {};
   for (const part of score.parts) parts[part.id] = { visible: !hidden.has(part.id), instrument: part.instrument, ...(part.gmSoundfont ? { gmSoundfont: part.gmSoundfont } : {}), volume: volumes[part.id] ?? 100 };
-  const state: FileState = { version: 1, source, settings, parts };
+  const state: FileState = { version: 1, source, settings: { ...settings, bpm: clampBpm(settings.bpm) }, parts };
   try { localStorage.setItem(storageKey(source.sha256), JSON.stringify(state)); }
   catch { /* Storage may be unavailable; the current session still works. */ }
 }

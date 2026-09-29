@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@astrojs/react": "^7.0.0",
+    "@fontsource/poppins": "^5.3.0",
     "@tonejs/midi": "^2.0.28",
     "abcjs": "^6.7.1",
     "astro": "^7.3.5",
@@ -21,8 +22,7 @@
     "react-dom": "^19.2.0",
     "smplr": "^1.0.0",
     "soundfont2": "^0.5.0",
-    "verovio": "6.3.0",
-    "vexflow": "^5.0.0"
+    "verovio": "6.3.0"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.5",

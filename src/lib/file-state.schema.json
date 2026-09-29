@@ -31,7 +31,7 @@
         "counts": { "type": "boolean" },
         "subdivisions": { "type": "boolean" },
         "annotationFont": { "enum": ["Sans", "Serif", "Mono"] },
-        "bpm": { "type": "number", "minimum": 30, "maximum": 240 },
+        "bpm": { "type": "number", "minimum": 30, "maximum": 240, "description": "Playback BPM. Writers clamp to 30-240; readers clamp out-of-range saved values instead of discarding the state." },
         "zoom": { "type": "number", "minimum": 0.5, "maximum": 4 },
         "semitones": { "type": "integer", "minimum": -12, "maximum": 12 },
         "scorePitch": { "enum": ["written", "concert"] }

@@ -6,31 +6,42 @@ type WorkerRequest = {
   operation: 'import' | 'render';
   data: string;
   options?: Record<string, unknown>;
+  /** One-based page numbers to serialize; all pages when omitted. */
+  pages?: number[];
 };
 
 let modulePromise: Promise<unknown> | undefined;
 const moduleReady = () => modulePromise ??= createVerovioModule();
+let toolkit: VerovioToolkit | undefined;
 
-// The WASM toolkit has mutable global state. Each request owns an instance and
-// requests are serialized so a rejected or superseded render cannot poison it.
+// One toolkit is reused across requests. Requests are serialized, and every
+// request resets options before applying its own, so transposition, fonts and
+// layout settings cannot leak between loads. A failed request discards the
+// instance so a poisoned WASM state is never reused.
 let queue = Promise.resolve();
 self.onmessage = (event: MessageEvent<WorkerRequest>) => {
   const request = event.data;
   queue = queue.then(async () => {
-    const toolkit = new VerovioToolkit(await moduleReady());
     try {
+      toolkit ??= new VerovioToolkit(await moduleReady());
+      toolkit.resetOptions();
+      toolkit.resetXmlIdSeed(0);
       toolkit.setOptions(request.operation === 'import'
         ? { breaks: 'none', inputFrom: 'auto', xmlIdChecksum: true }
         : request.options || {});
       if (!toolkit.loadData(request.data)) throw new Error('Verovio could not import this score.');
-      const value = request.operation === 'import'
-        ? { mei: toolkit.getMEI(), timemap: toolkit.renderToTimemap() }
-        : { pages: Array.from({ length: toolkit.getPageCount() }, (_, index) => toolkit.renderToSVG(index + 1)) };
+      let value: unknown;
+      if (request.operation === 'import') value = { mei: toolkit.getMEI() };
+      else {
+        const count = toolkit.getPageCount();
+        const wanted = request.pages?.filter(page => page >= 1 && page <= count) ?? Array.from({ length: count }, (_, index) => index + 1);
+        value = { pageCount: count, pages: wanted.map(page => ({ page, svg: toolkit!.renderToSVG(page) })) };
+      }
       self.postMessage({ id: request.id, value });
     } catch (error) {
+      try { toolkit?.destroy(); } catch { /* already unusable */ }
+      toolkit = undefined;
       self.postMessage({ id: request.id, error: error instanceof Error ? error.message : String(error) });
-    } finally {
-      toolkit.destroy();
     }
   });
 };

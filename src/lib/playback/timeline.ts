@@ -17,12 +17,25 @@ export type PerformanceTimeline = {
   events: PerformanceEvent[]; positions: PlaybackPosition[]; durationSeconds: number;
   initialBpm: number; diagnostics: string[];
 };
-export type TimelineOptions = { bpm: number; semitones?: number; musicXml?: string; verovioTimemap?: unknown };
+export type TimelineOptions = {
+  bpm: number; semitones?: number; musicXml?: string; verovioTimemap?: unknown;
+  /**
+   * The complete, unfiltered score when `score` is a view with hidden parts.
+   * Tempo changes, fermata holds and sibling-staff dynamics are read from it so
+   * hiding a part never changes the performance of the parts that remain.
+   */
+  fullScore?: Score;
+};
 
 type Marker = { forward?: boolean; backward?: number; ending?: number[]; dacapo?: boolean; dalsegno?: boolean; tocoda?: boolean; fine?: boolean; segno?: boolean; coda?: boolean };
 type Visit = { measureIndex: number; occurrence: number };
 const EPS = 1e-7;
+/** Extra hold added by a fermata, as a fraction of the held note's length. */
+const FERMATA_HOLD = .5;
+/** Grace notes steal at most this many beats from the beat they ornament. */
+const GRACE_BEATS = .125, GRACE_TOTAL = .25;
 const dynamics: Record<string, number> = { pppp: 20, ppp: 28, pp: 39, p: 52, mp: 66, mf: 82, f: 96, ff: 108, fff: 118, ffff: 124, sf: 112, sfz: 112, fz: 112, fp: 96, sforzando: 112 };
+const NAVIGATION = ['dacapo', 'dalsegno', 'tocoda', 'fine', 'segno', 'coda'];
 
 function xmlChildren(el: Element, name: string): Element[] { return Array.from(el.children).filter(item => item.localName === name); }
 function first(el: Element, name: string): Element | undefined { return xmlChildren(el, name)[0]; }
@@ -34,7 +47,12 @@ function numbers(value: string | null): number[] {
   });
 }
 
-/** MusicXML navigation is read from the original source, never inferred from SVG. */
+/**
+ * MusicXML navigation is read from the source, never inferred from SVG.
+ * Explicit <sound> attributes are authoritative; when a measure has none,
+ * <segno/>/<coda/> glyphs and anchored words ("D.S. al Coda", "To Coda", "Fine")
+ * are used. Words are anchored so "both hands" or "Winds" never trigger D.S.
+ */
 function sourceMarkers(xml: string | undefined, measureCount: number, diagnostics: string[]): Marker[] {
   const markers = Array.from({ length: measureCount }, () => ({} as Marker));
   if (!xml || typeof DOMParser === 'undefined') return markers;
@@ -42,7 +60,7 @@ function sourceMarkers(xml: string | undefined, measureCount: number, diagnostic
   if (doc.getElementsByTagName('parsererror').length) { diagnostics.push('MusicXML navigation could not be parsed.'); return markers; }
   const root = doc.documentElement;
   const sourceMeasures = root.localName === 'score-timewise'
-    ? xmlChildren(root, 'measure')
+    ? xmlChildren(root, 'measure').map(measure => first(measure, 'part') || measure)
     : xmlChildren(first(root, 'part') || root, 'measure');
   let ending: number[] = [];
   sourceMeasures.slice(0, measureCount).forEach((measure, i) => {
@@ -56,30 +74,51 @@ function sourceMarkers(xml: string | undefined, measureCount: number, diagnostic
       if (repeat?.getAttribute('direction') === 'backward') marker.backward = Math.max(2, Math.min(16, Number(repeat.getAttribute('times')) || 2));
     }
     marker.ending = ending.length ? [...ending] : undefined;
-    for (const direction of xmlChildren(measure, 'direction')) {
-      const sound = first(direction, 'sound');
-      if (sound) {
-        if (sound.getAttribute('dacapo') === 'yes') marker.dacapo = true;
-        if (sound.hasAttribute('dalsegno')) marker.dalsegno = true;
-        if (sound.hasAttribute('tocoda')) marker.tocoda = true;
-        if (sound.getAttribute('fine') === 'yes') marker.fine = true;
-        if (sound.hasAttribute('segno')) marker.segno = true;
-        if (sound.hasAttribute('coda')) marker.coda = true;
-      }
-      const words = Array.from(direction.getElementsByTagName('*')).filter(item => item.localName === 'words').map(item => item.textContent || '').join(' ');
-      if (/D\.?\s*C\.?\b/i.test(words)) marker.dacapo = true;
-      if (/D\.?\s*S\.?\b/i.test(words)) marker.dalsegno = true;
-      if (/\bto\s+coda\b/i.test(words)) marker.tocoda = true;
-      if (/\bfine\b/i.test(words)) marker.fine = true;
-      if (/\bsegno\b/i.test(words)) marker.segno = true;
-      if (/\bcoda\b/i.test(words)) marker.coda = true;
+    const directions = xmlChildren(measure, 'direction');
+    const sounds = [...xmlChildren(measure, 'sound'), ...directions.flatMap(direction => xmlChildren(direction, 'sound'))];
+    const explicit = sounds.some(sound => NAVIGATION.some(name => sound.hasAttribute(name)));
+    for (const sound of sounds) {
+      if (sound.getAttribute('dacapo') === 'yes') marker.dacapo = true;
+      if (sound.hasAttribute('dalsegno')) marker.dalsegno = true;
+      if (sound.hasAttribute('tocoda')) marker.tocoda = true;
+      if (sound.hasAttribute('fine') && sound.getAttribute('fine') !== 'no') marker.fine = true;
+      if (sound.hasAttribute('segno')) marker.segno = true;
+      if (sound.hasAttribute('coda')) marker.coda = true;
     }
+    let codaGlyph = false;
+    if (!explicit) for (const direction of directions) {
+      const types = xmlChildren(direction, 'direction-type');
+      const words = types.flatMap(type => xmlChildren(type, 'words')).map(item => (item.textContent || '').trim()).filter(Boolean).join(' ').trim();
+      const segnoGlyph = types.some(type => first(type, 'segno'));
+      const hasCodaGlyph = types.some(type => first(type, 'coda'));
+      if (/^(?:D\.\s*C\.?|Da\s+Capo)(?![a-z])/i.test(words)) marker.dacapo = true;
+      else if (/^(?:D\.\s*S\.?|Dal\s+Segno)(?![a-z])/i.test(words)) marker.dalsegno = true;
+      else if (/^to\s*(?:the\s+)?(?:coda|\u{1D10C})/iu.test(words) || (hasCodaGlyph && /^to$/i.test(words))) marker.tocoda = true;
+      else if (/^fine\.?$/i.test(words)) marker.fine = true;
+      else if (/^(?:\u{1D10C}\s*)?coda\.?$/iu.test(words) || words === '\u{1D10C}' || (hasCodaGlyph && !words)) codaGlyph = true;
+      if (segnoGlyph || /^(?:\u{1D10B}\s*)?segno$/iu.test(words) || words === '\u{1D10B}') marker.segno = true;
+    }
+    // A coda glyph printed beside "To Coda" marks the jump, not its target.
+    if (codaGlyph && !marker.tocoda) marker.coda = true;
     for (const barline of xmlChildren(measure, 'barline')) {
       const end = first(barline, 'ending');
       if (end && ['stop', 'discontinue'].includes(end.getAttribute('type') || '') && barline.getAttribute('location') !== 'left') ending = [];
     }
   });
   return markers;
+}
+
+/** The highest ending number of each consecutive group of volta brackets. */
+function lastEndings(markers: Marker[]): number[] {
+  const result = markers.map(() => 0);
+  for (let i = 0; i < markers.length;) {
+    if (!markers[i].ending) { i++; continue; }
+    let j = i, max = 0;
+    while (j < markers.length && markers[j].ending && (j === i || !(markers[j].ending!.includes(1) && !markers[j - 1].ending!.includes(1)))) { max = Math.max(max, ...markers[j].ending!); j++; }
+    for (let k = i; k < j; k++) result[k] = max;
+    i = j;
+  }
+  return result;
 }
 
 function traverse(markers: Marker[], diagnostics: string[]): Visit[] {
@@ -90,14 +129,15 @@ function traverse(markers: Marker[], diagnostics: string[]): Visit[] {
   let steps = 0;
   const limit = Math.max(64, count * 16);
   const segno = markers.findIndex(marker => marker.segno);
-  const coda = markers.findIndex(marker => marker.coda);
+  const finalEnding = lastEndings(markers);
   const occurrences = new Map<number, number>();
   while (index >= 0 && index < count && steps++ < limit) {
     const marker = markers[index];
     if (!marker.ending && index > 0 && markers[index - 1].ending) trailingPass = 1;
-    if (marker.forward && !repeatStack.some(repeat => repeat.start === index)) repeatStack.push({ start: index, pass: 1 });
+    if (!jumped && marker.forward && !repeatStack.some(repeat => repeat.start === index)) repeatStack.push({ start: index, pass: 1 });
     const pass = repeatStack.at(-1)?.pass || trailingPass;
-    const endingSkipped = marker.ending?.length && !marker.ending.includes(pass) && !jumped;
+    // After D.C./D.S. repeats are not taken, so only the final ending plays.
+    const endingSkipped = Boolean(marker.ending?.length && !marker.ending.includes(jumped ? finalEnding[index] : pass));
     if (!endingSkipped) {
       const occurrence = occurrences.get(index) || 0;
       occurrences.set(index, occurrence + 1);
@@ -110,14 +150,19 @@ function traverse(markers: Marker[], diagnostics: string[]): Visit[] {
       trailingPass = repeat.pass;
       repeatStack.pop();
     }
-    if (!jumped && (marker.dacapo || marker.dalsegno)) {
+    if (!endingSkipped && !jumped && (marker.dacapo || marker.dalsegno)) {
       jumped = true; trailingPass = 1; repeatStack.length = 0;
       if (marker.dalsegno && segno < 0) diagnostics.push('D.S. has no segno; restarted from the beginning.');
       index = marker.dalsegno && segno >= 0 ? segno : 0;
       continue;
     }
-    if (jumped && marker.tocoda && !codaJumped && coda >= 0) { codaJumped = true; index = coda; continue; }
-    if (jumped && marker.fine) break;
+    if (!endingSkipped && jumped && marker.tocoda && !codaJumped) {
+      const after = markers.findIndex((item, i) => item.coda && i > index);
+      const target = after >= 0 ? after : markers.findIndex(item => item.coda);
+      if (target >= 0) { codaJumped = true; index = target; continue; }
+      diagnostics.push('To Coda has no coda; playback continued.');
+    }
+    if (!endingSkipped && jumped && marker.fine) break;
     index++;
   }
   if (steps >= limit) diagnostics.push('Playback navigation exceeded its safety limit; the score was truncated.');
@@ -136,17 +181,19 @@ function scoreOffsets(score: Score): number[] {
 }
 
 type TempoPoint = { beat: number; bpm: number };
-type Articulation = { durationScale: number; velocityDelta: number };
-function sourceArticulations(xml: string | undefined, diagnostics: string[]): Map<string, Articulation> {
-  const result = new Map<string, Articulation>();
+type NoteMark = { durationScale: number; velocityDelta: number; fermata: boolean; silent: boolean };
+function sourceNoteMarks(xml: string | undefined, diagnostics: string[]): Map<string, NoteMark> {
+  const result = new Map<string, NoteMark>();
   if (!xml || typeof DOMParser === 'undefined') return result;
   const doc = new DOMParser().parseFromString(xml, 'application/xml');
   if (doc.getElementsByTagName('parsererror').length) return result;
   for (const note of Array.from(doc.getElementsByTagName('*')).filter(el => el.localName === 'note')) {
     const id = note.getAttribute('id');
     const notations = first(note, 'notations');
-    if (!notations) continue;
-    const art = first(notations, 'articulations');
+    // Cue notes are engraved for reference only and never sound.
+    const silent = Boolean(first(note, 'cue'));
+    if (!notations && !silent) continue;
+    const art = notations && first(notations, 'articulations');
     const names = art ? Array.from(art.children).map(el => el.localName) : [];
     let durationScale = 1, velocityDelta = 0;
     if (names.includes('staccatissimo')) durationScale = .25;
@@ -155,10 +202,11 @@ function sourceArticulations(xml: string | undefined, diagnostics: string[]): Ma
     else if (names.includes('tenuto')) durationScale = .96;
     if (names.includes('strong-accent')) velocityDelta = 18;
     else if (names.includes('accent')) velocityDelta = 12;
-    if (first(notations, 'fermata')) durationScale *= 1.5;
-    if (id && (durationScale !== 1 || velocityDelta)) result.set(id, { durationScale, velocityDelta });
-    else if (!id && (durationScale !== 1 || velocityDelta)) diagnostics.push('Some articulations lack MusicXML note IDs and could not be mapped to sound.');
-    if (first(notations, 'ornaments')) diagnostics.push('Ornaments are engraved but not synthesized.');
+    const fermata = Boolean(notations && first(notations, 'fermata'));
+    const meaningful = durationScale !== 1 || velocityDelta || fermata || silent;
+    if (id && meaningful) result.set(id, { durationScale, velocityDelta, fermata, silent });
+    else if (!id && meaningful) diagnostics.push('Some articulations lack MusicXML note IDs and could not be mapped to sound.');
+    if (notations && first(notations, 'ornaments')) diagnostics.push('Ornaments are engraved but not synthesized.');
   }
   if (Array.from(doc.getElementsByTagName('*')).some(el => el.localName === 'pedal')) diagnostics.push('Pedal marks are engraved but pedal sustain is not synthesized.');
   return result;
@@ -166,7 +214,7 @@ function sourceArticulations(xml: string | undefined, diagnostics: string[]): Ma
 function tempoPoints(score: Score, offsets: number[], diagnostics: string[]): TempoPoint[] {
   const byBeat = new Map<number, number>();
   for (const part of score.parts) for (const measure of part.measures) for (const direction of measure.directions || []) {
-    if (direction.tempo && direction.tempo > 0) {
+    if (direction.tempo && direction.tempo > 0 && offsets[measure.index] !== undefined) {
       const beat = offsets[measure.index] + direction.start;
       const old = byBeat.get(beat);
       if (old && Math.abs(old - direction.tempo) > EPS) diagnostics.push(`Conflicting tempos at score beat ${beat}; first part wins.`);
@@ -183,37 +231,63 @@ function tempoAt(points: TempoPoint[], beat: number): number {
   return bpm;
 }
 
+/** MusicXML <sound dynamics> is a percentage of forte, which is MIDI velocity 90. */
 function directionVelocity(direction: ScoreDirection): number | undefined {
-  if (direction.soundDynamics !== undefined && Number.isFinite(direction.soundDynamics)) return Math.max(1, Math.min(127, Math.round(direction.soundDynamics * 1.27)));
+  if (direction.soundDynamics !== undefined && Number.isFinite(direction.soundDynamics)) return Math.max(1, Math.min(127, Math.round(direction.soundDynamics * .9)));
   for (const symbol of direction.symbols || []) if (dynamics[symbol] !== undefined) return dynamics[symbol];
   return undefined;
 }
-function velocityFor(part: Part, measureIndex: number, noteStart: number, voice: string, offsets: number[]): number {
-  let value = 82;
-  const targetBeat = offsets[measureIndex] + noteStart;
+
+type DynamicPoint = { beat: number; staffId: string; voice?: string; velocity?: number; wedge?: { type: string; number: string } };
+/** The source part (not staff) a Score part came from; piano staves share dynamics. */
+function sourcePartId(score: Score, part: Part): string {
+  return score.document?.identity?.staffIdToSource?.[part.id]?.partId || part.id;
+}
+function dynamicPoints(score: Score, offsets: number[]): Map<string, DynamicPoint[]> {
+  const groups = new Map<string, DynamicPoint[]>();
+  for (const part of score.parts) {
+    const list = groups.get(sourcePartId(score, part)) || [];
+    groups.set(sourcePartId(score, part), list);
+    for (const measure of part.measures) {
+      const offset = offsets[measure.index];
+      if (offset === undefined) continue;
+      const directions = measure.directions || [];
+      const explicit = directions.some(direction => direction.symbols?.length || direction.soundDynamics !== undefined);
+      for (const direction of directions) {
+        const velocity = directionVelocity(direction);
+        if (velocity !== undefined || direction.wedge) list.push({ beat: offset + direction.start, staffId: part.id, voice: direction.voice, velocity, wedge: direction.wedge });
+      }
+      // Older imports only filled measure.dynamics; directions win when present.
+      if (!explicit) for (const mark of measure.dynamics || []) {
+        if (dynamics[mark.symbol] !== undefined) list.push({ beat: offset + mark.start, staffId: part.id, velocity: dynamics[mark.symbol] });
+      }
+    }
+  }
+  for (const list of groups.values()) list.sort((a, b) => a.beat - b.beat);
+  return groups;
+}
+function velocityFor(points: DynamicPoint[], staffId: string, targetBeat: number, voice: string): number {
+  let value = 82, valueBeat = -Infinity, valueOwn = false;
   const openWedges = new Map<string, { start: number; velocity: number; type: string }>();
   const completed: { start: number; end: number; velocity: number; type: string }[] = [];
-  for (const measure of part.measures) {
-    if (measure.index > measureIndex) break;
-    for (const direction of measure.directions || []) {
-      if (measure.index === measureIndex && direction.start > noteStart + EPS) continue;
-      if (direction.voice && direction.voice !== voice) continue;
-      if (direction.wedge) {
-        const key = direction.wedge.number;
-        const type = direction.wedge.type;
-        const beat = offsets[measure.index] + direction.start;
-        if (type === 'crescendo' || type === 'diminuendo') openWedges.set(key, { start: beat, velocity: value, type });
-        else if (type === 'stop') {
-          const open = openWedges.get(key);
-          if (open) { completed.push({ ...open, end: beat }); openWedges.delete(key); }
-        }
+  for (const point of points) {
+    if (point.beat > targetBeat + EPS) break;
+    const own = point.staffId === staffId;
+    // Voice-specific marks only filter notes on their own staff.
+    if (own && point.voice && point.voice !== voice) continue;
+    if (point.wedge) {
+      const key = `${point.staffId}:${point.wedge.number}`;
+      const type = point.wedge.type;
+      if (type === 'crescendo' || type === 'diminuendo') openWedges.set(key, { start: point.beat, velocity: value, type });
+      else if (type === 'stop') {
+        const open = openWedges.get(key);
+        if (open) { completed.push({ ...open, end: point.beat }); openWedges.delete(key); }
       }
-      value = directionVelocity(direction) ?? value;
     }
-    for (const direction of measure.dynamics || []) {
-      if (measure.index === measureIndex && direction.start > noteStart + EPS) continue;
-      value = dynamics[direction.symbol] ?? value;
-    }
+    if (point.velocity === undefined) continue;
+    // At the same instant, a mark on the note's own staff beats a sibling staff's.
+    if (Math.abs(point.beat - valueBeat) < EPS && valueOwn && !own) continue;
+    value = point.velocity; valueBeat = point.beat; valueOwn = own;
   }
   const wedge = [...completed, ...[...openWedges.values()].map(open => ({ ...open, end: targetBeat + 4 }))].find(span => span.start <= targetBeat && span.end > targetBeat);
   if (wedge) {
@@ -223,23 +297,29 @@ function velocityFor(part: Part, measureIndex: number, noteStart: number, voice:
   return Math.max(1, Math.min(127, value));
 }
 
+/** Prefer the identified partwise engraving text: it carries generated note IDs and normalized timewise layout. */
 function documentXml(score: Score): string | undefined {
-  const document = (score as Score & { document?: { originalText?: string; engravingText?: string; format?: string } }).document;
-  const xml = document?.originalText || document?.engravingText;
-  return xml && /<\s*(?:\w+:)?score-(?:partwise|timewise)\b/.test(xml) ? xml : undefined;
+  const document = score.document;
+  for (const xml of [document?.engravingText, document?.originalText]) {
+    if (xml && /<\s*(?:\w+:)?score-(?:partwise|timewise)\b/.test(xml)) return xml;
+  }
+  return undefined;
 }
 
 /** Build one ordered performed timeline, with source tempo scaled by the displayed BPM. */
 export function buildPerformanceTimeline(score: Score, options: TimelineOptions): PerformanceTimeline {
   const diagnostics: string[] = [];
+  const full = options.fullScore && options.fullScore.parts.length ? options.fullScore : score;
   const count = score.parts[0]?.measures.length || 0;
   const offsets = scoreOffsets(score);
-  const points = tempoPoints(score, offsets, diagnostics);
+  const points = tempoPoints(full, offsets, diagnostics);
   const initialBpm = tempoAt(points, 0);
   const requestedBpm = Number.isFinite(options.bpm) && options.bpm > 0 ? options.bpm : initialBpm;
   const tempoScale = requestedBpm / initialBpm;
-  const xml = options.musicXml || documentXml(score);
-  const articulations = sourceArticulations(xml, diagnostics);
+  const xml = options.musicXml || documentXml(score) || documentXml(full);
+  const marks = sourceNoteMarks(xml, diagnostics);
+  const markFor = (note: { sourceId?: string; pitches: (Pitch & { sourceId?: string })[] }) => [note.sourceId, ...note.pitches.map(p => p.sourceId)].map(id => id ? marks.get(id) : undefined).find((item): item is NoteMark => Boolean(item));
+  const dynamicGroups = dynamicPoints(full, offsets);
   const visits = traverse(sourceMarkers(xml, count, diagnostics), diagnostics);
   const events: PerformanceEvent[] = [];
   const positions: PlaybackPosition[] = [];
@@ -252,33 +332,82 @@ export function buildPerformanceTimeline(score: Score, options: TimelineOptions)
     const offset = offsets[measureIndex];
     const localTempos = points.filter(point => point.beat > offset + EPS && point.beat < offset + length - EPS);
     const boundaries = [0, ...localTempos.map(point => point.beat - offset), length];
-    const times = [elapsed];
+    const times = [0];
     for (let i = 1; i < boundaries.length; i++) {
       const bpm = tempoAt(points, offset + boundaries[i - 1] + EPS) * tempoScale;
       times.push(times[i - 1] + (boundaries[i] - boundaries[i - 1]) * 60 / bpm);
     }
-    const secondsAt = (beat: number) => {
+    const baseAt = (beat: number) => {
       const limited = Math.max(0, Math.min(length, beat));
       let segment = boundaries.length - 2;
       for (let i = 0; i < boundaries.length - 1; i++) if (limited < boundaries[i + 1] - EPS) { segment = i; break; }
-      return times[segment] + (limited - boundaries[segment]) * 60 / (tempoAt(points, offset + boundaries[segment] + EPS) * tempoScale);
+      return elapsed + times[segment] + (limited - boundaries[segment]) * 60 / (tempoAt(points, offset + boundaries[segment] + EPS) * tempoScale);
     };
-    if (previousMeasure >= 0 && measureIndex !== previousMeasure + 1) openTies.clear();
-    boundaries.forEach((beat, i) => positions.push({ seconds: times[i], scoreBeat: offset + beat, measureIndex, occurrence: visit.occurrence, measureBeat: beat, noteId: null, activeNoteIds: [] }));
+    const secondsPerBeat = (beat: number) => 60 / (tempoAt(points, offset + beat + EPS) * tempoScale);
+    // Fermatas hold the music: time is inserted where the shortest held note of
+    // each fermata onset ends, so later notes wait instead of overlapping.
+    const fermataStarts = new Map<string, { start: number; duration: number }>();
+    for (const part of full.parts) for (const note of part.measures[measureIndex]?.notes || []) {
+      if (note.grace || note.duration <= 0 || !markFor(note)?.fermata) continue;
+      const key = note.start.toFixed(6);
+      const old = fermataStarts.get(key);
+      if (!old || note.duration < old.duration) fermataStarts.set(key, { start: note.start, duration: note.duration });
+    }
+    const holdMap = new Map<string, { beat: number; seconds: number }>();
+    for (const { start, duration } of fermataStarts.values()) {
+      const beat = Math.min(length, start + duration);
+      const seconds = (baseAt(beat) - baseAt(start)) * FERMATA_HOLD;
+      const key = beat.toFixed(6);
+      holdMap.set(key, { beat, seconds: Math.max(seconds, holdMap.get(key)?.seconds || 0) });
+    }
+    const holds = [...holdMap.values()].sort((a, b) => a.beat - b.beat);
+    const heldBefore = (beat: number, inclusive: boolean) => holds.reduce((sum, hold) => sum + (hold.beat < beat - EPS || (inclusive && hold.beat <= beat + EPS) ? hold.seconds : 0), 0);
+    const secondsAt = (beat: number) => baseAt(beat) + heldBefore(beat, true);
+
+    const jumpedHere = previousMeasure >= 0 && measureIndex !== previousMeasure + 1;
+    // Ties survive a repeat/D.S. jump only if the target note stops the tie.
+    const carried = jumpedHere ? new Map(openTies) : undefined;
+    const positionBeats = [...new Set([...boundaries, ...holds.map(hold => hold.beat)].map(beat => beat.toFixed(9)))].map(Number).sort((a, b) => a - b);
+    for (const beat of positionBeats) {
+      const base = { scoreBeat: offset + beat, measureIndex, occurrence: visit.occurrence, measureBeat: beat, noteId: null, activeNoteIds: [] };
+      if (holds.some(hold => Math.abs(hold.beat - beat) < 1e-6)) positions.push({ ...base, seconds: baseAt(beat) + heldBefore(beat, false) });
+      positions.push({ ...base, seconds: secondsAt(beat) });
+    }
     for (const part of score.parts) {
       const measure = part.measures[measureIndex];
       if (!measure) continue;
+      const graceGroups = new Map<string, string[]>();
+      for (const note of measure.notes) if (note.grace) {
+        const key = `${note.voice || '1'}:${note.start.toFixed(6)}`;
+        graceGroups.set(key, [...(graceGroups.get(key) || []), note.id]);
+      }
+      const graceBeat = (n: number) => Math.min(GRACE_BEATS, GRACE_TOTAL / Math.max(1, n));
+      const dynamicList = dynamicGroups.get(sourcePartId(full, part)) || dynamicGroups.get(part.id) || [];
       for (const note of measure.notes) {
         if (note.rest || !note.pitches.length) continue;
         if (note.duration <= 0 && !note.grace) continue;
         const voice = note.voice || '1';
-        const hasOpeningGrace = !note.grace && note.start === 0 && measure.notes.some(other => other.grace && other.start === 0 && (other.voice || '1') === voice);
-        const start = secondsAt(note.grace ? Math.max(0, note.start - .125) : note.start) + (hasOpeningGrace ? .125 * 60 / (tempoAt(points, offset) * tempoScale) : 0);
-        const end = note.grace ? Math.max(start + .06, secondsAt(note.start) + (note.start === 0 ? .125 * 60 / (tempoAt(points, offset) * tempoScale) : 0)) : secondsAt(note.start + note.duration);
+        let start: number, end: number;
+        if (note.grace) {
+          const group = graceGroups.get(`${voice}:${note.start.toFixed(6)}`) || [note.id];
+          const n = group.length, i = Math.max(0, group.indexOf(note.id));
+          const step = graceBeat(n) * secondsPerBeat(note.start);
+          const principal = secondsAt(note.start);
+          // Graces on the downbeat delay their principal; others steal from the previous beat.
+          if (note.start <= EPS) { start = principal + i * step; end = principal + (i + 1) * step; }
+          else { start = Math.max(baseAt(0), principal - (n - i) * step); end = principal - (n - i - 1) * step; }
+          end = Math.max(start + .03, end);
+        } else {
+          const opening = note.start <= EPS ? (graceGroups.get(`${voice}:${note.start.toFixed(6)}`)?.length || 0) : 0;
+          start = secondsAt(note.start) + (opening ? opening * graceBeat(opening) * secondsPerBeat(0) : 0);
+          end = secondsAt(note.start + note.duration);
+        }
+        const mark = markFor(note);
+        if (mark?.silent) continue;
         note.pitches.forEach((pitch: Pitch & { sourceId?: string }, pitchIndex) => {
           const midi = soundingMidi(part, measure, pitch, options.semitones || 0);
-          const mark = articulations.get(pitch.sourceId || '') || articulations.get((note as typeof note & { sourceId?: string }).sourceId || '');
-          const soundingEnd = start + (end - start) * (mark?.durationScale ?? 1);
+          const pitchMark = (pitch.sourceId ? marks.get(pitch.sourceId) : undefined) || mark;
+          const soundingEnd = start + (end - start) * (pitchMark?.durationScale ?? 1);
           const tieKey = `${part.id}:${voice}:${midi}`;
           const old = openTies.get(tieKey);
           if (pitch.tieStop && old) {
@@ -295,7 +424,7 @@ export function buildPerformanceTimeline(score: Score, options: TimelineOptions)
             pitchId: pitch.sourceId || `${note.id}:${pitchIndex}`, pitchIndex, partId: part.id, voice,
             measureIndex, occurrence: visit.occurrence, scoreBeat: offset + note.start,
             endScoreBeat: offset + note.start + note.duration, startSeconds: start, endSeconds: soundingEnd,
-            midi, velocity: Math.max(1, Math.min(127, velocityFor(part, measureIndex, note.start, voice, offsets) + (mark?.velocityDelta || 0))), visualNoteIds: [note.id],
+            midi, velocity: Math.max(1, Math.min(127, velocityFor(dynamicList, part.id, offset + note.start, voice) + (pitchMark?.velocityDelta || 0))), visualNoteIds: [note.id],
             visualSegments: [{ noteId: note.id, startSeconds: start, endSeconds: soundingEnd }],
           };
           events.push(event);
@@ -303,7 +432,8 @@ export function buildPerformanceTimeline(score: Score, options: TimelineOptions)
         });
       }
     }
-    elapsed = times.at(-1) || elapsed;
+    if (carried) for (const [key, event] of carried) if (openTies.get(key) === event) openTies.delete(key);
+    elapsed = secondsAt(length);
     previousMeasure = measureIndex;
   }
   events.sort((a, b) => a.startSeconds - b.startSeconds || a.partId.localeCompare(b.partId) || a.pitchIndex - b.pitchIndex);
@@ -328,7 +458,9 @@ export function buildPerformanceTimeline(score: Score, options: TimelineOptions)
       }
     }
   }
-  return { events, positions, durationSeconds: elapsed, initialBpm, diagnostics: [...new Set(diagnostics)] };
+  let durationSeconds = elapsed;
+  for (const event of events) if (event.endSeconds > durationSeconds) durationSeconds = event.endSeconds;
+  return { events, positions, durationSeconds, initialBpm, diagnostics: [...new Set(diagnostics)] };
 }
 
 /** Includes sustained notes; useful for cursor, highlights, seek and resume. */

@@ -13,5 +13,7 @@ declare module 'verovio/esm' {
     getPageCount(): number;
     renderToSVG(page?: number): string;
     renderToTimemap(options?: Record<string, unknown>): unknown;
+    resetOptions(): void;
+    resetXmlIdSeed(seed: number): void;
   }
 }
