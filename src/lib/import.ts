@@ -402,6 +402,9 @@ export async function parseAbc(text: string): Promise<Score> {
   let pendingStart: MeasureNavigation = {};
   let openEnding: number[] | undefined;
   let lastFilled: Measure | undefined;
+  /** Coda signs written on a barline: the measure the barline ends and the one it starts. */
+  const barlineCodas: { before: Measure; after?: Measure }[] = [];
+  let pendingBarlineCoda: { before: Measure; after?: Measure } | undefined;
   const navigationWords = (item: any): NavigationWord[] => [
     ...(item.decoration || []).map((name: string) => abcDecorationWord(name)),
     ...(item.chord || []).map((chord: { name?: string }) => navigationWord(chord.name || '')),
@@ -427,6 +430,7 @@ export async function parseAbc(text: string): Promise<Score> {
           if (end && ['bar_right_repeat', 'bar_dbl_repeat'].includes(item.type)) end.repeatEnd = true;
           // A mark on a bar ends the measure before it, except segno/coda, which start the next one.
           for (const word of navigationWords(item)) applyWord(word, pendingStart, end);
+          if (lastFilled && navigationWords(item).includes('coda')) barlineCodas.push(pendingBarlineCoda = { before: lastFilled });
           if (item.endEnding) openEnding = undefined;
           if (['bar_left_repeat', 'bar_dbl_repeat'].includes(item.type)) pendingStart.repeatStart = true;
           if (item.startEnding) openEnding = endingNumbers(String(item.startEnding));
@@ -455,6 +459,7 @@ export async function parseAbc(text: string): Promise<Score> {
         if (!current.notes.length) {
           Object.assign(nav(current), pendingStart);
           pendingStart = {};
+          if (pendingBarlineCoda) { pendingBarlineCoda.after = current; pendingBarlineCoda = undefined; }
           if (openEnding?.length) nav(current).endings = [...openEnding];
         }
         for (const word of navigationWords(item)) applyWord(word, nav(current), nav(current));
@@ -479,7 +484,16 @@ export async function parseAbc(text: string): Promise<Score> {
     });
   });
   const navigation = parts[0]?.measures.map(m => m.navigation || {}) || [];
+  const measureIndex = (measure?: Measure) => measure ? parts[0]?.measures.indexOf(measure) ?? -1 : -1;
+  const wasToCoda = barlineCodas.map(pair => Boolean(navigation[measureIndex(pair.after)]?.toCoda));
   resolveCodaSigns(navigation);
+  // A barline coda sign that became To Coda is the jump at that barline: it ends the measure before it.
+  barlineCodas.forEach((pair, i) => {
+    const before = measureIndex(pair.before), after = measureIndex(pair.after);
+    if (before < 0 || after < 0 || wasToCoda[i] || !navigation[after].toCoda) return;
+    delete navigation[after].toCoda;
+    navigation[before].toCoda = true;
+  });
   const score = normalized({ title: tune.metaText?.title || '', subtitle: tune.lines.find((line: any) => line.subtitle)?.subtitle?.text || '', composer: tune.metaText?.composer || '', source: 'ABC', tempo: Number(tune.metaText?.tempo?.bpm) || 100, beats, beatType, key, parts });
   attachNavigation(score, navigation);
   score.document = makeSourceDocument({ format: 'abc', engravingFormat: 'mei', originalText: text, engravingText: scoreToMei(score), identity: identityForScore(score) });

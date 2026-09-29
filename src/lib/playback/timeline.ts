@@ -2,7 +2,7 @@ import type { Part, Pitch, Score, ScoreDirection } from '../score';
 import { soundingMidi } from '../transpose';
 import { musicXmlTextNavigation } from '../notation/navigation';
 import { fractionValue } from './fraction';
-import { buildRoadmap, measureLengths, resolveRoadmap, roadmapFromNavigation, type ResolvedSegment, type Roadmap } from './roadmap';
+import { buildRoadmap, generatedSegments, measureLengths, resolveRoadmap, roadmapFromNavigation, type ResolvedSegment, type Roadmap } from './roadmap';
 
 /** A sounding pitch. Repeated visits to a written note have separate occurrences. */
 export type PerformanceEvent = {
@@ -297,7 +297,8 @@ export function buildPerformanceTimeline(score: Score, options: TimelineOptions)
     : buildRoadmap(full, diagnostics);
   const override = options.roadmap ? resolveRoadmap(options.roadmap, exactLengths, diagnostics) : undefined;
   const roadmap = override ? options.roadmap! : built;
-  const performedSlices = slices(override || resolveRoadmap(built, exactLengths, diagnostics) || [], lengths);
+  // Only a user override is validated; a rejected one falls back to the generated roadmap, which always plays.
+  const performedSlices = slices(override || generatedSegments(built), lengths);
   const pedals = sourcePedals(xml, diagnostics);
   /** Pedal changes in performed time, per source part, in performed order. */
   const performedPedals = new Map<string, { seconds: number; kind: PedalChange['kind'] }[]>();

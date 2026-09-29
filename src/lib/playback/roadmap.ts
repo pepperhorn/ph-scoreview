@@ -29,11 +29,39 @@ export function measureLengths(score: Score): Fraction[] {
   });
 }
 
+type Cut = { at: Fraction; start?: boolean; end?: number; inferred?: boolean };
+
+/**
+ * Barline repeats recorded at a measure edge belong to the neighbouring
+ * barline: a repeat end at beat 0 closes the previous measure, and a repeat
+ * start at the bar end opens the next one. Returns, per measure, the repeat
+ * start/end carried onto its own edges.
+ */
+function edgeRepeats(navigation: (MeasureNavigation | undefined)[], lengths: Fraction[], diagnostics: string[]): { start?: boolean; end?: number; inferred?: boolean }[] {
+  const edges = lengths.map(() => ({} as { start?: boolean; end?: number; inferred?: boolean }));
+  lengths.forEach((length, bar) => {
+    for (const barline of navigation[bar]?.barlines || []) {
+      const at = parseFraction(barline.beat);
+      if (!at || compareFraction(length, ZERO) <= 0) continue;
+      if (barline.repeatEnd && compareFraction(at, ZERO) === 0) {
+        if (bar > 0) { edges[bar - 1].end = barline.repeatTimes || 2; edges[bar - 1].inferred = !barline.repeatTimes; }
+        else diagnostics.push('A repeat end at the score start has nothing to repeat; it was ignored.');
+      }
+      if (barline.repeatStart && compareFraction(at, length) === 0) {
+        if (bar + 1 < lengths.length) edges[bar + 1].start = true;
+        else diagnostics.push('A repeat start at the score end has nothing to repeat; it was ignored.');
+      }
+    }
+  });
+  return edges;
+}
+
 function units(navigation: (MeasureNavigation | undefined)[], lengths: Fraction[], diagnostics: string[]): Unit[] {
   const result: Unit[] = [];
+  const edges = edgeRepeats(navigation, lengths, diagnostics);
   lengths.forEach((length, bar) => {
     const nav = navigation[bar] || {};
-    const cuts = new Map<string, { at: Fraction; start?: boolean; end?: number; inferred?: boolean }>();
+    const cuts = new Map<string, Cut>();
     for (const barline of nav.barlines || []) {
       const at = parseFraction(barline.beat);
       if (!at || compareFraction(at, ZERO) < 0 || compareFraction(at, length) > 0) { diagnostics.push(`A repeat barline at beat ${barline.beat} lies outside measure ${bar + 1}; it was ignored.`); continue; }
@@ -43,6 +71,7 @@ function units(navigation: (MeasureNavigation | undefined)[], lengths: Fraction[
       if (barline.repeatEnd) { cut.end = barline.repeatTimes || 2; cut.inferred = !barline.repeatTimes; }
       cuts.set(key, cut);
     }
+    const edge = edges[bar];
     const inner = [...cuts.values()].filter(cut => compareFraction(cut.at, ZERO) > 0 && compareFraction(cut.at, length) < 0).sort((a, b) => compareFraction(a.at, b.at));
     const atStart = cuts.get('0'), atEnd = cuts.get(formatFraction(length));
     const points = [ZERO, ...inner.map(cut => cut.at), length];
@@ -55,9 +84,10 @@ function units(navigation: (MeasureNavigation | undefined)[], lengths: Fraction[
       result.push(unit);
     }
     const head = result[first], tail = result[result.length - 1];
-    if (nav.repeatStart || atStart?.start) head.repeatStart = true;
+    if (nav.repeatStart || atStart?.start || edge.start) head.repeatStart = true;
     if (nav.repeatEnd) { tail.repeatEnd = Math.max(2, Math.min(16, nav.repeatTimes || 2)); tail.repeatInferred = !nav.repeatTimes; }
     else if (atEnd?.end) { tail.repeatEnd = atEnd.end; tail.repeatInferred = atEnd.inferred; }
+    else if (edge.end) { tail.repeatEnd = edge.end; tail.repeatInferred = edge.inferred; }
     if (nav.segno) head.segno = true;
     if (nav.coda) head.coda = true;
     for (const key of ['toCoda', 'daCapo', 'dalSegno', 'fine'] as const) if (nav[key]) tail[key] = true;
@@ -88,7 +118,11 @@ function traverse(list: Unit[], diagnostics: string[]): Visit[] {
   const visits: Visit[] = [];
   const count = list.length;
   let index = 0, trailingPass = 1, jumped = false, codaJumped = false;
-  const repeatStack: { start: number; pass: number }[] = [];
+  const repeatStack: { start: number; pass: number; implicit?: boolean }[] = [];
+  /** The unit of the last completed repeat end: a backward repeat with no forward repeat goes back to just after it. */
+  let lastRepeatEnd = -1;
+  /** Backward repeats with no forward repeat that already played out; they are never taken again. */
+  const spentImplicit = new Set<number>();
   let steps = 0;
   const limit = Math.max(64, count * 16);
   const segno = list.findIndex(unit => unit.segno);
@@ -101,14 +135,16 @@ function traverse(list: Unit[], diagnostics: string[]): Visit[] {
     const taken = jumped ? finalEnding[index] : pass;
     const endingSkipped = Boolean(unit.endings?.length && !unit.endings.includes(taken));
     if (!endingSkipped) visits.push({ unit: index, pass: jumped ? 1 : pass, ending: unit.endings?.length ? taken : undefined });
-    if (!jumped && unit.repeatEnd) {
-      if (!repeatStack.length) repeatStack.push({ start: 0, pass: 1 });
+    if (!jumped && unit.repeatEnd && !(spentImplicit.has(index) && !repeatStack.length)) {
+      if (!repeatStack.length) repeatStack.push({ start: lastRepeatEnd < index ? lastRepeatEnd + 1 : 0, pass: 1, implicit: true });
       const repeat = repeatStack.at(-1)!;
       // An unnumbered repeat that closes an ending repeats until the group's last ending.
       const times = unit.repeatInferred && unit.endings?.length ? Math.max(unit.repeatEnd, Math.min(16, finalEnding[index])) : unit.repeatEnd;
       if (!endingSkipped && repeat.pass < times) { repeat.pass++; index = repeat.start; continue; }
       trailingPass = repeat.pass;
       repeatStack.pop();
+      if (repeat.implicit) spentImplicit.add(index);
+      lastRepeatEnd = index;
     }
     if (!endingSkipped && !jumped && (unit.daCapo || unit.dalSegno)) {
       jumped = true; trailingPass = 1; repeatStack.length = 0;
@@ -138,6 +174,8 @@ export function roadmapFromNavigation(navigation: (MeasureNavigation | undefined
   let previous = -2;
   for (const visit of traverse(list, diagnostics)) {
     const unit = list[visit.unit];
+    // A zero-length stretch plays nothing: it never starts a segment, and a jump into one breaks continuity.
+    if (compareFraction(unit.from, unit.to) >= 0) { previous = visit.unit === previous + 1 ? visit.unit : -2; continue; }
     const last = segments.at(-1);
     if (last && visit.unit === previous + 1) {
       last.to = pos(unit.bar, unit.to);
@@ -159,6 +197,12 @@ export function buildRoadmap(score: Score, diagnostics: string[] = []): Roadmap 
 }
 
 export type ResolvedSegment = { from: { bar: number; beat: Fraction }; to: { bar: number; beat: Fraction } };
+
+/** The segments of a generated roadmap (built by roadmapFromNavigation, so already valid), without validation. */
+export function generatedSegments(roadmap: Roadmap): ResolvedSegment[] {
+  const at = (position: RoadmapPos) => ({ bar: position.bar, beat: parseFraction(position.beat) || ZERO });
+  return roadmap.segments.map(segment => ({ from: at(segment.from), to: at(segment.to) }));
+}
 /**
  * Checks a (possibly user-supplied) roadmap against the score: positions must
  * lie inside their measures, each segment must run forwards, and the total

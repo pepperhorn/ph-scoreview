@@ -315,7 +315,45 @@ try {
     }
     const runaway = buildPerformanceTimeline(endingsScore, { bpm: 60, roadmap: { version: 1, segments: Array.from({ length: 300 }, () => seg(0, '0', 3, '4')) } });
     check(runaway.diagnostics.some(d => d.includes('safety limit')) && order(runaway) === '0,1,0,2,3', 'R7 runaway override capped', runaway.diagnostics);
-    return { failures, checks: 74 };
+    // F1: an ABC coda sign on a barline that resolves to To Coda jumps at that barline, not a bar later.
+    const abcBarCoda = await abcOrder('C4|D2 E2 !coda!|F4|G4 !D.C.!|]!coda!A4|]');
+    check(abcBarCoda === '0,1,2,3,0,1,4', 'F1 ABC barline coda sign jumps at the barline', abcBarCoda);
+    // ...while a coda sign on a barline that is the jump target still marks the start of the following measure.
+    const abcBarTarget = await abcOrder('C4|"^To Coda"D4|E4 !D.C.!|F4 !coda!|G4|]');
+    check(abcBarTarget === '0,1,2,0,1,4', 'F1 ABC barline coda target starts the next measure', abcBarTarget);
+    // F2: edge barlines. A repeat end at beat 0 closes the previous bar; a repeat start at the bar end opens the next.
+    const meiLayer = (body, extra = '') => `<staff n="1"><layer n="1">${body}</layer></staff>${extra}`;
+    const wholeMei = step => `<note pname="${step}" oct="4" dur="1"/>`;
+    const meiEdgeBoth = parseMei(meiDoc('<measure n="1">' + meiLayer(wholeMei('c') + '<barLine form="rptboth"/>') + '</measure><measure n="2" right="rptend">' + meiLayer(wholeMei('d')) + '</measure><measure n="3">' + meiLayer(wholeMei('e')) + '</measure>'));
+    const edgeBoth = buildPerformanceTimeline(meiEdgeBoth, { bpm: 120 });
+    check(order(edgeBoth) === '0,0,1,1,2', 'F2 MEI layer-final rptboth keeps its repeat start', [order(edgeBoth), buildRoadmap(meiEdgeBoth)]);
+    const meiEdgeEnd = parseMei(meiDoc('<measure n="1">' + meiLayer(wholeMei('c')) + '</measure><measure n="2">' + meiLayer('<barLine form="rptend"/>' + wholeMei('d')) + '</measure>'));
+    check(order(buildPerformanceTimeline(meiEdgeEnd, { bpm: 120 })) === '0,0,1', 'F2 MEI layer-initial rptend closes the previous bar', order(buildPerformanceTimeline(meiEdgeEnd, { bpm: 120 })));
+    const mxlEdgeStart = parseMusicXml(single([whole('C') + '<barline location="middle"><repeat direction="forward"/></barline>', whole('D') + '<barline location="right"><repeat direction="backward"/></barline>', whole('E')]));
+    check(order(buildPerformanceTimeline(mxlEdgeStart, { bpm: 120 })) === '0,1,1,2', 'F2 MusicXML middle forward repeat at the bar end opens the next bar', order(buildPerformanceTimeline(mxlEdgeStart, { bpm: 120 })));
+    const meiBoundary = parseMei(meiDoc('<measure n="1">' + meiLayer('<barLine form="rptend"/>' + wholeMei('c')) + '</measure><measure n="2">' + meiLayer(wholeMei('d') + '<barLine form="rptstart"/>') + '</measure>'));
+    const boundary = buildPerformanceTimeline(meiBoundary, { bpm: 120 });
+    check(order(boundary) === '0,1' && boundary.diagnostics.filter(d => /score (start|end)/.test(d)).length === 2, 'F2 edge repeats at score boundaries are diagnosed', [order(boundary), boundary.diagnostics]);
+    // F3: a generated roadmap is never rejected; zero-length stretches are skipped instead.
+    const zNote = (id, midi) => ({ id, start: 0, duration: 4, voice: '1', pitches: [{ midi, step: 'C', octave: 4, alter: 0 }] });
+    const emptyBar = { title: '', source: 'test', tempo: 60, beats: 4, beatType: 4, key: 0, parts: [{ id: 'a', name: 'a', clef: 'treble', instrument: 'piano', measures: [{ index: 0, beats: 4, notes: [zNote('z0', 60)] }, { index: 1, beats: 0, notes: [], navigation: { repeatStart: true, repeatEnd: true, daCapo: true } }, { index: 2, beats: 4, notes: [zNote('z2', 62)] }] }] };
+    const emptyTimeline = buildPerformanceTimeline(emptyBar, { bpm: 60 });
+    check(emptyTimeline.events.map(e => e.midi).join() === '60,60,62' && !emptyTimeline.diagnostics.some(d => d.includes('Roadmap override ignored')) && buildRoadmap(emptyBar).segments.every(s => json(s.from) !== json(s.to)), 'F3 zero-length generated segment is skipped, not rejected', [emptyTimeline.events.map(e => e.midi), emptyTimeline.diagnostics, buildRoadmap(emptyBar)]);
+    const rejected = buildPerformanceTimeline(emptyBar, { bpm: 60, roadmap: { version: 1, segments: [seg(1, '0', 1, '0')] } });
+    check(rejected.events.map(e => e.midi).join() === '60,60,62' && rejected.diagnostics.some(d => d.startsWith('Roadmap override ignored')) && json(rejected.roadmap) === json(buildRoadmap(emptyBar)), 'F3 rejected override falls back to the generated roadmap', [rejected.events.map(e => e.midi), rejected.diagnostics]);
+    // F4: a backward repeat with no forward repeat goes back to just after the previous repeat end, and never loops.
+    const abcSections = await abcOrder('|:A4:|B4|c4:|d4|]');
+    check(abcSections === '0,0,1,2,1,2,3', 'F4 orphan :| after a completed repeat restarts after it', abcSections);
+    const abcOrphan = await abcOrder('A4|B4:|c4|]');
+    check(abcOrphan === '0,1,0,1,2', 'F4 orphan :| with no earlier repeat restarts at the beginning', abcOrphan);
+    const back = (times = '') => '<barline location="right"><repeat direction="backward"' + times + '/></barline>';
+    const thrice = playOrder([whole('C'), whole('D') + back(' times="3"'), whole('E')]);
+    check(thrice === '0,1,0,1,0,1,2', 'F4 orphan :| times=3', thrice);
+    const thriceAfter = playOrder(['<barline location="left"><repeat direction="forward"/></barline>' + whole('C') + back(), whole('D'), whole('E') + back(' times="3"'), whole('F')]);
+    check(thriceAfter === '0,0,1,2,1,2,1,2,3', 'F4 orphan :| times=3 after a completed repeat', thriceAfter);
+    const abcSectionsDc = await abcOrder('|:A4:|B4|c4:|d4 !D.C.!|e4|]');
+    check(abcSectionsDc === '0,0,1,2,1,2,3,0,1,2,3,4', 'F4 repeats are not taken after a D.C.', abcSectionsDc);
+    return { failures, checks: 88 };
   }, { midiBytes });
   assert.deepEqual(review.failures, []);
   console.log(`Playback timeline: ${result.cases} browser fixtures and ${review.checks} review regressions passed; event counts ${result.eventCounts.join(', ')}.`);
