@@ -25,11 +25,15 @@ const url = process.env.READER_URL || `http://127.0.0.1:${server.address().port}
 const browser = await launcher.launch({ headless: true, ...(engine === 'chromium' ? { args: ['--no-sandbox'] } : {}) });
 try {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: engine !== 'firefox' });
-  const errors = [], remote = [];
+  const errors = [], remote = [], consoleLines = [];
+  page.on('console', m => consoleLines.push(`${m.type()}: ${m.text()}`));
   page.on('pageerror', e => errors.push(e.message));
   page.on('request', r => { if (/^https?:/.test(r.url()) && !r.url().startsWith(url)) remote.push(r.url()); });
   await page.addInitScript(() => {
     window.__audioStarts = 0;
+    window.__contexts = [];
+    const Native = window.AudioContext;
+    window.AudioContext = class extends Native { constructor(...args) { super(...args); window.__contexts.push(this); } };
     const start = AudioBufferSourceNode.prototype.start;
     AudioBufferSourceNode.prototype.start = function (...args) { window.__audioStarts++; return start.apply(this, args); };
   });
@@ -83,7 +87,10 @@ try {
   assert.ok(await page.locator('svg .chord.reader-note').count() > 0, 'Chords are the highlight target');
   assert.equal(await page.locator('svg .chord .note.reader-note').count(), 0, 'No single chord notehead is the highlight target');
   await page.getByRole('button', { name: 'Play score', exact: true }).click();
-  await page.waitForFunction(() => document.querySelector('.chord.is-playing'), { timeout: 20000 });
+  await page.waitForFunction(() => document.querySelector('.chord.is-playing'), { timeout: 20000 }).catch(async error => {
+    const state = await page.evaluate(() => ({ contexts: window.__contexts.map(c => ({ state: c.state, time: c.currentTime })), starts: window.__audioStarts, playing: document.querySelectorAll('.is-playing').length, toasts: [...document.querySelectorAll('.toast')].map(t => t.textContent), loading: !!document.querySelector('.audio-loading, [aria-busy=true]') }));
+    throw new Error(`No chord highlighted after Play: ${JSON.stringify(state)}; console: ${consoleLines.slice(-10).join(' | ')}`, { cause: error });
+  });
   const chordFills = await page.evaluate(() => [...document.querySelector('.chord.is-playing').querySelectorAll('.notehead')].map(head => getComputedStyle(head).fill));
   assert.ok(chordFills.length >= 3, 'Sample chord has three noteheads');
   assert.ok(chordFills.every(fill => fill === 'rgb(184, 114, 24)'), `Every chord notehead highlights: ${chordFills}`);
