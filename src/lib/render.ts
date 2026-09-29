@@ -143,7 +143,8 @@ const viewCache = new Map<string, ViewDocument>();
 function viewMei(baseline: string, score: Score, breakEvery: number, hiddenIds: Set<string>, showChordSymbols: boolean): ViewDocument {
   const key = [breakEvery, showChordSymbols, [...hiddenIds].sort().join('\u0001'), score.parts.map(part => part.id).join('\u0001'), baseline].join('\u0000');
   const cached = viewCache.get(key);
-  if (cached) return cached;
+  // The key covers structure only; transposed/concert views reuse it, so return this score's Part objects (their pitches differ).
+  if (cached) { const current = new Map(score.parts.map(part => [part.id, part])); return { ...cached, visibleParts: cached.visibleParts.map(part => current.get(part.id) || part) }; }
   const doc = parseXml(baseline);
   const measures = nodes(doc, 'measure');
   const measureIds = measures.map(xmlIdOf);

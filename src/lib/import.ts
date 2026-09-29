@@ -221,8 +221,16 @@ export function parseMusicXml(text: string): Score {
     parts.push(...Array.from(staffMap.values()).sort((a, b) => Number(a.id.split('-').pop()) - Number(b.id.split('-').pop())));
   }
   // Builder-style scores can contain many placeholder instruments with only
-  // rests. They obscure the playable staves in the continuous reader.
-  const playableParts = parts.filter(part => part.measures.some(measure => measure.notes.some(note => note.pitches.length > 0) || measure.directions?.length));
+  // rests. They obscure the playable staves in the continuous reader. A silent
+  // staff is kept only when its directions shape playback: a tempo, or
+  // dynamics/wedges that apply to a sounding sibling staff of the same part.
+  // Plain words (e.g. a template's "(Easy 3)" label) do not make it playable.
+  const sounding = (part: Part) => part.measures.some(measure => measure.notes.some(note => note.pitches.length > 0));
+  const sourcePart = (part: Part) => part.id.replace(/-\d+$/, '');
+  const soundingSources = new Set(parts.filter(sounding).map(sourcePart));
+  const shapesPlayback = (part: Part) => part.measures.some(measure => measure.directions?.some(direction => (direction.tempo ?? 0) > 0
+    || (soundingSources.has(sourcePart(part)) && (direction.symbols?.length || direction.wedge || direction.soundDynamics !== undefined))));
+  const playableParts = parts.filter(part => sounding(part) || shapesPlayback(part));
   const score = normalized({ title, subtitle, composer, credits: otherCredits, source: 'MusicXML', tempo, beats, beatType, key, parts: playableParts.length ? playableParts : parts });
   score.document = makeSourceDocument({ format: 'musicxml', engravingFormat: 'musicxml', originalText: text, engravingText, identity: identityForScore(score) });
   return score;
