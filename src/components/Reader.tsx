@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, FileMusic, FolderOpen, Minus, Pause, Play, Plus, RotateCcw, SlidersHorizontal, Square, Settings2, VolumeX, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { ChevronDown, ChevronLeft, ChevronRight, Ellipsis, Eye, EyeOff, FileMusic, FolderOpen, Minus, Pause, Play, Plus, RotateCcw, SlidersHorizontal, Square, Settings2, VolumeX, X } from 'lucide-react';
 import { exampleScore, gmSoundfontLabel, GM_FAMILIES, GM_SOUNDS, instrumentDetails, type GmFamily, type GmSound, type Part, type Score } from '../lib/score';
 import { importFile, parseAbc, parseMusicXml } from '../lib/import';
 import { portraitBarLimit, renderScore, type RenderResult } from '../lib/render';
+import { partControlMetrics, type PartControlMetrics } from '../lib/part-controls';
+import { clampStaveScale, HEADER_CONTROLS, MOBILE_HEADER_QUERY, STAVE_SCALE_MAX, STAVE_SCALE_MIN, STAVE_SCALE_STEP, type HeaderControlId } from '../lib/header-controls';
 import { clampBpm, fileSource, MAX_BPM, MIN_BPM, readFileState, writeFileState, type FileSettings, type FileSource } from '../lib/file-state';
 import { scoreForView } from '../lib/transpose';
 import { buildPerformanceTimeline, eventsFromSeconds, positionAtSeconds } from '../lib/playback/timeline';
@@ -39,6 +41,20 @@ type AudioPlayer = {
   loadNotes?(notes: number[]): Promise<void>;
 };
 export type ReaderProps = { musicXml?: string };
+/** Live media-query match; the server snapshot is false, and hydration then switches to the client value. */
+function useMediaQuery(query: string): boolean {
+  const subscribe = useCallback((change: () => void) => {
+    const list = window.matchMedia(query);
+    list.addEventListener('change', change);
+    return () => list.removeEventListener('change', change);
+  }, [query]);
+  return useSyncExternalStore(subscribe, () => window.matchMedia(query).matches, () => false);
+}
+/** The first-system control gutter used for engraving layout; it depends only on width so zooming reuses the cached layout. */
+const layoutGutter = (width: number) => Math.min(190, Math.max(128, Math.round(width * .36)));
+/** The widest control gutter a viewport can spare. */
+const maxControlGutter = (width: number) => Math.max(120, Math.round(width * .42));
+const STAVE_SCALE_COMMIT_MS = 180;
 
 export default function Reader({ musicXml }: ReaderProps) {
   const [score, setScore] = useState<Score>(sampleScore);
@@ -66,7 +82,12 @@ export default function Reader({ musicXml }: ReaderProps) {
   const [position, setPosition] = useState(0);
   const [ready, setReady] = useState(false);
   const [staffCenters, setStaffCenters] = useState<Record<string, number>>({});
-  const [scoreScale, setScoreScale] = useState(1);
+  const [controlMetrics, setControlMetrics] = useState<PartControlMetrics>(() => partControlMetrics(72));
+  const [zoomDraft, setZoomDraft] = useState<number | null>(null);
+  const zoomCommitRef = useRef(0);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+  const compactHeader = useMediaQuery(MOBILE_HEADER_QUERY);
   const [scoreWidth, setScoreWidth] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -116,7 +137,7 @@ export default function Reader({ musicXml }: ReaderProps) {
   useEffect(() => { if (ready) localStorage.setItem('scoreflow-prefs', JSON.stringify(prefs)); }, [prefs, ready]);
   useEffect(() => { if (ready && source) writeFileState(source, prefs, score, hiddenIds, trackVolumes); }, [ready, source, prefs, score, hiddenIds, trackVolumes]);
   const update = (patch: Partial<Prefs>) => {
-    if (['mode', 'notationFont', 'annotationFont', 'barsPerLine', 'names', 'chordSymbols', 'inferChordSymbols', 'counts', 'subdivisions', 'zoom', 'semitones', 'scorePitch'].some(key => key in patch)) setPainting(true);
+    if (['mode', 'notationFont', 'annotationFont', 'barsPerLine', 'names', 'chordSymbols', 'inferChordSymbols', 'counts', 'subdivisions', 'zoom', 'semitones', 'scorePitch'].some(key => key in patch && patch[key as keyof Prefs] !== prefs[key as keyof Prefs])) setPainting(true);
     if (patch.mode && patch.mode !== prefs.mode) viewportRef.current?.scrollTo({ left: 0, top: 0 });
     setPrefs(prev => ({ ...prev, ...patch }));
   };
@@ -181,7 +202,25 @@ export default function Reader({ musicXml }: ReaderProps) {
     viewportRef.current?.scrollTo({ left: 0, top: 0 });
   };
   const resetStaves = () => { stop(true); setPainting(true); setHiddenIds([]); viewportRef.current?.scrollTo({ left: 0, top: 0 }); };
-  const zoomBy = (delta: number) => update({ zoom: Math.max(.5, Math.min(4, Math.round((prefs.zoom + delta) * 4) / 4)) });
+  // The slider label follows the drag at once; the re-render waits until the value settles.
+  const changeStaveScale = (value: number) => {
+    const next = clampStaveScale(value);
+    setZoomDraft(next);
+    window.clearTimeout(zoomCommitRef.current);
+    zoomCommitRef.current = window.setTimeout(() => { setZoomDraft(null); update({ zoom: next }); }, STAVE_SCALE_COMMIT_MS);
+  };
+  useEffect(() => () => window.clearTimeout(zoomCommitRef.current), []);
+  useEffect(() => {
+    if (!compactHeader) setMoreOpen(false);
+  }, [compactHeader]);
+  useEffect(() => {
+    if (!moreOpen) return;
+    const outside = (event: PointerEvent) => { if (!moreRef.current?.contains(event.target as Node)) setMoreOpen(false); };
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') { setMoreOpen(false); moreRef.current?.querySelector<HTMLButtonElement>('.header-more-toggle')?.focus(); } };
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('keydown', escape);
+    return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape); };
+  }, [moreOpen]);
   useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
@@ -206,19 +245,25 @@ export default function Reader({ musicXml }: ReaderProps) {
       try {
         if (disposed) return;
         setScoreWidth(previous => previous === canvas.clientWidth ? previous : canvas.clientWidth);
-        const controlGutter = Math.min(190, Math.max(128, Math.round(canvas.clientWidth * .36)));
+        const many = displayScore.parts.length > 4;
+        const maxGutter = maxControlGutter(canvas.clientWidth);
+        const metricsFor = (stavePx: number, staffPitchPx: number) => partControlMetrics(stavePx, { staffPitchPx, maxGutter, eye: many });
         const metaHeight = canvas.closest('.score-content')?.querySelector('.score-meta')?.getBoundingClientRect().height || 0;
         const availableHeight = Math.max(120, (viewportRef.current?.clientHeight || 600) - metaHeight - 70);
-        const result = await renderScore(canvas, displayScore, prefs.mode, prefs.names, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.chordSymbols, prefs.inferChordSymbols, availableHeight, prefs.zoom, controlGutter, { font: prefs.notationFont, textFont: prefs.annotationFont, transpose: prefs.semitones, scorePitch, hiddenPartIds: hiddenIds, generation });
+        const result = await renderScore(canvas, displayScore, prefs.mode, prefs.names, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.chordSymbols, prefs.inferChordSymbols, availableHeight, prefs.zoom, layoutGutter(canvas.clientWidth), { gutterFor: (stavePx, staffPitchPx) => metricsFor(stavePx, staffPitchPx).gutter, font: prefs.notationFont, textFont: prefs.annotationFont, transpose: prefs.semitones, scorePitch, hiddenPartIds: hiddenIds, generation });
         if (disposed || generation !== renderRunRef.current) return;
         renderRef.current = result;
         setStaffCenters(Object.fromEntries(result.visiblePartIds.map((id, index) => [id, result.staffCenters[index]])));
-        setScoreScale(result.scale);
+        const metrics = metricsFor(result.stavePx, result.staffPitchPx);
+        setControlMetrics(metrics);
         const content = canvas.closest<HTMLElement>('.score-content');
+        // Staff controls size from the rendered stave, so their ratio to it holds at every zoom and fit.
+        content?.style.setProperty('--stave-px', `${result.stavePx.toFixed(2)}px`);
+        content?.style.setProperty('--stave-scale', (result.stavePx / 72).toFixed(4));
         content?.style.setProperty('--landscape-staff-center', `${result.visiblePartIds.length > 4 ? result.systemHeight / 2 : result.staffCenters[0] ?? 74}px`);
         content?.style.setProperty('--landscape-content-width', `${canvas.scrollWidth + 88}px`);
         const stage = canvas.closest<HTMLElement>('.score-stage');
-        stage?.style.setProperty('--control-gutter', `${controlGutter}px`);
+        stage?.style.setProperty('--control-gutter', `${result.gutter}px`);
         setError('');
       } catch (e) { if (!disposed) setError(e instanceof Error ? e.message : 'Could not draw this score.'); }
       finally {
@@ -403,22 +448,39 @@ export default function Reader({ musicXml }: ReaderProps) {
   const pickerPages = Math.ceil(familySounds.length / 16);
   const pickerSounds = familySounds.slice(pickerPage * 16, (pickerPage + 1) * 16);
   const hasScoreText = Boolean(score.title || score.subtitle || score.composer || score.credits?.length);
-  const firstLineWidth = (scoreWidth || 800) - Math.min(190, Math.max(128, Math.round((scoreWidth || 800) * .36)));
+  const firstLineWidth = (scoreWidth || 800) - layoutGutter(scoreWidth || 800);
   const barsLimit = portraitBarLimit(firstLineWidth, visibleScore);
   const barsSetting = prefs.mode === 'portrait' && <label className="header-bars-setting"><span>Bars</span><select aria-label="Bars per line" title={`Auto fits up to ${barsLimit} bars`} value={prefs.barsPerLine} onChange={event => update({ barsPerLine: event.target.value === 'auto' ? 'auto' : Number(event.target.value) })}><option value="auto">Auto</option>{[1, 2, 3, 4].map(count => <option value={count} key={count}>{count}</option>)}</select></label>;
 
+  const staveScale = zoomDraft ?? prefs.zoom;
+  const staveScalePercent = Math.round(staveScale * 100);
+  const headerElements: Record<HeaderControlId, React.ReactNode> = {
+    stop: <button className="icon-button stop-button" aria-label="Stop playback" title="Stop playback" onClick={() => { stop(true); viewportRef.current?.scrollTo({ top: 0, left: 0, behavior: 'smooth' }); }}><Square size={17} fill="currentColor"/></button>,
+    play: <button className="play-button" aria-label={playing || loadingAudio ? 'Pause playback' : 'Play score'} onClick={play}>{playing || loadingAudio ? <Pause size={17} fill="currentColor"/> : <Play size={17} fill="currentColor"/>}<span>{loadingAudio ? 'Loading sounds' : playing ? 'Pause' : 'Play'}</span></button>,
+    openFile: <button className="icon-button header-open-file" aria-label="Open score file" title="Open score file" onClick={() => fileRef.current?.click()}><FolderOpen size={18}/></button>,
+    bpm: <label className="bpm-control"><span>BPM</span><input type="number" min={MIN_BPM} max={MAX_BPM} value={prefs.bpm} onChange={e => { stop(true); update({ bpm: clampBpm(Number(e.target.value) || 96) }); }}/></label>,
+    mode: <div className="mode-toggle" role="group" aria-label="Reading mode"><button aria-label="Vertical view" title="Vertical view" className={prefs.mode === 'portrait' ? 'selected' : ''} onClick={() => update({ mode: 'portrait' })}><span>Vertical</span></button><button aria-label="Endless view" title="Endless view" className={prefs.mode === 'landscape' ? 'selected' : ''} onClick={() => update({ mode: 'landscape' })}><span>Endless</span></button></div>,
+    bars: barsSetting || null,
+    staveScale: <label className="header-stave-scale" title="Stave scale">
+      <span className="header-stave-scale-label">Scale</span>
+      <input className="header-stave-scale-input" type="range" min={STAVE_SCALE_MIN} max={STAVE_SCALE_MAX} step={STAVE_SCALE_STEP} value={staveScale} aria-label="Stave scale" aria-valuetext={`${staveScalePercent}%`} onChange={event => changeStaveScale(Number(event.target.value))}/>
+      <output className="header-stave-scale-value">{staveScalePercent}%</output>
+    </label>,
+    mixer: <button className="icon-button mixer-trigger" aria-label="Track mixer" title="Track mixer" aria-haspopup="dialog" aria-expanded={mixer} onClick={() => { setDrawer(false); setMoreOpen(false); setMixer(true); }}><SlidersHorizontal size={18}/><span className="mixer-trigger-label">Track mixer</span></button>,
+  };
+  const renderControls = (tier: 'primary' | 'secondary') => HEADER_CONTROLS.filter(control => control.tier === tier && headerElements[control.id]).map(control => <div key={control.id} className={`header-control header-control-${control.id}`} data-header-control={control.id}>{headerElements[control.id]}</div>);
+  const primaryControls = renderControls('primary');
+  const secondaryControls = renderControls('secondary');
+
   return <main className="app-shell">
-    <header className={`topbar ${score.parts.length > 4 ? 'has-zoom' : ''}`} aria-label="Playback transport">
+    <header className={`topbar ${compactHeader ? 'is-compact' : ''}`} aria-label="Playback transport">
       <input ref={fileRef} type="file" accept=".xml,.musicxml,.mxl,.mid,.midi,.mei,.abc,.txt" hidden onChange={e => { readFile(e.target.files?.[0]); e.target.value = ''; }}/>
       <div className="transport">
-        <button className="icon-button stop-button" aria-label="Stop playback" title="Stop playback" onClick={() => { stop(true); viewportRef.current?.scrollTo({ top: 0, left: 0, behavior: 'smooth' }); }}><Square size={17} fill="currentColor"/></button>
-        <button className="play-button" aria-label={playing || loadingAudio ? 'Pause playback' : 'Play score'} onClick={play}>{playing || loadingAudio ? <Pause size={17} fill="currentColor"/> : <Play size={17} fill="currentColor"/>}<span>{loadingAudio ? 'Loading sounds' : playing ? 'Pause' : 'Play'}</span></button>
-        <label className="bpm-control"><span>BPM</span><input type="number" min={MIN_BPM} max={MAX_BPM} value={prefs.bpm} onChange={e => { stop(true); update({ bpm: clampBpm(Number(e.target.value) || 96) }); }}/></label>
-        <div className="mode-toggle" role="group" aria-label="Reading mode"><button aria-label="Vertical view" title="Vertical view" className={prefs.mode === 'portrait' ? 'selected' : ''} onClick={() => update({ mode: 'portrait' })}><span>Vertical</span></button><button aria-label="Endless view" title="Endless view" className={prefs.mode === 'landscape' ? 'selected' : ''} onClick={() => update({ mode: 'landscape' })}><span>Endless</span></button></div>
-        {barsSetting}
-        {score.parts.length > 4 && <div className="zoom-controls" role="group" aria-label="Score zoom"><button aria-label="Zoom out" title="Zoom out" disabled={prefs.zoom <= .5} onClick={() => zoomBy(-.25)}><Minus size={15}/></button><span aria-live="polite">{Math.round(prefs.zoom * 100)}%</span><button aria-label="Zoom in" title="Zoom in" disabled={prefs.zoom >= 4} onClick={() => zoomBy(.25)}><Plus size={15}/></button></div>}
-        <button className="icon-button header-open-file" aria-label="Open score file" title="Open score file" onClick={() => fileRef.current?.click()}><FolderOpen size={18}/></button>
-        <button className="icon-button mixer-trigger" aria-label="Track mixer" title="Track mixer" aria-haspopup="dialog" aria-expanded={mixer} onClick={() => { setDrawer(false); setMixer(true); }}><SlidersHorizontal size={18}/></button>
+        {primaryControls}
+        {compactHeader ? secondaryControls.length > 0 && <div className="header-more" ref={moreRef}>
+          <button className={`icon-button header-more-toggle ${moreOpen ? 'open' : ''}`} aria-label="More controls" title="More controls" aria-expanded={moreOpen} aria-controls="header-secondary-panel" onClick={() => setMoreOpen(open => !open)}><Ellipsis size={19}/></button>
+          {moreOpen && <div id="header-secondary-panel" className="header-secondary-panel" role="group" aria-label="Secondary controls">{secondaryControls}</div>}
+        </div> : secondaryControls}
       </div>
     </header>
 
@@ -450,14 +512,14 @@ export default function Reader({ musicXml }: ReaderProps) {
       }} onTouchMove={e => {
         if (!pinchRef.current || e.touches.length !== 2) return;
         const distance = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-        pinchRef.current.nextZoom = Math.max(.5, Math.min(4, pinchRef.current.zoom * distance / Math.max(1, pinchRef.current.distance)));
+        pinchRef.current.nextZoom = clampStaveScale(pinchRef.current.zoom * distance / Math.max(1, pinchRef.current.distance));
         if (stageRef.current) { stageRef.current.style.transformOrigin = 'center top'; stageRef.current.style.transform = `scale(${pinchRef.current.nextZoom / pinchRef.current.zoom})`; }
       }} onTouchEnd={e => {
         if (pinchRef.current) {
           const nextZoom = pinchRef.current.nextZoom;
           pinchRef.current = null;
           if (stageRef.current) stageRef.current.style.transform = '';
-          update({ zoom: Math.round(nextZoom * 4) / 4 });
+          update({ zoom: clampStaveScale(nextZoom) });
           swipeRef.current = null;
           return;
         }
@@ -479,7 +541,7 @@ export default function Reader({ musicXml }: ReaderProps) {
           </div>}
           <div className="score-stage" ref={stageRef}>
             <div className="score-staves" ref={canvasRef}/>
-            <div className="part-controls">{visibleScore.parts.map((part, index) => <div key={part.id} className="part-control" style={{ top: `${staffCenters[part.id] ?? 86 + index * ((prefs.names || prefs.counts) ? 125 : 100)}px`, height: score.parts.length > 4 ? '30px' : `${36 * scoreScale}px` }} title={`Sound for ${part.name}`}><button className="instrument-control" aria-label={`Instrument for ${part.name}`} aria-haspopup="dialog" onClick={() => openInstrumentPicker(part)}><img className="part-icon" style={{ width: score.parts.length > 4 ? '24px' : `${28 * scoreScale}px`, height: score.parts.length > 4 ? '24px' : `${28 * scoreScale}px` }} src={instrumentDetails(part.instrument).icon} alt=""/></button><span className="part-name" title={part.name}>{part.name}</span>{score.parts.length > 4 && <button className="staff-eye" aria-label={`Hide ${part.name}`} title={`Hide ${part.name}`} onClick={() => togglePart(part.id)} disabled={visibleScore.parts.length <= 1}><Eye size={17}/></button>}</div>)}</div>
+            <div className="part-controls" style={{ '--part-icon': `${controlMetrics.icon}px`, '--part-font': `${controlMetrics.font}px`, '--part-eye': `${controlMetrics.eye}px`, '--part-control-height': `${controlMetrics.height}px` } as React.CSSProperties}>{visibleScore.parts.map((part, index) => <div key={part.id} className="part-control" style={{ top: `${staffCenters[part.id] ?? 86 + index * ((prefs.names || prefs.counts) ? 125 : 100)}px` }} title={`Sound for ${part.name}`}><button className="instrument-control" aria-label={`Instrument for ${part.name}`} aria-haspopup="dialog" onClick={() => openInstrumentPicker(part)}><img className="part-icon" src={instrumentDetails(part.instrument).icon} alt=""/></button><span className="part-name" title={part.name}>{part.name}</span>{score.parts.length > 4 && <button className="staff-eye" aria-label={`Hide ${part.name}`} title={`Hide ${part.name}`} onClick={() => togglePart(part.id)} disabled={visibleScore.parts.length <= 1}><Eye size={17}/></button>}</div>)}</div>
           </div>
         </div>
       </div>

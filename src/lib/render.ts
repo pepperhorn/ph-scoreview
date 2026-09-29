@@ -11,8 +11,20 @@ const SVG = 'http://www.w3.org/2000/svg';
 export type NotePoint = { id: string; measure: number; part: number; start: number; duration: number; rest?: boolean; x: number; y: number; element?: Element; sourceId?: string };
 export type MeasureGeometry = { index: number; system: number; x: number; width: number; y: number; height: number; element?: Element };
 export type SystemGeometry = { index: number; firstMeasure: number; measureCount: number; width: number; height: number; staffCenters: number[] };
-export type RenderResult = { points: NotePoint[]; measureStarts: number[]; systemSize: number; staffCenters: number[]; scale: number; barWidth: number; systemHeight: number; measures: MeasureGeometry[]; systems: SystemGeometry[]; visiblePartIds: string[] };
-export type RenderOptions = { font?: 'Bravura' | 'Petaluma'; textFont?: 'Sans' | 'Serif' | 'Mono'; transpose?: number; semitones?: number; scorePitch?: 'written' | 'concert'; generation?: number; hiddenPartIds?: string[] };
+export type RenderResult = { points: NotePoint[]; measureStarts: number[]; systemSize: number; staffCenters: number[]; scale: number; barWidth: number; systemHeight: number; measures: MeasureGeometry[]; systems: SystemGeometry[]; visiblePartIds: string[];
+  /** Rendered five-line staff height (px) of the first system, the unit staff controls are sized from. */
+  stavePx: number;
+  /** Smallest distance between adjacent staff centres in the first system (px); Infinity for one staff. */
+  staffPitchPx: number;
+  /** Left gutter reserved for staff controls before the first system (px). */
+  gutter: number };
+export type RenderOptions = { font?: 'Bravura' | 'Petaluma'; textFont?: 'Sans' | 'Serif' | 'Mono'; transpose?: number; semitones?: number; scorePitch?: 'written' | 'concert'; generation?: number; hiddenPartIds?: string[];
+  /**
+   * Final control gutter for a rendered staff height and staff pitch (px). The engraving is laid out with
+   * `firstSystemGutter` (independent of zoom, so zooming reuses the cached layout); the first system is then
+   * fitted beside the gutter this returns.
+   */
+  gutterFor?: (stavePx: number, staffPitchPx: number) => number };
 
 const latestGeneration = new WeakMap<HTMLElement, number>();
 /** Endless view keeps one unbroken system up to this many bars, then uses bounded chunks. */
@@ -218,7 +230,7 @@ function sanitizeSvg(doc: XMLDocument): SVGSVGElement {
   return document.importNode(doc.documentElement, true) as unknown as SVGSVGElement;
 }
 
-type StaffBand = { top: number; bottom: number; center: number; laneTop: number };
+type StaffBand = { top: number; bottom: number; center: number; laneTop: number; lines: boolean };
 type PageGeometry = { svg: SVGSVGElement; block: HTMLElement; naturalWidth: number; naturalHeight: number; bands: Map<string, StaffBand>; notes: { element: Element; event: ScoreNote; partIndex: number; measure: number; x: number; y: number }[]; measureRects: { index: number; element: Element; rect: DOMRect }[]; measureCount: number; firstMeasure: number };
 
 /** Render from the original engraving document through the locally bundled WASM worker. */
@@ -312,7 +324,7 @@ export async function renderScore(
       const rect = lines.length ? null : box(staff, svg);
       const top = lines.length ? Math.min(...lines.map(line => line.y)) : rect!.y;
       const bottom = lines.length ? Math.max(...lines.map(line => line.y + line.height)) : rect!.y + rect!.height;
-      page.bands.set(n, { top, bottom, center: (top + bottom) / 2, laneTop: bottom });
+      page.bands.set(n, { top, bottom, center: (top + bottom) / 2, laneTop: bottom, lines: lines.length > 1 });
     }
     // The lane goes below the staff and anything hanging under it: low notes, lyrics and below-staff directions.
     const ordered = [...page.bands.entries()].sort((a, b) => a[1].top - b[1].top);
@@ -374,17 +386,38 @@ export async function renderScore(
   }
   if (!isCurrent()) throw new Error('Superseded score render.');
 
-  // Size every system, then read positions (earlier heights move later blocks).
-  const scales = geometry.map((page, pageIndex) => {
-    const widthLimit = pageIndex === 0 ? usableWidth : viewportWidth;
+  // Staff controls scale with the first system's staves, and the first system fits beside the controls' gutter.
+  const firstBands = visibleParts.map(part => geometry[0].bands.get(staffOf.get(part.id) || '')).filter((band): band is StaffBand => !!band);
+  const lined = firstBands.find(band => band.lines);
+  const staffNatural = lined ? lined.bottom - lined.top : 72;
+  const centers = firstBands.map(band => band.center).sort((a, b) => a - b);
+  const pitchNatural = centers.slice(1).reduce((least, center, index) => Math.min(least, center - centers[index]), Infinity);
+  const scaleFor = (page: PageGeometry, pageIndex: number, gutter: number) => {
+    const widthLimit = pageIndex === 0 ? Math.max(180, viewportWidth - gutter) : viewportWidth;
     const widthFit = mode === 'portrait' ? Math.min(1, widthLimit / page.naturalWidth) : 1;
     const heightFit = visibleParts.length > 4 && availableHeight > 0 ? Math.min(1, availableHeight / page.naturalHeight) : 1;
-    const scale = Math.min(widthFit, heightFit) * zoom;
+    return Math.min(widthFit, heightFit) * zoom;
+  };
+  let gutter = firstSystemGutter;
+  if (options.gutterFor) {
+    // Gutter grows with the staff while a wider gutter shrinks a width-fitted staff; damped iteration settles in a few steps.
+    for (let step = 0; step < 12; step++) {
+      const scale = scaleFor(geometry[0], 0, gutter);
+      const next = options.gutterFor(staffNatural * scale, pitchNatural * scale);
+      if (Math.abs(next - gutter) < .5) { gutter = next; break; }
+      gutter = step < 2 ? next : (gutter + next) / 2;
+    }
+    gutter = Math.round(gutter);
+  }
+
+  // Size every system, then read positions (earlier heights move later blocks).
+  const scales = geometry.map((page, pageIndex) => {
+    const scale = scaleFor(page, pageIndex, gutter);
     const { block, svg } = page;
     block.dataset.firstMeasure = String(page.firstMeasure + 1);
     block.style.width = `${page.naturalWidth * scale}px`;
     block.style.height = `${page.naturalHeight * scale}px`;
-    block.style.marginLeft = pageIndex === 0 ? `${firstSystemGutter}px` : '';
+    block.style.marginLeft = pageIndex === 0 ? `${gutter}px` : '';
     svg.style.width = `${page.naturalWidth * scale}px`; svg.style.height = `${page.naturalHeight * scale}px`;
     return scale;
   });
@@ -407,5 +440,6 @@ export async function renderScore(
   const first = systems[0];
   const firstCenters = first.staffCenters.map((center, index) => Number.isFinite(center) ? center : (first.staffCenters[index - 1] ?? 0) + 80 * scales[0]);
   return { points, measureStarts, systemSize: bars, staffCenters: firstCenters, scale: scales[0], visiblePartIds: visibleParts.map(part => part.id),
-    barWidth: Math.max(1, first.width) / Math.max(1, first.measureCount || bars), systemHeight: first.height, measures, systems };
+    barWidth: Math.max(1, first.width) / Math.max(1, first.measureCount || bars), systemHeight: first.height, measures, systems,
+    stavePx: staffNatural * scales[0], staffPitchPx: pitchNatural * scales[0], gutter };
 }
