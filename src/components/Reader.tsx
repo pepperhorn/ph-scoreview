@@ -344,7 +344,7 @@ export default function Reader({ musicXml }: ReaderProps) {
           const event = events[nextEvent];
           const time = started + event.startSeconds - secondsStart;
           if (time > horizon) break;
-          const duration = Math.max(.01, event.endSeconds - event.startSeconds);
+          const duration = Math.max(.01, event.soundEndSeconds - event.startSeconds);
           const destination = audio.trackGains.get(event.partId);
           const part = parts.get(event.partId);
           for (const player of part ? audio.players.get(audioKey(part)) || [] : []) scheduledStopsRef.current.push({ stop: player.start({ note: event.midi, time: Math.max(time, audio.context.currentTime), duration, velocity: event.velocity, destination }), end: time + duration });

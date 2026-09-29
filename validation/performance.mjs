@@ -70,12 +70,14 @@ try {
     const accented = performed.events.find(event => event.pitchId === 'accent');
     if (!g1 || g2 || !accented || !approx(g1.endSeconds, 4) || !approx(accented.endSeconds - accented.startSeconds, 2)) throw new Error('Real MusicXML tie/articulation fixture failed');
     if (performed.events.filter(event => event.pitchId === 'long1').length !== 2) throw new Error('Repeat occurrences did not replay source note');
-    if (!performed.diagnostics.some(message => message.includes('Pedal marks')) || !performed.diagnostics.some(message => message.includes('Ornaments'))) throw new Error('Unsupported source effects were not diagnosed');
+    if (performed.diagnostics.some(message => message.includes('Pedal')) || !performed.diagnostics.some(message => message.includes('Ornaments'))) throw new Error('Source effect diagnostics are wrong (pedal is now synthesized; ornaments are not)');
+    // The fixture pedals measure 2: the tied G released at beat 2 rings to the lift; its highlight does not.
+    if (!approx(g1.soundEndSeconds, performed.events.find(event => event.pitchId === 'accent').endSeconds) || !approx(g1.endSeconds, 4)) throw new Error('Fixture pedal did not sustain the released tie');
     return { cases: 9, eventCounts: [tie.events.length, repeat.events.length, nested.events.length, navigation.events.length, performed.events.length], diagnostics: [...new Set([...tie.diagnostics, ...repeat.diagnostics, ...navigation.diagnostics, ...performed.diagnostics])] };
   });
   assert.equal(result.cases, 9);
   const review = await page.evaluate(async ({ midiBytes }) => {
-    const { buildPerformanceTimeline } = await import('/src/lib/playback/timeline.ts');
+    const { buildPerformanceTimeline, positionAtSeconds, eventsFromSeconds } = await import('/src/lib/playback/timeline.ts');
     const { parseMusicXml, parseMidi, parseAbc } = await import('/src/lib/import.ts');
     const failures = [];
     const check = (condition, message, detail) => { if (!condition) failures.push(`${message}: ${JSON.stringify(detail)}`); };
@@ -178,7 +180,42 @@ try {
     check(abc.parts[0].measures.map(m => m.beats).join() === '2,2,2', 'L3 ABC triplet stretched the bar', abc.parts[0].measures.map(m => m.beats));
     const abcEvents = abcTimeline.events.map(e => `${e.midi}@${e.startSeconds.toFixed(2)}-${e.endSeconds.toFixed(2)}`).join();
     check(abcEvents === '60@0.00-0.33,62@0.33-0.67,64@0.67-1.00,65@1.00-2.00,67@2.00-4.00,72@4.00-6.00', 'L3 ABC triplet/tie timing', abcEvents);
-    return { failures, checks: 22 };
+
+    // P: damper pedal sustains released notes in audio only (soundEndSeconds), scoped to the source part.
+    const rest = (dur = 4, type = 'quarter', staff = '') => `<note><rest/><duration>${dur}</duration><voice>1</voice><type>${type}</type>${staff}</note>`;
+    const pedal = type => `<direction><direction-type><pedal type="${type}" line="yes"/></direction-type></direction>`;
+    const ends = t => t.events.map(e => `${e.midi}:${e.startSeconds}-${e.endSeconds}/${e.soundEndSeconds}`).join();
+    const sustained = buildPerformanceTimeline(parseMusicXml(single([pedal('start') + one('C', 4, 4) + one('D', 4, 4) + rest() + pedal('stop') + one('E', 4, 4)])), { bpm: 60 });
+    check(ends(sustained) === '60:0-1/3,62:1-2/3,64:3-4/4', 'P1 pedal start/stop extends released notes', ends(sustained));
+    check(positionAtSeconds(sustained, 2.5).activeNoteIds.length === 0, 'P1 pedal tail extended highlighting', positionAtSeconds(sustained, 2.5).activeNoteIds);
+    const resumedTail = eventsFromSeconds(sustained, 2.5).map(e => `${e.midi}:${e.startSeconds}-${e.soundEndSeconds}`).join();
+    check(resumedTail === '60:2.5-3,62:2.5-3,64:3-4', 'P1 resume clips sustained tails', resumedTail);
+    check(!sustained.diagnostics.some(d => d.includes('edal')), 'P1 pedal still diagnosed', sustained.diagnostics);
+    const soundPedal = buildPerformanceTimeline(parseMusicXml(single(['<direction><direction-type><words>Ped.</words></direction-type><sound damper-pedal="yes"/></direction>' + one('C', 4, 4) + rest() + '<direction><direction-type><words>*</words></direction-type><sound damper-pedal="no"/></direction>' + rest(8, 'half')])), { bpm: 60 });
+    check(ends(soundPedal) === '60:0-1/2', 'P1 <sound damper-pedal> sustain', ends(soundPedal));
+    const changed = buildPerformanceTimeline(parseMusicXml(single([pedal('start') + one('C', 4, 4) + one('D', 4, 4) + pedal('change') + one('E', 4, 4) + rest() + pedal('stop')])), { bpm: 60 });
+    check(ends(changed) === '60:0-1/2,62:1-2/2,64:2-3/4', 'P2 pedal change splits sustain', ends(changed));
+    const restruck = buildPerformanceTimeline(parseMusicXml(single([pedal('start') + one('C', 4, 4) + one('D', 4, 4) + one('C', 4, 4) + rest() + pedal('stop')])), { bpm: 60 });
+    check(ends(restruck) === '60:0-1/2,62:1-2/4,60:2-3/4', 'P3 same-pitch re-attack truncates sustain', ends(restruck));
+    const pedalRepeat = buildPerformanceTimeline(parseMusicXml(single([
+      '<barline location="left"><repeat direction="forward"/></barline>' + pedal('start') + one('C', 4, 4) + rest(12, 'half'),
+      one('D', 4, 4) + rest() + pedal('stop') + rest(8, 'half') + '<barline location="right"><repeat direction="backward"/></barline>'])), { bpm: 60 });
+    check(ends(pedalRepeat) === '60:0-1/6,62:4-5/6,60:8-9/14,62:12-13/14' && approx(pedalRepeat.durationSeconds, 16), 'P4 pedal per repeat occurrence', ends(pedalRepeat));
+    const pianoPedal = score('<score-part id="P1"><part-name>Piano</part-name></score-part><score-part id="P2"><part-name>Violin</part-name></score-part>',
+      `<part id="P1"><measure number="1">${attrs.replace('</time>', '</time><staves>2</staves>').replace('<clef>', '<clef number="1">')}<clef number="2"><sign>F</sign><line>4</line></clef>
+      <direction placement="below"><direction-type><pedal type="start" line="yes"/></direction-type><staff>1</staff></direction>
+      ${one('C', 5, 4, '<staff>1</staff>')}${rest(4, 'quarter', '<staff>1</staff>')}${rest(4, 'quarter', '<staff>1</staff>')}
+      <direction placement="below"><direction-type><pedal type="stop" line="yes"/></direction-type><staff>1</staff></direction>${rest(4, 'quarter', '<staff>1</staff>')}
+      <backup><duration>16</duration></backup>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>4</duration><voice>5</voice><type>quarter</type><staff>2</staff></note><note><rest/><duration>12</duration><voice>5</voice><type>half</type><dot/><staff>2</staff></note></measure></part>` +
+      `<part id="P2"><measure number="1">${attrs}${one('G', 4, 4)}${rest(12, 'half')}</measure></part>`);
+    const pianoTimeline = buildPerformanceTimeline(parseMusicXml(pianoPedal), { bpm: 60 });
+    const soundEnd = midiValue => pianoTimeline.events.find(e => e.midi === midiValue)?.soundEndSeconds;
+    check(soundEnd(72) === 3 && soundEnd(48) === 3, 'P5 staff-1 pedal sustains staff 2 of the same part', ends(pianoTimeline));
+    check(soundEnd(67) === 1, 'P6 pedal leaked into another part', ends(pianoTimeline));
+    const sost = buildPerformanceTimeline(parseMusicXml(single([pedal('sostenuto') + whole('C')])), { bpm: 60 });
+    check(sost.diagnostics.some(d => d.includes('Sostenuto')) && sost.events[0].soundEndSeconds === 4, 'P7 sostenuto diagnosed, not synthesized', sost.diagnostics);
+    return { failures, checks: 33 };
   }, { midiBytes });
   assert.deepEqual(review.failures, []);
   console.log(`Playback timeline: ${result.cases} browser fixtures and ${review.checks} review regressions passed; event counts ${result.eventCounts.join(', ')}.`);
