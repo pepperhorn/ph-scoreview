@@ -2,6 +2,7 @@ import type { Part, Score, ScoreNote } from './score';
 import { inferChordSymbol } from './chords';
 import { importVerovio, renderVerovio } from './verovio-runtime';
 import { staffDefXmlId } from './notation/document';
+import { musicFontOptions } from './music-fonts';
 
 const MEI = 'http://www.music-encoding.org/ns/mei';
 const XML = 'http://www.w3.org/XML/1998/namespace';
@@ -259,6 +260,7 @@ export async function renderScore(
     // Verovio can only move written pitch to sounding pitch, so concert-basis scores are engraved as encoded.
     transposeToSoundingPitch: options.scorePitch === 'concert' && !concertBasis, transpose: semitones ? String(semitones) : '',
     spacingStaff, smuflTextFont: 'none', header: 'none', footer: 'none', svgAdditionalAttribute: ['staff@n', 'note@pname', 'note@oct'],
+    ...musicFontOptions(options.font),
   });
   const pageCount = endlessSingle ? 1 : Math.ceil(measureIds.length / bars);
   let pages: string[];
@@ -290,6 +292,7 @@ export async function renderScore(
     if (inner) { inner.setAttribute('width', String(naturalWidth)); inner.setAttribute('height', String(naturalHeight)); }
     svg.classList.add('score-svg');
     svg.dataset.textFont = textFont;
+    svg.dataset.musicFont = options.font || 'Bravura';
     const block = document.createElement('div');
     block.className = 'score-system';
     block.appendChild(svg); fragment.appendChild(block);
