@@ -44,13 +44,30 @@ try {
         const lines = [...staff.querySelectorAll(':scope > path')].slice(0, 5).map(line => line.getBoundingClientRect());
         return (Math.min(...lines.map(line => line.top)) + Math.max(...lines.map(line => line.bottom))) / 2;
       });
-      const controls = [...document.querySelectorAll('.part-control')].map(control => { const rect = control.getBoundingClientRect(); return rect.top + rect.height / 2; });
-      return { staves: staves.length, controls: controls.length, offsets: controls.map((center, index) => Math.abs(center - staves[index])) };
+      const rects = [...document.querySelectorAll('.part-control')].map(control => control.getBoundingClientRect());
+      const controls = rects.map(rect => rect.top + rect.height / 2);
+      return { staves: staves.length, controls: controls.length, offsets: controls.map((center, index) => Math.abs(center - staves[index])), overlapping: rects.some((rect, index) => index > 0 && rect.top < rects[index - 1].bottom - .5) };
     });
     assert.equal(offsets.staves, expected, 'Engraved staff count');
     assert.equal(offsets.controls, expected, 'Staff control count');
     assert.ok(offsets.offsets.every(offset => offset < 4), `Staff controls align with their staves: ${offsets.offsets.map(value => value.toFixed(1))}`);
+    assert.equal(offsets.overlapping, false, 'Adjacent staff controls do not overlap');
   };
+  // At phone widths secondary header controls live in the "More controls" dropdown.
+  const moreToggle = () => page.getByRole('button', { name: 'More controls', exact: true });
+  const openMore = async () => { if (await moreToggle().count() && await moreToggle().getAttribute('aria-expanded') !== 'true') await moreToggle().click(); };
+  const closeMore = async () => { if (await moreToggle().count() && await moreToggle().getAttribute('aria-expanded') === 'true') await page.keyboard.press('Escape'); };
+  const header = async (action) => { await openMore(); await action(); await closeMore(); };
+  const staveScale = () => page.getByRole('slider', { name: 'Stave scale', exact: true });
+  // Rendered first-system staff height, first control icon size and zoom value text.
+  const staffMetrics = () => page.evaluate(() => {
+    const lines = [...document.querySelector('.score-system:first-child svg g.measure > g.staff').querySelectorAll(':scope > path')].slice(0, 5).map(line => line.getBoundingClientRect());
+    const staff = Math.max(...lines.map(line => line.bottom)) - Math.min(...lines.map(line => line.top));
+    const icon = document.querySelector('.part-control .part-icon').getBoundingClientRect().height;
+    const font = parseFloat(getComputedStyle(document.querySelector('.part-control .part-name')).fontSize);
+    const controlsRight = Math.max(...[...document.querySelectorAll('.part-control')].map(control => control.getBoundingClientRect().right));
+    return { staff, icon, font, controlsRight, systemLeft: document.querySelector('.score-system:first-child').getBoundingClientRect().left };
+  });
   const ready = async () => {
     await page.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg'), { timeout: 30000 });
     assert.equal(await page.locator('.toast').count(), 0, await page.locator('.toast').allTextContents());
@@ -92,6 +109,61 @@ try {
   // Sample score: Verovio transposes the untouched document exactly once.
   const firstChord = () => page.evaluate(() => [...document.querySelector('.score-system svg .chord').querySelectorAll('.note')].map(note => note.getAttribute('data-pname')).sort().join(''));
   assert.equal(await firstChord(), 'ceg');
+  // Mobile header: secondary controls stay in a closed "More controls" dropdown until opened.
+  assert.equal(await moreToggle().getAttribute('aria-expanded'), 'false', 'More controls start closed');
+  for (const hidden of [staveScale(), page.getByRole('button', { name: 'Track mixer', exact: true }), page.getByRole('button', { name: 'Endless view', exact: true }), page.locator('.bpm-control input')]) assert.equal(await hidden.count(), 0, 'Secondary controls are hidden while More is closed');
+  await moreToggle().click();
+  assert.equal(await moreToggle().getAttribute('aria-expanded'), 'true');
+  for (const shown of [staveScale(), page.getByRole('button', { name: 'Track mixer', exact: true }), page.getByRole('button', { name: 'Endless view', exact: true }), page.locator('.bpm-control input')]) assert.ok(await shown.isVisible(), 'Secondary controls are usable in the More panel');
+  await page.keyboard.press('Escape');
+  assert.equal(await moreToggle().getAttribute('aria-expanded'), 'false', 'Escape closes More');
+  await openMore();
+  await page.mouse.click(10, 700);
+  assert.equal(await moreToggle().getAttribute('aria-expanded'), 'false', 'Outside click closes More');
+  await openMore();
+  await page.reload();
+  await ready();
+  assert.equal(await moreToggle().getAttribute('aria-expanded'), 'false', 'More is closed after reload');
+  assert.equal(await staveScale().count(), 0);
+  // Stave scale slider: controls keep their ratio to the rendered stave, stay aligned and clear of the notation.
+  const atDefault = await staffMetrics();
+  await header(async () => {
+    assert.equal(await staveScale().inputValue(), '1');
+    await staveScale().fill('1.25');
+    await page.locator('.header-stave-scale-value', { hasText: '125%' }).waitFor();
+  });
+  // The slider commits zoom once the value settles, then re-renders.
+  const zoomCommitted = zoom => page.waitForFunction(value => JSON.parse(localStorage.getItem('scoreflow-prefs') || '{}').zoom === value, zoom, { timeout: 5000 });
+  await zoomCommitted(1.25);
+  await ready();
+  const zoomed = await staffMetrics();
+  assert.ok(zoomed.staff > atDefault.staff * 1.15, `Stave grows with stave scale: ${atDefault.staff} -> ${zoomed.staff}`);
+  for (const key of ['icon', 'font']) assert.ok(Math.abs(zoomed[key] / zoomed.staff - atDefault[key] / atDefault.staff) < .03, `Control ${key} keeps its ratio to the stave: ${(atDefault[key] / atDefault.staff).toFixed(3)} vs ${(zoomed[key] / zoomed.staff).toFixed(3)}`);
+  for (const metrics of [atDefault, zoomed]) assert.ok(metrics.controlsRight <= metrics.systemLeft, `Staff controls stay clear of the notation: ${metrics.controlsRight} <= ${metrics.systemLeft}`);
+  await assertControlsAligned(1);
+  await header(async () => { await staveScale().fill('1'); await page.locator('.header-stave-scale-value', { hasText: '100%' }).waitFor(); });
+  await zoomCommitted(1);
+  await ready();
+  // Desktop header: every control is inline and there is no More toggle.
+  // A resize re-renders after the viewport settles; wait for the first system to change width.
+  const resizeTo = async (width, height) => {
+    const before = await page.evaluate(() => document.querySelector('.score-system').style.width);
+    await page.setViewportSize({ width, height });
+    await page.waitForFunction(previous => document.querySelector('.score-system')?.style.width !== previous, before, { timeout: 10000 });
+    await ready();
+  };
+  // Just above the mobile breakpoint every control is inline and must still fit.
+  await page.setViewportSize({ width: 600, height: 800 });
+  await moreToggle().waitFor({ state: 'detached' });
+  assert.equal(await page.evaluate(() => document.querySelector('.topbar').scrollWidth <= document.querySelector('.topbar').clientWidth), true, 'Inline header fits at 600px');
+  await page.waitForTimeout(400);
+  await ready();
+  await resizeTo(1280, 800);
+  assert.equal(await moreToggle().count(), 0, 'No More toggle on desktop');
+  for (const shown of [staveScale(), page.getByRole('button', { name: 'Track mixer', exact: true }), page.getByRole('button', { name: 'Vertical view', exact: true }), page.locator('.bpm-control input'), page.locator('[aria-label="Bars per line"]')]) assert.ok(await shown.isVisible(), 'Secondary controls are inline on desktop');
+  const desktop = await staffMetrics();
+  assert.ok(Math.abs(desktop.icon - 56) <= 1 && Math.abs(desktop.font - 22) <= .5, `Default desktop controls are double size: ${desktop.icon}px icon, ${desktop.font}px name`);
+  await resizeTo(390, 844);
   await page.getByRole('button', { name: 'Options', exact: true }).click();
   await page.getByRole('button', { name: 'Transpose up one semitone', exact: true }).click();
   await page.getByRole('button', { name: 'Transpose up one semitone', exact: true }).click();
@@ -145,7 +217,7 @@ try {
   assert.ok(await page.locator('svg .dynam').count() >= 5, 'Source dynamics render natively');
   assert.ok(await page.locator('svg .artic').count() >= 40, 'Source articulations survive');
   assert.ok(await page.locator('svg .verse').count() > 0, 'MusicXML lyrics survive');
-  await page.locator('[aria-label="Bars per line"]').selectOption('4');
+  await header(() => page.locator('[aria-label="Bars per line"]').selectOption('4'));
   await ready();
   assert.equal(await page.locator('.score-system').count(), 2, 'Exactly four measures per system');
   assert.equal(await page.evaluate(() => { const v = document.querySelector('.score-viewport'); return v.scrollWidth <= v.clientWidth + 1; }), true, 'Portrait fits viewport');
@@ -157,10 +229,15 @@ try {
   assert.ok(await page.locator('.count-label').count() > 0);
   await page.getByRole('button', { name: 'Petaluma', exact: true }).click();
   await ready();
+  // Re-selecting the current notation font changes nothing, so no loading overlay may linger.
+  await page.getByRole('button', { name: 'Petaluma', exact: true }).click();
+  await page.waitForTimeout(500);
+  assert.equal(await page.locator('.score-loading').count(), 0, 'Re-selecting the current font leaves no loading overlay');
   await page.getByRole('button', { name: 'Mono', exact: true }).click();
   await ready();
   assert.match(await page.locator('.note-label').first().evaluate(e => getComputedStyle(e).fontFamily), /monospace/);
   await page.locator('button[aria-label="Close options"]').click();
+  await openMore();
   await page.getByRole('button', { name: 'Track mixer', exact: true }).click();
   assert.equal(await page.locator('.mixer-track').count(), 5);
   await page.locator('[aria-label="Volume for Track 1"]').fill('42');
@@ -178,12 +255,13 @@ try {
   await page.locator('input[type=file]').setInputFiles(fixture);
   await ready();
   assert.equal(await page.locator('.part-control').count(), 4, 'Old staff identities preserve hidden state');
+  await openMore();
   await page.getByRole('button', { name: 'Track mixer', exact: true }).click();
   assert.equal(await page.locator('[aria-label="Volume for Track 1"]').inputValue(), '42');
   await page.getByRole('button', { name: 'Close track mixer', exact: true }).click();
   await page.getByRole('button', { name: 'Show Track 2', exact: true }).click();
   await ready();
-  await page.getByRole('button', { name: 'Endless view', exact: true }).click();
+  await header(() => page.getByRole('button', { name: 'Endless view', exact: true }).click());
   await ready();
   assert.equal(await page.locator('svg .note').count(), 160);
   assert.equal(await page.locator('.score-system').count(), 1, 'Endless view is one unbroken system');
@@ -201,10 +279,13 @@ try {
   await page.waitForTimeout(650);
   assert.equal(await page.evaluate(() => window.__audioStarts), stopped, 'Pause cancels future scheduling');
   await page.getByRole('button', { name: 'Stop playback', exact: true }).click();
-  await page.getByRole('button', { name: 'Vertical view', exact: true }).click();
+  await header(() => page.getByRole('button', { name: 'Vertical view', exact: true }).click());
   await page.setViewportSize({ width: 320, height: 844 });
   await ready();
   assert.equal(await page.evaluate(() => document.querySelector('.topbar').scrollWidth <= document.querySelector('.topbar').clientWidth), true);
+  await openMore();
+  assert.equal(await page.evaluate(() => { const panel = document.querySelector('.header-secondary-panel').getBoundingClientRect(); return panel.left >= 0 && panel.right <= innerWidth; }), true, 'More panel fits a 320px viewport');
+  await closeMore();
   await page.locator('input[type=file]').setInputFiles({ name: 'bad.xml', mimeType: 'application/xml', buffer: Buffer.from('<broken') });
   await page.getByRole('alert').waitFor();
   assert.equal(await page.locator('svg .note').count(), 160, 'Invalid import preserves previous score');
