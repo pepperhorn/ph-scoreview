@@ -47,15 +47,18 @@
 .font-toggle button{border:0;border-radius:6px;background:transparent;padding:6px 8px;color:#718073;font-size:10px}
 .font-toggle button.selected{background:white;color:#345642;box-shadow:0 1px 4px #253b2e18;font-weight:700}
 .font-load-progress{position:sticky;top:0;left:0;width:100%;height:2px;margin-bottom:-2px;overflow:hidden;z-index:6;pointer-events:none}
-.score-content{transition:opacity .26s ease}
-.score-content.is-painting{opacity:0}
+/* Paint reveal: the score settles from slightly enlarged to its final scale while fading in.
+   Going back to painting fades out quickly and snaps the scale only once it is invisible. */
+.score-content{transform-origin:50% 0;transition:opacity .34s ease-out,transform .5s cubic-bezier(.16,1,.3,1)}
+.landscape .score-content{transform-origin:0 50%}
+.score-content.is-painting{opacity:0;transform:scale(1.06);transition:opacity .16s ease-in,transform 0s linear .16s}
 .score-loading{position:absolute;inset:0;z-index:8;display:flex;align-items:center;justify-content:center;gap:11px;color:#738477;font-size:12px;letter-spacing:.04em;pointer-events:none}
 .score-loading-spinner{width:22px;height:22px;border:2px solid #dfe8dd;border-top-color:#5d8164;border-radius:50%;animation:score-loading-spin .8s linear infinite}
 @keyframes score-loading-spin{to{transform:rotate(360deg)}}
 .font-load-progress::before{content:'';display:block;width:30%;height:100%;background:#6f9576;animation:font-loading-sweep 1.1s ease-in-out infinite}
 @keyframes font-loading-sweep{from{transform:translateX(-100%)}to{transform:translateX(435%)}}
 @media(prefers-reduced-motion:reduce){.font-load-progress::before{width:100%;animation:none;opacity:.65}}
-@media(prefers-reduced-motion:reduce){.score-content{transition:none}.score-loading-spinner{animation:none}}
+@media(prefers-reduced-motion:reduce){.score-content,.score-content.is-painting{transition:none;transform:none}.score-loading-spinner{animation:none}}
 html,body,#root{height:100%;overflow:hidden}
 .app-shell{height:100dvh;min-height:0;padding-bottom:0;display:flex;flex-direction:column;overflow:hidden}
 .topbar{position:sticky;top:0;flex:none;z-index:20}

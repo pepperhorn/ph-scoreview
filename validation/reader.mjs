@@ -69,11 +69,15 @@ try {
     return { staff, icon, font, controlsRight, systemLeft: document.querySelector('.score-system:first-child').getBoundingClientRect().left };
   });
   const ready = async () => {
-    await page.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg'), { timeout: 30000 });
+    await page.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg') && !document.querySelector('.score-content').getAnimations().length, { timeout: 30000 });
     assert.equal(await page.locator('.toast').count(), 0, await page.locator('.toast').allTextContents());
   };
   await page.goto(url);
   await ready();
+  // Paint reveal zooms out from an enlarged scale while fading in.
+  const reveal = await page.evaluate(() => { const style = getComputedStyle(document.querySelector('.score-content')); return { transition: style.transitionProperty, transform: style.transform }; });
+  assert.match(reveal.transition, /transform/, 'Score paint animates scale');
+  assert.equal(reveal.transform, 'none', 'Painted score settles at its natural scale');
   assert.ok(await page.locator('svg .note').count() > 0, 'Verovio native notes render');
   assert.ok(await page.locator('svg .notehead use').count() > 0, 'Noteheads retain their glyph references');
   // SMuFL text glyphs (the sample's metronome mark) keep their music font, served by an app-level local @font-face.
@@ -306,7 +310,7 @@ try {
     AudioBufferSourceNode.prototype.start = function (...args) { window.__audioStarts++; return start.apply(this, args); };
   });
   await silent.goto(url);
-  await silent.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg'), { timeout: 30000 });
+  await silent.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg') && !document.querySelector('.score-content').getAnimations().length, { timeout: 30000 });
   const lineLeft = () => silent.evaluate(() => parseFloat(document.querySelector('.playback-line')?.style.left ?? 'NaN'));
   await silent.getByRole('button', { name: 'Play score', exact: true }).click();
   await silent.locator('.playback-notice').waitFor({ timeout: 5000 });
