@@ -1,5 +1,8 @@
 import type { Part, Pitch, Score, ScoreDirection } from '../score';
 import { soundingMidi } from '../transpose';
+import { musicXmlTextNavigation } from '../notation/navigation';
+import { fractionValue } from './fraction';
+import { buildRoadmap, measureLengths, resolveRoadmap, roadmapFromNavigation, type ResolvedSegment, type Roadmap } from './roadmap';
 
 /** A sounding pitch. Repeated visits to a written note have separate occurrences. */
 export type PerformanceEvent = {
@@ -24,6 +27,8 @@ export type PlaybackPosition = {
 export type PerformanceTimeline = {
   events: PerformanceEvent[]; positions: PlaybackPosition[]; durationSeconds: number;
   initialBpm: number; diagnostics: string[];
+  /** The roadmap that was performed: the override when it was valid, else the one built from the score. */
+  roadmap: Roadmap;
 };
 export type TimelineOptions = {
   bpm: number; semitones?: number; musicXml?: string; verovioTimemap?: unknown;
@@ -33,159 +38,55 @@ export type TimelineOptions = {
    * hiding a part never changes the performance of the parts that remain.
    */
   fullScore?: Score;
+  /**
+   * A user or saved performance order that replaces the one built from the
+   * score's navigation. It is validated; an unusable one is diagnosed and the
+   * built roadmap is used instead.
+   */
+  roadmap?: Roadmap;
 };
 
-type Marker = { forward?: boolean; backward?: number; ending?: number[]; dacapo?: boolean; dalsegno?: boolean; tocoda?: boolean; fine?: boolean; segno?: boolean; coda?: boolean };
-type Visit = { measureIndex: number; occurrence: number };
 const EPS = 1e-7;
 /** Extra hold added by a fermata, as a fraction of the held note's length. */
 const FERMATA_HOLD = .5;
 /** Grace notes steal at most this many beats from the beat they ornament. */
 const GRACE_BEATS = .125, GRACE_TOTAL = .25;
 const dynamics: Record<string, number> = { pppp: 20, ppp: 28, pp: 39, p: 52, mp: 66, mf: 82, f: 96, ff: 108, fff: 118, ffff: 124, sf: 112, sfz: 112, fz: 112, fp: 96, sforzando: 112 };
-const NAVIGATION = ['dacapo', 'dalsegno', 'tocoda', 'fine', 'segno', 'coda'];
 
 function xmlChildren(el: Element, name: string): Element[] { return Array.from(el.children).filter(item => item.localName === name); }
 function first(el: Element, name: string): Element | undefined { return xmlChildren(el, name)[0]; }
-function numbers(value: string | null): number[] {
-  return (value || '').split(/[\s,]+/).flatMap(token => {
-    const range = /^(\d+)-(\d+)$/.exec(token);
-    if (range) return Array.from({ length: Math.min(16, Number(range[2]) - Number(range[1]) + 1) }, (_, i) => Number(range[1]) + i);
-    const number = Number(token); return Number.isInteger(number) && number > 0 ? [number] : [];
-  });
+function scoreOffsets(lengths: number[]): number[] {
+  let offset = 0;
+  return lengths.map(length => { const here = offset; offset += length; return here; });
 }
 
+/** One measure's share of a roadmap segment, with its performed occurrence of that measure. */
+type Slice = { measureIndex: number; from: number; to: number; occurrence: number; linearIn: boolean; linearOut: boolean };
 /**
- * MusicXML navigation is read from the source, never inferred from SVG.
- * Explicit <sound> attributes are authoritative; when a measure has none,
- * <segno/>/<coda/> glyphs and anchored words ("D.S. al Coda", "To Coda", "Fine")
- * are used. Words are anchored so "both hands" or "Winds" never trigger D.S.
+ * Splits roadmap segments into per-measure slices. A slice that continues the
+ * previous one exactly (next measure start, or the same offset in the same
+ * measure) is linear: ties and sounding notes carry across it. Any other
+ * entry into a measure is a new occurrence of that measure.
  */
-function sourceMarkers(xml: string | undefined, measureCount: number, diagnostics: string[]): Marker[] {
-  const markers = Array.from({ length: measureCount }, () => ({} as Marker));
-  if (!xml || typeof DOMParser === 'undefined') return markers;
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
-  if (doc.getElementsByTagName('parsererror').length) { diagnostics.push('MusicXML navigation could not be parsed.'); return markers; }
-  const root = doc.documentElement;
-  const sourceMeasures = root.localName === 'score-timewise'
-    ? xmlChildren(root, 'measure').map(measure => first(measure, 'part') || measure)
-    : xmlChildren(first(root, 'part') || root, 'measure');
-  let ending: number[] = [];
-  sourceMeasures.slice(0, measureCount).forEach((measure, i) => {
-    const marker = markers[i];
-    for (const barline of xmlChildren(measure, 'barline')) {
-      const end = first(barline, 'ending');
-      if (end?.getAttribute('type') === 'start') ending = numbers(end.getAttribute('number'));
-      if (end?.getAttribute('type') === 'stop' && barline.getAttribute('location') === 'left') ending = [];
-      const repeat = first(barline, 'repeat');
-      if (repeat?.getAttribute('direction') === 'forward') marker.forward = true;
-      if (repeat?.getAttribute('direction') === 'backward') marker.backward = Math.max(2, Math.min(16, Number(repeat.getAttribute('times')) || 2));
+function slices(segments: ResolvedSegment[], lengths: number[]): Slice[] {
+  const result: Slice[] = [];
+  const occurrences = new Map<number, number>();
+  for (const segment of segments) {
+    for (let bar = segment.from.bar; bar <= segment.to.bar; bar++) {
+      const from = bar === segment.from.bar ? fractionValue(segment.from.beat) : 0;
+      const to = bar === segment.to.bar ? fractionValue(segment.to.beat) : lengths[bar];
+      if (to <= from + EPS) continue;
+      const previous = result.at(-1);
+      const sameBar = Boolean(previous && previous.measureIndex === bar && Math.abs(previous.to - from) < EPS);
+      const nextBar = Boolean(previous && previous.measureIndex + 1 === bar && from < EPS && Math.abs(previous.to - lengths[previous.measureIndex]) < EPS);
+      let occurrence: number;
+      if (sameBar) occurrence = previous!.occurrence;
+      else { occurrence = occurrences.get(bar) || 0; occurrences.set(bar, occurrence + 1); }
+      if (previous) previous.linearOut = sameBar || nextBar;
+      result.push({ measureIndex: bar, from, to, occurrence, linearIn: sameBar || nextBar, linearOut: false });
     }
-    marker.ending = ending.length ? [...ending] : undefined;
-    const directions = xmlChildren(measure, 'direction');
-    const sounds = [...xmlChildren(measure, 'sound'), ...directions.flatMap(direction => xmlChildren(direction, 'sound'))];
-    const explicit = sounds.some(sound => NAVIGATION.some(name => sound.hasAttribute(name)));
-    for (const sound of sounds) {
-      if (sound.getAttribute('dacapo') === 'yes') marker.dacapo = true;
-      if (sound.hasAttribute('dalsegno')) marker.dalsegno = true;
-      if (sound.hasAttribute('tocoda')) marker.tocoda = true;
-      if (sound.hasAttribute('fine') && sound.getAttribute('fine') !== 'no') marker.fine = true;
-      if (sound.hasAttribute('segno')) marker.segno = true;
-      if (sound.hasAttribute('coda')) marker.coda = true;
-    }
-    let codaGlyph = false;
-    if (!explicit) for (const direction of directions) {
-      const types = xmlChildren(direction, 'direction-type');
-      const words = types.flatMap(type => xmlChildren(type, 'words')).map(item => (item.textContent || '').trim()).filter(Boolean).join(' ').trim();
-      const segnoGlyph = types.some(type => first(type, 'segno'));
-      const hasCodaGlyph = types.some(type => first(type, 'coda'));
-      if (/^(?:D\.\s*C\.?|Da\s+Capo)(?![a-z])/i.test(words)) marker.dacapo = true;
-      else if (/^(?:D\.\s*S\.?|Dal\s+Segno)(?![a-z])/i.test(words)) marker.dalsegno = true;
-      else if (/^to\s*(?:the\s+)?(?:coda|\u{1D10C})/iu.test(words) || (hasCodaGlyph && /^to$/i.test(words))) marker.tocoda = true;
-      else if (/^fine\.?$/i.test(words)) marker.fine = true;
-      else if (/^(?:\u{1D10C}\s*)?coda\.?$/iu.test(words) || words === '\u{1D10C}' || (hasCodaGlyph && !words)) codaGlyph = true;
-      if (segnoGlyph || /^(?:\u{1D10B}\s*)?segno$/iu.test(words) || words === '\u{1D10B}') marker.segno = true;
-    }
-    // A coda glyph printed beside "To Coda" marks the jump, not its target.
-    if (codaGlyph && !marker.tocoda) marker.coda = true;
-    for (const barline of xmlChildren(measure, 'barline')) {
-      const end = first(barline, 'ending');
-      if (end && ['stop', 'discontinue'].includes(end.getAttribute('type') || '') && barline.getAttribute('location') !== 'left') ending = [];
-    }
-  });
-  return markers;
-}
-
-/** The highest ending number of each consecutive group of volta brackets. */
-function lastEndings(markers: Marker[]): number[] {
-  const result = markers.map(() => 0);
-  for (let i = 0; i < markers.length;) {
-    if (!markers[i].ending) { i++; continue; }
-    let j = i, max = 0;
-    while (j < markers.length && markers[j].ending && (j === i || !(markers[j].ending!.includes(1) && !markers[j - 1].ending!.includes(1)))) { max = Math.max(max, ...markers[j].ending!); j++; }
-    for (let k = i; k < j; k++) result[k] = max;
-    i = j;
   }
   return result;
-}
-
-function traverse(markers: Marker[], diagnostics: string[]): Visit[] {
-  const visits: Visit[] = [];
-  const count = markers.length;
-  let index = 0, trailingPass = 1, jumped = false, codaJumped = false;
-  const repeatStack: { start: number; pass: number }[] = [];
-  let steps = 0;
-  const limit = Math.max(64, count * 16);
-  const segno = markers.findIndex(marker => marker.segno);
-  const finalEnding = lastEndings(markers);
-  const occurrences = new Map<number, number>();
-  while (index >= 0 && index < count && steps++ < limit) {
-    const marker = markers[index];
-    if (!marker.ending && index > 0 && markers[index - 1].ending) trailingPass = 1;
-    if (!jumped && marker.forward && !repeatStack.some(repeat => repeat.start === index)) repeatStack.push({ start: index, pass: 1 });
-    const pass = repeatStack.at(-1)?.pass || trailingPass;
-    // After D.C./D.S. repeats are not taken, so only the final ending plays.
-    const endingSkipped = Boolean(marker.ending?.length && !marker.ending.includes(jumped ? finalEnding[index] : pass));
-    if (!endingSkipped) {
-      const occurrence = occurrences.get(index) || 0;
-      occurrences.set(index, occurrence + 1);
-      visits.push({ measureIndex: index, occurrence });
-    }
-    if (!jumped && marker.backward) {
-      if (!repeatStack.length) repeatStack.push({ start: 0, pass: 1 });
-      const repeat = repeatStack.at(-1)!;
-      if (!endingSkipped && repeat.pass < marker.backward) { repeat.pass++; index = repeat.start; continue; }
-      trailingPass = repeat.pass;
-      repeatStack.pop();
-    }
-    if (!endingSkipped && !jumped && (marker.dacapo || marker.dalsegno)) {
-      jumped = true; trailingPass = 1; repeatStack.length = 0;
-      if (marker.dalsegno && segno < 0) diagnostics.push('D.S. has no segno; restarted from the beginning.');
-      index = marker.dalsegno && segno >= 0 ? segno : 0;
-      continue;
-    }
-    if (!endingSkipped && jumped && marker.tocoda && !codaJumped) {
-      const after = markers.findIndex((item, i) => item.coda && i > index);
-      const target = after >= 0 ? after : markers.findIndex(item => item.coda);
-      if (target >= 0) { codaJumped = true; index = target; continue; }
-      diagnostics.push('To Coda has no coda; playback continued.');
-    }
-    if (!endingSkipped && jumped && marker.fine) break;
-    index++;
-  }
-  if (steps >= limit) diagnostics.push('Playback navigation exceeded its safety limit; the score was truncated.');
-  return visits;
-}
-
-function measureLength(score: Score, index: number): number {
-  const measures = score.parts[0]?.measures;
-  const measure = measures?.[index];
-  if (!measure) return 0;
-  return Number.isFinite(measure.beats) && measure.beats > 0 ? measure.beats : measure.notes.reduce((max, note) => Math.max(max, note.start + note.duration), 0);
-}
-function scoreOffsets(score: Score): number[] {
-  let offset = 0;
-  return (score.parts[0]?.measures || []).map((_, i) => { const here = offset; offset += measureLength(score, i); return here; });
 }
 
 type TempoPoint = { beat: number; bpm: number };
@@ -378,8 +279,10 @@ function documentXml(score: Score): string | undefined {
 export function buildPerformanceTimeline(score: Score, options: TimelineOptions): PerformanceTimeline {
   const diagnostics: string[] = [];
   const full = options.fullScore && options.fullScore.parts.length ? options.fullScore : score;
-  const count = score.parts[0]?.measures.length || 0;
-  const offsets = scoreOffsets(score);
+  // Measure lengths, navigation and the roadmap come from the full score, so hiding a part never changes them.
+  const exactLengths = measureLengths(full);
+  const lengths = exactLengths.map(fractionValue);
+  const offsets = scoreOffsets(lengths);
   const points = tempoPoints(full, offsets, diagnostics);
   const initialBpm = tempoAt(points, 0);
   const requestedBpm = Number.isFinite(options.bpm) && options.bpm > 0 ? options.bpm : initialBpm;
@@ -388,7 +291,13 @@ export function buildPerformanceTimeline(score: Score, options: TimelineOptions)
   const marks = sourceNoteMarks(xml, diagnostics);
   const markFor = (note: { sourceId?: string; pitches: (Pitch & { sourceId?: string })[] }) => [note.sourceId, ...note.pitches.map(p => p.sourceId)].map(id => id ? marks.get(id) : undefined).find((item): item is NoteMark => Boolean(item));
   const dynamicGroups = dynamicPoints(full, offsets);
-  const visits = traverse(sourceMarkers(xml, count, diagnostics), diagnostics);
+  // Navigation lives on the Score; an explicit musicXml option (a caller's own source) is read instead.
+  const built = options.musicXml
+    ? roadmapFromNavigation(musicXmlTextNavigation(options.musicXml, lengths.length, diagnostics), exactLengths, diagnostics)
+    : buildRoadmap(full, diagnostics);
+  const override = options.roadmap ? resolveRoadmap(options.roadmap, exactLengths, diagnostics) : undefined;
+  const roadmap = override ? options.roadmap! : built;
+  const performedSlices = slices(override || resolveRoadmap(built, exactLengths, diagnostics) || [], lengths);
   const pedals = sourcePedals(xml, diagnostics);
   /** Pedal changes in performed time, per source part, in performed order. */
   const performedPedals = new Map<string, { seconds: number; kind: PedalChange['kind'] }[]>();
@@ -397,37 +306,39 @@ export function buildPerformanceTimeline(score: Score, options: TimelineOptions)
   const positions: PlaybackPosition[] = [];
   const openTies = new Map<string, PerformanceEvent>();
   let elapsed = 0;
-  let previousMeasure = -1;
-  for (const visit of visits) {
-    const measureIndex = visit.measureIndex;
-    const length = measureLength(score, measureIndex);
+  for (const slice of performedSlices) {
+    const { measureIndex, from, to } = slice;
+    const length = lengths[measureIndex];
     const offset = offsets[measureIndex];
-    const localTempos = points.filter(point => point.beat > offset + EPS && point.beat < offset + length - EPS);
-    const boundaries = [0, ...localTempos.map(point => point.beat - offset), length];
+    // A slice continued within the same measure lets its notes sound on past `to`, so time is mapped up to the bar end.
+    const horizon = slice.linearOut ? Math.max(to, length) : to;
+    const localTempos = points.filter(point => point.beat > offset + from + EPS && point.beat < offset + horizon - EPS);
+    const boundaries = [from, ...localTempos.map(point => point.beat - offset), horizon];
     const times = [0];
     for (let i = 1; i < boundaries.length; i++) {
       const bpm = tempoAt(points, offset + boundaries[i - 1] + EPS) * tempoScale;
       times.push(times[i - 1] + (boundaries[i] - boundaries[i - 1]) * 60 / bpm);
     }
     const baseAt = (beat: number) => {
-      const limited = Math.max(0, Math.min(length, beat));
+      const limited = Math.max(from, Math.min(horizon, beat));
       let segment = boundaries.length - 2;
       for (let i = 0; i < boundaries.length - 1; i++) if (limited < boundaries[i + 1] - EPS) { segment = i; break; }
       return elapsed + times[segment] + (limited - boundaries[segment]) * 60 / (tempoAt(points, offset + boundaries[segment] + EPS) * tempoScale);
     };
     const secondsPerBeat = (beat: number) => 60 / (tempoAt(points, offset + beat + EPS) * tempoScale);
+    const inSlice = (beat: number) => beat >= from - EPS && beat < to - EPS;
     // Fermatas hold the music: time is inserted where the shortest held note of
     // each fermata onset ends, so later notes wait instead of overlapping.
     const fermataStarts = new Map<string, { start: number; duration: number }>();
     for (const part of full.parts) for (const note of part.measures[measureIndex]?.notes || []) {
-      if (note.grace || note.duration <= 0 || !markFor(note)?.fermata) continue;
+      if (note.grace || note.duration <= 0 || !inSlice(note.start) || !markFor(note)?.fermata) continue;
       const key = note.start.toFixed(6);
       const old = fermataStarts.get(key);
       if (!old || note.duration < old.duration) fermataStarts.set(key, { start: note.start, duration: note.duration });
     }
     const holdMap = new Map<string, { beat: number; seconds: number }>();
     for (const { start, duration } of fermataStarts.values()) {
-      const beat = Math.min(length, start + duration);
+      const beat = Math.min(to, start + duration);
       const seconds = (baseAt(beat) - baseAt(start)) * FERMATA_HOLD;
       const key = beat.toFixed(6);
       holdMap.set(key, { beat, seconds: Math.max(seconds, holdMap.get(key)?.seconds || 0) });
@@ -435,21 +346,25 @@ export function buildPerformanceTimeline(score: Score, options: TimelineOptions)
     const holds = [...holdMap.values()].sort((a, b) => a.beat - b.beat);
     const heldBefore = (beat: number, inclusive: boolean) => holds.reduce((sum, hold) => sum + (hold.beat < beat - EPS || (inclusive && hold.beat <= beat + EPS) ? hold.seconds : 0), 0);
     const secondsAt = (beat: number) => baseAt(beat) + heldBefore(beat, true);
+    // A note is cut where a segment ends in a jump; a linear continuation lets it sound on.
+    const release = (beat: number) => slice.linearOut ? beat : Math.min(to, beat);
 
-    const jumpedHere = previousMeasure >= 0 && measureIndex !== previousMeasure + 1;
     // Ties survive a repeat/D.S. jump only if the target note stops the tie.
-    const carried = jumpedHere ? new Map(openTies) : undefined;
-    const positionBeats = [...new Set([...boundaries, ...holds.map(hold => hold.beat)].map(beat => beat.toFixed(9)))].map(Number).sort((a, b) => a - b);
+    const carried = slice.linearIn ? undefined : new Map(openTies);
+    const positionBeats = [...new Set([...boundaries.filter(beat => beat < to - EPS), to, ...holds.map(hold => hold.beat)].map(beat => beat.toFixed(9)))].map(Number).sort((a, b) => a - b);
     for (const beat of positionBeats) {
-      const base = { scoreBeat: offset + beat, measureIndex, occurrence: visit.occurrence, measureBeat: beat, noteId: null, activeNoteIds: [] };
+      const base = { scoreBeat: offset + beat, measureIndex, occurrence: slice.occurrence, measureBeat: beat, noteId: null, activeNoteIds: [] };
       if (holds.some(hold => Math.abs(hold.beat - beat) < 1e-6)) positions.push({ ...base, seconds: baseAt(beat) + heldBefore(beat, false) });
       positions.push({ ...base, seconds: secondsAt(beat) });
     }
     // Pedal marks are placed per performed occurrence, so repeats and jumps re-pedal.
+    // A mark exactly at a slice end belongs to the slice that continues from there, if any.
     for (const [sourceId, changes] of pedals) for (const change of changes) {
       if (change.measureIndex !== measureIndex) continue;
+      const atEnd = change.beat >= to - EPS && (to >= length - EPS || (!slice.linearOut && change.beat <= to + EPS));
+      if (!inSlice(change.beat) && !atEnd) continue;
       const list = performedPedals.get(sourceId) || [];
-      list.push({ seconds: secondsAt(Math.min(length, change.beat)), kind: change.kind });
+      list.push({ seconds: secondsAt(Math.min(to, change.beat)), kind: change.kind });
       performedPedals.set(sourceId, list);
     }
     for (const part of score.parts) {
@@ -466,6 +381,8 @@ export function buildPerformanceTimeline(score: Score, options: TimelineOptions)
       for (const note of measure.notes) {
         if (note.rest || !note.pitches.length) continue;
         if (note.duration <= 0 && !note.grace) continue;
+        // Only notes that start inside the slice sound in it; a note begun before a jump target is not re-attacked.
+        if (!inSlice(note.start)) continue;
         const voice = note.voice || '1';
         let start: number, end: number;
         if (note.grace) {
@@ -475,12 +392,12 @@ export function buildPerformanceTimeline(score: Score, options: TimelineOptions)
           const principal = secondsAt(note.start);
           // Graces on the downbeat delay their principal; others steal from the previous beat.
           if (note.start <= EPS) { start = principal + i * step; end = principal + (i + 1) * step; }
-          else { start = Math.max(baseAt(0), principal - (n - i) * step); end = principal - (n - i - 1) * step; }
+          else { start = Math.max(baseAt(from), principal - (n - i) * step); end = principal - (n - i - 1) * step; }
           end = Math.max(start + .03, end);
         } else {
           const opening = note.start <= EPS ? (graceGroups.get(`${voice}:${note.start.toFixed(6)}`)?.length || 0) : 0;
           start = secondsAt(note.start) + (opening ? opening * graceBeat(opening) * secondsPerBeat(0) : 0);
-          end = secondsAt(note.start + note.duration);
+          end = secondsAt(release(note.start + note.duration));
         }
         const mark = markFor(note);
         if (mark?.silent) continue;
@@ -500,9 +417,9 @@ export function buildPerformanceTimeline(score: Score, options: TimelineOptions)
           }
           if (pitch.tieStop && !old) diagnostics.push(`Unmatched tie stop at ${note.id}, pitch ${pitchIndex}.`);
           const event: PerformanceEvent = {
-            id: `${note.id}:${pitchIndex}:${visit.occurrence}`, noteId: note.id,
+            id: `${note.id}:${pitchIndex}:${slice.occurrence}`, noteId: note.id,
             pitchId: pitch.sourceId || `${note.id}:${pitchIndex}`, pitchIndex, partId: part.id, voice,
-            measureIndex, occurrence: visit.occurrence, scoreBeat: offset + note.start,
+            measureIndex, occurrence: slice.occurrence, scoreBeat: offset + note.start,
             endScoreBeat: offset + note.start + note.duration, startSeconds: start, endSeconds: soundingEnd, soundEndSeconds: soundingEnd,
             midi, velocity: Math.max(1, Math.min(127, velocityFor(dynamicList, part.id, offset + note.start, voice) + (pitchMark?.velocityDelta || 0))), visualNoteIds: [note.id],
             visualSegments: [{ noteId: note.id, startSeconds: start, endSeconds: soundingEnd }],
@@ -514,8 +431,7 @@ export function buildPerformanceTimeline(score: Score, options: TimelineOptions)
       }
     }
     if (carried) for (const [key, event] of carried) if (openTies.get(key) === event) openTies.delete(key);
-    elapsed = secondsAt(length);
-    previousMeasure = measureIndex;
+    elapsed = secondsAt(to);
   }
   events.sort((a, b) => a.startSeconds - b.startSeconds || a.partId.localeCompare(b.partId) || a.pitchIndex - b.pitchIndex);
   applySustainPedal(events, eventSource, performedPedals, elapsed);
@@ -542,7 +458,7 @@ export function buildPerformanceTimeline(score: Score, options: TimelineOptions)
   }
   let durationSeconds = elapsed;
   for (const event of events) durationSeconds = Math.max(durationSeconds, event.endSeconds, event.soundEndSeconds);
-  return { events, positions, durationSeconds, initialBpm, diagnostics: [...new Set(diagnostics)] };
+  return { events, positions, durationSeconds, initialBpm, diagnostics: [...new Set(diagnostics)], roadmap };
 }
 
 /**

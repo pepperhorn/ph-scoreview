@@ -6,7 +6,24 @@ export type Pitch = { step: string; octave: number; alter: number; midi: number;
 export type Transposition = { semitones: number; diatonic?: number };
 export type ScoreNote = { id: string; sourceId?: string; start: number; duration: number; pitches: Pitch[]; transposition?: Transposition; chordSymbol?: string; lyric?: string; beamStart?: boolean; beamEnd?: boolean; rest?: boolean; dotted?: boolean; dots?: number; writtenType?: string; voice?: string; stem?: string; grace?: boolean; tuplet?: { actual: number; normal: number; number: string; start?: boolean; stop?: boolean }; slurStart?: string[]; slurStop?: string[]; tieStart?: boolean; tieStop?: boolean };
 export type ScoreDirection = { start: number; symbols?: string[]; text?: string; placement?: 'above' | 'below'; voice?: string; wedge?: { type: string; number: string }; soundDynamics?: number; tempo?: number };
-export type Measure = { index: number; beats: number; notes: ScoreNote[]; dynamics?: { start: number; symbol: string }[]; directions?: ScoreDirection[]; nominalBeats?: number; number?: string; implicit?: boolean; key?: number; clef?: string; beatsPerBar?: number; beatType?: number; transposition?: Transposition };
+/** A repeat barline inside a bar, at an exact quarter-note offset from the bar start ("3", "5/2"). */
+export type BarlineNavigation = { beat: string; repeatStart?: boolean; repeatEnd?: boolean; repeatTimes?: number };
+/**
+ * Format-neutral written navigation of one measure, filled by every importer.
+ * Bar-level marks apply at the bar start (repeatStart, segno, coda) or the bar
+ * end (repeatEnd, toCoda, daCapo, dalSegno, fine); `barlines` holds repeats
+ * that fall inside the bar. JSON-serializable.
+ */
+export type MeasureNavigation = {
+  repeatStart?: boolean; repeatEnd?: boolean;
+  /** Total plays of a repeatEnd; omitted means 2, or the last ending number when the repeat ends inside an ending. */
+  repeatTimes?: number;
+  /** Volta numbers of the ending bracket this measure belongs to. */
+  endings?: number[];
+  segno?: boolean; coda?: boolean; toCoda?: boolean; daCapo?: boolean; dalSegno?: boolean; fine?: boolean;
+  barlines?: BarlineNavigation[];
+};
+export type Measure = { index: number; beats: number; notes: ScoreNote[]; dynamics?: { start: number; symbol: string }[]; directions?: ScoreDirection[]; nominalBeats?: number; number?: string; implicit?: boolean; key?: number; clef?: string; beatsPerBar?: number; beatType?: number; transposition?: Transposition; navigation?: MeasureNavigation };
 export type Part = { id: string; name: string; clef: string; key?: number; instrument: InstrumentId; gmProgram?: number; gmSoundfont?: string; pitchBasis?: 'written' | 'concert'; transposition?: Transposition; measures: Measure[] };
 export type Score = { title: string; subtitle?: string; composer?: string; credits?: string[]; source: string; tempo: number; beats: number; beatType: number; key: number; parts: Part[]; document?: SourceDocument };
 export type InstrumentId = 'piano' | 'guitar' | 'bassguitar' | 'double-bass' | 'drum-kit' | 'alto-saxophone' | 'tenor-saxophone' | 'bari-saxophone' | 'flute' | 'clarinet' | 'trumpet' | 'trombone' | 'violin' | 'viola' | 'cello' | 'microphone';
