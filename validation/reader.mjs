@@ -1,0 +1,105 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { createServer } from 'node:http';
+import { extname, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { chromium, firefox, webkit } from 'playwright-core';
+
+const root = fileURLToPath(new URL('..', import.meta.url));
+const dist = resolve(root, 'dist');
+const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.wasm': 'application/wasm' };
+const server = createServer(async (request, response) => {
+  const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
+  const path = resolve(dist, `.${pathname === '/' ? '/index.html' : pathname}`);
+  if (!path.startsWith(`${dist}${sep}`)) { response.writeHead(403).end(); return; }
+  try { response.writeHead(200, { 'content-type': mime[extname(path)] || 'application/octet-stream' }).end(await readFile(path)); }
+  catch { response.writeHead(404).end(); }
+});
+await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+const url = process.env.READER_URL || `http://127.0.0.1:${server.address().port}`;
+const engine = process.env.BROWSER || 'chromium';
+const browser = await ({ chromium, firefox, webkit }[engine]).launch({ headless: true, ...(engine === 'chromium' ? { args: ['--no-sandbox'] } : {}) });
+try {
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: engine !== 'firefox' });
+  const errors = [], remote = [];
+  page.on('pageerror', e => errors.push(e.message));
+  page.on('request', r => { if (/^https?:/.test(r.url()) && !r.url().startsWith(url)) remote.push(r.url()); });
+  await page.addInitScript(() => {
+    window.__audioStarts = 0;
+    const start = AudioBufferSourceNode.prototype.start;
+    AudioBufferSourceNode.prototype.start = function (...args) { window.__audioStarts++; return start.apply(this, args); };
+  });
+  const ready = async () => {
+    await page.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg'), { timeout: 30000 });
+    assert.equal(await page.locator('.toast').count(), 0, await page.locator('.toast').allTextContents());
+  };
+  await page.goto(url);
+  await ready();
+  assert.ok(await page.locator('svg .note').count() > 0, 'Verovio native notes render');
+  assert.ok(await page.locator('svg .notehead use').count() > 0, 'Noteheads retain their glyph references');
+  const fixture = resolve(root, 'validation/fixtures/ensemble.musicxml');
+  await page.locator('input[type=file]').setInputFiles(fixture);
+  await page.waitForFunction(() => document.querySelector('h1')?.textContent === 'Migration ensemble');
+  await ready();
+  assert.equal(await page.locator('.part-control').count(), 5);
+  assert.equal(await page.locator('svg .note').count(), 160, 'Every source pitch survives direct MusicXML import');
+  assert.ok(await page.locator('svg .dynam').count() >= 5, 'Source dynamics render natively');
+  assert.ok(await page.locator('svg .artic').count() >= 40, 'Source articulations survive');
+  assert.ok(await page.locator('svg .verse').count() > 0, 'MusicXML lyrics survive');
+  await page.locator('[aria-label="Bars per line"]').selectOption('4');
+  await ready();
+  assert.equal(await page.locator('.score-system').count(), 2, 'Exactly four measures per system');
+  assert.equal(await page.evaluate(() => { const v = document.querySelector('.score-viewport'); return v.scrollWidth <= v.clientWidth + 1; }), true, 'Portrait fits viewport');
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  await page.getByRole('switch', { name: 'Note names', exact: true }).click();
+  await page.getByRole('switch', { name: 'Beat counts', exact: true }).click();
+  await ready();
+  assert.ok(await page.locator('.note-label').count() > 0);
+  assert.ok(await page.locator('.count-label').count() > 0);
+  await page.getByRole('button', { name: 'Petaluma', exact: true }).click();
+  await ready();
+  await page.getByRole('button', { name: 'Mono', exact: true }).click();
+  await ready();
+  assert.match(await page.locator('.note-label').first().evaluate(e => getComputedStyle(e).fontFamily), /monospace/);
+  await page.locator('button[aria-label="Close options"]').click();
+  await page.getByRole('button', { name: 'Track mixer', exact: true }).click();
+  assert.equal(await page.locator('.mixer-track').count(), 5);
+  await page.locator('[aria-label="Volume for Track 1"]').fill('42');
+  await page.getByRole('button', { name: 'Voice for Track 1', exact: true }).click();
+  assert.equal(await page.locator('.instrument-picker-grid button').count(), 16);
+  await page.locator('.instrument-picker-grid button').nth(1).click();
+  await page.getByRole('button', { name: 'Close track mixer', exact: true }).click();
+  await page.getByRole('button', { name: 'Hide Track 2', exact: true }).click();
+  await ready();
+  assert.equal(await page.locator('.part-control').count(), 4);
+  assert.equal(await page.locator('svg .note').count(), 128);
+  await page.locator('input[type=file]').setInputFiles(fixture);
+  await ready();
+  assert.equal(await page.locator('.part-control').count(), 4, 'Old staff identities preserve hidden state');
+  await page.getByRole('button', { name: 'Track mixer', exact: true }).click();
+  assert.equal(await page.locator('[aria-label="Volume for Track 1"]').inputValue(), '42');
+  await page.getByRole('button', { name: 'Close track mixer', exact: true }).click();
+  await page.getByRole('button', { name: 'Show Track 2', exact: true }).click();
+  await ready();
+  await page.getByRole('button', { name: 'Endless view', exact: true }).click();
+  await ready();
+  assert.equal(await page.locator('svg .note').count(), 160);
+  await page.getByRole('button', { name: 'Play score', exact: true }).click();
+  await page.waitForFunction(() => window.__audioStarts > 0 && document.querySelector('.playback-line'));
+  assert.ok(await page.locator('.is-playing').count() > 0);
+  await page.getByRole('button', { name: 'Pause playback', exact: true }).click();
+  const stopped = await page.evaluate(() => window.__audioStarts);
+  await page.waitForTimeout(650);
+  assert.equal(await page.evaluate(() => window.__audioStarts), stopped, 'Pause cancels future scheduling');
+  await page.getByRole('button', { name: 'Stop playback', exact: true }).click();
+  await page.getByRole('button', { name: 'Vertical view', exact: true }).click();
+  await page.setViewportSize({ width: 320, height: 844 });
+  await ready();
+  assert.equal(await page.evaluate(() => document.querySelector('.topbar').scrollWidth <= document.querySelector('.topbar').clientWidth), true);
+  await page.locator('input[type=file]').setInputFiles({ name: 'bad.xml', mimeType: 'application/xml', buffer: Buffer.from('<broken') });
+  await page.getByRole('alert').waitFor();
+  assert.equal(await page.locator('svg .note').count(), 160, 'Invalid import preserves previous score');
+  assert.deepEqual(errors, []);
+  assert.deepEqual(remote, [], 'Scores and resources stay local');
+  console.log(`${engine}: reader import, engraving, layout, annotations, fonts, mixer, persistence and playback passed`);
+} finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

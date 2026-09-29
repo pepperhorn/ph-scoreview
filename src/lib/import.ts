@@ -1,10 +1,11 @@
 import { strFromU8, unzipSync } from 'fflate';
 import { gmProgramForNumber, gmProgramForVirtualName, instrumentForName, instrumentForProgram, midiPitch, pitch, ucfirst, type Measure, type Part, type Score, type ScoreNote, type Transposition } from './score';
+import { identifyMusicXmlNotes, identityForScore, makeSourceDocument, normalizeTimewiseMusicXml, scoreToMei, sha256 } from './notation/document';
 
 const children = (node: Element, tag: string) => Array.from(node.children).filter(el => el.localName === tag);
 const child = (node: Element, tag: string) => children(node, tag)[0];
 const value = (node: Element, tag: string) => child(node, tag)?.textContent?.trim() || '';
-const number = (node: Element, tag: string, fallback = 0) => Number(value(node, tag)) || fallback;
+const number = (node: Element, tag: string, fallback = 0) => { const raw = value(node, tag); return raw !== '' && Number.isFinite(Number(raw)) ? Number(raw) : fallback; };
 const parseXml = (text: string) => {
   const doc = new DOMParser().parseFromString(text, 'application/xml');
   if (doc.querySelector('parsererror')) throw new Error('This file is not valid XML.');
@@ -41,25 +42,9 @@ const normalized = (score: Score): Score => {
 };
 
 export function parseMusicXml(text: string): Score {
-  const doc = parseXml(text);
-  let root = doc.documentElement;
-  if (root.localName === 'score-timewise') {
-    const partwise = doc.createElement('score-partwise');
-    for (const e of Array.from(root.children).filter(e => e.localName !== 'measure')) partwise.appendChild(e.cloneNode(true));
-    const ids = children(child(root, 'part-list') || root, 'score-part').map(e => e.getAttribute('id') || '');
-    for (const id of ids) {
-      const part = doc.createElement('part'); part.setAttribute('id', id);
-      for (const m of children(root, 'measure')) {
-        const inner = children(m, 'part').find(e => e.getAttribute('id') === id);
-        const measure = doc.createElement('measure');
-        measure.setAttribute('number', m.getAttribute('number') || String(part.children.length + 1));
-        for (const item of Array.from(inner?.children || [])) measure.appendChild(item.cloneNode(true));
-        part.appendChild(measure);
-      }
-      partwise.appendChild(part);
-    }
-    root = partwise;
-  }
+  const engravingText = identifyMusicXmlNotes(normalizeTimewiseMusicXml(text)).text;
+  const doc = parseXml(engravingText);
+  const root = doc.documentElement;
   if (root.localName !== 'score-partwise') throw new Error('This file is not a MusicXML score.');
   const concertScore = Boolean(child(child(root, 'defaults') || root, 'concert-score'));
   const list = child(root, 'part-list');
@@ -85,6 +70,7 @@ export function parseMusicXml(text: string): Score {
   const scoreParts = new Map(children(list || root, 'score-part').map(p => [p.getAttribute('id'), p]));
   const names = new Map([...scoreParts].map(([id, p]) => [id, value(p, 'part-name')]));
   let beats = 4, beatType = 4, key = 0, tempo = 100;
+  let openingMeter = false, openingTempo = false;
   const parts: Part[] = [];
   for (const [partNo, element] of children(root, 'part').entries()) {
     const id = element.getAttribute('id') || `P${partNo + 1}`;
@@ -101,6 +87,8 @@ export function parseMusicXml(text: string): Score {
     const staffMap = new Map<number, Part>();
     let divisions = 1;
     let partKey = key;
+    let partBeats = 4, partBeatType = 4;
+    let partClef = '';
     let partTransposition: Transposition = { semitones: 0 };
     const staffTranspositions = new Map<number, Transposition>();
     for (const [index, m] of children(element, 'measure').entries()) {
@@ -108,40 +96,55 @@ export function parseMusicXml(text: string): Score {
       let last: ScoreNote | undefined;
       const harmonyByTime = new Map<number, string>();
       const attrs = child(m, 'attributes');
-      if (attrs) {
-        divisions = number(attrs, 'divisions', divisions);
-        const time = child(attrs, 'time');
-        if (time) { beats = number(time, 'beats', beats); beatType = number(time, 'beat-type', beatType); }
-        const k = child(attrs, 'key');
-        if (k) {
-          partKey = number(k, 'fifths', partKey);
-          if (partNo === 0) key = partKey;
+      const applyAttributes = (attributes: Element) => {
+        divisions = number(attributes, 'divisions', divisions);
+        const time = child(attributes, 'time');
+        if (time) {
+          partBeats = number(time, 'beats', partBeats); partBeatType = number(time, 'beat-type', partBeatType);
+          if (partNo === 0 && !openingMeter) { beats = partBeats; beatType = partBeatType; openingMeter = true; }
         }
-        const forPart = children(attrs, 'for-part').map(item => musicXmlTranspose(child(item, 'part-transpose'))).find(Boolean);
+        const k = child(attributes, 'key');
+        if (k) { partKey = number(k, 'fifths', partKey); if (partNo === 0 && index === 0) key = partKey; }
+        const clefElement = children(attributes, 'clef').find(c => Number(c.getAttribute('number') || 1) === 1);
+        if (clefElement) {
+          const sign = value(clefElement, 'sign');
+          partClef = sign === 'F' ? 'bass' : sign === 'C' ? number(clefElement, 'line', 3) === 4 ? 'tenor' : 'alto' : sign === 'percussion' ? 'percussion' : 'treble';
+        }
+        const forPart = children(attributes, 'for-part').map(item => musicXmlTranspose(child(item, 'part-transpose'))).find(Boolean);
         if (concertScore && forPart) partTransposition = forPart;
-        else for (const item of children(attrs, 'transpose')) {
+        else for (const item of children(attributes, 'transpose')) {
           const interval = musicXmlTranspose(item)!;
           const staffNumber = Number(item.getAttribute('number'));
           if (staffNumber > 0) staffTranspositions.set(staffNumber, interval);
           else partTransposition = interval;
         }
-      }
-      const measureBeats = beats * 4 / beatType;
+        staffMap.forEach((part, staff) => {
+          const measure = part.measures[index];
+          if (!measure) return;
+          const clefElement = children(attributes, 'clef').find(c => Number(c.getAttribute('number') || 1) === staff);
+          if (clefElement) { const sign = value(clefElement, 'sign'); part.clef = sign === 'F' ? 'bass' : sign === 'C' ? number(clefElement, 'line', 3) === 4 ? 'tenor' : 'alto' : sign === 'percussion' ? 'percussion' : 'treble'; }
+          measure.key = partKey; measure.clef = part.clef; measure.beatsPerBar = partBeats; measure.beatType = partBeatType;
+          measure.nominalBeats = partBeats * 4 / partBeatType;
+        });
+      };
+      if (attrs) applyAttributes(attrs);
+      const measureBeats = partBeats * 4 / partBeatType;
       const ensure = (staff: number) => {
         const transposition = staffTranspositions.get(staff) || partTransposition;
         if (!staffMap.has(staff)) {
           const clefEl = attrs && children(attrs, 'clef').find(c => Number(c.getAttribute('number') || 1) === staff);
           const sign = clefEl ? value(clefEl, 'sign') : '';
-          const clef = sign === 'F' ? 'bass' : sign === 'C' ? 'alto' : sign === 'percussion' ? 'percussion' : /bass/i.test(name) ? 'bass' : 'treble';
+          const clef = sign === 'F' ? 'bass' : sign === 'C' ? number(clefEl!, 'line', 3) === 4 ? 'tenor' : 'alto' : sign === 'percussion' ? 'percussion' : partClef || (/bass/i.test(name) ? 'bass' : 'treble');
           staffMap.set(staff, { id: `${id}-${staff}`, name: staff === 1 ? name : `${name} · ${staff}`, clef, key: partKey, instrument: gm ? gm.icon as Part['instrument'] : instrumentForName(name), gmProgram: gm?.program, gmSoundfont: gm?.soundfont, pitchBasis: concertScore ? 'concert' : 'written', transposition, measures: Array.from({ length: index }, (_, i) => empty(i, measureBeats)) });
         }
         const p = staffMap.get(staff)!;
-        if (!p.measures[index]) p.measures[index] = empty(index, measureBeats);
+        if (!p.measures[index]) p.measures[index] = { ...empty(index, measureBeats), nominalBeats: measureBeats, number: m.getAttribute('number') || String(index + 1), implicit: m.getAttribute('implicit') === 'yes', key: partKey, clef: p.clef, beatsPerBar: partBeats, beatType: partBeatType };
         p.measures[index].transposition = transposition;
         return p.measures[index];
       };
       staffMap.forEach((_, staff) => ensure(staff));
       for (const item of Array.from(m.children)) {
+        if (item.localName === 'attributes') { if (item !== attrs) applyAttributes(item); continue; }
         if (item.localName === 'harmony') {
           const symbol = musicXmlHarmony(item);
           if (symbol) harmonyByTime.set(cursor + number(item, 'offset') / divisions, symbol);
@@ -149,17 +152,19 @@ export function parseMusicXml(text: string): Score {
         if (item.localName === 'direction') {
           const sound = child(item, 'sound');
           const metronome = child(item, 'direction-type') && child(child(item, 'direction-type'), 'metronome');
-          const t = Number(sound?.getAttribute('tempo') || (metronome ? value(metronome, 'per-minute') : 0));
-          if (t > 0) tempo = t;
+          const metronomeUnit = metronome && value(metronome, 'beat-unit');
+          const unitLength = metronomeUnit ? durationBeats(metronomeUnit, metronome ? children(metronome, 'beat-unit-dot').length : 0) : 1;
+          const t = Number(sound?.getAttribute('tempo') || (metronome ? value(metronome, 'per-minute') : 0)) * (sound?.hasAttribute('tempo') ? 1 : unitLength);
+          if (t > 0 && partNo === 0 && !openingTempo) { tempo = t; openingTempo = true; }
           const dynamics = children(item, 'direction-type').flatMap(type => children(type, 'dynamics')).flatMap(mark => Array.from(mark.children));
-          if (dynamics.length) {
-            const measure = ensure(number(item, 'staff', 1));
-            const start = Math.max(0, Math.min(measureBeats, cursor + number(item, 'offset') / divisions));
-            for (const mark of dynamics) {
-              const symbol = (mark.localName === 'other-dynamics' ? mark.textContent || '' : mark.localName).trim().toLowerCase();
-              if (symbol) (measure.dynamics ||= []).push({ start, symbol });
-            }
-          }
+          const measure = ensure(number(item, 'staff', 1));
+          const start = Math.max(0, cursor + number(item, 'offset') / divisions);
+          const symbols = dynamics.map(mark => (mark.localName === 'other-dynamics' ? mark.textContent || '' : mark.localName).trim().toLowerCase()).filter(Boolean);
+          const text = children(item, 'direction-type').flatMap(type => children(type, 'words')).map(word => word.textContent?.trim() || '').filter(Boolean).join(' ');
+          const wedge = children(item, 'direction-type').flatMap(type => children(type, 'wedge'))[0];
+          const soundDynamics = sound?.hasAttribute('dynamics') ? Number(sound.getAttribute('dynamics')) : undefined;
+          if (symbols.length || text || wedge || t > 0 || soundDynamics !== undefined) (measure.directions ||= []).push({ start, symbols, text, placement: item.getAttribute('placement') === 'above' ? 'above' : 'below', voice: value(item, 'voice') || undefined, wedge: wedge ? { type: wedge.getAttribute('type') || '', number: wedge.getAttribute('number') || '1' } : undefined, soundDynamics, tempo: t > 0 ? t : undefined });
+          for (const symbol of symbols) (measure.dynamics ||= []).push({ start, symbol });
         }
         if (item.localName === 'backup') { cursor = Math.max(0, cursor - number(item, 'duration') / divisions); last = undefined; }
         if (item.localName === 'forward') { cursor += number(item, 'duration') / divisions; last = undefined; }
@@ -167,34 +172,54 @@ export function parseMusicXml(text: string): Score {
         const staff = number(item, 'staff', 1);
         const measure = ensure(staff);
         const chord = Boolean(child(item, 'chord'));
-        const duration = number(item, 'duration') / divisions || durationBeats(value(item, 'type'), children(item, 'dot').length);
+        const grace = Boolean(child(item, 'grace'));
+        const duration = grace ? 0 : child(item, 'duration') ? number(item, 'duration') / divisions : durationBeats(value(item, 'type'), children(item, 'dot').length);
         const p = child(item, 'pitch');
+        const unpitched = child(item, 'unpitched');
         const rest = Boolean(child(item, 'rest'));
         const primaryBeam = children(item, 'beam').find(beam => Number(beam.getAttribute('number') || 1) === 1)?.textContent?.trim().toLowerCase();
         const beamStart = primaryBeam === 'begin';
         const beamEnd = primaryBeam === 'end';
-        const notePitch = p && !rest ? pitch(value(p, 'step') || 'C', number(p, 'octave', 4), number(p, 'alter')) : undefined;
+        const accidentalElement = child(item, 'accidental');
+        const sourceId = item.getAttribute('id') || undefined;
+        const instrumentId = child(item, 'instrument')?.getAttribute('id');
+        const midiInstrument = definition && children(definition, 'midi-instrument').find(instrument => instrument.getAttribute('id') === instrumentId) || definition && children(definition, 'midi-instrument')[0];
+        const midiUnpitched = midiInstrument ? number(midiInstrument, 'midi-unpitched', 0) : 0;
+        const displayStep = unpitched ? value(unpitched, 'display-step') || 'C' : undefined;
+        const displayOctave = unpitched ? number(unpitched, 'display-octave', 4) : undefined;
+        const basePitch = p ? pitch(value(p, 'step') || 'C', number(p, 'octave', 4), number(p, 'alter')) : unpitched ? { ...(midiUnpitched ? midiPitch(midiUnpitched - 1) : pitch(displayStep!, displayOctave!)), unpitched: true, displayStep, displayOctave } : undefined;
+        const notePitch = basePitch && !rest ? { ...basePitch, sourceId, accidental: accidentalElement?.textContent?.trim(), cautionary: accidentalElement?.getAttribute('cautionary') === 'yes' || accidentalElement?.getAttribute('parentheses') === 'yes', tieStart: children(item, 'tie').some(t => t.getAttribute('type') === 'start'), tieStop: children(item, 'tie').some(t => t.getAttribute('type') === 'stop') } : undefined;
+        const notations = child(item, 'notations');
+        const timeModification = child(item, 'time-modification');
+        const tuplets = children(notations || item, 'tuplet');
+        const tuplet = timeModification ? { actual: number(timeModification, 'actual-notes', 3), normal: number(timeModification, 'normal-notes', 2), number: tuplets[0]?.getAttribute('number') || '1', start: tuplets.some(t => t.getAttribute('type') === 'start'), stop: tuplets.some(t => t.getAttribute('type') === 'stop') } : undefined;
         // A MusicXML <chord> can contain notes with different durations. Only
         // combine equal-duration pitches; keep the others as concurrent voices.
         const onset = chord && last ? last.start : cursor;
-        if (chord && last && notePitch && Math.abs(last.duration - duration) < .001) {
+        if (chord && last && notePitch && last.voice === (value(item, 'voice') || '1') && Math.abs(last.duration - duration) < .001) {
           last.pitches.push(notePitch);
           last.beamStart ||= beamStart;
           last.beamEnd ||= beamEnd;
         }
         else {
-          last = { id: `${id}-${staff}-${index}-${measure.notes.length}`, start: onset, duration, pitches: notePitch ? [notePitch] : [], chordSymbol: harmonyByTime.get(onset), rest, dotted: Boolean(child(item, 'dot')), beamStart, beamEnd, tieStart: children(item, 'tie').some(t => t.getAttribute('type') === 'start'), tieStop: children(item, 'tie').some(t => t.getAttribute('type') === 'stop') };
+          last = { id: `${id}-${staff}-${index}-${measure.notes.length}`, sourceId, start: onset, duration, pitches: notePitch ? [notePitch] : [], transposition: staffTranspositions.get(staff) || partTransposition, chordSymbol: harmonyByTime.get(onset), rest, dotted: Boolean(child(item, 'dot')), dots: children(item, 'dot').length, writtenType: value(item, 'type') || undefined, voice: value(item, 'voice') || '1', stem: value(item, 'stem') || undefined, grace, tuplet, slurStart: children(notations || item, 'slur').filter(s => s.getAttribute('type') === 'start').map(s => s.getAttribute('number') || '1'), slurStop: children(notations || item, 'slur').filter(s => s.getAttribute('type') === 'stop').map(s => s.getAttribute('number') || '1'), tieStart: notePitch?.tieStart, tieStop: notePitch?.tieStop };
           measure.notes.push(last);
         }
-        if (!chord) cursor += duration;
+        if (!chord && !grace) cursor += duration;
+      }
+      for (const part of staffMap.values()) {
+        const measure = part.measures[index];
+        if (measure?.implicit) measure.beats = Math.max(cursor, ...measure.notes.map(note => note.start + note.duration), 0);
       }
     }
     parts.push(...Array.from(staffMap.values()).sort((a, b) => Number(a.id.split('-').pop()) - Number(b.id.split('-').pop())));
   }
   // Builder-style scores can contain many placeholder instruments with only
   // rests. They obscure the playable staves in the continuous reader.
-  const playableParts = parts.filter(part => part.measures.some(measure => measure.notes.some(note => note.pitches.length > 0)));
-  return normalized({ title, subtitle, composer, credits: otherCredits, source: 'MusicXML', tempo, beats, beatType, key, parts: playableParts.length ? playableParts : parts });
+  const playableParts = parts.filter(part => part.measures.some(measure => measure.notes.some(note => note.pitches.length > 0) || measure.directions?.length));
+  const score = normalized({ title, subtitle, composer, credits: otherCredits, source: 'MusicXML', tempo, beats, beatType, key, parts: playableParts.length ? playableParts : parts });
+  score.document = makeSourceDocument({ format: 'musicxml', engravingFormat: 'musicxml', originalText: text, engravingText, identity: identityForScore(score) });
+  return score;
 }
 
 export function parseMei(text: string): Score {
@@ -219,26 +244,38 @@ export function parseMei(text: string): Score {
       const out = empty(index, beats * 4 / beatType);
       const staff = Array.from(measure.getElementsByTagName('*')).find(e => e.localName === 'staff' && e.getAttribute('n') === n);
       if (!staff) return out;
-      const layer = Array.from(staff.children).find(e => e.localName === 'layer') || staff;
       const bySourceId = new Map<string, ScoreNote>();
-      let cursor = 0;
-      for (const el of Array.from(layer.children)) {
-        const kind = el.localName;
-        if (!['note', 'chord', 'rest', 'mRest'].includes(kind)) continue;
-        const duration = kind === 'mRest' ? out.beats : durationBeats(el.getAttribute('dur') || '4', Number(el.getAttribute('dots') || 0));
-        const noteEls = kind === 'chord' ? Array.from(el.children).filter(e => e.localName === 'note') : kind === 'note' ? [el] : [];
-        const pitches = noteEls.map(e => {
-          const step = (e.getAttribute('pname') || 'c').toUpperCase();
-          const explicit = ({ s: 1, f: -1, ss: 2, ff: -2, n: 0 } as Record<string, number>)[e.getAttribute('accid') || ''];
-          return pitch(step, Number(e.getAttribute('oct') || 4), explicit ?? alteredByKey(step));
-        });
-        const parsed: ScoreNote = { id: `${n}-${index}-${out.notes.length}`, start: cursor, duration, pitches, rest: !pitches.length };
-        out.notes.push(parsed);
-        for (const source of [el, ...noteEls]) {
-          const sourceId = source.getAttribute('xml:id') || source.getAttributeNS('http://www.w3.org/XML/1998/namespace', 'id');
-          if (sourceId) bySourceId.set(sourceId, parsed);
-        }
-        cursor += duration;
+      const sourceId = (el: Element) => el.getAttribute('xml:id') || el.getAttributeNS('http://www.w3.org/XML/1998/namespace', 'id') || undefined;
+      const layers = Array.from(staff.children).filter(e => e.localName === 'layer');
+      for (const [layerIndex, layer] of (layers.length ? layers : [staff]).entries()) {
+        let cursor = 0;
+        const walk = (parent: Element, ratio = 1, beam = false, tuplet?: ScoreNote['tuplet']) => {
+          const events = Array.from(parent.children).filter(e => ['note', 'chord', 'rest', 'mRest', 'space', 'beam', 'tuplet'].includes(e.localName));
+          for (const [eventIndex, el] of events.entries()) {
+            const kind = el.localName;
+            if (kind === 'beam') { walk(el, ratio, true, tuplet); continue; }
+            if (kind === 'tuplet') {
+              const actual = Number(el.getAttribute('num')) || 3, normal = Number(el.getAttribute('numbase')) || 2;
+              walk(el, ratio * normal / actual, beam, { actual, normal, number: el.getAttribute('n') || '1', start: true, stop: true });
+              continue;
+            }
+            const grace = el.getAttribute('grace') !== null;
+            const duration = grace ? 0 : kind === 'mRest' ? out.beats : durationBeats(el.getAttribute('dur') || '4', Number(el.getAttribute('dots') || 0)) * ratio;
+            const noteEls = kind === 'chord' ? Array.from(el.children).filter(e => e.localName === 'note') : kind === 'note' ? [el] : [];
+            const pitches = noteEls.map(e => {
+              const step = (e.getAttribute('pname') || 'c').toUpperCase();
+              const explicit = ({ s: 1, f: -1, ss: 2, ff: -2, n: 0 } as Record<string, number>)[e.getAttribute('accid') || ''];
+              const tie = e.getAttribute('tie') || el.getAttribute('tie') || '';
+              return { ...pitch(step, Number(e.getAttribute('oct') || 4), explicit ?? alteredByKey(step)), sourceId: sourceId(e), tieStart: /[im]/.test(tie), tieStop: /[tm]/.test(tie) };
+            });
+            const lyric = Array.from(el.getElementsByTagName('*')).filter(e => e.localName === 'syl').map(e => e.textContent?.trim() || '').filter(Boolean).join(' ');
+            const parsed: ScoreNote = { id: `${n}-${index}-${out.notes.length}`, sourceId: sourceId(el), start: cursor, duration, pitches, rest: !pitches.length, voice: layer.getAttribute('n') || String(layerIndex + 1), beamStart: beam && eventIndex === 0, beamEnd: beam && eventIndex === events.length - 1, grace, tuplet, lyric: lyric || undefined };
+            out.notes.push(parsed);
+            for (const source of [el, ...noteEls]) { const id = sourceId(source); if (id) bySourceId.set(id, parsed); }
+            cursor += duration;
+          }
+        };
+        walk(layer);
       }
       for (const harmony of Array.from(measure.getElementsByTagName('*')).filter(e => e.localName === 'harm')) {
         const targetStaff = harmony.getAttribute('staff');
@@ -258,7 +295,9 @@ export function parseMei(text: string): Score {
   const title = (titles.find(e => ['main', 'uniform'].includes(e.getAttribute('type') || '')) || titles[0])?.textContent?.trim() || '';
   const subtitle = titles.find(e => ['subordinate', 'subtitle'].includes(e.getAttribute('type') || ''))?.textContent?.trim() || '';
   const composer = all('composer')[0]?.textContent?.trim() || all('persName').find(e => e.getAttribute('role') === 'composer')?.textContent?.trim() || '';
-  return normalized({ title, subtitle, composer, source: 'MEI', tempo: 100, beats, beatType, key, parts });
+  const score = normalized({ title, subtitle, composer, source: 'MEI', tempo: 100, beats, beatType, key, parts });
+  score.document = makeSourceDocument({ format: 'mei', engravingFormat: 'mei', originalText: text, engravingText: text, identity: identityForScore(score) });
+  return score;
 }
 
 export async function parseAbc(text: string): Promise<Score> {
@@ -311,7 +350,9 @@ export async function parseAbc(text: string): Promise<Score> {
     }
   }
   parts.forEach(part => { part.measures = part.measures.filter(m => m.notes.length); part.measures.forEach((m, i) => m.index = i); });
-  return normalized({ title: tune.metaText?.title || '', subtitle: tune.lines.find((line: any) => line.subtitle)?.subtitle?.text || '', composer: tune.metaText?.composer || '', source: 'ABC', tempo: Number(tune.metaText?.tempo?.bpm) || 100, beats, beatType, key, parts });
+  const score = normalized({ title: tune.metaText?.title || '', subtitle: tune.lines.find((line: any) => line.subtitle)?.subtitle?.text || '', composer: tune.metaText?.composer || '', source: 'ABC', tempo: Number(tune.metaText?.tempo?.bpm) || 100, beats, beatType, key, parts });
+  score.document = makeSourceDocument({ format: 'abc', engravingFormat: 'mei', originalText: text, engravingText: scoreToMei(score), identity: identityForScore(score) });
+  return score;
 }
 
 export async function parseMidi(buffer: ArrayBuffer): Promise<Score> {
@@ -330,7 +371,8 @@ export async function parseMidi(buffer: ArrayBuffer): Promise<Score> {
       const absolute = Math.round(note.ticks / ppq * 4) / 4;
       const duration = Math.max(.25, Math.round(note.durationTicks / ppq * 4) / 4);
       const index = Math.floor(absolute / measureSize);
-      while (measures.length <= index) measures.push(empty(measures.length, measureSize));
+      const finalIndex = Math.floor(Math.max(absolute, absolute + duration - 1e-6) / measureSize);
+      while (measures.length <= finalIndex) measures.push(empty(measures.length, measureSize));
       const m = measures[index], start = absolute - index * measureSize;
       const chord = m.notes.find(n => Math.abs(n.start - start) < .001 && Math.abs(n.duration - duration) < .001);
       if (chord) chord.pitches.push(midiPitch(note.midi));
@@ -338,24 +380,37 @@ export async function parseMidi(buffer: ArrayBuffer): Promise<Score> {
     }
     return { id: `midi-${ti}`, name, clef: track.instrument.percussion ? 'percussion' : /bass/i.test(name) ? 'bass' : 'treble', instrument: track.instrument.percussion ? 'drum-kit' : instrumentForProgram(track.instrument.number), pitchBasis: 'concert' as const, measures };
   });
-  return normalized({ title: midi.name || '', source: 'MIDI · quantized', tempo, beats, beatType, key: 0, parts });
+  const score = normalized({ title: midi.name || '', source: 'MIDI · quantized', tempo, beats, beatType, key: 0, parts });
+  score.document = makeSourceDocument({ format: 'midi', engravingFormat: 'mei', originalBytes: new Uint8Array(buffer), engravingText: scoreToMei(score), identity: identityForScore(score) });
+  return score;
 }
 
 export async function importFile(file: File): Promise<Score> {
   if (file.size > 8_000_000) throw new Error('Please choose a file smaller than 8 MB.');
   const name = file.name.toLowerCase();
-  if (/\.(mid|midi)$/.test(name)) return parseMidi(await file.arrayBuffer());
-  if (/\.mxl$/.test(name)) {
-    const files = unzipSync(new Uint8Array(await file.arrayBuffer()));
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const hash = await sha256(bytes);
+  let score: Score;
+  if (/\.(mid|midi)$/.test(name)) score = await parseMidi(bytes.buffer);
+  else if (/\.mxl$/.test(name)) {
+    let files: Record<string, Uint8Array>;
+    try { files = unzipSync(bytes); } catch { throw new Error('This MXL archive could not be opened.'); }
     const container = files['META-INF/container.xml'];
     const path = container && parseXml(strFromU8(container)).querySelector('rootfile')?.getAttribute('full-path');
-    const entry = path ? files[path] : Object.entries(files).find(([key]) => /\.xml$/.test(key) && !key.startsWith('META-INF/'))?.[1];
+    if (path && (path.startsWith('/') || path.split('/').includes('..'))) throw new Error('This MXL archive declares an unsafe score path.');
+    const entry = path ? files[path] : Object.entries(files).find(([key]) => /\.(xml|musicxml)$/i.test(key) && !key.startsWith('META-INF/'))?.[1];
     if (!entry || entry.length > 8_000_000) throw new Error('This MXL archive has no readable score.');
-    return parseMusicXml(strFromU8(entry));
+    const text = strFromU8(entry);
+    score = parseMusicXml(text);
+    score.document = makeSourceDocument({ format: 'mxl', engravingFormat: 'musicxml', originalBytes: bytes, originalText: text, engravingText: score.document!.engravingText, filename: file.name, sha256: hash, identity: score.document!.identity });
+    return score;
+  } else {
+    const text = new TextDecoder().decode(bytes);
+    if (/\.(abc|txt)$/.test(name)) score = await parseAbc(text);
+    else if (/\.mei$/.test(name)) score = parseMei(text);
+    else if (/\.(xml|musicxml)$/.test(name)) score = parseMusicXml(text);
+    else throw new Error('Choose a MusicXML, MIDI, MEI, or ABC file.');
   }
-  const text = await file.text();
-  if (/\.(abc|txt)$/.test(name)) return parseAbc(text);
-  if (/\.mei$/.test(name)) return parseMei(text);
-  if (/\.(xml|musicxml)$/.test(name)) return parseMusicXml(text);
-  throw new Error('Choose a MusicXML, MIDI, MEI, or ABC file.');
+  score.document = makeSourceDocument({ format: score.document!.format, engravingFormat: score.document!.engravingFormat, originalBytes: bytes, originalText: score.document!.originalText, engravingText: score.document!.engravingText, filename: file.name, sha256: hash, identity: score.document!.identity });
+  return score;
 }

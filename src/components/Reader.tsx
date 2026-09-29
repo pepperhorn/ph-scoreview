@@ -1,22 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, FileMusic, FolderOpen, Minus, Pause, Play, Plus, RotateCcw, SlidersHorizontal, Square, Settings2, X } from 'lucide-react';
-import { Font, VexFlow } from 'vexflow/core';
 import { exampleScore, gmSoundfontLabel, GM_FAMILIES, GM_SOUNDS, instrumentDetails, type GmFamily, type GmSound, type Part, type Score } from '../lib/score';
 import { importFile, parseAbc, parseMusicXml } from '../lib/import';
 import { portraitBarLimit, renderScore, type RenderResult } from '../lib/render';
 import { fileSource, readFileState, writeFileState, type FileSettings, type FileSource } from '../lib/file-state';
-import { scoreForView, soundingMidi } from '../lib/transpose';
+import { scoreForView } from '../lib/transpose';
+import { buildPerformanceTimeline, eventsFromSeconds, positionAtSeconds } from '../lib/playback/timeline';
+import { disposeVerovio, importVerovio } from '../lib/verovio-runtime';
 
 type Prefs = FileSettings;
 const defaults: Prefs = { mode: 'portrait', notationFont: 'Bravura', barsPerLine: 'auto', overlap: 1, names: false, chordSymbols: false, inferChordSymbols: false, counts: false, subdivisions: false, annotationFont: 'Sans', bpm: 96, zoom: 1, semitones: 0, scorePitch: 'written' };
 const sampleAbc = `X:1\nT:A little room to play\nM:4/4\nL:1/4\nQ:1/4=96\nK:C\nC E G c | B A G E | C E G c | d2 c2 | G E D C | E G A G | F E D B, | C4 |`;
 const playbackSound = (part: Part) => part.gmSoundfont || (part.instrument === 'drum-kit' ? 'drum-kit' : instrumentDetails(part.instrument).soundfont!);
 const audioKey = (part: Part) => playbackSound(part) === 'drum-kit' ? `drum-kit:${part.id}` : playbackSound(part);
-const musicFontLoads = new Map<string, Promise<unknown>>();
-function ensureMusicFont(name: 'Bravura' | 'Petaluma') {
-  if (!musicFontLoads.has(name)) musicFontLoads.set(name, Font.load(name, `/fonts/${name}.woff2`, { display: 'block' }));
-  return musicFontLoads.get(name)!;
-}
 type AudioPlayer = {
   fallback?: boolean;
   start(options: { note: number; time: number; duration: number; velocity: number; destination?: AudioNode }): () => void;
@@ -47,6 +43,7 @@ export default function Reader({ musicXml }: ReaderProps) {
   const [painting, setPainting] = useState(true);
   const [resizeTick, setResizeTick] = useState(0);
   const [active, setActive] = useState<string | null>(null);
+  const [activeNotes, setActiveNotes] = useState<string[]>([]);
   const [position, setPosition] = useState(0);
   const [ready, setReady] = useState(false);
   const [staffCenters, setStaffCenters] = useState<number[]>([]);
@@ -60,6 +57,8 @@ export default function Reader({ musicXml }: ReaderProps) {
   const playRef = useRef<{ start: number; beat: number; frame: number; interval: ReturnType<typeof setInterval> } | null>(null);
   const scheduledStopsRef = useRef<Array<{ stop: () => void; end: number }>>([]);
   const playRunRef = useRef(0);
+  const importRunRef = useRef(0);
+  const renderRunRef = useRef(0);
   const swipeRef = useRef<{ x: number; y: number } | null>(null);
   const pinchRef = useRef<{ distance: number; zoom: number; nextZoom: number } | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -76,14 +75,7 @@ export default function Reader({ musicXml }: ReaderProps) {
   }, [trackVolumes]);
   const displayScore = useMemo(() => scoreForView(visibleScore, prefs.scorePitch, prefs.semitones), [visibleScore, prefs.scorePitch, prefs.semitones]);
   const hasTransposingParts = score.parts.some(part => part.transposition?.semitones || part.measures.some(measure => measure.transposition?.semitones));
-  const measureOffsets = useMemo(() => {
-    let elapsed = 0;
-    return visibleScore.parts[0]?.measures.map(measure => {
-      const start = elapsed;
-      elapsed += measure.beats;
-      return start;
-    }) || [];
-  }, [visibleScore]);
+  const timeline = useMemo(() => buildPerformanceTimeline(visibleScore, { bpm: prefs.bpm, semitones: prefs.semitones }), [visibleScore, prefs.bpm, prefs.semitones]);
 
   useEffect(() => {
     try {
@@ -102,7 +94,7 @@ export default function Reader({ musicXml }: ReaderProps) {
   useEffect(() => { if (ready) localStorage.setItem('scoreflow-prefs', JSON.stringify(prefs)); }, [prefs, ready]);
   useEffect(() => { if (ready && source) writeFileState(source, prefs, score, hiddenIds, trackVolumes); }, [ready, source, prefs, score, hiddenIds, trackVolumes]);
   const update = (patch: Partial<Prefs>) => {
-    if (['mode', 'notationFont', 'barsPerLine', 'names', 'chordSymbols', 'inferChordSymbols', 'counts', 'subdivisions', 'zoom', 'semitones', 'scorePitch'].some(key => key in patch)) setPainting(true);
+    if (['mode', 'notationFont', 'annotationFont', 'barsPerLine', 'names', 'chordSymbols', 'inferChordSymbols', 'counts', 'subdivisions', 'zoom', 'semitones', 'scorePitch'].some(key => key in patch)) setPainting(true);
     if (patch.mode && patch.mode !== prefs.mode) viewportRef.current?.scrollTo({ left: 0, top: 0 });
     setPrefs(prev => ({ ...prev, ...patch }));
   };
@@ -114,7 +106,7 @@ export default function Reader({ musicXml }: ReaderProps) {
     audioRef.current?.players.forEach(players => players.forEach(player => player.stop()));
     setPlaying(false);
     setLoadingAudio(false);
-    if (reset) { setPosition(0); setActive(null); }
+    if (reset) { setPosition(0); setActive(null); setActiveNotes([]); }
   }, []);
   const changePitch = (patch: Partial<Prefs>) => { stop(true); update(patch); };
   const loadScore = (next: Score, nextSource: FileSource | null = null) => {
@@ -134,15 +126,31 @@ export default function Reader({ musicXml }: ReaderProps) {
   };
   useEffect(() => {
     if (!musicXml) return;
-    try { loadScore(parseMusicXml(musicXml)); }
-    catch (e) { setError(e instanceof Error ? e.message : 'Could not read the supplied MusicXML.'); }
+    const run = ++importRunRef.current;
+    stop(true); setPainting(true);
+    void (async () => {
+      try {
+        const next = parseMusicXml(musicXml);
+        if (next.document) await importVerovio(next.document.engravingText);
+        if (run === importRunRef.current) loadScore(next);
+      } catch (e) {
+        if (run === importRunRef.current) { setPainting(false); setError(e instanceof Error ? e.message : 'Could not read the supplied MusicXML.'); }
+      }
+    })();
+    return () => { importRunRef.current++; };
   }, [musicXml]);
   const readFile = async (file?: File) => {
     if (!file) return;
+    const run = ++importRunRef.current;
+    stop(true);
     setPainting(true);
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-    try { const [nextSource, nextScore] = await Promise.all([fileSource(file), importFile(file)]); loadScore(nextScore, nextSource); }
-    catch (e) { setPainting(false); setError(e instanceof Error ? e.message : 'Could not open this file.'); }
+    try {
+      const [nextSource, nextScore] = await Promise.all([fileSource(file), importFile(file)]);
+      if (nextScore.document) await importVerovio(nextScore.document.engravingText);
+      if (run === importRunRef.current) loadScore(nextScore, nextSource);
+    }
+    catch (e) { if (run === importRunRef.current) { setPainting(false); setError(e instanceof Error ? e.message : 'Could not open this file.'); } }
   };
   const togglePart = (id: string) => {
     if (!hiddenSet.has(id) && visibleScore.parts.length <= 1) return;
@@ -168,18 +176,19 @@ export default function Reader({ musicXml }: ReaderProps) {
     const canvas = canvasRef.current;
     if (!canvas || !ready) return;
     let disposed = false;
+    const generation = ++renderRunRef.current;
     let timer = 0;
     let frame = 0;
     setPainting(true);
-    const draw = () => {
+    const draw = async () => {
       try {
         if (disposed) return;
-        VexFlow.setFonts(prefs.notationFont);
         setScoreWidth(previous => previous === canvas.clientWidth ? previous : canvas.clientWidth);
         const controlGutter = Math.min(190, Math.max(128, Math.round(canvas.clientWidth * .36)));
         const metaHeight = canvas.closest('.score-content')?.querySelector('.score-meta')?.getBoundingClientRect().height || 0;
         const availableHeight = Math.max(120, (viewportRef.current?.clientHeight || 600) - metaHeight - 70);
-        const result = renderScore(canvas, displayScore, prefs.mode, prefs.names, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.chordSymbols, prefs.inferChordSymbols, availableHeight, prefs.zoom, controlGutter);
+        const result = await renderScore(canvas, displayScore, prefs.mode, prefs.names, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.chordSymbols, prefs.inferChordSymbols, availableHeight, prefs.zoom, controlGutter, { font: prefs.notationFont, textFont: prefs.annotationFont, transpose: prefs.semitones, scorePitch: prefs.scorePitch, generation });
+        if (disposed || generation !== renderRunRef.current) return;
         renderRef.current = result;
         setStaffCenters(result.staffCenters);
         setScoreScale(result.scale);
@@ -198,23 +207,11 @@ export default function Reader({ musicXml }: ReaderProps) {
         });
       }
     };
-    const prepare = async () => {
-      const pending = !musicFontLoads.has(prefs.notationFont);
-      setLoadingFont(pending);
-      try { await ensureMusicFont(prefs.notationFont); }
-      catch {
-        musicFontLoads.delete(prefs.notationFont);
-        if (!disposed) { setLoadingFont(false); setPainting(false); setError(`Could not load the ${prefs.notationFont} notation font.`); }
-        return;
-      }
-      if (disposed) return;
-      setLoadingFont(false);
-      const delay = hasPaintedRef.current && !window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 260 : 0;
-      timer = window.setTimeout(draw, delay);
-    };
-    void prepare();
+    setLoadingFont(false);
+    const delay = hasPaintedRef.current && !window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 260 : 0;
+    timer = window.setTimeout(() => void draw(), delay);
     return () => { disposed = true; window.clearTimeout(timer); cancelAnimationFrame(frame); };
-  }, [ready, resizeTick, scoreRevision, hiddenIds, prefs.mode, prefs.notationFont, prefs.names, prefs.chordSymbols, prefs.inferChordSymbols, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.zoom, prefs.semitones, prefs.scorePitch]);
+  }, [ready, resizeTick, scoreRevision, hiddenIds, prefs.mode, prefs.notationFont, prefs.annotationFont, prefs.names, prefs.chordSymbols, prefs.inferChordSymbols, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.zoom, prefs.semitones, prefs.scorePitch]);
 
   const turn = useCallback((direction: number) => {
     const el = viewportRef.current;
@@ -247,10 +244,9 @@ export default function Reader({ musicXml }: ReaderProps) {
     canvasRef.current?.querySelectorAll('.reader-note.is-playing').forEach(n => n.classList.remove('is-playing'));
     canvasRef.current?.querySelectorAll('.playback-line').forEach(n => n.remove());
     if (!note || !note.element) return;
-    const beat = (measureOffsets[note.measure] || 0) + note.start;
+    const sounding = new Set(activeNotes);
     renderRef.current?.points.forEach(point => {
-      const onset = (measureOffsets[point.measure] || 0) + point.start;
-      if (!point.rest && onset <= beat && onset + point.duration > beat) point.element?.classList.add('is-playing');
+      if (!point.rest && sounding.has(point.id)) point.element?.classList.add('is-playing');
     });
     const block = note.element.closest<HTMLElement>('.score-system');
     if (!block) return;
@@ -269,7 +265,7 @@ export default function Reader({ musicXml }: ReaderProps) {
       const y = head.top + head.height / 2;
       if (y > view.top + view.height * .72 || y < view.top + view.height * .18) viewport.scrollBy({ top: y - view.top - view.height * .38, behavior: 'smooth' });
     }
-  }, [active, prefs.mode, measureOffsets]);
+  }, [active, activeNotes, prefs.mode, painting]);
 
   const ensureAudio = async () => {
     if (!audioRef.current) {
@@ -293,7 +289,8 @@ export default function Reader({ musicXml }: ReaderProps) {
     }
     for (const sound of [...new Set(visibleScore.parts.map(audioKey))]) {
       const matching = visibleScore.parts.filter(part => audioKey(part) === sound);
-      const notes = matching.flatMap(part => part.measures.flatMap(measure => measure.notes.flatMap(note => note.pitches.map(notePitch => soundingMidi(part, measure, notePitch, prefs.semitones)))));
+      const matchingIds = new Set(matching.map(part => part.id));
+      const notes = timeline.events.filter(event => matchingIds.has(event.partId)).map(event => event.midi);
       let players = audio.players.get(sound);
       if (!players) {
         if (sound.startsWith('drum-kit:')) {
@@ -326,58 +323,41 @@ export default function Reader({ musicXml }: ReaderProps) {
       const audio = await ensureAudio();
       if (run !== playRunRef.current) return;
       setLoadingAudio(false);
-      const beatStart = position;
+      const secondsStart = position;
       const started = audio.context.currentTime + .09;
-      const secondsPerBeat = 60 / Math.max(30, prefs.bpm);
-      const events: { beat: number; duration: number; pitch: number; partId: string; key: string }[] = [];
-      for (const part of visibleScore.parts) {
-        for (const m of part.measures) for (const note of m.notes) {
-          if (note.rest) continue;
-          const beat = (measureOffsets[m.index] || 0) + note.start;
-          if (beat < beatStart) continue;
-          for (const notePitch of note.pitches) events.push({ beat, duration: note.duration, pitch: soundingMidi(part, m, notePitch, prefs.semitones), partId: part.id, key: audioKey(part) });
-        }
-      }
-      events.sort((a, b) => a.beat - b.beat);
+      const parts = new Map(visibleScore.parts.map(part => [part.id, part]));
+      const events = eventsFromSeconds(timeline, secondsStart);
       let nextEvent = 0;
       const schedule = () => {
         const horizon = audio.context.currentTime + .5;
         while (nextEvent < events.length) {
           const event = events[nextEvent];
-          const time = started + (event.beat - beatStart) * secondsPerBeat;
+          const time = started + event.startSeconds - secondsStart;
           if (time > horizon) break;
-          const duration = Math.max(.06, event.duration * secondsPerBeat * .92);
+          const duration = Math.max(.01, event.endSeconds - event.startSeconds);
           const destination = audio.trackGains.get(event.partId);
-          for (const player of audio.players.get(event.key) || []) scheduledStopsRef.current.push({ stop: player.start({ note: event.pitch, time: Math.max(time, audio.context.currentTime), duration, velocity: 82, destination }), end: time + duration });
+          const part = parts.get(event.partId);
+          for (const player of part ? audio.players.get(audioKey(part)) || [] : []) scheduledStopsRef.current.push({ stop: player.start({ note: event.midi, time: Math.max(time, audio.context.currentTime), duration, velocity: event.velocity, destination }), end: time + duration });
           nextEvent++;
         }
         scheduledStopsRef.current = scheduledStopsRef.current.filter(item => item.end > audio.context.currentTime);
       };
       schedule();
       const interval = setInterval(schedule, 50);
-      const total = visibleScore.parts[0].measures.reduce((sum, m) => sum + m.beats, 0);
       const tick = () => {
-        const nowBeat = beatStart + Math.max(0, audio.context.currentTime - started) / secondsPerBeat;
-        if (nowBeat >= total) { stop(true); return; }
-        let current: RenderResult['points'][number] | undefined;
-        let currentOnset = -Infinity;
-        for (const point of renderRef.current?.points || []) {
-          const onset = (measureOffsets[point.measure] || 0) + point.start;
-          if (onset > nowBeat + .001) continue;
-          if (onset > currentOnset + .001 || (Math.abs(onset - currentOnset) < .001 && current?.rest && !point.rest)) {
-            current = point;
-            currentOnset = onset;
-          }
-        }
-        if (current) setActive(current.id);
-        setPosition(nowBeat);
+        const now = secondsStart + Math.max(0, audio.context.currentTime - started);
+        if (now >= timeline.durationSeconds) { stop(true); return; }
+        const current = positionAtSeconds(timeline, now);
+        setActive(current.noteId);
+        setActiveNotes(previous => previous.join('|') === current.activeNoteIds.join('|') ? previous : current.activeNoteIds);
+        setPosition(now);
         if (playRef.current) playRef.current.frame = requestAnimationFrame(tick);
       };
-      playRef.current = { start: started, beat: beatStart, frame: requestAnimationFrame(tick), interval };
+      playRef.current = { start: started, beat: secondsStart, frame: requestAnimationFrame(tick), interval };
       setPlaying(true);
     } catch (e) { if (run === playRunRef.current) { setLoadingAudio(false); setError(e instanceof Error ? e.message : 'Audio could not start.'); } }
   };
-  useEffect(() => () => { if (playRef.current) { cancelAnimationFrame(playRef.current.frame); clearInterval(playRef.current.interval); } audioRef.current?.players.forEach(players => players.forEach(p => p.dispose())); audioRef.current?.context.close(); }, []);
+  useEffect(() => () => { importRunRef.current++; playRunRef.current++; disposeVerovio(); if (playRef.current) { cancelAnimationFrame(playRef.current.frame); clearInterval(playRef.current.interval); } scheduledStopsRef.current.splice(0).forEach(item => item.stop()); audioRef.current?.players.forEach(players => players.forEach(p => p.dispose())); audioRef.current?.context.close(); }, []);
   const openInstrumentPicker = (part: Part) => {
     const currentSound = playbackSound(part);
     const selected = GM_SOUNDS.find(sound => (sound.soundfont || 'drum-kit') === currentSound);
@@ -405,7 +385,7 @@ export default function Reader({ musicXml }: ReaderProps) {
       <div className="transport">
         <button className="icon-button stop-button" aria-label="Stop playback" title="Stop playback" onClick={() => { stop(true); viewportRef.current?.scrollTo({ top: 0, left: 0, behavior: 'smooth' }); }}><Square size={17} fill="currentColor"/></button>
         <button className="play-button" aria-label={playing || loadingAudio ? 'Pause playback' : 'Play score'} onClick={play}>{playing || loadingAudio ? <Pause size={17} fill="currentColor"/> : <Play size={17} fill="currentColor"/>}<span>{loadingAudio ? 'Loading sounds' : playing ? 'Pause' : 'Play'}</span></button>
-        <label className="bpm-control"><span>BPM</span><input type="number" min="30" max="240" value={prefs.bpm} onChange={e => update({ bpm: Math.max(30, Math.min(240, Number(e.target.value) || 96)) })}/></label>
+        <label className="bpm-control"><span>BPM</span><input type="number" min="30" max="240" value={prefs.bpm} onChange={e => { stop(true); update({ bpm: Math.max(30, Math.min(240, Number(e.target.value) || 96)) }); }}/></label>
         <div className="mode-toggle" role="group" aria-label="Reading mode"><button aria-label="Vertical view" title="Vertical view" className={prefs.mode === 'portrait' ? 'selected' : ''} onClick={() => update({ mode: 'portrait' })}><span>Vertical</span></button><button aria-label="Endless view" title="Endless view" className={prefs.mode === 'landscape' ? 'selected' : ''} onClick={() => update({ mode: 'landscape' })}><span>Endless</span></button></div>
         {barsSetting}
         {score.parts.length > 4 && <div className="zoom-controls" role="group" aria-label="Score zoom"><button aria-label="Zoom out" title="Zoom out" disabled={prefs.zoom <= .5} onClick={() => zoomBy(-.25)}><Minus size={15}/></button><span aria-live="polite">{Math.round(prefs.zoom * 100)}%</span><button aria-label="Zoom in" title="Zoom in" disabled={prefs.zoom >= 4} onClick={() => zoomBy(.25)}><Plus size={15}/></button></div>}

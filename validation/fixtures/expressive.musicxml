@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Original compact validation score: no external score material. -->
+<score-partwise version="4.0">
+  <work><work-title>Expression and rhythm</work-title></work>
+  <part-list><score-part id="P1"><part-name>Piano</part-name><score-instrument id="I1"><instrument-name>Piano</instrument-name></score-instrument><midi-instrument id="I1"><midi-channel>1</midi-channel><midi-program>1</midi-program></midi-instrument></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes><divisions>12</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>
+      <barline location="left"><repeat direction="forward"/></barline>
+      <direction placement="above"><direction-type><rehearsal>A</rehearsal></direction-type><staff>1</staff></direction>
+      <direction placement="below"><direction-type><dynamics><p/></dynamics></direction-type><staff>1</staff><sound tempo="90" dynamics="40"/></direction>
+      <direction placement="below"><direction-type><wedge type="crescendo" number="1"/></direction-type><staff>1</staff></direction>
+      <harmony><root><root-step>C</root-step></root><kind>major</kind><staff>1</staff></harmony>
+      <note id="triplet1"><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><type>eighth</type><time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes><normal-type>eighth</normal-type></time-modification><stem>up</stem><staff>1</staff><beam number="1">begin</beam><notations><tuplet type="start" number="1"/><slur type="start" number="1"/></notations><lyric number="1"><syllabic>begin</syllabic><text>Sing</text></lyric></note>
+      <note id="triplet2"><pitch><step>D</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><type>eighth</type><time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes><normal-type>eighth</normal-type></time-modification><stem>up</stem><staff>1</staff><beam number="1">continue</beam></note>
+      <note id="triplet3"><pitch><step>E</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><type>eighth</type><time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes><normal-type>eighth</normal-type></time-modification><stem>up</stem><staff>1</staff><beam number="1">end</beam><notations><tuplet type="stop" number="1"/><slur type="stop" number="1"/></notations><lyric number="1"><syllabic>end</syllabic><text>ing</text></lyric></note>
+      <note id="grace"><grace slash="yes"/><pitch><step>F</step><octave>4</octave></pitch><voice>1</voice><type>eighth</type><staff>1</staff></note>
+      <note id="long1"><pitch><step>G</step><octave>4</octave></pitch><duration>36</duration><tie type="start"/><voice>1</voice><type>half</type><dot/><staff>1</staff><notations><tied type="start"/><ornaments><trill-mark/></ornaments></notations><lyric number="1"><syllabic>single</syllabic><text>long</text><extend type="start"/></lyric></note>
+      <backup><duration>48</duration></backup>
+      <note id="bass1"><pitch><step>C</step><octave>3</octave></pitch><duration>48</duration><voice>2</voice><type>whole</type><staff>2</staff></note>
+    </measure>
+    <measure number="2">
+      <direction placement="below"><direction-type><wedge type="stop" number="1"/></direction-type><staff>1</staff></direction>
+      <direction placement="below"><direction-type><dynamics><f/></dynamics></direction-type><staff>1</staff><sound dynamics="90"/></direction>
+      <direction placement="below"><direction-type><pedal type="start" line="yes"/></direction-type><staff>2</staff></direction>
+      <note id="long2"><pitch><step>G</step><octave>4</octave></pitch><duration>24</duration><tie type="stop"/><voice>1</voice><type>half</type><staff>1</staff><notations><tied type="stop"/></notations></note>
+      <note id="accent"><pitch><step>A</step><octave>4</octave></pitch><duration>24</duration><voice>1</voice><type>half</type><staff>1</staff><notations><articulations><accent/></articulations><fermata/></notations></note>
+      <backup><duration>48</duration></backup>
+      <note id="bass2"><pitch><step>F</step><octave>3</octave></pitch><duration>48</duration><voice>2</voice><type>whole</type><staff>2</staff></note>
+      <direction placement="below"><direction-type><pedal type="stop" line="yes"/></direction-type><staff>2</staff></direction>
+    </measure>
+    <measure number="3">
+      <attributes><key><fifths>2</fifths></key><time><beats>3</beats><beat-type>4</beat-type></time></attributes>
+      <direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>120</per-minute></metronome></direction-type><staff>1</staff><sound tempo="120"/></direction>
+      <note id="sharp"><pitch><step>F</step><alter>1</alter><octave>4</octave></pitch><duration>12</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <note id="natural"><pitch><step>F</step><alter>0</alter><octave>4</octave></pitch><duration>12</duration><voice>1</voice><type>quarter</type><accidental cautionary="yes">natural</accidental><staff>1</staff></note>
+      <note id="rest"><rest/><duration>12</duration><voice>1</voice><type>quarter</type><staff>1</staff></note>
+      <backup><duration>36</duration></backup>
+      <note id="bass3"><pitch><step>D</step><octave>3</octave></pitch><duration>36</duration><voice>2</voice><type>half</type><dot/><staff>2</staff></note>
+    </measure>
+    <measure number="4">
+      <attributes><key><fifths>0</fifths></key></attributes>
+      <note id="last"><pitch><step>C</step><octave>5</octave></pitch><duration>36</duration><voice>1</voice><type>half</type><dot/><staff>1</staff><notations><arpeggiate/></notations></note>
+      <backup><duration>36</duration></backup>
+      <note id="bass4"><pitch><step>C</step><octave>3</octave></pitch><duration>36</duration><voice>2</voice><type>half</type><dot/><staff>2</staff></note>
+      <barline location="right"><repeat direction="backward" times="2"/></barline>
+    </measure>
+  </part>
+</score-partwise>
