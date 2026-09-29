@@ -69,6 +69,26 @@ try {
   assert.equal(smufl.text, '\uE1D5', 'Tempo glyph survives sanitizing');
   assert.ok(smufl.loaded && smufl.faces > 0, 'Local Bravura @font-face loads for SMuFL text');
   assert.equal(smufl.embedded, false, 'No embedded font payload is needed');
+  // Petaluma applies its SMuFL engravingDefaults (heavier stems/lines) and pairs Sans stave text with Petaluma Script.
+  const scoreStyle = () => page.evaluate(async () => {
+    await document.fonts.ready;
+    const tempo = document.querySelector('.score-system svg g.tempo text');
+    return { stem: Number(document.querySelector('.score-system svg .stem path')?.getAttribute('stroke-width')), tempoFont: tempo && getComputedStyle(tempo).fontFamily, script: document.fonts.check("20px 'Petaluma Script'"), meter: [...document.querySelectorAll('.score-system svg .meterSig use')].map(use => { const rect = use.getBoundingClientRect(); return [rect.top, rect.bottom]; }) };
+  });
+  const bravuraStyle = await scoreStyle();
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  await page.getByRole('button', { name: 'Petaluma', exact: true }).click();
+  await ready();
+  const petalumaStyle = await scoreStyle();
+  assert.ok(petalumaStyle.stem > bravuraStyle.stem, `Petaluma stems are heavier than Bravura (${petalumaStyle.stem} > ${bravuraStyle.stem})`);
+  assert.match(petalumaStyle.tempoFont || '', /Petaluma Script/, 'Petaluma tempo text uses Petaluma Script');
+  assert.ok(petalumaStyle.script, 'Local Petaluma Script @font-face loads');
+  // Without Verovio's handwrittenFont option the two Petaluma digits overprint each other.
+  assert.ok(petalumaStyle.meter.length === 2 && petalumaStyle.meter[0][1] <= petalumaStyle.meter[1][0] + 2, `Petaluma time-signature digits do not overprint: ${JSON.stringify(petalumaStyle.meter)}`);
+  assert.doesNotMatch(bravuraStyle.tempoFont || '', /Petaluma/, 'Bravura keeps the chosen stave text font');
+  await page.getByRole('button', { name: 'Bravura', exact: true }).click();
+  await page.locator('button[aria-label="Close options"]').click();
+  await ready();
   // Sample score: Verovio transposes the untouched document exactly once.
   const firstChord = () => page.evaluate(() => [...document.querySelector('.score-system svg .chord').querySelectorAll('.note')].map(note => note.getAttribute('data-pname')).sort().join(''));
   assert.equal(await firstChord(), 'ceg');
