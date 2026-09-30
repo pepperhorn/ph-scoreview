@@ -491,7 +491,8 @@ try {
     assert.ok(sample.systems.length > 2, `${label}: the sample has several systems`);
     assert.deepEqual(sample.systems.map(system => system.bars), sample.systems.map(() => 4), `${label}: the default shows four bars on every system (zoom ${sample.zoom})`);
     assert.ok(sample.systems.every(system => !system.overflow) && !sample.scrolls, `${label}: default systems fit the viewport width (${JSON.stringify(sample)})`);
-    assert.ok(sample.systems.every(system => Math.abs(system.staff - 72 * sample.zoom) <= 1.5), `${label}: every system is drawn at the default scale, none width-fitted (${JSON.stringify(sample)})`);
+    // Engines measure staff-line boxes slightly differently (Firefox includes more line thickness), so allow 3%.
+    assert.ok(sample.systems.every(system => Math.abs(system.staff - sample.systems[0].staff) <= .5 && Math.abs(system.staff - 72 * sample.zoom) <= Math.max(1.5, 72 * sample.zoom * .03)), `${label}: every system is drawn at the default scale, none width-fitted (${JSON.stringify(sample)})`);
     // Endless keeps its device default; back in Vertical the four-bar default is re-resolved.
     await four.getByRole('button', { name: 'Endless view', exact: true }).click();
     await fourReady();
@@ -554,7 +555,7 @@ try {
   // The default stave scale is the four-bar fit (see the four-bar block below); the stave is drawn at that scale.
   const deskDefaultZoom = Number(await desk.evaluate(() => document.querySelector('.score-content').dataset.staveScale));
   const deskDefaultStaff = await deskStaff();
-  assert.ok(Math.abs(deskDefaultStaff - 72 * deskDefaultZoom) <= 1.5, `Desktop default stave is drawn at its stave scale ${deskDefaultZoom}: ${deskDefaultStaff}`);
+  assert.ok(Math.abs(deskDefaultStaff - 72 * deskDefaultZoom) <= Math.max(1.5, 72 * deskDefaultZoom * .03), `Desktop default stave is drawn at its stave scale ${deskDefaultZoom}: ${deskDefaultStaff}`);
   // Auto bars reflow: 50% fits more bars per line than 100%, and full systems fill the usable width.
   await deskZoom(1);
   const atFull = await systemLayout();
