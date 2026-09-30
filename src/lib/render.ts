@@ -17,14 +17,17 @@ export type RenderResult = { points: NotePoint[]; measureStarts: number[]; syste
   /** Smallest distance between adjacent staff centres in the first system (px); Infinity for one staff. */
   staffPitchPx: number;
   /** Left gutter reserved for staff controls before the first system (px). */
-  gutter: number };
+  gutter: number;
+  /** Stave scale the score was laid out at (px per Verovio unit); the resolved value when 'fit' was requested. */
+  zoom: number };
 export type RenderOptions = { font?: 'Bravura' | 'Petaluma'; textFont?: 'Sans' | 'Serif' | 'Mono'; transpose?: number; semitones?: number; scorePitch?: 'written' | 'concert'; generation?: number; hiddenPartIds?: string[];
   /**
-   * Final control gutter for a rendered staff height and staff pitch (px). The engraving is laid out with
-   * `firstSystemGutter` (independent of zoom, so zooming reuses the cached layout); the first system is then
-   * fitted beside the gutter this returns.
+   * Control gutter for a rendered staff height and staff pitch (px). The layout reserves the gutter for a
+   * staff of `STAFF_UNITS * zoom` px before rendering; the final gutter uses the measured staves.
    */
-  gutterFor?: (stavePx: number, staffPitchPx: number) => number };
+  gutterFor?: (stavePx: number, staffPitchPx: number) => number;
+  /** Upper bound of a 'fit' zoom (the device default); a many-staff stack is height-fitted below it. */
+  fitCap?: number };
 
 const latestGeneration = new WeakMap<HTMLElement, number>();
 /** Endless view keeps one unbroken system up to this many bars, then uses bounded chunks. */
@@ -43,8 +46,19 @@ export function portraitMinimumBarWidth(score: Score): number {
 }
 // Lyric syllables need roughly a word's width each; without this, Verovio compresses them into collisions.
 const lyricBarWidth = (syllables: number) => syllables ? 110 + syllables * 62 : 0;
+/** Auto bars per line never exceeds this; explicit choices stay 1-4. */
+export const AUTO_BAR_CAP = 8;
+/** Five-line staff height in Verovio layout units at `scale: 100` (72px at stave scale 1). */
+export const STAFF_UNITS = 72;
+/** Most bars that fit a line of `width` Verovio units (the layout width, not px). */
 export function portraitBarLimit(width: number, score: Score, minimumBar = portraitMinimumBarWidth(score)): number {
-  return Math.max(1, Math.min(4, score.parts[0]?.measures.length || 1, Math.floor((Math.max(240, width) - 56) / minimumBar)));
+  return Math.max(1, Math.min(AUTO_BAR_CAP, score.parts[0]?.measures.length || 1, Math.floor((Math.max(240, width) - 56) / minimumBar)));
+}
+/** Auto bars per line: the width limit, balanced so the last line is not left short. */
+export function autoBarsPerLine(width: number, score: Score, minimumBar = portraitMinimumBarWidth(score)): number {
+  const limit = portraitBarLimit(width, score, minimumBar);
+  const count = Math.max(1, score.parts[0]?.measures.length || 1);
+  return Math.ceil(count / Math.ceil(count / limit));
 }
 const lyricCache = new Map<string, number>();
 /** Most lyric syllables in any one staff-measure of the engraving (per verse line). */
@@ -238,7 +252,7 @@ export async function renderScore(
   container: HTMLElement, score: Score, mode: 'portrait' | 'landscape',
   showNames: boolean, showCounts: boolean, subdivisions: boolean,
   barsPerLine: 'auto' | number, showChordSymbols: boolean, inferChordSymbols: boolean,
-  availableHeight = 0, zoom = 1, firstSystemGutter = 0, options: RenderOptions = {},
+  availableHeight = 0, zoom: number | 'fit' = 1, firstSystemGutter = 0, options: RenderOptions = {},
 ): Promise<RenderResult> {
   const generation = options.generation ?? (latestGeneration.get(container) || 0) + 1;
   latestGeneration.set(container, generation);
@@ -247,16 +261,17 @@ export async function renderScore(
   const { mei: baseline } = await importVerovio(score.document.engravingText);
   if (!isCurrent()) throw new Error('Superseded score render.');
   const viewportWidth = Math.max(240, container.clientWidth);
-  const usableWidth = Math.max(180, viewportWidth - firstSystemGutter);
   const count = Math.max(1, score.parts[0]?.measures.length || 1);
   const endlessSingle = mode === 'landscape' && count <= ENDLESS_SINGLE_SYSTEM_LIMIT;
   const minimumBar = Math.max(portraitMinimumBarWidth(score), lyricBarWidth(engravedLyricDensity(baseline)));
-  const bars = mode === 'landscape' ? (endlessSingle ? count : ENDLESS_CHUNK) : barsPerLine === 'auto' ? portraitBarLimit(usableWidth, score, minimumBar) : Math.min(4, Math.max(1, barsPerLine));
-  const { mei, measureIds, staffOf, visibleParts } = viewMei(baseline, score, endlessSingle ? 0 : bars, new Set(options.hiddenPartIds || []), showChordSymbols);
-  const visibleIndex = new Map(visibleParts.map((part, index) => [part.id, index]));
+  const barFloor = Math.max(190, minimumBar);
+  const hiddenIds = new Set(options.hiddenPartIds || []);
+  // The gutter for a staff drawn at this zoom (staff pitch is unknown before layout, so this is an upper bound).
+  const layoutGutter = (scale: number) => options.gutterFor ? Math.round(options.gutterFor(STAFF_UNITS * scale, Infinity)) : firstSystemGutter;
 
   // Annotation lanes sit under each staff (below lyrics); reserve room for them in the engraving.
-  const annotated = visibleParts.filter(part => part.clef !== 'percussion' || showCounts);
+  const structure = viewMei(baseline, score, 0, hiddenIds, showChordSymbols);
+  const annotated = structure.visibleParts.filter(part => part.clef !== 'percussion' || showCounts);
   const nameRows = showNames ? Math.max(1, ...annotated.flatMap(part => part.measures.flatMap(measure => measure.notes.map(note => note.pitches.length)))) : 0;
   const laneRows = nameRows + (showCounts ? 1 : 0);
   const laneHeight = laneRows ? LANE_GAP + laneRows * LANE_ROW + 4 : 0;
@@ -274,20 +289,57 @@ export async function renderScore(
     spacingStaff, smuflTextFont: 'none', header: 'none', footer: 'none', svgAdditionalAttribute: ['staff@n', 'note@pname', 'note@oct'],
     ...musicFontOptions(options.font),
   });
-  const pageCount = endlessSingle ? 1 : Math.ceil(measureIds.length / bars);
-  let pages: string[];
-  if (mode === 'landscape') {
-    pages = (await renderVerovio(mei, verovioOptions(100000))).pages.map(item => item.svg);
-  } else {
+
+  // Layout at a stave scale: Verovio lays out (viewport - gutter) / zoom units, so systems fill the viewport.
+  type Layout = { zoom: number; bars: number; explicit: boolean; view: ViewDocument; pageCount: number; firstWidth: number; restWidth: number };
+  const layoutAt = (scale: number): Layout => {
+    const usableUnits = Math.max(180, viewportWidth - layoutGutter(scale)) / scale;
+    const restUnits = viewportWidth / scale;
+    const explicit = mode === 'portrait' && barsPerLine !== 'auto';
+    const bars = mode === 'landscape' ? (endlessSingle ? count : ENDLESS_CHUNK) : barsPerLine === 'auto' ? autoBarsPerLine(usableUnits, score, minimumBar) : Math.min(4, Math.max(1, barsPerLine));
+    const view = viewMei(baseline, score, endlessSingle ? 0 : bars, hiddenIds, showChordSymbols);
+    // A bar never gets narrower than its minimum (the system is width-fitted instead); explicit counts are not stretched
+    // past a comfortable width, so their systems stay narrower than the viewport and are centred.
+    const least = bars * barFloor + 120;
+    const most = explicit ? bars * barFloor * 2 + 120 : Infinity;
+    return { zoom: scale, bars, explicit, view, pageCount: endlessSingle ? 1 : Math.ceil(view.measureIds.length / bars),
+      firstWidth: Math.max(least, Math.min(most, usableUnits)), restWidth: Math.max(least, Math.min(most, restUnits)) };
+  };
+  const fitCap = options.fitCap ?? 1;
+  const heightFit = (naturalHeight: number) => structure.visibleParts.length > 4 && availableHeight > 0 ? Math.min(fitCap, availableHeight / naturalHeight) : fitCap;
+  const renderPages = async (layout: Layout): Promise<string[]> => {
+    if (mode === 'landscape') return (await renderVerovio(layout.view.mei, verovioOptions(100000))).pages.map(item => item.svg);
     // Only the first system gives up width to the staff controls; later systems use the full viewport.
-    const firstWidth = Math.max(usableWidth, bars * Math.max(190, minimumBar) + 120);
-    const restWidth = Math.max(viewportWidth, bars * Math.max(190, minimumBar) + 120);
+    const split = layout.pageCount > 1 && layout.firstWidth !== layout.restWidth;
     const [first, rest] = await Promise.all([
-      renderVerovio(mei, verovioOptions(firstWidth), pageCount > 1 && firstWidth !== restWidth ? [1] : undefined),
-      pageCount > 1 && firstWidth !== restWidth ? renderVerovio(mei, verovioOptions(restWidth), Array.from({ length: pageCount - 1 }, (_, index) => index + 2)) : undefined,
+      renderVerovio(layout.view.mei, verovioOptions(layout.firstWidth), split ? [1] : undefined),
+      split ? renderVerovio(layout.view.mei, verovioOptions(layout.restWidth), Array.from({ length: layout.pageCount - 1 }, (_, index) => index + 2)) : undefined,
     ]);
-    pages = [...first.pages, ...(rest?.pages || [])].sort((a, b) => a.page - b.page).map(item => item.svg);
+    return [...first.pages, ...(rest?.pages || [])].sort((a, b) => a.page - b.page).map(item => item.svg);
+  };
+  const naturalHeightOf = (svg: string) => Number(/viewBox="[^"]*?\s([\d.]+)"/.exec(svg)?.[1]) || 1;
+
+  let layout: Layout;
+  let pages: string[];
+  if (zoom !== 'fit') {
+    layout = layoutAt(zoom);
+    pages = await renderPages(layout);
+  } else if (mode === 'landscape') {
+    // Endless layout does not depend on zoom: fit the one system's height.
+    layout = layoutAt(fitCap);
+    pages = await renderPages(layout);
+    layout.zoom = heightFit(Math.max(...pages.map(naturalHeightOf)));
+  } else {
+    // Height fit: measure the first system at the cap, then lay out again at the fitted scale.
+    layout = layoutAt(fitCap);
+    const probe = await renderVerovio(layout.view.mei, verovioOptions(layout.firstWidth), layout.pageCount > 1 && layout.firstWidth !== layout.restWidth ? [1] : undefined);
+    if (!isCurrent()) throw new Error('Superseded score render.');
+    const fitted = Math.round(heightFit(naturalHeightOf(probe.pages[0]?.svg || '')) * 1000) / 1000;
+    if (fitted < fitCap - .001) layout = layoutAt(fitted);
+    pages = await renderPages(layout);
   }
+  const { bars, view: { measureIds, staffOf, visibleParts } } = layout;
+  const visibleIndex = new Map(visibleParts.map((part, index) => [part.id, index]));
   if (!isCurrent()) throw new Error('Superseded score render.');
   if (!pages.length) throw new Error('Verovio did not produce a score page.');
 
@@ -392,13 +444,10 @@ export async function renderScore(
   const staffNatural = lined ? lined.bottom - lined.top : 72;
   const centers = firstBands.map(band => band.center).sort((a, b) => a - b);
   const pitchNatural = centers.slice(1).reduce((least, center, index) => Math.min(least, center - centers[index]), Infinity);
-  const scaleFor = (page: PageGeometry, pageIndex: number, gutter: number) => {
-    const widthLimit = pageIndex === 0 ? Math.max(180, viewportWidth - gutter) : viewportWidth;
-    const widthFit = mode === 'portrait' ? Math.min(1, widthLimit / page.naturalWidth) : 1;
-    const heightFit = visibleParts.length > 4 && availableHeight > 0 ? Math.min(1, availableHeight / page.naturalHeight) : 1;
-    return Math.min(widthFit, heightFit) * zoom;
-  };
-  let gutter = firstSystemGutter;
+  // Systems draw at the stave scale; a portrait system is only width-fitted when its bars cannot fit at their minimum width.
+  const widthLimitFor = (pageIndex: number, gutter: number) => pageIndex === 0 ? Math.max(180, viewportWidth - gutter) : viewportWidth;
+  const scaleFor = (page: PageGeometry, pageIndex: number, gutter: number) => mode === 'portrait' ? Math.min(layout.zoom, widthLimitFor(pageIndex, gutter) / page.naturalWidth) : layout.zoom;
+  let gutter = layoutGutter(layout.zoom);
   if (options.gutterFor) {
     // Gutter grows with the staff while a wider gutter shrinks a width-fitted staff; damped iteration settles in a few steps.
     for (let step = 0; step < 12; step++) {
@@ -417,7 +466,11 @@ export async function renderScore(
     block.dataset.firstMeasure = String(page.firstMeasure + 1);
     block.style.width = `${page.naturalWidth * scale}px`;
     block.style.height = `${page.naturalHeight * scale}px`;
-    block.style.marginLeft = pageIndex === 0 ? `${gutter}px` : '';
+    const width = page.naturalWidth * scale;
+    const minLeft = pageIndex === 0 ? gutter : 0;
+    // Portrait systems end flush with the viewport; explicit bar counts narrower than the viewport are centred.
+    const left = mode === 'landscape' ? minLeft : layout.explicit ? Math.max(minLeft, (viewportWidth - width) / 2) : Math.max(minLeft, viewportWidth - width);
+    block.style.marginLeft = left ? `${Math.floor(left)}px` : '';
     svg.style.width = `${page.naturalWidth * scale}px`; svg.style.height = `${page.naturalHeight * scale}px`;
     return scale;
   });
@@ -441,5 +494,5 @@ export async function renderScore(
   const firstCenters = first.staffCenters.map((center, index) => Number.isFinite(center) ? center : (first.staffCenters[index - 1] ?? 0) + 80 * scales[0]);
   return { points, measureStarts, systemSize: bars, staffCenters: firstCenters, scale: scales[0], visiblePartIds: visibleParts.map(part => part.id),
     barWidth: Math.max(1, first.width) / Math.max(1, first.measureCount || bars), systemHeight: first.height, measures, systems,
-    stavePx: staffNatural * scales[0], staffPitchPx: pitchNatural * scales[0], gutter };
+    stavePx: staffNatural * scales[0], staffPitchPx: pitchNatural * scales[0], gutter, zoom: layout.zoom };
 }

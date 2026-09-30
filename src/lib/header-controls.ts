@@ -27,8 +27,5 @@ export const MOBILE_HEADER_BREAKPOINT = 580;
 /** Media query matching the collapsed (mobile) header. */
 export const MOBILE_HEADER_QUERY = `(max-width: ${MOBILE_HEADER_BREAKPOINT}px)`;
 
-/** Stave scale (zoom) bounds shared by the header slider and pinch zoom; they match the file-state schema. */
-export const STAVE_SCALE_MIN = .5;
-export const STAVE_SCALE_MAX = 4;
-export const STAVE_SCALE_STEP = .05;
-export const clampStaveScale = (value: number) => Math.max(STAVE_SCALE_MIN, Math.min(STAVE_SCALE_MAX, Math.round(value / STAVE_SCALE_STEP) / Math.round(1 / STAVE_SCALE_STEP)));
+/** Stave scale (zoom) bounds shared by the header slider and pinch zoom live with the defaults in stave-scale.ts. */
+export { clampStaveScale, STAVE_SCALE_MAX, STAVE_SCALE_MIN, STAVE_SCALE_STEP } from './stave-scale';
