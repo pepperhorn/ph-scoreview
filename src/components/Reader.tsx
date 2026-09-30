@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { ChevronDown, ChevronLeft, ChevronRight, Ellipsis, Eye, EyeOff, FileMusic, FolderOpen, Minus, Pause, Play, Plus, RotateCcw, SlidersHorizontal, Square, Settings2, VolumeX, X } from 'lucide-react';
 import { exampleScore, gmSoundfontLabel, GM_FAMILIES, GM_SOUNDS, instrumentDetails, type GmFamily, type GmSound, type Part, type Score } from '../lib/score';
@@ -47,15 +47,6 @@ type AudioPlayer = {
   loadNotes?(notes: number[]): Promise<void>;
 };
 export type ReaderProps = { musicXml?: string };
-/** Live media-query match; the server snapshot is false, and hydration then switches to the client value. */
-function useMediaQuery(query: string): boolean {
-  const subscribe = useCallback((change: () => void) => {
-    const list = window.matchMedia(query);
-    list.addEventListener('change', change);
-    return () => list.removeEventListener('change', change);
-  }, [query]);
-  return useSyncExternalStore(subscribe, () => window.matchMedia(query).matches, () => false);
-}
 /** The widest control gutter a viewport can spare. */
 const maxControlGutter = (width: number) => Math.max(120, Math.round(width * .42));
 /** Keyboard steps on the stave scale slider commit once they settle; drags and pinches commit on release. */
@@ -120,7 +111,6 @@ export default function Reader({ musicXml }: ReaderProps) {
   const staveScaleInputRef = useRef<HTMLInputElement | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
-  const compactHeader = useMediaQuery(MOBILE_HEADER_QUERY);
   const [scoreWidth, setScoreWidth] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -376,15 +366,16 @@ export default function Reader({ musicXml }: ReaderProps) {
   }, [onStaveScaleChange]);
   useEffect(() => () => window.clearTimeout(zoomCommitRef.current), []);
   useEffect(() => {
-    if (!compactHeader) setMoreOpen(false);
-  }, [compactHeader]);
-  useEffect(() => {
     if (!moreOpen) return;
+    // Layout is CSS-only (styles.css); this listener just closes an open panel once the header widens past the breakpoint.
+    const compact = window.matchMedia(MOBILE_HEADER_QUERY);
+    const widened = () => { if (!compact.matches) setMoreOpen(false); };
+    compact.addEventListener('change', widened);
     const outside = (event: PointerEvent) => { if (!moreRef.current?.contains(event.target as Node)) setMoreOpen(false); };
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') { setMoreOpen(false); moreRef.current?.querySelector<HTMLButtonElement>('.header-more-toggle')?.focus(); } };
     document.addEventListener('pointerdown', outside);
     document.addEventListener('keydown', escape);
-    return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape); };
+    return () => { compact.removeEventListener('change', widened); document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape); };
   }, [moreOpen]);
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -630,7 +621,9 @@ export default function Reader({ musicXml }: ReaderProps) {
   const hasScoreText = Boolean(score.title || score.subtitle || score.composer || score.credits?.length);
   // Auto bars follow the layout width in Verovio units: (width - gutter) / stave scale.
   const barsLimit = portraitBarLimit(Math.max(180, (scoreWidth || 800) - controlMetrics.gutter) / renderedZoom, visibleScore);
-  const barsSetting = prefs.mode === 'portrait' && <label className="header-bars-setting"><span>Bars</span><select aria-label="Bars per line" title={`Auto fits up to ${barsLimit} bars`} value={prefs.barsPerLine} onChange={event => update({ barsPerLine: event.target.value === 'auto' ? 'auto' : Number(event.target.value) })}><option value="auto">Auto</option>{[1, 2, 3, 4].map(count => <option value={count} key={count}>{count}</option>)}</select></label>;
+  // Always rendered (disabled in Endless, same footprint) so a saved mode applied after hydration can't add/remove it and shift the header.
+  const barsDisabled = prefs.mode !== 'portrait';
+  const barsSetting = <label className={`header-bars-setting ${barsDisabled ? 'is-disabled' : ''}`} title={barsDisabled ? 'Bars per line applies to Vertical view' : undefined}><span>Bars</span><select aria-label="Bars per line" title={barsDisabled ? 'Bars per line applies to Vertical view' : `Auto fits up to ${barsLimit} bars`} disabled={barsDisabled} aria-disabled={barsDisabled} value={prefs.barsPerLine} onChange={event => update({ barsPerLine: event.target.value === 'auto' ? 'auto' : Number(event.target.value) })}><option value="auto">Auto</option>{[1, 2, 3, 4].map(count => <option value={count} key={count}>{count}</option>)}</select></label>;
 
   const staveScale = zoomDraft ?? prefs.zoom ?? renderedZoom;
   const staveScaleMin = Math.min(STAVE_SCALE_MIN, renderedZoom);
@@ -645,7 +638,7 @@ export default function Reader({ musicXml }: ReaderProps) {
       <button aria-label="Vertical view" title="Vertical view" className={`mode-toggle-vertical ${prefs.mode === 'portrait' ? 'selected' : ''}`} onClick={() => update({ mode: 'portrait' })}><span className="mode-toggle-label-full">Vertical</span><span className="mode-toggle-label-short" aria-hidden="true">V</span></button>
       <button aria-label="Endless view" title="Endless view" className={`mode-toggle-endless ${prefs.mode === 'landscape' ? 'selected' : ''}`} onClick={() => update({ mode: 'landscape' })}><span className="mode-toggle-label-full">Endless</span><span className="mode-toggle-label-short" aria-hidden="true">E</span></button>
     </div>,
-    bars: barsSetting || null,
+    bars: barsSetting,
     staveScale: <label className="header-stave-scale" title="Stave scale">
       <span className="header-stave-scale-label">Scale</span>
       <input className="header-stave-scale-input" type="range" min={staveScaleMin} max={STAVE_SCALE_MAX} step={STAVE_SCALE_STEP} value={staveScale} aria-label="Stave scale" aria-valuetext={`${staveScalePercent}%`} onChange={event => draftStaveScale(Number(event.target.value))}
@@ -660,14 +653,16 @@ export default function Reader({ musicXml }: ReaderProps) {
   const secondaryControls = renderControls('secondary');
 
   return <main className="app-shell">
-    <header className={`topbar ${compactHeader ? 'is-compact' : ''}`} aria-label="Playback transport">
+    <header className="topbar" aria-label="Playback transport">
       <input ref={fileRef} type="file" accept={SCORE_FILE_ACCEPT} hidden onChange={e => { readFile(e.target.files?.[0]); e.target.value = ''; }}/>
       <div className="transport">
         {primaryControls}
-        {compactHeader ? secondaryControls.length > 0 && <div className="header-more" ref={moreRef}>
+        {/* Secondary controls render once. CSS lays them out inline above MOBILE_HEADER_BREAKPOINT and as the
+            More dropdown (toggle shown, panel display:none until data-open) at or below it, so SSR paints the right arrangement. */}
+        {secondaryControls.length > 0 && <div className="header-more" ref={moreRef} data-open={moreOpen ? 'true' : 'false'}>
           <button className={`icon-button header-more-toggle ${moreOpen ? 'open' : ''}`} aria-label="More controls" title="More controls" aria-expanded={moreOpen} aria-controls="header-secondary-panel" onClick={() => setMoreOpen(open => !open)}><Ellipsis size={19}/></button>
-          {moreOpen && <div id="header-secondary-panel" className="header-secondary-panel" role="group" aria-label="Secondary controls">{secondaryControls}</div>}
-        </div> : secondaryControls}
+          <div id="header-secondary-panel" className="header-secondary-panel" role="group" aria-label="Secondary controls">{secondaryControls}</div>
+        </div>}
       </div>
     </header>
 

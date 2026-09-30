@@ -95,6 +95,7 @@ html,body,#root{height:100%;overflow:hidden}
 .lyric-phrase{font-size:15px}
 .header-bars-setting{display:flex;align-items:center;gap:6px;color:#879289;font-size:10px;font-weight:700;letter-spacing:.08em}
 .header-bars-setting select{height:30px;min-width:70px;padding:0 6px;border:1px solid #e5e9e3;border-radius:7px;background:#fff;color:#345642;font-size:11px;letter-spacing:0}
+.header-bars-setting.is-disabled{opacity:.55}.header-bars-setting.is-disabled select{cursor:not-allowed}
 @media(max-width:580px){.header-bars-setting{gap:3px;letter-spacing:0}.header-bars-setting select{min-width:57px;height:28px;padding:0 3px}}
 .score-stage .part-controls{width:var(--control-gutter,128px)}
 .score-stage .part-control{width:calc(var(--control-gutter,128px) - 8px);justify-content:flex-start}
@@ -170,22 +171,35 @@ html,body,#root{height:100%;overflow:hidden}
 .header-stave-scale{display:flex;align-items:center;gap:6px;color:#879289;font-family:Poppins,Arial,sans-serif;font-size:10px;font-weight:700;letter-spacing:.08em}
 .header-stave-scale-input{width:88px;height:18px;margin:0;accent-color:#5d8164;cursor:pointer}
 .header-stave-scale-value{min-width:36px;color:#345642;font-size:11px;letter-spacing:0;text-align:right;font-variant-numeric:tabular-nums}
-.header-more{display:flex}
-.header-more-toggle{color:#486b51}
+/* Header arrangement is pure CSS so the server-rendered first paint already matches the viewport (no hydration reflow).
+   The secondary controls render once inside .header-more > .header-secondary-panel: above the breakpoint both wrappers are
+   layout-transparent (controls sit inline, the More toggle is display:none); at or below it they become the More dropdown.
+   HEADER BREAKPOINT: 580px must equal MOBILE_HEADER_BREAKPOINT in src/lib/header-controls.ts (asserted by validation/reader.mjs). */
+.header-more,.header-secondary-panel,.header-secondary-panel>.header-control{display:contents}
+.header-more-toggle{display:none;color:#486b51}
 .header-more-toggle.open{background:#edf3ec}
-.header-secondary-panel{position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);z-index:40;width:min(340px,calc(100vw - 16px));display:flex;flex-direction:column;gap:4px;padding:10px 12px;border:1px solid #e2e9e0;border-radius:12px;background:#fff;box-shadow:0 12px 36px #15251a2e;font-family:Poppins,Arial,sans-serif}
-.header-secondary-panel>.header-control{display:flex;align-items:center;justify-content:space-between;min-height:40px;padding:2px 0;border-top:1px solid #f0f2ee}
-.header-secondary-panel>.header-control:first-child{border-top:0}
-.header-secondary-panel .bpm-control{margin-left:0;width:100%;justify-content:space-between}
-.header-secondary-panel .header-bars-setting,.header-secondary-panel .header-stave-scale{width:100%;justify-content:space-between}
-.header-secondary-panel .header-stave-scale-input{flex:1;width:auto;min-width:0}
-.header-secondary-panel .mixer-trigger{width:auto;height:34px;padding:0 8px;display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700}
-.mixer-trigger-label{display:none}.header-secondary-panel .mixer-trigger-label{display:inline}
-.header-secondary-panel .header-control-mixer{justify-content:flex-start}
+.mixer-trigger-label{display:none}
 /* Below ~900px every control is still inline, so drop the secondary controls' text labels (Play/Open keep theirs). */
-@media(max-width:900px){.topbar:not(.is-compact) .header-stave-scale-label,.topbar:not(.is-compact) .bpm-control span,.topbar:not(.is-compact) .header-bars-setting>span{display:none}.topbar:not(.is-compact) .bpm-control{margin-left:0}}
-@media(max-width:760px){.topbar:not(.is-compact) .header-stave-scale-input{width:56px}}
-@media(max-width:640px){.topbar:not(.is-compact) .header-stave-scale-input{width:44px}.topbar:not(.is-compact) .header-bars-setting select{min-width:58px}}
+@media(max-width:900px){.header-stave-scale-label,.bpm-control span,.header-bars-setting>span{display:none}.bpm-control{margin-left:0}}
+@media(max-width:760px){.header-stave-scale-input{width:56px}}
+@media(max-width:640px){.header-stave-scale-input{width:44px}.topbar .header-bars-setting select{min-width:58px}}
+/* HEADER BREAKPOINT (mobile): the More dropdown. Closed = display:none, so its controls are neither visible nor focusable. */
+@media(max-width:580px){
+  .header-more{display:flex}
+  .topbar .header-more-toggle{display:grid}
+  .header-secondary-panel{position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);z-index:40;width:min(340px,calc(100vw - 16px));display:none;flex-direction:column;gap:4px;padding:10px 12px;border:1px solid #e2e9e0;border-radius:12px;background:#fff;box-shadow:0 12px 36px #15251a2e;font-family:Poppins,Arial,sans-serif}
+  .header-more[data-open="true"] .header-secondary-panel{display:flex}
+  .header-secondary-panel>.header-control{display:flex;align-items:center;justify-content:space-between;min-height:40px;padding:2px 0;border-top:1px solid #f0f2ee}
+  .header-secondary-panel>.header-control:first-child{border-top:0}
+  .header-secondary-panel .bpm-control{margin-left:0;width:100%;justify-content:space-between}
+  .header-secondary-panel .bpm-control span,.header-secondary-panel .header-stave-scale-label,.header-secondary-panel .header-bars-setting>span{display:inline}
+  .header-secondary-panel .header-bars-setting,.header-secondary-panel .header-stave-scale{width:100%;justify-content:space-between}
+  .header-secondary-panel .header-bars-setting select{min-width:57px}
+  .header-secondary-panel .header-stave-scale-input{flex:1;width:auto;min-width:0}
+  .header-secondary-panel .mixer-trigger{width:auto;height:34px;padding:0 8px;display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700}
+  .header-secondary-panel .mixer-trigger-label{display:inline}
+  .header-secondary-panel .header-control-mixer{justify-content:flex-start}
+}
 @media(max-width:580px){.mixer-panel{padding:15px}.mixer-track{grid-template-columns:24px minmax(0,1fr) 120px;gap:6px}}
 /* Short landscape Endless centres the stage on the viewport. A stack taller than the viewport is top-aligned instead,
    so no staff ends up above the scroll origin; the title stays just above the stage. */
@@ -205,7 +219,7 @@ html,body,#root{height:100%;overflow:hidden}
 .mode-toggle-label-short{display:none}
 .topbar .transport{gap:10px}
 @media(max-width:760px){
-  .topbar:not(.is-compact) .transport{gap:5px}
+  .topbar .transport{gap:5px}
   .topbar .play-button{padding:0 12px}
   .topbar .header-open-file{padding:0 10px}
   .mode-toggle button{min-width:36px;padding:0 6px;font-size:12px}
