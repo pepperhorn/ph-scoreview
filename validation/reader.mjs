@@ -868,6 +868,8 @@ try {
   assert.deepEqual(await opener.locator('.open-dialog-format-name').allTextContents(), ['MusicXML', 'MIDI', 'MEI', 'ABC notation'], 'Dialog lists the four formats');
   assert.match(await opener.locator('.open-dialog-formats').textContent(), /\.musicxml.*\.xml.*\.mxl.*\.mid.*\.midi.*\.mei.*\.abc.*\.txt/s);
   assert.match(await opener.locator('.open-dialog-tip').textContent(), /Paste ABC notation here, or drop a score file or a folder of scores/);
+  assert.equal(await dialog().getByRole('button', { name: /choose folder/i }).count(), 0, 'No Choose folder button (folders can still be dropped)');
+  assert.equal(await dialog().locator('input[webkitdirectory]').count(), 0);
   assert.equal(await opener.evaluate(() => document.activeElement?.classList.contains('open-dialog-abc-input')), true, 'Entry box is focused on open');
   assert.equal(await opener.locator('.open-dialog-open-abc').isDisabled(), true, 'Open ABC waits for text');
   // Page-turn keys stay inert while the dialog is open.

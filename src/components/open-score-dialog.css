@@ -29,8 +29,8 @@
 .open-dialog-message.is-error{color:#9a482d;background:#fff3ee;border:1px solid #e9c7bb}
 .open-dialog-message.is-hint{color:#6b5a1f;background:#fdf8e9;border:1px solid #eadcae}
 .open-dialog-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:16px}
-.open-dialog-browse,.open-dialog-folder{height:37px;display:inline-flex;align-items:center;gap:8px;padding:0 13px;border:1px solid #dfe5dc;border-radius:10px;background:#fff;color:#345642;font-size:12px;font-weight:700}
-.open-dialog-browse:hover,.open-dialog-folder:hover{background:#f2f7f1;border-color:#b9cdb9}
+.open-dialog-browse{height:37px;display:inline-flex;align-items:center;gap:8px;padding:0 13px;border:1px solid #dfe5dc;border-radius:10px;background:#fff;color:#345642;font-size:12px;font-weight:700}
+.open-dialog-browse:hover{background:#f2f7f1;border-color:#b9cdb9}
 .open-dialog-open-abc{margin-left:auto;height:37px;border-radius:10px;font-size:12px}
 .open-dialog-open-abc:disabled{cursor:not-allowed;opacity:.45}
 .open-dialog button:focus-visible{outline:2px solid #8fb89a;outline-offset:2px}
