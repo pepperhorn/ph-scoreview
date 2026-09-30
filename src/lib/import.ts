@@ -538,8 +538,12 @@ export async function parseMidi(buffer: ArrayBuffer): Promise<Score> {
   return score;
 }
 
-/** Uncompressed size limit for an MXL score member, matching the 8 MB file limit. */
-export const MXL_MAX_SCORE_BYTES = 8_000_000;
+const MB = 1024 * 1024;
+/** Largest score file accepted (MusicXML, MXL, MEI, ABC or MIDI). Orchestral MusicXML routinely runs to tens of MB. */
+export const MAX_SCORE_FILE_BYTES = 64 * MB;
+/** Uncompressed size limit for an MXL score member; bounds decompression so a small archive cannot inflate without limit. */
+export const MXL_MAX_SCORE_BYTES = 128 * MB;
+const formatMb = (bytes: number) => `${Math.round(bytes / MB * 10) / 10} MB`;
 /**
  * Reads the MusicXML member of an MXL archive without inflating anything else:
  * only META-INF/container.xml and the chosen score are decompressed, each with a
@@ -567,7 +571,7 @@ export function extractMxlScore(bytes: Uint8Array): string {
   }
   const target = path ? entries.find(entry => entry.name === path) : entries.find(entry => /\.(xml|musicxml)$/i.test(entry.name) && !entry.name.startsWith('META-INF/'));
   if (!target) throw new Error(path ? `This MXL archive does not contain its declared score "${path}".` : 'This MXL archive has no MusicXML score.');
-  if (!(target.originalSize <= MXL_MAX_SCORE_BYTES)) throw new Error(`The score inside this MXL archive is larger than ${MXL_MAX_SCORE_BYTES / 1_000_000} MB uncompressed.`);
+  if (!(target.originalSize <= MXL_MAX_SCORE_BYTES)) throw new Error(`The score inside this MXL archive is ${formatMb(target.originalSize)} uncompressed; the limit is ${formatMb(MXL_MAX_SCORE_BYTES)}.`);
   let files: Record<string, Uint8Array>;
   try { files = unzipSync(bytes, { filter: file => file.name === target.name && file.originalSize <= MXL_MAX_SCORE_BYTES }); }
   catch { throw new Error('The score inside this MXL archive could not be decompressed.'); }
@@ -577,7 +581,7 @@ export function extractMxlScore(bytes: Uint8Array): string {
 }
 
 export async function importFile(file: File): Promise<Score> {
-  if (file.size > 8_000_000) throw new Error('Please choose a file smaller than 8 MB.');
+  if (file.size > MAX_SCORE_FILE_BYTES) throw new Error(`This file is ${formatMb(file.size)}; scores up to ${formatMb(MAX_SCORE_FILE_BYTES)} can be opened.`);
   const name = file.name.toLowerCase();
   const bytes = new Uint8Array(await file.arrayBuffer());
   const hash = await sha256(bytes);
