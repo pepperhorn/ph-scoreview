@@ -14,6 +14,7 @@ import { buildPerformanceTimeline, eventsFromSeconds, positionAtSeconds } from '
 import { disposeVerovio, importVerovio } from '../lib/verovio-runtime';
 import { withEngravingDocument } from '../lib/notation/document';
 import { SCORE_FILE_ACCEPT } from '../lib/score-files';
+import { PAGE_PAD_PX, pageOfSystem, systemPages, turnTarget, type ReadingPage, type SystemSpan } from '../lib/paging';
 import OpenScoreDialog from './OpenScoreDialog';
 import '@fontsource/poppins/400.css';
 import '@fontsource/poppins/500.css';
@@ -57,6 +58,11 @@ const readScoreRecord = (source: FileSource) => Promise.race([
   scoreDb.read(source).catch(() => null),
   new Promise<null>(resolve => setTimeout(() => resolve(null), SCORE_RECORD_TIMEOUT_MS)),
 ]);
+/** After a user scroll (wheel, scrollbar drag, page turn) playback follow leaves the view alone this long. */
+const FOLLOW_SUSPEND_MS = 2500;
+/** A programmatic smooth scroll counts as in flight until it lands, or for at most this long. */
+const SCROLL_SETTLE_MS = 900;
+const scrollBehavior = (): ScrollBehavior => window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
 /** Where the viewport centre sits in a measure, so a re-layout can put that point back at the centre. */
 type ZoomAnchor = { index: number; fx: number; fy: number };
 
@@ -126,6 +132,17 @@ export default function Reader({ musicXml }: ReaderProps) {
   const pinchRef = useRef<{ distance: number; zoom: number; nextZoom: number } | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const hasPaintedRef = useRef(false);
+  const modeRef = useRef(prefs.mode);
+  modeRef.current = prefs.mode;
+  const overlapRef = useRef(prefs.overlap);
+  overlapRef.current = prefs.overlap;
+  /** Vertical reading pages (see paging.ts), recomputed from the rendered systems whenever they are used. */
+  const pagesRef = useRef<{ pages: ReadingPage[]; spans: SystemSpan[] }>({ pages: [], spans: [] });
+  /** Extra space below the score so the last page start can reach the viewport top. */
+  const pageTailRef = useRef(0);
+  /** Destination of the last programmatic smooth scroll, so a turn or follow during it builds on where it lands. */
+  const scrollTargetRef = useRef<{ top: number; left: number; at: number } | null>(null);
+  const userScrollAtRef = useRef(-Infinity);
   const hiddenSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
   const visibleScore = useMemo(() => {
     const parts = score.parts.filter(part => !hiddenSet.has(part.id));
@@ -381,7 +398,10 @@ export default function Reader({ musicXml }: ReaderProps) {
     const viewport = viewportRef.current;
     if (!viewport) return;
     let width = viewport.clientWidth;
+    let height = viewport.clientHeight;
     const observer = new ResizeObserver(() => {
+      // A height change keeps the layout but changes how many systems make a page.
+      if (Math.abs(viewport.clientHeight - height) >= 1) { height = viewport.clientHeight; refreshPagesRef.current(); }
       if (Math.abs(viewport.clientWidth - width) < 1) return;
       width = viewport.clientWidth;
       setResizeTick(value => value + 1);
@@ -433,6 +453,7 @@ export default function Reader({ musicXml }: ReaderProps) {
         const stage = canvas.closest<HTMLElement>('.score-stage');
         stage?.style.setProperty('--control-gutter', `${result.gutter}px`);
         clearStaveScalePreview();
+        refreshPages();
         if (anchor) restoreZoomAnchor(anchor, result, prefs.mode);
         setError('');
       } catch (e) { if (!disposed) setError(e instanceof Error ? e.message : 'Could not draw this score.'); }
@@ -450,20 +471,76 @@ export default function Reader({ musicXml }: ReaderProps) {
     return () => { disposed = true; window.clearTimeout(timer); cancelAnimationFrame(frame); };
   }, [ready, resizeTick, scoreRevision, hiddenIds, prefs.mode, prefs.notationFont, prefs.annotationFont, prefs.names, prefs.chordSymbols, prefs.inferChordSymbols, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.zoom, prefs.semitones, scorePitch]);
 
+  /** Each rendered system's top and bottom in the viewport's scroll coordinates (score title included). */
+  const systemSpans = (): SystemSpan[] => {
+    const viewport = viewportRef.current, canvas = canvasRef.current, content = contentRef.current;
+    if (!viewport || !canvas || !content) return [];
+    const blocks = [...canvas.querySelectorAll<HTMLElement>(':scope > .score-system')];
+    // Rects are exact but follow the paint-reveal and zoom-preview transforms; offsets ignore them (whole pixels).
+    if (getComputedStyle(content).transform === 'none') {
+      const origin = viewport.getBoundingClientRect().top + viewport.clientTop - viewport.scrollTop;
+      return blocks.map(block => { const rect = block.getBoundingClientRect(); return { top: rect.top - origin, bottom: rect.bottom - origin }; });
+    }
+    return blocks.map(block => {
+      let top = 0;
+      for (let element: HTMLElement | null = block; element && element !== viewport; element = element.offsetParent as HTMLElement | null) top += element.offsetTop;
+      return { top, bottom: top + block.offsetHeight };
+    });
+  };
+  /** Recompute the Vertical pages from the rendered systems, and pad the score so the last page start is reachable. */
+  const refreshPages = () => {
+    const viewport = viewportRef.current, content = contentRef.current;
+    if (!viewport || !content) return pagesRef.current;
+    const spans = modeRef.current === 'portrait' ? systemSpans() : [];
+    // The pad above a page stays inside the previous system's blank bottom margin (20 Verovio units).
+    const pad = Math.min(PAGE_PAD_PX, 16 * (renderRef.current?.scale ?? 1));
+    const pages = spans.length ? systemPages(spans, viewport.clientHeight, overlapRef.current, pad) : [];
+    const lastStart = pages.at(-1)?.start ?? 0;
+    const tail = lastStart > 0 ? Math.max(0, Math.ceil(lastStart + viewport.clientHeight - (viewport.scrollHeight - pageTailRef.current))) : 0;
+    if (tail !== pageTailRef.current) { pageTailRef.current = tail; content.style.setProperty('--page-tail', `${tail}px`); }
+    return pagesRef.current = { pages, spans };
+  };
+  const refreshPagesRef = useRef(refreshPages);
+  refreshPagesRef.current = refreshPages;
+  const scrollViewport = (to: { top?: number; left?: number }) => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const top = Math.max(0, Math.min(viewport.scrollHeight - viewport.clientHeight, to.top ?? viewport.scrollTop));
+    const left = Math.max(0, Math.min(viewport.scrollWidth - viewport.clientWidth, to.left ?? viewport.scrollLeft));
+    scrollTargetRef.current = { top, left, at: performance.now() };
+    viewport.scrollTo({ top, left, behavior: scrollBehavior() });
+  };
+  /** The destination of a programmatic scroll that has not landed yet. */
+  const pendingScroll = () => {
+    const viewport = viewportRef.current, target = scrollTargetRef.current;
+    if (!viewport || !target || performance.now() - target.at > SCROLL_SETTLE_MS) return null;
+    return Math.abs(viewport.scrollTop - target.top) > 1 || Math.abs(viewport.scrollLeft - target.left) > 1 ? target : null;
+  };
+  // Endless turns by a viewport less the overhang bars; Vertical turns to the next or previous system page.
   const turn = useCallback((direction: number) => {
     const el = viewportRef.current;
     if (!el) return;
+    userScrollAtRef.current = performance.now();
+    const pending = pendingScroll();
     if (prefs.mode === 'landscape') {
       const step = Math.max(100, el.clientWidth - prefs.overlap * (renderRef.current?.barWidth || 230));
-      el.scrollTo({ left: Math.max(0, el.scrollLeft + direction * step), behavior: 'smooth' });
+      scrollViewport({ left: (pending?.left ?? el.scrollLeft) + direction * step });
     } else {
-      const firstSystem = canvasRef.current?.querySelector<HTMLElement>('.score-system');
-      const centers = renderRef.current?.staffCenters || [];
-      const staveHeight = centers.length > 1 ? centers[1] - centers[0] : firstSystem?.offsetHeight || 170;
-      const step = Math.max(100, el.clientHeight - prefs.overlap * staveHeight);
-      el.scrollTo({ top: Math.max(0, el.scrollTop + direction * step), behavior: 'smooth' });
+      const target = turnTarget(refreshPages().pages, pending?.top ?? el.scrollTop, direction);
+      if (target !== null) scrollViewport({ top: target });
     }
   }, [prefs.mode, prefs.overlap]);
+  useEffect(() => { refreshPages(); }, [prefs.mode, prefs.overlap]);
+  // Wheel and scrollbar drags are the reader's own scrolling: playback follow waits for them.
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const manual = () => { userScrollAtRef.current = performance.now(); scrollTargetRef.current = null; };
+    const scrollbar = (event: PointerEvent) => { if (event.target === viewport) manual(); };
+    viewport.addEventListener('wheel', manual, { passive: true });
+    viewport.addEventListener('pointerdown', scrollbar);
+    return () => { viewport.removeEventListener('wheel', manual); viewport.removeEventListener('pointerdown', scrollbar); };
+  }, []);
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && pickerPartId) { setPickerPartId(null); return; }
@@ -505,17 +582,24 @@ export default function Reader({ musicXml }: ReaderProps) {
     line.className = 'playback-line';
     line.style.left = `${note?.element ? note.x : measure!.x + measure!.width * measureCursor!.fraction}px`;
     block.appendChild(line);
+    // Follow playback in page jumps: nothing moves while the active system is in view, a smooth scroll in flight
+    // is left to land, and a reader who just scrolled keeps their view for a moment.
     const viewport = viewportRef.current;
-    if (!viewport) return;
-    const view = viewport.getBoundingClientRect();
+    if (!viewport || !playRef.current || performance.now() - userScrollAtRef.current < FOLLOW_SUSPEND_MS || pendingScroll()) return;
     if (prefs.mode === 'landscape') {
+      const view = viewport.getBoundingClientRect();
       const x = line.getBoundingClientRect().left;
-      if (x > view.left + view.width * .78 || x < view.left + view.width * .18) viewport.scrollBy({ left: x - view.left - view.width * .35, behavior: 'smooth' });
-    } else {
-      const head = anchor.getBoundingClientRect();
-      const y = head.top + head.height / 2;
-      if (y > view.top + view.height * .72 || y < view.top + view.height * .18) viewport.scrollBy({ top: y - view.top - view.height * .38, behavior: 'smooth' });
+      if (x > view.left + view.width * .78 || x < view.left + view.width * .18) scrollViewport({ left: viewport.scrollLeft + x - view.left - view.width * .35 });
+      return;
     }
+    const { pages, spans } = refreshPages();
+    const index = [...canvasRef.current?.querySelectorAll(':scope > .score-system') || []].indexOf(block);
+    const span = spans[index], page = pageOfSystem(pages, index);
+    if (!span || !page) return;
+    const top = viewport.scrollTop, bottom = top + viewport.clientHeight;
+    // A tall system is followed while any of it (and so the playback line) is in view; others must be wholly in view.
+    const inView = page.tall ? span.top < bottom && span.bottom > top : span.top >= top - 1 && span.bottom <= bottom + 1;
+    if (!inView && Math.abs(page.start - top) > 1) scrollViewport({ top: page.start });
   // measureCursor is read through its key, so the effect re-runs when the line moves rather than on every frame.
   }, [active, activeNotes, prefs.mode, painting, measureCursorKey]);
 
@@ -752,7 +836,7 @@ export default function Reader({ musicXml }: ReaderProps) {
       <div className="drawer-top"><div><div className="eyebrow">MAKE IT YOURS</div><h2>Reading options</h2></div><button className="icon-button" aria-label="Close options" onClick={() => setDrawer(false)}><X size={20}/></button></div>
       <div className="drawer-grid">
 
-        <div className="drawer-panel"><h3><Settings2 size={17}/> Reading</h3><div className="font-choice"><span>Notation font</span><div className="font-toggle" role="group" aria-label="Notation font"><button className={prefs.notationFont === 'Bravura' ? 'selected' : ''} aria-pressed={prefs.notationFont === 'Bravura'} onClick={() => update({ notationFont: 'Bravura' })}>Bravura</button><button className={prefs.notationFont === 'Petaluma' ? 'selected' : ''} aria-pressed={prefs.notationFont === 'Petaluma'} onClick={() => update({ notationFont: 'Petaluma' })}>Petaluma</button></div></div><div className="font-choice"><span>Stave text font</span><div className="font-toggle" role="group" aria-label="Stave text font">{(['Sans', 'Serif', 'Mono'] as const).map(font => <button key={font} className={prefs.annotationFont === font ? 'selected' : ''} aria-pressed={prefs.annotationFont === font} onClick={() => update({ annotationFont: font })}>{font}</button>)}</div></div><label className="field-label" htmlFor="overhang">Overhang <span>{prefs.overlap === 0 ? 'Off' : `${prefs.overlap} ${prefs.mode === 'portrait' ? (prefs.overlap === 1 ? 'stave line' : 'stave lines') : (prefs.overlap === 1 ? 'bar' : 'bars')}`}</span></label><input id="overhang" className="range" type="range" min="0" max="3" step="1" value={prefs.overlap} onChange={e => update({ overlap: Number(e.target.value) })}/><div className="switch-row"><span>Note names</span><button className={`switch ${prefs.names ? 'on' : ''}`} role="switch" aria-label="Note names" aria-checked={prefs.names} onClick={() => update({ names: !prefs.names })}/></div><div className="switch-row"><span>Chord symbols</span><button className={`switch ${prefs.chordSymbols ? 'on' : ''}`} role="switch" aria-label="Chord symbols" aria-checked={prefs.chordSymbols} onClick={() => update({ chordSymbols: !prefs.chordSymbols })}/></div><label className="switch-row inference-row"><span>Infer chord symbols</span><input type="checkbox" checked={prefs.inferChordSymbols} onChange={e => update({ inferChordSymbols: e.target.checked })}/></label><div className="switch-row"><span>Beat counts</span><button className={`switch ${prefs.counts ? 'on' : ''}`} role="switch" aria-label="Beat counts" aria-checked={prefs.counts} onClick={() => update({ counts: !prefs.counts })}/></div><div className="switch-row"><span>Count subdivisions</span><button className={`switch ${prefs.subdivisions ? 'on' : ''}`} role="switch" aria-label="Count subdivisions" aria-checked={prefs.subdivisions} onClick={() => update({ subdivisions: !prefs.subdivisions, counts: true })}/></div>{score.parts.length > 4 && <button className="text-action reset-staves" onClick={resetStaves}><RotateCcw size={15}/> Reset score staves</button>}</div>
+        <div className="drawer-panel"><h3><Settings2 size={17}/> Reading</h3><div className="font-choice"><span>Notation font</span><div className="font-toggle" role="group" aria-label="Notation font"><button className={prefs.notationFont === 'Bravura' ? 'selected' : ''} aria-pressed={prefs.notationFont === 'Bravura'} onClick={() => update({ notationFont: 'Bravura' })}>Bravura</button><button className={prefs.notationFont === 'Petaluma' ? 'selected' : ''} aria-pressed={prefs.notationFont === 'Petaluma'} onClick={() => update({ notationFont: 'Petaluma' })}>Petaluma</button></div></div><div className="font-choice"><span>Stave text font</span><div className="font-toggle" role="group" aria-label="Stave text font">{(['Sans', 'Serif', 'Mono'] as const).map(font => <button key={font} className={prefs.annotationFont === font ? 'selected' : ''} aria-pressed={prefs.annotationFont === font} onClick={() => update({ annotationFont: font })}>{font}</button>)}</div></div><label className="field-label" htmlFor="overhang">Overhang <span>{prefs.overlap === 0 ? 'Off' : `${prefs.overlap} ${prefs.mode === 'portrait' ? (prefs.overlap === 1 ? 'system' : 'systems') : (prefs.overlap === 1 ? 'bar' : 'bars')}`}</span></label><input id="overhang" className="range" type="range" min="0" max="3" step="1" value={prefs.overlap} onChange={e => update({ overlap: Number(e.target.value) })}/><div className="switch-row"><span>Note names</span><button className={`switch ${prefs.names ? 'on' : ''}`} role="switch" aria-label="Note names" aria-checked={prefs.names} onClick={() => update({ names: !prefs.names })}/></div><div className="switch-row"><span>Chord symbols</span><button className={`switch ${prefs.chordSymbols ? 'on' : ''}`} role="switch" aria-label="Chord symbols" aria-checked={prefs.chordSymbols} onClick={() => update({ chordSymbols: !prefs.chordSymbols })}/></div><label className="switch-row inference-row"><span>Infer chord symbols</span><input type="checkbox" checked={prefs.inferChordSymbols} onChange={e => update({ inferChordSymbols: e.target.checked })}/></label><div className="switch-row"><span>Beat counts</span><button className={`switch ${prefs.counts ? 'on' : ''}`} role="switch" aria-label="Beat counts" aria-checked={prefs.counts} onClick={() => update({ counts: !prefs.counts })}/></div><div className="switch-row"><span>Count subdivisions</span><button className={`switch ${prefs.subdivisions ? 'on' : ''}`} role="switch" aria-label="Count subdivisions" aria-checked={prefs.subdivisions} onClick={() => update({ subdivisions: !prefs.subdivisions, counts: true })}/></div>{score.parts.length > 4 && <button className="text-action reset-staves" onClick={resetStaves}><RotateCcw size={15}/> Reset score staves</button>}</div>
         <div className="drawer-panel abc-panel"><h3><FileMusic size={17}/> ABC notation</h3><p>Paste ABC text here, or use the open button in the header for files and folders.</p><textarea value={abc} onChange={e => setAbc(e.target.value)} spellCheck={false} aria-label="ABC notation"/><button className="primary-action" onClick={() => void readAbc(abc)}>View notation <ChevronRight size={17}/></button><button className="text-action" onClick={loadSample}><FileMusic size={16}/> Open sample score</button></div>
         <div className="drawer-panel pitch-panel"><h3><Settings2 size={17}/> Pitch</h3><div className="pitch-options"><div><span className="pitch-label">Transpose score</span><div className="semitone-control"><button aria-label="Transpose down one semitone" disabled={prefs.semitones <= -12} onClick={() => changePitch({ semitones: prefs.semitones - 1 })}><Minus size={16}/></button><output aria-live="polite">{prefs.semitones > 0 ? '+' : ''}{prefs.semitones} semitones</output><button aria-label="Transpose up one semitone" disabled={prefs.semitones >= 12} onClick={() => changePitch({ semitones: prefs.semitones + 1 })}><Plus size={16}/></button><button className="pitch-reset" aria-label="Reset transposition" title="Reset transposition" disabled={prefs.semitones === 0} onClick={() => changePitch({ semitones: 0 })}><RotateCcw size={15}/></button></div></div>{!concertBasis && <div><span className="pitch-label">Score view</span><div className="font-toggle pitch-view" role="group" aria-label="Score pitch view"><button className={prefs.scorePitch === 'written' ? 'selected' : ''} aria-pressed={prefs.scorePitch === 'written'} onClick={() => changePitch({ scorePitch: 'written' })}>Transposing</button><button className={prefs.scorePitch === 'concert' ? 'selected' : ''} aria-pressed={prefs.scorePitch === 'concert'} onClick={() => changePitch({ scorePitch: 'concert' })}>Concert</button></div></div>}</div><p className="pitch-hint">{concertBasis ? 'This score is written at concert pitch, so it is shown at concert pitch. Playback stays at concert pitch.' : hasTransposingParts ? 'Transposing shows written parts; Concert shows sounding pitches. Playback stays at concert pitch.' : 'This score has no instrument transposition data, so both views match.'}</p></div>
       </div>
