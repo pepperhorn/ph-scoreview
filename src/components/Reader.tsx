@@ -6,7 +6,7 @@ import { importFile, parseAbc, parseMusicXml } from '../lib/import';
 import { portraitBarLimit, renderScore, type MeasureGeometry, type RenderResult } from '../lib/render';
 import { partControlMetrics, type PartControlMetrics } from '../lib/part-controls';
 import { HEADER_CONTROLS, MOBILE_HEADER_QUERY, type HeaderControlId } from '../lib/header-controls';
-import { clampStaveScale, DEFAULT_STAVE_SCALE, defaultStaveScale, deviceClass, STAVE_SCALE_MAX, STAVE_SCALE_MIN, STAVE_SCALE_STEP } from '../lib/stave-scale';
+import { clampStaveScale, deviceClass, ENDLESS_STAVE_SCALE, minimumDefaultStaveScale, STAVE_SCALE_MAX, STAVE_SCALE_MIN, STAVE_SCALE_STEP } from '../lib/stave-scale';
 import { buildFileState, clampBpm, fileSource, MAX_BPM, MIN_BPM, textSource, type FileSettings, type FileSource, type FileState, type ScoreView } from '../lib/file-state';
 import { sampleSource, scoreDb } from '../lib/score-db';
 import { scoreForView } from '../lib/transpose';
@@ -411,10 +411,9 @@ export default function Reader({ musicXml }: ReaderProps) {
         const metricsFor = (stavePx: number, staffPitchPx: number) => partControlMetrics(stavePx, { staffPitchPx, maxGutter, eye: many });
         const metaHeight = canvas.closest('.score-content')?.querySelector('.score-meta')?.getBoundingClientRect().height || 0;
         const availableHeight = Math.max(120, (viewportRef.current?.clientHeight || 600) - metaHeight - 70);
-        // Without a user zoom the default is re-resolved for the current device and viewport (so rotation re-fits).
-        const device = deviceClass();
-        const requested = prefs.zoom ?? defaultStaveScale(device, score.parts.length);
-        const result = await renderScore(canvas, displayScore, prefs.mode, prefs.names, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.chordSymbols, prefs.inferChordSymbols, availableHeight, requested, 0, { gutterFor: (stavePx, staffPitchPx) => metricsFor(stavePx, staffPitchPx).gutter, fitCap: DEFAULT_STAVE_SCALE[device], font: prefs.notationFont, textFont: prefs.annotationFont, transpose: prefs.semitones, scorePitch, hiddenPartIds: hiddenIds, generation });
+        // Without a user zoom the default ('fit': four bars in Vertical) is re-resolved for the viewport, so rotation re-fits.
+        const requested = prefs.zoom ?? 'fit';
+        const result = await renderScore(canvas, displayScore, prefs.mode, prefs.names, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.chordSymbols, prefs.inferChordSymbols, availableHeight, requested, 0, { gutterFor: (stavePx, staffPitchPx) => metricsFor(stavePx, staffPitchPx).gutter, fitCap: ENDLESS_STAVE_SCALE[deviceClass()], fitFloor: minimumDefaultStaveScale(deviceClass()), font: prefs.notationFont, textFont: prefs.annotationFont, transpose: prefs.semitones, scorePitch, hiddenPartIds: hiddenIds, generation });
         if (disposed || generation !== renderRunRef.current) return;
         renderRef.current = result;
         renderedZoomRef.current = result.zoom;

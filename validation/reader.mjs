@@ -181,6 +181,8 @@ try {
     assert.deepEqual(layout.mode.map(button => [button.label, button.title, button.top]), [['Vertical view', 'Vertical view', true], ['Endless view', 'Endless view', true]], `Mode toggle is top level with full labels at ${width}px`);
     if (minTarget) for (const target of layout.targets) assert.ok(target.width >= minTarget - .5 && target.height >= minTarget - 6.5, `Header touch target ${target.label} is large enough at ${width}px: ${target.width}x${target.height}`);
   };
+  // A range input only accepts min + k * step; the reader rounds a committed value to the 0.05 grid.
+  const onStep = async (slider, value) => { const min = Number(await slider.getAttribute('min')); return String(Math.round((min + Math.round((value - min) / .05) * .05) * 1000) / 1000); };
   // Rendered first-system staff height, first control icon size and zoom value text.
   const staffMetrics = () => page.evaluate(() => {
     const lines = [...document.querySelector('.score-system:first-child svg g.measure > g.staff').querySelectorAll(':scope > path')].slice(0, 5).map(line => line.getBoundingClientRect());
@@ -259,20 +261,30 @@ try {
   assert.equal(await staveScale().count(), 0);
   // Stave scale slider: controls keep their ratio to the rendered stave, stay aligned and clear of the notation.
   const atDefault = await staffMetrics();
+  // The slider commits zoom once the value settles, then re-lays out at that absolute stave scale.
+  const zoomCommitted = zoom => page.waitForFunction(value => document.querySelector('.score-content')?.dataset.staveScale === String(value), zoom, { timeout: 5000 });
   await header(async () => {
-    assert.equal(await staveScale().inputValue(), '1');
+    // The default (four bars across in Vertical) is below 1 at 390px; the slider shows it to within a step.
+    const fitted = Number(await page.evaluate(() => document.querySelector('.score-content').dataset.staveScale));
+    assert.ok(fitted < 1 && Math.abs(Number(await staveScale().inputValue()) - fitted) <= .05, `Slider shows the default scale: ${fitted}`);
+    await staveScale().fill('1');
+    await page.locator('.header-stave-scale-value', { hasText: '100%' }).waitFor();
+  });
+  await zoomCommitted(1);
+  await ready();
+  // Ratios are compared above the controls' minimum sizes (the tiny default stave clamps the icon and name).
+  const atOne = await staffMetrics();
+  await header(async () => {
     await staveScale().fill('1.25');
     await page.locator('.header-stave-scale-value', { hasText: '125%' }).waitFor();
   });
-  // The slider commits zoom once the value settles, then re-lays out at that absolute stave scale.
-  const zoomCommitted = zoom => page.waitForFunction(value => document.querySelector('.score-content')?.dataset.staveScale === String(value), zoom, { timeout: 5000 });
   await zoomCommitted(1.25);
   await ready();
   const zoomed = await staffMetrics();
-  assert.ok(zoomed.restStaff > atDefault.restStaff * 1.15, `Stave grows with stave scale: ${atDefault.restStaff} -> ${zoomed.restStaff}`);
-  assert.ok(zoomed.staff >= atDefault.staff - .5, `The width-limited first system never shrinks when zooming in: ${atDefault.staff} -> ${zoomed.staff}`);
-  for (const key of ['icon', 'font']) assert.ok(Math.abs(zoomed[key] / zoomed.staff - atDefault[key] / atDefault.staff) < .03, `Control ${key} keeps its ratio to the stave: ${(atDefault[key] / atDefault.staff).toFixed(3)} vs ${(zoomed[key] / zoomed.staff).toFixed(3)}`);
-  for (const metrics of [atDefault, zoomed]) assert.ok(metrics.controlsRight <= metrics.systemLeft, `Staff controls stay clear of the notation: ${metrics.controlsRight} <= ${metrics.systemLeft}`);
+  assert.ok(zoomed.restStaff > atOne.restStaff * 1.15, `Stave grows with stave scale: ${atOne.restStaff} -> ${zoomed.restStaff}`);
+  assert.ok(zoomed.staff >= atOne.staff - .5, `The width-limited first system never shrinks when zooming in: ${atOne.staff} -> ${zoomed.staff}`);
+  for (const key of ['icon', 'font']) assert.ok(Math.abs(zoomed[key] / zoomed.staff - atOne[key] / atOne.staff) < .03, `Control ${key} keeps its ratio to the stave: ${(atOne[key] / atOne.staff).toFixed(3)} vs ${(zoomed[key] / zoomed.staff).toFixed(3)}`);
+  for (const metrics of [atDefault, atOne, zoomed]) assert.ok(metrics.controlsRight <= metrics.systemLeft, `Staff controls stay clear of the notation: ${metrics.controlsRight} <= ${metrics.systemLeft}`);
   await assertControlsAligned(1);
   await header(async () => { await staveScale().fill('1'); await page.locator('.header-stave-scale-value', { hasText: '100%' }).waitFor(); });
   await zoomCommitted(1);
@@ -341,7 +353,14 @@ try {
   await ready();
   // Verovio draws each <ending> as a system milestone plus one spanning bracket.
   assert.equal(await page.locator('svg g.ending.systemMilestone').count(), 2, 'First and second endings engrave');
-  assert.equal(await page.locator('svg g.ending.spanning').count(), 2, 'Each ending bracket spans only its own measure');
+  // Verovio draws a bracket in the milestone or, at some system breaks, in a spanning group; either way one per ending.
+  const brackets = await page.evaluate(() => {
+    const drawn = [...document.querySelectorAll('svg g.ending.spanning, svg g.ending.systemMilestone')].filter(ending => ending.getBoundingClientRect().width > 0);
+    const widest = Math.max(...[...document.querySelectorAll('svg g.measure')].map(measure => measure.getBoundingClientRect().width));
+    return drawn.map(ending => ending.getBoundingClientRect().width / widest);
+  });
+  assert.equal(brackets.length, 2, 'Each ending draws one bracket');
+  assert.ok(brackets.every(ratio => ratio <= 1.05), `Each ending bracket spans only its own measure: ${brackets.map(ratio => ratio.toFixed(2))}`);
   assert.equal(await page.locator('svg g.repeatMark').count(), 1, 'Segno engraves');
   assert.deepEqual((await page.locator('svg g.dir').allTextContents()).map(text => text.trim()), ['Fine', 'D.S. al Fine'], 'Fine and D.S. engrave');
   const fixture = resolve(root, 'validation/fixtures/ensemble.musicxml');
@@ -390,7 +409,8 @@ try {
   assert.deepEqual(await page.locator('.part-control .part-name').allTextContents(), ['Track 1', 'Track 3', 'Track 4', 'Track 5']);
   await assertControlsAligned(4);
   // Per-score memory: an explicit stave scale is saved with the file and restored when it is reopened.
-  await header(async () => { await staveScale().fill('0.8'); await page.locator('.header-stave-scale-value', { hasText: '80%' }).waitFor(); });
+  // A default below the usual minimum becomes the slider's min, so pick the step value nearest 0.8 (the commit rounds it to 0.8).
+  await header(async () => { await staveScale().fill(await onStep(staveScale(), .8)); await page.locator('.header-stave-scale-value', { hasText: '80%' }).waitFor(); });
   await zoomCommitted(0.8);
   await ready();
   await page.locator('input[type=file]').setInputFiles(fixture);
@@ -436,6 +456,101 @@ try {
   assert.deepEqual(remote, [], 'Scores and resources stay local');
   console.log(`${engine}: reader import, engraving, layout, annotations, fonts, mixer, persistence and playback passed`);
 
+  // Vertical default: the largest stave scale at which four bars (or every bar of a shorter score) fit the first
+  // system beside the staff controls, so Auto shows four per line. On compact devices the default is never below a
+  // 40px staff (fewer bars per line instead). A user zoom replaces it (even below the floor); Endless keeps its default.
+  const twoBars = `<?xml version="1.0"?><score-partwise version="4.0"><work><work-title>Two bars</work-title></work><part-list><score-part id="P1"><part-name>Solo</part-name></score-part></part-list><part id="P1">${[1, 2].map(number => `<measure number="${number}">${number === 1 ? '<attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>' : ''}${['C', 'D', 'E', 'F'].map(step => `<note><pitch><step>${step}</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>`).join('')}</measure>`).join('')}</part></score-partwise>`;
+  const fourEnsembleXml = await readFile(resolve(root, 'validation/fixtures/ensemble.musicxml'));
+  const READABLE_STAFF = 40;
+  for (const [width, height, endlessDefault] of [[1280, 800, '0.75'], [390, 844, '1'], [320, 640, '1']]) {
+    const compact = width < 851;
+    const fourContext = await browser.newContext({ viewport: { width, height } });
+    const four = await fourContext.newPage();
+    const fourErrors = [];
+    four.on('pageerror', e => fourErrors.push(e.message));
+    const fourReady = () => four.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg') && !document.querySelector('.score-content').getAnimations().length, { timeout: 30000 });
+    const fourZoom = () => four.evaluate(() => document.querySelector('.score-content').dataset.staveScale);
+    const fourHeader = async action => {
+      const toggle = four.getByRole('button', { name: 'More controls', exact: true });
+      if (await toggle.count() && await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
+      await action();
+      if (await toggle.count() && await toggle.getAttribute('aria-expanded') === 'true') await four.keyboard.press('Escape');
+    };
+    // Bars per system, whether any system overflows the canvas, and the rendered staff of each system.
+    const fourLayout = () => four.evaluate(() => {
+      const canvas = document.querySelector('.score-staves').getBoundingClientRect();
+      const view = document.querySelector('.score-viewport');
+      const zoom = Number(document.querySelector('.score-content').dataset.staveScale);
+      const systems = [...document.querySelectorAll('.score-system')].map(system => {
+        const lines = [...system.querySelector('svg g.measure > g.staff').querySelectorAll(':scope > path')].slice(0, 5).map(line => line.getBoundingClientRect());
+        return { bars: system.querySelectorAll('svg g.measure').length, overflow: system.getBoundingClientRect().right > canvas.right + 1 || system.getBoundingClientRect().left < canvas.left - 1, staff: Math.max(...lines.map(line => line.bottom)) - Math.min(...lines.map(line => line.top)) };
+      });
+      return { zoom, systems, scrolls: view.scrollWidth > view.clientWidth + 1 };
+    });
+    // Engines measure staff-line boxes slightly differently (Firefox includes more line thickness), so allow 3%.
+    const drawnAt = (system, zoom) => Math.abs(system.staff - 72 * zoom) <= Math.max(1.5, 72 * zoom * .03);
+    const label = `${width}px`;
+    const fits = layout => layout.systems.every(system => !system.overflow) && !layout.scrolls;
+    await four.goto(url);
+    await fourReady();
+    const sample = await fourLayout();
+    assert.ok(sample.systems.length > 2, `${label}: the sample has several systems`);
+    assert.ok(fits(sample), `${label}: default systems fit the viewport width (${JSON.stringify(sample)})`);
+    assert.equal(await four.evaluate(() => [...document.querySelectorAll('.score-system')].every(system => system.querySelectorAll('svg g.system').length === 1)), true, `${label}: every sample line is one engraved system`);
+    assert.ok(sample.systems.every(system => drawnAt(system, sample.zoom)), `${label}: every system is drawn at the default scale, none width-fitted (${JSON.stringify(sample)})`);
+    if (compact) {
+      assert.ok(sample.systems.every(system => system.staff >= READABLE_STAFF - .5 && system.bars <= 4), `${label}: the compact default keeps a readable staff, with up to four bars per line (${JSON.stringify(sample)})`);
+    } else {
+      assert.deepEqual(sample.systems.map(system => system.bars), sample.systems.map(() => 4), `${label}: the default shows four bars on every system (zoom ${sample.zoom})`);
+    }
+    // Endless keeps its device default; back in Vertical the Vertical default is re-resolved.
+    await four.getByRole('button', { name: 'Endless view', exact: true }).click();
+    await fourReady();
+    assert.equal(await fourZoom(), endlessDefault, `${label}: Endless default stave scale is unchanged`);
+    await four.getByRole('button', { name: 'Vertical view', exact: true }).click();
+    await fourReady();
+    assert.equal(Number(await fourZoom()), sample.zoom, `${label}: returning to Vertical restores the default`);
+    // A user zoom replaces the default (on phones even below the readable floor), persists and is restored on reload.
+    const chosen = sample.zoom > 1 ? .9 : .3;
+    await fourHeader(async () => {
+      const slider = four.getByRole('slider', { name: 'Stave scale', exact: true });
+      await slider.fill(await onStep(slider, chosen));
+    });
+    await four.waitForFunction(value => document.querySelector('.score-content').dataset.staveScale === String(value), chosen, { timeout: 8000 });
+    await fourReady();
+    await four.reload();
+    await fourReady();
+    assert.equal(await fourZoom(), String(chosen), `${label}: a user stave scale is restored instead of the default`);
+    // The default stave size depends on the viewport, not the score length: a two-bar score is drawn at the same scale
+    // as the sample, on one shorter line (not stretched to fill the viewport).
+    await four.locator('input[type=file]').setInputFiles({ name: 'two-bars.musicxml', mimeType: 'application/xml', buffer: Buffer.from(twoBars) });
+    await four.waitForFunction(() => document.querySelector('h1')?.textContent === 'Two bars');
+    await fourReady();
+    const short = await fourLayout();
+    const shortLines = await four.evaluate(() => ({ wrapped: [...document.querySelectorAll('.score-system')].some(system => system.querySelectorAll('svg g.system').length !== 1), width: document.querySelector('.score-system').getBoundingClientRect().width, canvas: document.querySelector('.score-staves').getBoundingClientRect().width }));
+    assert.equal(short.zoom, sample.zoom, `${label}: a two-bar score defaults to the same stave scale as the sample`);
+    assert.ok(fits(short), `${label}: the two-bar system fits the viewport width (${JSON.stringify(short)})`);
+    // Every line is one engraved system (Verovio never wraps inside a line); on phones the 40px floor may leave one bar per line.
+    assert.equal(shortLines.wrapped, false, `${label}: no line wraps inside its system (${JSON.stringify(short)})`);
+    if (!compact) assert.deepEqual(short.systems.map(system => system.bars), [2], `${label}: a two-bar score shows both bars on one line (${JSON.stringify(short)})`);
+    assert.ok(short.systems.every(system => drawnAt(system, short.zoom)), `${label}: the two-bar line is drawn at the default scale (${JSON.stringify(short)})`);
+    if (!compact) assert.ok(shortLines.width < shortLines.canvas * .8, `${label}: the two-bar line is shorter than a full line (${JSON.stringify(shortLines)})`);
+    // Five staves with lyrics: phones keep the readable floor (the stack scrolls); desktop fits four bars or the height.
+    await four.locator('input[type=file]').setInputFiles({ name: 'ensemble.musicxml', mimeType: 'application/xml', buffer: fourEnsembleXml });
+    await four.waitForFunction(() => document.querySelector('h1')?.textContent === 'Migration ensemble');
+    await fourReady();
+    const ensemble = await fourLayout();
+    assert.ok(fits(ensemble), `${label}: ensemble systems fit the viewport width (${JSON.stringify(ensemble)})`);
+    if (compact) {
+      assert.ok(ensemble.zoom >= READABLE_STAFF / 72 - .001, `${label}: the ensemble default is not below the readable floor (${ensemble.zoom})`);
+      // The first system beside the staff controls is still width-fitted when a single lyric bar cannot fit there.
+      assert.ok(ensemble.systems.slice(1).every(system => system.staff >= READABLE_STAFF - .5), `${label}: later ensemble systems keep a readable staff (${JSON.stringify(ensemble)})`);
+    } else assert.ok(ensemble.systems.every(system => system.bars <= 4), `${label}: the ensemble shows at most four bars per line (${JSON.stringify(ensemble)})`);
+    assert.deepEqual(fourErrors, []);
+    await fourContext.close();
+  }
+  console.log(`${engine}: four-bar Vertical default, compact readable floor, Endless default and user-zoom restore passed`);
+
   // Stave scale reflow (desktop): zoom is an absolute stave size, Verovio reflows at (width - gutter) / zoom.
   const deskContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const desk = await deskContext.newPage();
@@ -464,10 +579,10 @@ try {
   });
   await desk.goto(url);
   await deskReady();
-  // Baseline: on main the sample rendered its stave at scale 1 (72px staff) at 1280x800; the desktop default is 0.75x.
-  assert.equal(await deskSlider().inputValue(), '0.75', 'Desktop default stave scale');
+  // The default stave scale is the four-bar fit (see the four-bar block below); the stave is drawn at that scale.
+  const deskDefaultZoom = Number(await desk.evaluate(() => document.querySelector('.score-content').dataset.staveScale));
   const deskDefaultStaff = await deskStaff();
-  assert.ok(Math.abs(deskDefaultStaff - 72 * .75) <= 1.5, `Desktop default stave is 0.75x the 72px baseline: ${deskDefaultStaff}`);
+  assert.ok(Math.abs(deskDefaultStaff - 72 * deskDefaultZoom) <= Math.max(1.5, 72 * deskDefaultZoom * .03), `Desktop default stave is drawn at its stave scale ${deskDefaultZoom}: ${deskDefaultStaff}`);
   // Auto bars reflow: 50% fits more bars per line than 100%, and full systems fill the usable width.
   await deskZoom(1);
   const atFull = await systemLayout();
@@ -596,7 +711,8 @@ try {
   await phone.setViewportSize({ width: 390, height: 844 });
   await phone.goto(url);
   await phone.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg') && !document.querySelector('.score-content').getAnimations().length, { timeout: 30000 });
-  assert.equal(await phone.evaluate(() => document.querySelector('.score-content').dataset.staveScale), '1', 'A desktop-saved zoom is not applied at 390px');
+  assert.notEqual(await phone.evaluate(() => document.querySelector('.score-content').dataset.staveScale), '1.5', 'A desktop-saved zoom is not applied at 390px');
+  assert.ok(Math.abs(Number(await phone.evaluate(() => document.querySelector('.score-content').dataset.staveScale)) - 40 / 72) < .01, 'The phone uses its own readable default');
   await phone.close();
   assert.deepEqual(deskErrors, []);
   await deskContext.close();

@@ -23,19 +23,29 @@ export const DESKTOP_QUERY = '(pointer: fine) and (min-width: 851px)';
 export const deviceClass = (): DeviceClass => typeof window !== 'undefined' && window.matchMedia?.(DESKTOP_QUERY).matches ? 'desktop' : 'compact';
 
 /**
- * Rendered stave scale of the single-stave sample before zoom became absolute
- * (measured on main, 2026-09-30): 1280x800 desktop rendered every system at 1.0;
- * 390x844 rendered the later systems at 1.0 (the first, beside the staff controls,
- * width-fitted to 0.78, which the reflow still does when a bar cannot fit).
+ * Endless default stave scale (unchanged from the fixed device defaults): desktop is 75% of the sample's former
+ * rendered scale of 1 (a 72px staff at 1280x800); phones and tablets keep 1. Vertical does not use it.
  */
-export const BASELINE_STAVE_SCALE: Record<DeviceClass, number> = { desktop: 1, compact: 1 };
-/** Desktop is 75% of the baseline; phones and tablets keep the baseline so they look unchanged. */
-export const DEFAULT_STAVE_SCALE: Record<DeviceClass, number> = { desktop: BASELINE_STAVE_SCALE.desktop * .75, compact: BASELINE_STAVE_SCALE.compact };
-/** Scores with more than this many staves default to the full-stack height fit. */
-export const HEIGHT_FIT_STAVES = 4;
-
+export const ENDLESS_STAVE_SCALE: Record<DeviceClass, number> = { desktop: .75, compact: 1 };
 /**
- * Default zoom for a score without a user-chosen one: a device scale, or 'fit' for many staves. The default is
- * re-resolved on every layout (resize, rotation, mode), while a user-chosen zoom stays fixed and is the only one saved.
+ * Vertical default: the largest stave scale at which this many bars fit the first system beside the staff controls at
+ * their minimum width, so Auto shows that many per line (`barFitZoom` in render.ts). It depends on the viewport, not the
+ * score length: a shorter score is drawn at the same size on a shorter, centred system.
  */
-export const defaultStaveScale = (device: DeviceClass, staves: number): number | 'fit' => staves > HEIGHT_FIT_STAVES ? 'fit' : DEFAULT_STAVE_SCALE[device];
+export const DEFAULT_VERTICAL_BARS = 4;
+/**
+ * Readable floor for the Vertical default on compact devices (phones, tablets): the rendered five-line staff is at least
+ * this many px, so a phone shows fewer bars per line (2-3) rather than an unreadably small four-bar fit.
+ * Only the default is floored; a user can still zoom below it.
+ */
+export const COMPACT_MIN_DEFAULT_STAVE_PX = 40;
+/** Smallest Vertical default stave scale for a device class (the staff is 72px at stave scale 1, render.ts STAFF_UNITS). */
+export const minimumDefaultStaveScale = (device: DeviceClass) => device === 'compact' ? Math.ceil(COMPACT_MIN_DEFAULT_STAVE_PX / 72 * 1000) / 1000 : 0;
+/** Scores with more than this many staves default to the full-stack height fit, capped at the default above. */
+export const HEIGHT_FIT_STAVES = 4;
+/*
+ * Without a user-chosen zoom the reader requests 'fit', which render.ts resolves per layout: Vertical fits
+ * DEFAULT_VERTICAL_BARS bars, Endless uses ENDLESS_STAVE_SCALE, and many staves take min(that, height fit); on compact
+ * devices the Vertical result is then raised to minimumDefaultStaveScale (readability wins over fit). The default
+ * is re-resolved on every layout (resize, rotation, mode), while a user-chosen zoom stays fixed and is the only one saved.
+ */
