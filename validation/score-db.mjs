@@ -117,6 +117,46 @@ try {
   assert.notEqual(result.abcKey, result.xmlKey, 'Keys carry a format prefix');
   assert.match(result.abcKey, /^[0-9a-f]{64}$/);
 
+  // Write-ahead: records still inside the debounce window survive an immediate reload.
+  await page.evaluate(async () => {
+    const { createScoreDb } = await import('/src/lib/score-db.ts');
+    const settings = { mode: 'portrait', notationFont: 'Bravura', barsPerLine: 'auto', overlap: 1, names: false, chordSymbols: false, inferChordSymbols: false, counts: false, subdivisions: false, annotationFont: 'Sans', bpm: 96, semitones: 3, scorePitch: 'written' };
+    const source = { name: 'wal.musicxml', size: 1, sha256: 'a'.repeat(64), format: 'musicxml' };
+    const db = createScoreDb({ dbName: 'scoreflow-test-wal', debounceMs: 400 });
+    db.write({ version: 2, source, lastOpened: Date.now(), settings, parts: {}, view: { zoom: 1.7, zoomDevice: 'desktop' } });
+    db.persistPending();
+    const local = createScoreDb({ indexedDB: null, debounceMs: 400 });
+    local.write({ version: 2, source: { ...source, sha256: 'b'.repeat(64) }, lastOpened: Date.now(), settings, parts: {}, view: { zoom: 1.9, zoomDevice: 'desktop' } });
+    local.persistPending();
+  });
+  await page.reload();
+  const wal = await page.evaluate(async () => {
+    const { createScoreDb } = await import('/src/lib/score-db.ts');
+    const source = hash => ({ name: 'wal.musicxml', size: 1, sha256: hash.repeat(64), format: 'musicxml' });
+    const db = createScoreDb({ dbName: 'scoreflow-test-wal', debounceMs: 0 });
+    const restored = await db.read(source('a'));
+    await db.flush();
+    const local = createScoreDb({ indexedDB: null, debounceMs: 0 });
+    const localRestored = await local.read(source('b'));
+    await local.flush();
+    // An older pending copy never wins over a newer stored record.
+    const newer = { ...restored, lastOpened: Date.now() + 1000, view: { zoom: 2.5, zoomDevice: 'desktop' } };
+    db.write(newer); await db.flush();
+    localStorage.setItem(`scoreflow-pending-v2:${'a'.repeat(64)}`, JSON.stringify({ updatedAt: Date.now() - 60000, state: { ...restored, view: { zoom: .9, zoomDevice: 'desktop' } } }));
+    const stale = await db.read(source('a'));
+    return {
+      zoom: restored?.view?.zoom, semitones: restored?.settings.semitones, localZoom: localRestored?.view?.zoom, stale: stale?.view?.zoom,
+      pendingLeft: Object.keys(localStorage).filter(key => key.startsWith('scoreflow-pending-v2:') && !key.endsWith('a'.repeat(64))),
+      inDb: (await db.keys()).includes('a'.repeat(64)),
+    };
+  });
+  assert.equal(wal.zoom, 1.7, 'A pending write survives an immediate reload');
+  assert.equal(wal.semitones, 3);
+  assert.equal(wal.inDb, true, 'The recovered record is persisted to IndexedDB');
+  assert.equal(wal.localZoom, 1.9, 'The localStorage fallback recovers pending writes too');
+  assert.deepEqual(wal.pendingLeft, [], 'Recovered pending keys are removed');
+  assert.equal(wal.stale, 2.5, 'An older pending copy does not override a newer record');
+
   // Keys stay stable across reloads.
   await page.reload();
   const again = await page.evaluate(async () => {
@@ -128,7 +168,7 @@ try {
   });
   assert.equal(again.abcKey, result.abcKey, 'ABC key is stable across reloads');
   assert.equal(again.sampleKey, result.sampleKey, 'Sample key is stable across reloads');
-  console.log('Score memory: IndexedDB round trip, v1 migration, localStorage fallback, eviction, debounce and stable keys passed');
+  console.log('Score memory: IndexedDB round trip, v1 migration, localStorage fallback, eviction, debounce, write-ahead reload recovery and stable keys passed');
 } finally {
   await browser?.close();
   server.kill('SIGTERM');

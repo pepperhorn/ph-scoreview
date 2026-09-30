@@ -443,13 +443,25 @@ try {
   assert.ok(Math.abs(endlessAfter.cx - (endlessAfter.rect.left + endlessAfter.rect.right) / 2) <= endlessAfter.rect.width, `Endless: the anchor bar stays within half a bar of the centre (${JSON.stringify(endlessAfter)})`);
   await desk.getByRole('button', { name: 'Vertical view', exact: true }).click();
   await deskReady();
-  // Reloading the sample restores its zoom; a desktop zoom is not applied on a phone.
+  // Reloading the sample restores its zoom, even straight after the change (inside the write debounce);
+  // a desktop zoom is not applied on a phone.
   await deskZoom(1.5);
-  await desk.waitForTimeout(600);
   await desk.reload();
   await deskReady();
   assert.equal(await deskSlider().inputValue(), '1.5', 'Reloading the sample restores its stave scale');
   assert.ok(Math.abs(await deskStaff() - 72 * 1.5) <= 2, 'The restored scale is applied before paint');
+  // A transposition is restored after an immediate reload too.
+  await desk.getByRole('button', { name: 'Options', exact: true }).click();
+  await desk.getByRole('button', { name: 'Transpose up one semitone', exact: true }).click();
+  await desk.locator('.semitone-control output', { hasText: '+1 semitones' }).waitFor();
+  await desk.reload();
+  await deskReady();
+  assert.equal(await desk.locator('.semitone-control output').textContent(), '+1 semitones', 'An immediate reload restores the transposition');
+  assert.equal(await deskSlider().inputValue(), '1.5', 'and keeps the stave scale');
+  await desk.getByRole('button', { name: 'Options', exact: true }).click();
+  await desk.getByRole('button', { name: 'Reset transposition', exact: true }).click();
+  await desk.locator('button[aria-label="Close options"]').click();
+  await deskReady();
   const phone = await deskContext.newPage();
   await phone.setViewportSize({ width: 390, height: 844 });
   await phone.goto(url);

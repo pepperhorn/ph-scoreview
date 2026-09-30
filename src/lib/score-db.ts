@@ -7,6 +7,12 @@
  * unavailable (private mode, blocked) records go to localStorage instead. All access is
  * wrapped in try/catch, writes are debounced and never block rendering, and only the most
  * recently opened MAX_SCORE_RECORDS scores are kept. Only settings and hashes are stored.
+ *
+ * Write-ahead: an IndexedDB transaction started while the page unloads may never complete, so
+ * `persistPending()` (called on pagehide / visibilitychange→hidden) synchronously copies queued
+ * records to localStorage `scoreflow-pending-v2:<hash>` and still kicks the IndexedDB write. A read
+ * prefers a pending copy newer than the stored record, persists it, and the pending key is removed
+ * after the next successful write.
  */
 import type { Score } from './score';
 import { legacyStorageKey, migrateFileState, parseFileState, parseLegacyFileState, textSource, type FileSource, type FileState } from './file-state';
@@ -18,6 +24,7 @@ export const MAX_SCORE_RECORDS = 200;
 export const SCORE_WRITE_DEBOUNCE_MS = 400;
 const fallbackKey = (hash: string) => `scoreflow-file-v2:${hash}`;
 const FALLBACK_PREFIX = 'scoreflow-file-v2:';
+const pendingKey = (hash: string) => `scoreflow-pending-v2:${hash}`;
 
 export type ScoreDbOptions = {
   /** IndexedDB factory; `null` forces the localStorage fallback. Defaults to `globalThis.indexedDB`. */
@@ -36,6 +43,8 @@ export type ScoreDb = {
   write(state: FileState): void;
   /** Write every queued record now. */
   flush(): Promise<void>;
+  /** Synchronously save queued records to the localStorage write-ahead keys, then start writing them. For page unload. */
+  persistPending(): void;
   keys(): Promise<string[]>;
   backend(): Promise<'indexeddb' | 'localstorage' | 'none'>;
 };
@@ -81,14 +90,15 @@ export function createScoreDb(options: ScoreDbOptions = {}): ScoreDb {
       return legacy && migrateFileState(legacy, device());
     } catch { return null; }
   };
-  const writeLocal = (state: FileState) => {
+  const writeLocal = (state: FileState): boolean => {
     const store = storage();
-    if (!store) return;
+    if (!store) return false;
     try {
       store.setItem(fallbackKey(state.source.sha256), JSON.stringify(state));
       const records = localKeys(store).map(hash => ({ hash, lastOpened: readLocal(hash)?.lastOpened ?? 0 })).sort((a, b) => a.lastOpened - b.lastOpened);
       for (const { hash } of records.slice(0, Math.max(0, records.length - maxRecords))) store.removeItem(fallbackKey(hash));
-    } catch { /* Storage may be full or unavailable; the session still works. */ }
+      return true;
+    } catch { return false; /* Storage may be full or unavailable; the session still works. */ }
   };
   const localKeys = (store: Storage) => {
     const hashes: string[] = [];
@@ -96,6 +106,23 @@ export function createScoreDb(options: ScoreDbOptions = {}): ScoreDb {
     return hashes;
   };
 
+  /** A write-ahead copy for `hash`, when valid: its state and when it was queued. */
+  const readPending = (hash: string): { updatedAt: number; state: FileState } | null => {
+    try {
+      const raw = JSON.parse(storage()?.getItem(pendingKey(hash)) || 'null');
+      const state = raw && Number.isFinite(raw.updatedAt) ? parseFileState(raw.state, hash) : null;
+      return state ? { updatedAt: raw.updatedAt, state } : null;
+    } catch { return null; }
+  };
+  const dropPending = (hash: string) => { try { storage()?.removeItem(pendingKey(hash)); } catch { /* ignore */ } };
+  /** Newest of the stored record and a pending write-ahead copy; a newer pending copy is queued to be persisted. */
+  const withPending = (hash: string, stored: FileState | null): FileState | null => {
+    const pending = readPending(hash);
+    if (!pending) return stored;
+    if (stored && stored.lastOpened >= pending.updatedAt) { dropPending(hash); return stored; }
+    queue(pending.state);
+    return structuredClone(pending.state);
+  };
   const writeDb = async (db: IDBDatabase, state: FileState) => {
     const transaction = db.transaction(SCORE_STORE, 'readwrite');
     const store = transaction.objectStore(SCORE_STORE);
@@ -132,13 +159,20 @@ export function createScoreDb(options: ScoreDbOptions = {}): ScoreDb {
           await writeDb(db, state);
           // The legacy copy (and any fallback copy) is dropped once IndexedDB holds the record.
           try { storage()?.removeItem(legacyStorageKey(state.source.sha256)); storage()?.removeItem(fallbackKey(state.source.sha256)); } catch { /* ignore */ }
+          dropPending(state.source.sha256);
           continue;
         } catch { /* fall back below */ }
       }
-      writeLocal(state);
+      if (writeLocal(state)) dropPending(state.source.sha256);
     }
   };
   const flush = () => (flushing = flushing.then(flushNow, flushNow));
+  const queue = (state: FileState) => {
+    pending.set(state.source.sha256, structuredClone(state));
+    clearTimeout(timer);
+    if (debounceMs <= 0) void flush();
+    else timer = setTimeout(() => void flush(), debounceMs);
+  };
 
   return {
     async read(source) {
@@ -150,18 +184,21 @@ export function createScoreDb(options: ScoreDbOptions = {}): ScoreDb {
         try {
           const stored = await settle(db.transaction(SCORE_STORE, 'readonly').objectStore(SCORE_STORE).get(hash));
           const state = stored === undefined ? null : parseFileState(stored, hash);
-          if (state) return state;
+          if (state) return withPending(hash, state);
         } catch { /* fall back to localStorage */ }
       }
-      return readLocal(hash) ?? readLegacy(hash);
+      return withPending(hash, readLocal(hash) ?? readLegacy(hash));
     },
-    write(state) {
-      pending.set(state.source.sha256, structuredClone(state));
-      clearTimeout(timer);
-      if (debounceMs <= 0) void flush();
-      else timer = setTimeout(() => void flush(), debounceMs);
-    },
+    write: queue,
     flush,
+    persistPending() {
+      if (!pending.size) return;
+      const updatedAt = Date.now();
+      for (const state of pending.values()) {
+        try { storage()?.setItem(pendingKey(state.source.sha256), JSON.stringify({ updatedAt, state })); } catch { /* storage full or unavailable */ }
+      }
+      void flush();
+    },
     async keys() {
       const db = await open();
       if (db) {

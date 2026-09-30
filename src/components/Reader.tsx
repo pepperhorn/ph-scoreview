@@ -185,10 +185,13 @@ export default function Reader({ musicXml }: ReaderProps) {
     savedViewRef.current = view;
     scoreDb.write(buildFileState(source, prefs, score, hiddenIds, trackVolumes, view));
   }, [ready, source, prefs, score, hiddenIds, trackVolumes]);
+  // Unload can cut an IndexedDB transaction short, so pending writes are also saved synchronously (write-ahead).
   useEffect(() => {
-    const flush = () => void scoreDb.flush();
-    window.addEventListener('pagehide', flush);
-    return () => { window.removeEventListener('pagehide', flush); flush(); };
+    const persist = () => scoreDb.persistPending();
+    const hidden = () => { if (document.visibilityState === 'hidden') persist(); };
+    window.addEventListener('pagehide', persist);
+    document.addEventListener('visibilitychange', hidden);
+    return () => { window.removeEventListener('pagehide', persist); document.removeEventListener('visibilitychange', hidden); void scoreDb.flush(); };
   }, []);
   const update = (patch: Partial<Prefs>) => {
     if (['mode', 'notationFont', 'annotationFont', 'barsPerLine', 'names', 'chordSymbols', 'inferChordSymbols', 'counts', 'subdivisions', 'semitones', 'scorePitch'].some(key => key in patch && patch[key as keyof Prefs] !== prefs[key as keyof Prefs])) setPainting(true);
