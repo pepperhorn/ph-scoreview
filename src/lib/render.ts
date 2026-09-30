@@ -28,7 +28,9 @@ export type RenderOptions = { font?: 'Bravura' | 'Petaluma'; textFont?: 'Sans' |
    */
   gutterFor?: (stavePx: number, staffPitchPx: number) => number;
   /** Endless 'fit' zoom (the device's Endless default); a many-staff stack is height-fitted below it. Vertical 'fit' ignores it. */
-  fitCap?: number };
+  fitCap?: number;
+  /** Vertical 'fit' is never below this stave scale (compact readability floor); the stack then scrolls. */
+  fitFloor?: number };
 
 const latestGeneration = new WeakMap<HTMLElement, number>();
 /** Endless view keeps one unbroken system up to this many bars, then uses bounded chunks. */
@@ -352,12 +354,14 @@ export async function renderScore(
     layout.zoom = Math.round(heightFit(Math.max(...pages.map(naturalHeightOf))) * 1000) / 1000;
   } else {
     // Vertical: the bar fit; many staves then measure the first system there and lay out again at the height fit.
-    layout = layoutAt(fitCap);
+    // The readability floor wins over both, so a compact default never draws an unreadably small staff.
+    const floor = options.fitFloor ?? 0;
+    layout = layoutAt(Math.max(floor, fitCap));
     if (structure.visibleParts.length > HEIGHT_FIT_STAVES) {
       const probe = await renderVerovio(layout.view.mei, verovioOptions(layout.firstWidth), layout.pageCount > 1 && layout.firstWidth !== layout.restWidth ? [1] : undefined);
       if (!isCurrent()) throw new Error('Superseded score render.');
-      const fitted = Math.round(heightFit(naturalHeightOf(probe.pages[0]?.svg || '')) * 1000) / 1000;
-      if (fitted < fitCap - .001) layout = layoutAt(fitted);
+      const fitted = Math.max(floor, Math.round(heightFit(naturalHeightOf(probe.pages[0]?.svg || '')) * 1000) / 1000);
+      if (fitted < layout.zoom - .001) layout = layoutAt(fitted);
     }
     pages = await renderPages(layout);
   }

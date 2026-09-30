@@ -31,19 +31,22 @@ Date: 2026-09-30 · Status: approved for implementation · Branch: `feat/stave-s
 - **Reachability:** content is never placed above the scroll origin. When a system or stack is taller than the viewport it is top-aligned instead of centred, in Vertical and in Endless (including the short-landscape layout that centres the stage on the viewport).
 
 ### Defaults (when a score has no saved zoom)
-Revised 2026-09-30 (`feat/four-bar-default`): the fixed Vertical device defaults (desktop 0.75, compact 1.0) are replaced by a four-bar fit. The user can still scale up or down from it.
+Revised 2026-09-30 (`feat/four-bar-default`): the fixed Vertical device defaults (desktop 0.75, compact 1.0) are replaced by a four-bar fit, with a readable floor on compact devices. The user can still scale up or down from it.
 
 | View | Default stave scale |
 | --- | --- |
 | Vertical | The largest scale at which `min(4, measure count)` bars fit the first system beside the staff controls at their minimum width, so Auto shows four bars per line (or every bar of a shorter score) |
 | Endless | Unchanged: desktop (`(pointer: fine)` and viewport width > 850px) 0.75, phone and tablet 1.0 |
 | More than 4 staves | `min(the view's default above, full-stack height fit)` |
+| Compact devices, Vertical | `max(readable floor, the result above)`. The floor is a 40px five-line staff (`COMPACT_MIN_DEFAULT_STAVE_PX`), stave scale ≈ 0.556 |
+
+- **Compact readability floor:** on the compact device class (anything that is not desktop), readability wins over fit. The Vertical default is never below a 40px staff. Auto then shows fewer bars per line (1–3 on phones), and a many-staff stack scrolls vertically instead of being height-fitted smaller. Desktop and Endless are unchanged. Only the default is floored: a user can still zoom below it, and that zoom is saved as usual. One case still draws smaller: when a single bar (for example a lyric bar) cannot fit beside the staff controls, the first system is width-fitted below the floor, while later systems use the full width.
 
 - **Width model:** the fit uses the same model as the layout. The minimum bar width is the Auto one (busiest bar, lyric density from the engraving). The first system needs `bars × barFloor + 120` Verovio units. Its usable width is `(viewport − gutter(zoom) − 4px slack) / zoom`, where the gutter is the staff-control gutter for a `72 × zoom` px staff. Usable width falls as zoom rises, so `barFitZoom` in `src/lib/render.ts` bisects for the largest fitting zoom. It is deterministic, rounded down to 0.001 and clamped to `[0.02, 4]`, and it needs no extra Verovio render. Only the many-staff height fit keeps its one probe render.
 - **Balancing:** Auto balances lines, so a score whose count leaves a short last line (for example 5 or 6 bars) shows 3 per line at the four-bar zoom.
 - **Explicit bar counts** (1–4) keep the four-bar default zoom, and their systems are centred as before.
 - **Re-resolving:** the reader requests `'fit'` whenever there is no user zoom, and `renderScore` resolves it on every layout (resize, rotation, mode switch).
-- **Where it lives:** the constants are in `src/lib/stave-scale.ts`: `DEFAULT_VERTICAL_BARS`, `ENDLESS_STAVE_SCALE` and `HEIGHT_FIT_STAVES`, next to the slider range and step.
+- **Where it lives:** the constants are in `src/lib/stave-scale.ts`: `DEFAULT_VERTICAL_BARS`, `COMPACT_MIN_DEFAULT_STAVE_PX`, `ENDLESS_STAVE_SCALE` and `HEIGHT_FIT_STAVES`, next to the slider range and step.
 - **Slider minimum:** the effective minimum is `min(STAVE_SCALE_MIN, current default)`, so a default below the usual minimum is shown as is and never clamped up.
 
 ### Per-score memory (local database)
@@ -72,7 +75,7 @@ Revised 2026-09-30 (`feat/four-bar-default`): the fixed Vertical device defaults
   - the anchor measure stays within half a bar of the viewport centre;
   - at 50% on 1280px, Auto shows more bars per line than at 100% and systems fill at least 90% of the usable width;
   - explicit bar counts produce centred systems;
-  - with no saved zoom, the sample shows exactly four bars on every Vertical system at 1280×800 and 390×844, drawn at the default scale with no horizontal overflow; a two-bar score shows two bars per line; the Endless default is unchanged;
+  - with no saved zoom, the sample shows exactly four bars on every Vertical system at 1280×800. At 390 and 320 the sample and the ensemble keep a staff of at least 40px (except a width-fitted first system beside the controls), with at most four bars per line. There is no horizontal overflow, a two-bar score shows two bars per line on desktop, and the Endless default is unchanged;
   - reopening a file (and reloading with the sample) restores its zoom;
   - a desktop-saved zoom is not applied at 390px;
   - existing assertions stay green.

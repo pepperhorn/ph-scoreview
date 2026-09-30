@@ -353,10 +353,9 @@ try {
   await ready();
   // Verovio draws each <ending> as a system milestone plus one spanning bracket.
   assert.equal(await page.locator('svg g.ending.systemMilestone').count(), 2, 'First and second endings engrave');
-  // An ending on one system draws its bracket in the milestone; across a system break Verovio adds a spanning group.
+  // Verovio draws a bracket in the milestone or, at some system breaks, in a spanning group; either way one per ending.
   const brackets = await page.evaluate(() => {
-    const spanning = [...document.querySelectorAll('svg g.ending.spanning')];
-    const drawn = spanning.length ? spanning : [...document.querySelectorAll('svg g.ending.systemMilestone')].filter(ending => ending.getBoundingClientRect().width > 0);
+    const drawn = [...document.querySelectorAll('svg g.ending.spanning, svg g.ending.systemMilestone')].filter(ending => ending.getBoundingClientRect().width > 0);
     const widest = Math.max(...[...document.querySelectorAll('svg g.measure')].map(measure => measure.getBoundingClientRect().width));
     return drawn.map(ending => ending.getBoundingClientRect().width / widest);
   });
@@ -458,9 +457,13 @@ try {
   console.log(`${engine}: reader import, engraving, layout, annotations, fonts, mixer, persistence and playback passed`);
 
   // Vertical default: the largest stave scale at which four bars (or every bar of a shorter score) fit the first
-  // system beside the staff controls, so Auto shows four per line. A user zoom replaces it; Endless keeps its default.
+  // system beside the staff controls, so Auto shows four per line. On compact devices the default is never below a
+  // 40px staff (fewer bars per line instead). A user zoom replaces it (even below the floor); Endless keeps its default.
   const twoBars = `<?xml version="1.0"?><score-partwise version="4.0"><work><work-title>Two bars</work-title></work><part-list><score-part id="P1"><part-name>Solo</part-name></score-part></part-list><part id="P1">${[1, 2].map(number => `<measure number="${number}">${number === 1 ? '<attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>' : ''}${['C', 'D', 'E', 'F'].map(step => `<note><pitch><step>${step}</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>`).join('')}</measure>`).join('')}</part></score-partwise>`;
-  for (const [width, height, endlessDefault] of [[1280, 800, '0.75'], [390, 844, '1']]) {
+  const fourEnsembleXml = await readFile(resolve(root, 'validation/fixtures/ensemble.musicxml'));
+  const READABLE_STAFF = 40;
+  for (const [width, height, endlessDefault] of [[1280, 800, '0.75'], [390, 844, '1'], [320, 640, '1']]) {
+    const compact = width < 851;
     const fourContext = await browser.newContext({ viewport: { width, height } });
     const four = await fourContext.newPage();
     const fourErrors = [];
@@ -473,7 +476,7 @@ try {
       await action();
       if (await toggle.count() && await toggle.getAttribute('aria-expanded') === 'true') await four.keyboard.press('Escape');
     };
-    // Bars per system, whether any system overflows the canvas, and the rendered staff of each system against 72px x zoom.
+    // Bars per system, whether any system overflows the canvas, and the rendered staff of each system.
     const fourLayout = () => four.evaluate(() => {
       const canvas = document.querySelector('.score-staves').getBoundingClientRect();
       const view = document.querySelector('.score-viewport');
@@ -484,24 +487,30 @@ try {
       });
       return { zoom, systems, scrolls: view.scrollWidth > view.clientWidth + 1 };
     });
+    // Engines measure staff-line boxes slightly differently (Firefox includes more line thickness), so allow 3%.
+    const drawnAt = (system, zoom) => Math.abs(system.staff - 72 * zoom) <= Math.max(1.5, 72 * zoom * .03);
     const label = `${width}px`;
+    const fits = layout => layout.systems.every(system => !system.overflow) && !layout.scrolls;
     await four.goto(url);
     await fourReady();
     const sample = await fourLayout();
     assert.ok(sample.systems.length > 2, `${label}: the sample has several systems`);
-    assert.deepEqual(sample.systems.map(system => system.bars), sample.systems.map(() => 4), `${label}: the default shows four bars on every system (zoom ${sample.zoom})`);
-    assert.ok(sample.systems.every(system => !system.overflow) && !sample.scrolls, `${label}: default systems fit the viewport width (${JSON.stringify(sample)})`);
-    // Engines measure staff-line boxes slightly differently (Firefox includes more line thickness), so allow 3%.
-    assert.ok(sample.systems.every(system => Math.abs(system.staff - sample.systems[0].staff) <= .5 && Math.abs(system.staff - 72 * sample.zoom) <= Math.max(1.5, 72 * sample.zoom * .03)), `${label}: every system is drawn at the default scale, none width-fitted (${JSON.stringify(sample)})`);
-    // Endless keeps its device default; back in Vertical the four-bar default is re-resolved.
+    assert.ok(fits(sample), `${label}: default systems fit the viewport width (${JSON.stringify(sample)})`);
+    assert.ok(sample.systems.every(system => drawnAt(system, sample.zoom)), `${label}: every system is drawn at the default scale, none width-fitted (${JSON.stringify(sample)})`);
+    if (compact) {
+      assert.ok(sample.systems.every(system => system.staff >= READABLE_STAFF - .5 && system.bars <= 4), `${label}: the compact default keeps a readable staff, with up to four bars per line (${JSON.stringify(sample)})`);
+    } else {
+      assert.deepEqual(sample.systems.map(system => system.bars), sample.systems.map(() => 4), `${label}: the default shows four bars on every system (zoom ${sample.zoom})`);
+    }
+    // Endless keeps its device default; back in Vertical the Vertical default is re-resolved.
     await four.getByRole('button', { name: 'Endless view', exact: true }).click();
     await fourReady();
     assert.equal(await fourZoom(), endlessDefault, `${label}: Endless default stave scale is unchanged`);
     await four.getByRole('button', { name: 'Vertical view', exact: true }).click();
     await fourReady();
-    assert.equal(Number(await fourZoom()), sample.zoom, `${label}: returning to Vertical restores the four-bar default`);
-    // A user zoom replaces the default, persists and is restored on reload.
-    const chosen = sample.zoom > 1 ? .9 : .5;
+    assert.equal(Number(await fourZoom()), sample.zoom, `${label}: returning to Vertical restores the default`);
+    // A user zoom replaces the default (on phones even below the readable floor), persists and is restored on reload.
+    const chosen = sample.zoom > 1 ? .9 : .3;
     await fourHeader(async () => {
       const slider = four.getByRole('slider', { name: 'Stave scale', exact: true });
       await slider.fill(await onStep(slider, chosen));
@@ -511,18 +520,32 @@ try {
     await four.reload();
     await fourReady();
     assert.equal(await fourZoom(), String(chosen), `${label}: a user stave scale is restored instead of the default`);
-    // A two-bar score shows both bars on its one line at its own default.
+    // A two-bar score shows both bars on its one line at its own default (on phones, as many as a readable staff allows).
     await four.locator('input[type=file]').setInputFiles({ name: 'two-bars.musicxml', mimeType: 'application/xml', buffer: Buffer.from(twoBars) });
     await four.waitForFunction(() => document.querySelector('h1')?.textContent === 'Two bars');
     await fourReady();
     const short = await fourLayout();
-    assert.deepEqual(short.systems.map(system => system.bars), [2], `${label}: a two-bar score shows two bars per line (${JSON.stringify(short)})`);
-    assert.ok(!short.systems[0].overflow && !short.scrolls, `${label}: the two-bar system fits the viewport width`);
-    assert.ok(short.zoom > sample.zoom, `${label}: two bars default to a larger stave than four (${short.zoom} > ${sample.zoom})`);
+    assert.ok(fits(short), `${label}: the two-bar systems fit the viewport width (${JSON.stringify(short)})`);
+    if (compact) assert.ok(short.systems.every(system => system.bars <= 2 && system.staff >= READABLE_STAFF - .5), `${label}: a two-bar score keeps a readable staff (${JSON.stringify(short)})`);
+    else {
+      assert.deepEqual(short.systems.map(system => system.bars), [2], `${label}: a two-bar score shows two bars per line (${JSON.stringify(short)})`);
+      assert.ok(short.zoom > sample.zoom, `${label}: two bars default to a larger stave than four (${short.zoom} > ${sample.zoom})`);
+    }
+    // Five staves with lyrics: phones keep the readable floor (the stack scrolls); desktop fits four bars or the height.
+    await four.locator('input[type=file]').setInputFiles({ name: 'ensemble.musicxml', mimeType: 'application/xml', buffer: fourEnsembleXml });
+    await four.waitForFunction(() => document.querySelector('h1')?.textContent === 'Migration ensemble');
+    await fourReady();
+    const ensemble = await fourLayout();
+    assert.ok(fits(ensemble), `${label}: ensemble systems fit the viewport width (${JSON.stringify(ensemble)})`);
+    if (compact) {
+      assert.ok(ensemble.zoom >= READABLE_STAFF / 72 - .001, `${label}: the ensemble default is not below the readable floor (${ensemble.zoom})`);
+      // The first system beside the staff controls is still width-fitted when a single lyric bar cannot fit there.
+      assert.ok(ensemble.systems.slice(1).every(system => system.staff >= READABLE_STAFF - .5), `${label}: later ensemble systems keep a readable staff (${JSON.stringify(ensemble)})`);
+    } else assert.ok(ensemble.systems.every(system => system.bars <= 4), `${label}: the ensemble shows at most four bars per line (${JSON.stringify(ensemble)})`);
     assert.deepEqual(fourErrors, []);
     await fourContext.close();
   }
-  console.log(`${engine}: four-bar Vertical default, Endless default and user-zoom restore passed`);
+  console.log(`${engine}: four-bar Vertical default, compact readable floor, Endless default and user-zoom restore passed`);
 
   // Stave scale reflow (desktop): zoom is an absolute stave size, Verovio reflows at (width - gutter) / zoom.
   const deskContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -685,7 +708,7 @@ try {
   await phone.goto(url);
   await phone.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg') && !document.querySelector('.score-content').getAnimations().length, { timeout: 30000 });
   assert.notEqual(await phone.evaluate(() => document.querySelector('.score-content').dataset.staveScale), '1.5', 'A desktop-saved zoom is not applied at 390px');
-  assert.equal(await phone.evaluate(() => document.querySelector('.score-system').querySelectorAll('svg g.measure').length), 4, 'The phone uses its own four-bar default');
+  assert.ok(Math.abs(Number(await phone.evaluate(() => document.querySelector('.score-content').dataset.staveScale)) - 40 / 72) < .01, 'The phone uses its own readable default');
   await phone.close();
   assert.deepEqual(deskErrors, []);
   await deskContext.close();
