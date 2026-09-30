@@ -53,12 +53,40 @@ try {
     assert.ok(offsets.offsets.every(offset => offset < 4), `Staff controls align with their staves: ${offsets.offsets.map(value => value.toFixed(1))}`);
     assert.equal(offsets.overlapping, false, 'Adjacent staff controls do not overlap');
   };
-  // At phone widths secondary header controls live in the "More controls" dropdown.
+  // At phone widths secondary header controls (bpm, bars, stave scale, mixer) live in the "More controls" dropdown; Vertical/Endless stay top level.
   const moreToggle = () => page.getByRole('button', { name: 'More controls', exact: true });
   const openMore = async () => { if (await moreToggle().count() && await moreToggle().getAttribute('aria-expanded') !== 'true') await moreToggle().click(); };
   const closeMore = async () => { if (await moreToggle().count() && await moreToggle().getAttribute('aria-expanded') === 'true') await page.keyboard.press('Escape'); };
   const header = async (action) => { await openMore(); await action(); await closeMore(); };
   const staveScale = () => page.getByRole('slider', { name: 'Stave scale', exact: true });
+  // Top-level header: Play/Open keep their text, Open is outlined, the mode toggle is inline (V/E when condensed).
+  const headerLayout = (target = page) => target.evaluate(() => {
+    const topbar = document.querySelector('.topbar');
+    const visibleText = element => [...element.querySelectorAll('span')].filter(span => span.getClientRects().length && getComputedStyle(span).visibility !== 'hidden').map(span => span.textContent).join('');
+    const open = document.querySelector('.header-open-file');
+    const openStyle = getComputedStyle(open);
+    const targets = [...document.querySelectorAll('.stop-button, .play-button, .header-open-file, .header-more-toggle, .mode-toggle button')].map(element => { const rect = element.getBoundingClientRect(); return { label: element.getAttribute('aria-label'), width: rect.width, height: rect.height }; });
+    return {
+      fits: topbar.scrollWidth <= topbar.clientWidth,
+      play: visibleText(document.querySelector('.play-button')),
+      open: visibleText(open),
+      openBorder: openStyle.borderTopWidth === '1px' && openStyle.borderTopStyle === 'solid' && !/rgba\(0, 0, 0, 0\)|transparent/.test(openStyle.borderTopColor),
+      openLabel: open.getAttribute('aria-label'),
+      mode: [...document.querySelectorAll('.mode-toggle button')].map(button => ({ text: visibleText(button), label: button.getAttribute('aria-label'), title: button.getAttribute('title'), top: !button.closest('.header-secondary-panel') })),
+      targets,
+    };
+  });
+  const assertHeader = async (width, { modeText, minTarget }, target = page) => {
+    const layout = await headerLayout(target);
+    assert.equal(layout.fits, true, `Header does not overflow at ${width}px`);
+    assert.match(layout.play, /^(Play|Pause|Loading)$/, `Play button keeps its text at ${width}px: ${layout.play}`);
+    assert.equal(layout.open, 'Open', `Open button shows its text at ${width}px`);
+    assert.equal(layout.openBorder, true, `Open button is outlined at ${width}px`);
+    assert.equal(layout.openLabel, 'Open score file');
+    assert.deepEqual(layout.mode.map(button => button.text), modeText, `Mode toggle text at ${width}px`);
+    assert.deepEqual(layout.mode.map(button => [button.label, button.title, button.top]), [['Vertical view', 'Vertical view', true], ['Endless view', 'Endless view', true]], `Mode toggle is top level with full labels at ${width}px`);
+    if (minTarget) for (const target of layout.targets) assert.ok(target.width >= minTarget - .5 && target.height >= minTarget - 6.5, `Header touch target ${target.label} is large enough at ${width}px: ${target.width}x${target.height}`);
+  };
   // Rendered first-system staff height, first control icon size and zoom value text.
   const staffMetrics = () => page.evaluate(() => {
     const lines = [...document.querySelector('.score-system:first-child svg g.measure > g.staff').querySelectorAll(':scope > path')].slice(0, 5).map(line => line.getBoundingClientRect());
@@ -118,10 +146,13 @@ try {
   assert.equal(await firstChord(), 'ceg');
   // Mobile header: secondary controls stay in a closed "More controls" dropdown until opened.
   assert.equal(await moreToggle().getAttribute('aria-expanded'), 'false', 'More controls start closed');
-  for (const hidden of [staveScale(), page.getByRole('button', { name: 'Track mixer', exact: true }), page.getByRole('button', { name: 'Endless view', exact: true }), page.locator('.bpm-control input')]) assert.equal(await hidden.count(), 0, 'Secondary controls are hidden while More is closed');
+  for (const hidden of [staveScale(), page.getByRole('button', { name: 'Track mixer', exact: true }), page.locator('.bpm-control input')]) assert.equal(await hidden.count(), 0, 'Secondary controls are hidden while More is closed');
+  for (const shown of [page.getByRole('button', { name: 'Vertical view', exact: true }), page.getByRole('button', { name: 'Endless view', exact: true })]) assert.ok(await shown.isVisible(), 'Vertical/Endless stay top level on mobile');
+  await assertHeader(390, { modeText: ['V', 'E'], minTarget: 36 });
   await moreToggle().click();
   assert.equal(await moreToggle().getAttribute('aria-expanded'), 'true');
-  for (const shown of [staveScale(), page.getByRole('button', { name: 'Track mixer', exact: true }), page.getByRole('button', { name: 'Endless view', exact: true }), page.locator('.bpm-control input')]) assert.ok(await shown.isVisible(), 'Secondary controls are usable in the More panel');
+  for (const shown of [staveScale(), page.getByRole('button', { name: 'Track mixer', exact: true }), page.locator('.bpm-control input')]) assert.ok(await shown.isVisible(), 'Secondary controls are usable in the More panel');
+  assert.equal(await page.locator('.header-secondary-panel .mode-toggle').count(), 0, 'The mode toggle is not in the More panel');
   await page.keyboard.press('Escape');
   assert.equal(await moreToggle().getAttribute('aria-expanded'), 'false', 'Escape closes More');
   await openMore();
@@ -164,11 +195,15 @@ try {
   await page.setViewportSize({ width: 600, height: 800 });
   await moreToggle().waitFor({ state: 'detached' });
   assert.equal(await page.evaluate(() => document.querySelector('.topbar').scrollWidth <= document.querySelector('.topbar').clientWidth), true, 'Inline header fits at 600px');
+  await assertHeader(600, { modeText: ['V', 'E'] });
+  await page.setViewportSize({ width: 700, height: 800 });
+  await assertHeader(700, { modeText: ['V', 'E'] });
   await page.waitForTimeout(400);
   await ready();
   await resizeTo(1280, 800);
   assert.equal(await moreToggle().count(), 0, 'No More toggle on desktop');
   for (const shown of [staveScale(), page.getByRole('button', { name: 'Track mixer', exact: true }), page.getByRole('button', { name: 'Vertical view', exact: true }), page.locator('.bpm-control input'), page.locator('[aria-label="Bars per line"]')]) assert.ok(await shown.isVisible(), 'Secondary controls are inline on desktop');
+  await assertHeader(1280, { modeText: ['Vertical', 'Endless'] });
   const desktop = await staffMetrics();
   assert.ok(Math.abs(desktop.icon - 56) <= 1 && Math.abs(desktop.font - 22) <= .5, `Default desktop controls are double size: ${desktop.icon}px icon, ${desktop.font}px name`);
   await resizeTo(390, 844);
@@ -274,7 +309,7 @@ try {
   await page.getByRole('button', { name: 'Close track mixer', exact: true }).click();
   await page.getByRole('button', { name: 'Show Track 2', exact: true }).click();
   await ready();
-  await header(() => page.getByRole('button', { name: 'Endless view', exact: true }).click());
+  await page.getByRole('button', { name: 'Endless view', exact: true }).click();
   await ready();
   assert.equal(await page.locator('svg .note').count(), 160);
   assert.equal(await page.locator('.score-system').count(), 1, 'Endless view is one unbroken system');
@@ -292,10 +327,11 @@ try {
   await page.waitForTimeout(650);
   assert.equal(await page.evaluate(() => window.__audioStarts), stopped, 'Pause cancels future scheduling');
   await page.getByRole('button', { name: 'Stop playback', exact: true }).click();
-  await header(() => page.getByRole('button', { name: 'Vertical view', exact: true }).click());
+  await page.getByRole('button', { name: 'Vertical view', exact: true }).click();
   await page.setViewportSize({ width: 320, height: 844 });
   await ready();
   assert.equal(await page.evaluate(() => document.querySelector('.topbar').scrollWidth <= document.querySelector('.topbar').clientWidth), true);
+  await assertHeader(320, { modeText: ['V', 'E'], minTarget: 34 });
   await openMore();
   assert.equal(await page.evaluate(() => { const panel = document.querySelector('.header-secondary-panel').getBoundingClientRect(); return panel.left >= 0 && panel.right <= innerWidth; }), true, 'More panel fits a 320px viewport');
   await closeMore();
@@ -510,7 +546,7 @@ try {
   await rot.locator('input[type=file]').setInputFiles({ name: 'twelve.musicxml', mimeType: 'application/xml', buffer: Buffer.from(manyStaves) });
   await rot.waitForFunction(() => document.querySelector('h1')?.textContent === 'Twelve staves' && document.querySelectorAll('.part-control').length === 12);
   await rotReady();
-  await rotHeader(() => rot.getByRole('button', { name: 'Endless view', exact: true }).click());
+  await rot.getByRole('button', { name: 'Endless view', exact: true }).click();
   await rotReady();
   const portraitFit = await rotZoom();
   await rotateTo(844, 390);
@@ -536,7 +572,7 @@ try {
   assert.ok(tall.staffTop >= tall.viewTop, `Tall Endless stack is top-aligned so the first staff is reachable (${JSON.stringify(tall)})`);
   assert.ok(tall.titleBottom <= tall.staffTop + 1, `The title does not overlap the first staff (${JSON.stringify(tall)})`);
   // Vertical keeps the same guarantee.
-  await rotHeader(() => rot.getByRole('button', { name: 'Vertical view', exact: true }).click());
+  await rot.getByRole('button', { name: 'Vertical view', exact: true }).click();
   await rotReady();
   const vertical = await reachable();
   assert.ok(vertical.staffTop >= vertical.viewTop, `Tall Vertical stack is reachable (${JSON.stringify(vertical)})`);
@@ -615,6 +651,7 @@ try {
   const outline = await openButton().evaluate(button => { const style = getComputedStyle(button); return { width: style.borderTopWidth, style: style.borderTopStyle, color: style.borderTopColor }; });
   assert.ok(outline.width === '1px' && outline.style === 'solid' && !/rgba\(0, 0, 0, 0\)|transparent/.test(outline.color), `Open button has a visible outline: ${JSON.stringify(outline)}`);
   assert.equal(await openButton().getAttribute('aria-label'), 'Open score file');
+  assert.equal(await openButton().innerText(), 'Open', 'Open button shows its text on desktop');
   await openButton().click();
   await dialog().waitFor();
   assert.equal(await dialog().getAttribute('aria-modal'), 'true');
