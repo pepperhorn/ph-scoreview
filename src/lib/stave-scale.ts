@@ -10,7 +10,13 @@ export type DeviceClass = 'desktop' | 'compact';
 export const STAVE_SCALE_MIN = .2;
 export const STAVE_SCALE_MAX = 4;
 export const STAVE_SCALE_STEP = .05;
-export const clampStaveScale = (value: number) => Math.max(STAVE_SCALE_MIN, Math.min(STAVE_SCALE_MAX, Math.round(value / STAVE_SCALE_STEP) / Math.round(1 / STAVE_SCALE_STEP)));
+/**
+ * Round to the slider step within the range. `min` is the effective minimum: a many-staff height fit can sit below
+ * STAVE_SCALE_MIN, and the slider then reaches down to it (the fit is never clamped up).
+ */
+export const clampStaveScale = (value: number, min = STAVE_SCALE_MIN) => Math.max(min, Math.min(STAVE_SCALE_MAX, Math.round(value / STAVE_SCALE_STEP) / Math.round(1 / STAVE_SCALE_STEP)));
+/** Smallest stave scale a saved record may hold (a user can keep a very small height fit). */
+export const STAVE_SCALE_FLOOR = .02;
 
 /** Desktop: a fine pointer and a viewport wider than 850px. Everything else (phones, tablets) is compact. */
 export const DESKTOP_QUERY = '(pointer: fine) and (min-width: 851px)';
@@ -28,5 +34,8 @@ export const DEFAULT_STAVE_SCALE: Record<DeviceClass, number> = { desktop: BASEL
 /** Scores with more than this many staves default to the full-stack height fit. */
 export const HEIGHT_FIT_STAVES = 4;
 
-/** Default zoom for a score without a saved one: a device scale, or 'fit' (resolved at render) for many staves. */
+/**
+ * Default zoom for a score without a user-chosen one: a device scale, or 'fit' for many staves. The default is
+ * re-resolved on every layout (resize, rotation, mode), while a user-chosen zoom stays fixed and is the only one saved.
+ */
 export const defaultStaveScale = (device: DeviceClass, staves: number): number | 'fit' => staves > HEIGHT_FIT_STAVES ? 'fit' : DEFAULT_STAVE_SCALE[device];

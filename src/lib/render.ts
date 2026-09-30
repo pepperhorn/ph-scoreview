@@ -328,7 +328,7 @@ export async function renderScore(
     // Endless layout does not depend on zoom: fit the one system's height.
     layout = layoutAt(fitCap);
     pages = await renderPages(layout);
-    layout.zoom = heightFit(Math.max(...pages.map(naturalHeightOf)));
+    layout.zoom = Math.round(heightFit(Math.max(...pages.map(naturalHeightOf))) * 1000) / 1000;
   } else {
     // Height fit: measure the first system at the cap, then lay out again at the fitted scale.
     layout = layoutAt(fitCap);

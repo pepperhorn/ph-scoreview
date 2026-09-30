@@ -6,7 +6,7 @@ import { importFile, parseAbc, parseMusicXml } from '../lib/import';
 import { portraitBarLimit, renderScore, type MeasureGeometry, type RenderResult } from '../lib/render';
 import { partControlMetrics, type PartControlMetrics } from '../lib/part-controls';
 import { HEADER_CONTROLS, MOBILE_HEADER_QUERY, type HeaderControlId } from '../lib/header-controls';
-import { clampStaveScale, DEFAULT_STAVE_SCALE, defaultStaveScale, deviceClass, STAVE_SCALE_MAX, STAVE_SCALE_MIN, STAVE_SCALE_STEP, type DeviceClass } from '../lib/stave-scale';
+import { clampStaveScale, DEFAULT_STAVE_SCALE, defaultStaveScale, deviceClass, STAVE_SCALE_MAX, STAVE_SCALE_MIN, STAVE_SCALE_STEP } from '../lib/stave-scale';
 import { buildFileState, clampBpm, fileSource, MAX_BPM, MIN_BPM, textSource, type FileSettings, type FileSource, type FileState, type ScoreView } from '../lib/file-state';
 import { sampleSource, scoreDb } from '../lib/score-db';
 import { scoreForView } from '../lib/transpose';
@@ -104,9 +104,8 @@ export default function Reader({ musicXml }: ReaderProps) {
   const renderedZoomRef = useRef(1);
   const prefsZoomRef = useRef<number | null>(null);
   prefsZoomRef.current = prefs.zoom;
-  /** Default for this score when it has no saved zoom: a device scale, or 'fit' until a many-staff render resolves it. */
-  const defaultZoomRef = useRef<number | 'fit'>(DEFAULT_STAVE_SCALE.compact);
-  const loadDeviceRef = useRef<DeviceClass>('compact');
+  /** Slider floor: STAVE_SCALE_MIN, or lower when a many-staff height fit is smaller. */
+  const staveScaleMinRef = useRef(STAVE_SCALE_MIN);
   const savedViewRef = useRef<ScoreView | undefined>(undefined);
   /** The next render is a zoom commit: no paint reveal or loading overlay, and the anchor measure is kept centred. */
   const quietRenderRef = useRef(false);
@@ -193,11 +192,7 @@ export default function Reader({ musicXml }: ReaderProps) {
   }, []);
   const update = (patch: Partial<Prefs>) => {
     if (['mode', 'notationFont', 'annotationFont', 'barsPerLine', 'names', 'chordSymbols', 'inferChordSymbols', 'counts', 'subdivisions', 'semitones', 'scorePitch'].some(key => key in patch && patch[key as keyof Prefs] !== prefs[key as keyof Prefs])) setPainting(true);
-    if (patch.mode && patch.mode !== prefs.mode) {
-      viewportRef.current?.scrollTo({ left: 0, top: 0 });
-      // A many-staff default is the height fit of the current view.
-      if (prefs.zoom === null) defaultZoomRef.current = defaultStaveScale(loadDeviceRef.current, score.parts.length);
-    }
+    if (patch.mode && patch.mode !== prefs.mode) viewportRef.current?.scrollTo({ left: 0, top: 0 });
     setPrefs(prev => ({ ...prev, ...patch }));
   };
   const stop = useCallback((reset = false) => {
@@ -214,8 +209,6 @@ export default function Reader({ musicXml }: ReaderProps) {
   /** Show a score with its saved record (if any). The saved zoom applies only on the device class it was chosen on. */
   const loadScore = (next: Score, nextSource: FileSource, saved: FileState | null) => {
     const device = deviceClass();
-    loadDeviceRef.current = device;
-    defaultZoomRef.current = defaultStaveScale(device, next.parts.length);
     savedViewRef.current = saved?.view;
     const zoom = saved?.view?.zoomDevice === device ? saved.view.zoom : null;
     const restored = saved ? { ...next, parts: next.parts.map(part => {
@@ -343,7 +336,7 @@ export default function Reader({ musicXml }: ReaderProps) {
   };
   const commitStaveScale = (value: number) => {
     window.clearTimeout(zoomCommitRef.current);
-    const next = clampStaveScale(value);
+    const next = clampStaveScale(value, staveScaleMinRef.current);
     setZoomDraft(null);
     const committed = quietRenderRef.current ? pendingZoomRef.current : prefsZoomRef.current;
     if (next === committed) { if (!quietRenderRef.current) clearStaveScalePreview(); return; }
@@ -355,7 +348,7 @@ export default function Reader({ musicXml }: ReaderProps) {
   // `input` (React onChange) previews and moves the label; the native `change` event commits. Range inputs fire
   // `change` on release after a drag and once per keyboard step, so keyboard steps are debounced.
   const draftStaveScale = (value: number) => {
-    const next = clampStaveScale(value);
+    const next = clampStaveScale(value, staveScaleMinRef.current);
     setZoomDraft(next);
     previewStaveScale(next);
   };
@@ -424,12 +417,12 @@ export default function Reader({ musicXml }: ReaderProps) {
         const metricsFor = (stavePx: number, staffPitchPx: number) => partControlMetrics(stavePx, { staffPitchPx, maxGutter, eye: many });
         const metaHeight = canvas.closest('.score-content')?.querySelector('.score-meta')?.getBoundingClientRect().height || 0;
         const availableHeight = Math.max(120, (viewportRef.current?.clientHeight || 600) - metaHeight - 70);
-        const requested = prefs.zoom ?? defaultZoomRef.current;
-        const result = await renderScore(canvas, displayScore, prefs.mode, prefs.names, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.chordSymbols, prefs.inferChordSymbols, availableHeight, requested, 0, { gutterFor: (stavePx, staffPitchPx) => metricsFor(stavePx, staffPitchPx).gutter, fitCap: DEFAULT_STAVE_SCALE[loadDeviceRef.current], font: prefs.notationFont, textFont: prefs.annotationFont, transpose: prefs.semitones, scorePitch, hiddenPartIds: hiddenIds, generation });
+        // Without a user zoom the default is re-resolved for the current device and viewport (so rotation re-fits).
+        const device = deviceClass();
+        const requested = prefs.zoom ?? defaultStaveScale(device, score.parts.length);
+        const result = await renderScore(canvas, displayScore, prefs.mode, prefs.names, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.chordSymbols, prefs.inferChordSymbols, availableHeight, requested, 0, { gutterFor: (stavePx, staffPitchPx) => metricsFor(stavePx, staffPitchPx).gutter, fitCap: DEFAULT_STAVE_SCALE[device], font: prefs.notationFont, textFont: prefs.annotationFont, transpose: prefs.semitones, scorePitch, hiddenPartIds: hiddenIds, generation });
         if (disposed || generation !== renderRunRef.current) return;
         renderRef.current = result;
-        // A resolved height fit stays fixed through later resizes (width changes never change zoom).
-        if (requested === 'fit') defaultZoomRef.current = result.zoom;
         renderedZoomRef.current = result.zoom;
         const metrics = metricsFor(result.stavePx, result.staffPitchPx);
         // Commit the controls with the new SVG so no frame shows them against the other layout.
@@ -637,6 +630,8 @@ export default function Reader({ musicXml }: ReaderProps) {
   const barsSetting = prefs.mode === 'portrait' && <label className="header-bars-setting"><span>Bars</span><select aria-label="Bars per line" title={`Auto fits up to ${barsLimit} bars`} value={prefs.barsPerLine} onChange={event => update({ barsPerLine: event.target.value === 'auto' ? 'auto' : Number(event.target.value) })}><option value="auto">Auto</option>{[1, 2, 3, 4].map(count => <option value={count} key={count}>{count}</option>)}</select></label>;
 
   const staveScale = zoomDraft ?? prefs.zoom ?? renderedZoom;
+  const staveScaleMin = Math.min(STAVE_SCALE_MIN, renderedZoom);
+  staveScaleMinRef.current = staveScaleMin;
   const staveScalePercent = Math.round(staveScale * 100);
   const headerElements: Record<HeaderControlId, React.ReactNode> = {
     stop: <button className="icon-button stop-button" aria-label="Stop playback" title="Stop playback" onClick={() => { stop(true); viewportRef.current?.scrollTo({ top: 0, left: 0, behavior: 'smooth' }); }}><Square size={17} fill="currentColor"/></button>,
@@ -647,7 +642,7 @@ export default function Reader({ musicXml }: ReaderProps) {
     bars: barsSetting || null,
     staveScale: <label className="header-stave-scale" title="Stave scale">
       <span className="header-stave-scale-label">Scale</span>
-      <input className="header-stave-scale-input" type="range" min={STAVE_SCALE_MIN} max={STAVE_SCALE_MAX} step={STAVE_SCALE_STEP} value={staveScale} aria-label="Stave scale" aria-valuetext={`${staveScalePercent}%`} onChange={event => draftStaveScale(Number(event.target.value))}
+      <input className="header-stave-scale-input" type="range" min={staveScaleMin} max={STAVE_SCALE_MAX} step={STAVE_SCALE_STEP} value={staveScale} aria-label="Stave scale" aria-valuetext={`${staveScalePercent}%`} onChange={event => draftStaveScale(Number(event.target.value))}
         ref={staveScaleInput} onPointerDown={() => { sliderPointerRef.current = true; window.clearTimeout(zoomCommitRef.current); }}
         onPointerUp={event => releaseStaveScale(event.currentTarget)} onPointerCancel={event => releaseStaveScale(event.currentTarget)}/>
       <output className="header-stave-scale-value">{staveScalePercent}%</output>
@@ -700,7 +695,7 @@ export default function Reader({ musicXml }: ReaderProps) {
       }} onTouchMove={e => {
         if (!pinchRef.current || e.touches.length !== 2) return;
         const distance = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-        pinchRef.current.nextZoom = clampStaveScale(pinchRef.current.zoom * distance / Math.max(1, pinchRef.current.distance));
+        pinchRef.current.nextZoom = clampStaveScale(pinchRef.current.zoom * distance / Math.max(1, pinchRef.current.distance), staveScaleMinRef.current);
         setZoomDraft(pinchRef.current.nextZoom);
         previewStaveScale(pinchRef.current.nextZoom);
       }} onTouchEnd={e => {

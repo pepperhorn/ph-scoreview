@@ -27,22 +27,24 @@ Date: 2026-09-30 · Status: approved for implementation · Branch: `feat/stave-s
 - **Endless:** a single system at the chosen stave size; the vertical centring is unchanged.
 - **Many staves (more than 4):** the default zoom is the full-stack height fit (as today). After that, zoom is absolute.
 - **Staff controls and gutter:** they keep following the rendered stave (from #5). The gutter is included in the layout-width calculation, so notation never collides with the controls.
-- **Width changes** (window resize or rotation) re-lay out at the same zoom and do not change it.
+- **Width changes** (window resize or rotation) re-lay out at the same *user-chosen* zoom and do not change it. A **default** zoom (no slider or pinch change, and no saved user zoom for this score and device class) is re-resolved on every layout, so resize, rotation or a mode switch re-fits it (the device default, or the many-staff height fit).
+- **Reachability:** content is never placed above the scroll origin. When a system or stack is taller than the viewport it is top-aligned instead of centred, in Vertical and in Endless (including the short-landscape layout that centres the stage on the viewport).
 
 ### Defaults (when a score has no saved zoom)
 | Device class | Default stave scale |
 | --- | --- |
 | Desktop (`(pointer: fine)` and viewport width > 850px) | 0.75 × today's rendered scale for the single-stave sample (measured; expected ≈ 0.75) |
 | Phone and tablet | The current rendered scale of the sample at 390px, so phones look unchanged |
-| More than 4 staves | Height fit |
+| More than 4 staves | Height fit (at most the device default above) |
 
-The defaults live in one typed module, `src/lib/stave-scale.ts`, next to the slider range and step.
+The defaults live in one typed module, `src/lib/stave-scale.ts`, next to the slider range and step. The slider's effective minimum is `min(STAVE_SCALE_MIN, current fit)`, so a height fit below the usual minimum is shown as is and never clamped up.
 
 ### Per-score memory (local database)
 - A small IndexedDB wrapper, `src/lib/score-db.ts`: database `scoreflow`, object store `scores`, keyed by `sha256`. It stores the existing `FileState` (version bumped to 2 and adding `lastOpened`) plus `view: { zoom, zoomDevice: 'desktop' | 'compact' }`.
 - **Keys:**
   - opened files: the original-bytes hash (as today);
   - default sample, pasted ABC and the `musicXml` prop: a hash of the source text with a format prefix (`abc:`, `musicxml:`).
+- **Only user zooms are saved:** an automatic default is never written as if chosen; a saved view from another device class is kept when the default is in use.
 - **Restoring:** on reopen, zoom is restored when the saved `zoomDevice` matches the current device class. Otherwise the device default is used, so a phone zoom doesn't carry over to desktop.
 - **Migration:** the first read of a hash falls back to the `localStorage` v1 record and imports it. The `localStorage` copy is kept until the next successful IndexedDB write.
 - **Fallbacks:** if IndexedDB is unavailable (private mode, blocked), fall back to `localStorage` silently. All access is wrapped in try/catch. Writes are debounced (about 400ms) and never block rendering.

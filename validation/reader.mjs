@@ -460,6 +460,78 @@ try {
   await deskContext.close();
   console.log(`${engine}: stave scale reflow, quiet zoom commits, anchoring and per-score memory passed`);
 
+  // Rotation with many staves: a default (fit) zoom re-fits, a user zoom stays, and every staff stays reachable.
+  const manyStaves = (() => {
+    const parts = Array.from({ length: 12 }, (_, index) => `P${index + 1}`);
+    const measures = number => `<measure number="${number}">${number === 1 ? '<attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>' : ''}${['C', 'E', 'G', 'C'].map((step, beat) => `<note><pitch><step>${step}</step><octave>${beat === 3 ? 5 : 4}</octave></pitch><duration>1</duration><type>quarter</type></note>`).join('')}</measure>`;
+    return `<?xml version="1.0"?><score-partwise version="4.0"><work><work-title>Twelve staves</work-title></work><part-list>${parts.map(id => `<score-part id="${id}"><part-name>Staff ${id.slice(1)}</part-name></score-part>`).join('')}</part-list>${parts.map(id => `<part id="${id}">${Array.from({ length: 8 }, (_, index) => measures(index + 1)).join('')}</part>`).join('')}</score-partwise>`;
+  })();
+  const rotateContext = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: engine !== 'firefox' });
+  const rot = await rotateContext.newPage();
+  const rotErrors = [];
+  rot.on('pageerror', e => rotErrors.push(e.message));
+  const rotReady = () => rot.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg') && !document.querySelector('.score-content').getAnimations().length, { timeout: 30000 });
+  const rotZoom = () => rot.evaluate(() => document.querySelector('.score-content').dataset.staveScale);
+  const rotHeader = async action => {
+    const toggle = rot.getByRole('button', { name: 'More controls', exact: true });
+    if (await toggle.count() && await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
+    await action();
+    if (await toggle.count() && await toggle.getAttribute('aria-expanded') === 'true') await rot.keyboard.press('Escape');
+  };
+  // A rotation re-renders: wait for the engraved SVG to be replaced.
+  const rotateTo = async (width, height) => {
+    await rot.evaluate(() => { document.querySelector('.score-system svg').__beforeRotation = true; });
+    await rot.setViewportSize({ width, height });
+    await rot.waitForFunction(() => document.querySelector('.score-system svg') && !document.querySelector('.score-system svg').__beforeRotation, null, { timeout: 10000 });
+    await rotReady();
+  };
+  // Every staff is inside the scrollable area: at scroll origin the first staff's top line is below the viewport top.
+  const reachable = () => rot.evaluate(() => {
+    const view = document.querySelector('.score-viewport');
+    view.scrollTo({ top: 0, left: 0 });
+    const staffTop = Math.min(...[...document.querySelector('.score-system svg g.measure > g.staff').querySelectorAll(':scope > path')].slice(0, 5).map(line => line.getBoundingClientRect().top));
+    const title = document.querySelector('.score-meta h1')?.getBoundingClientRect();
+    return { staffTop, viewTop: view.getBoundingClientRect().top, titleBottom: title?.bottom ?? -Infinity, titleTop: title?.top ?? Infinity, stack: document.querySelector('.score-system').getBoundingClientRect().height, viewHeight: view.clientHeight };
+  });
+  await rot.goto(url);
+  await rotReady();
+  await rot.locator('input[type=file]').setInputFiles({ name: 'twelve.musicxml', mimeType: 'application/xml', buffer: Buffer.from(manyStaves) });
+  await rot.waitForFunction(() => document.querySelector('h1')?.textContent === 'Twelve staves' && document.querySelectorAll('.part-control').length === 12);
+  await rotReady();
+  await rotHeader(() => rot.getByRole('button', { name: 'Endless view', exact: true }).click());
+  await rotReady();
+  const portraitFit = await rotZoom();
+  await rotateTo(844, 390);
+  const landscapeFit = await rotZoom();
+  assert.ok(Number(landscapeFit) < Number(portraitFit), `A default (fit) zoom re-fits on rotation: ${portraitFit} -> ${landscapeFit}`);
+  const fitted = await reachable();
+  assert.ok(fitted.staffTop >= fitted.viewTop, `Rotated default fit: every staff is reachable (${JSON.stringify(fitted)})`);
+  assert.ok(fitted.stack <= fitted.viewHeight + 1, `Rotated default fit: the stack fits the viewport height (${JSON.stringify(fitted)})`);
+  // The slider can show a fit below its usual minimum without clamping it up.
+  const slider = await rot.evaluate(() => { const input = document.querySelector('.header-stave-scale-input'); return input && { min: Number(input.min), label: document.querySelector('.header-stave-scale-value').textContent }; });
+  if (slider) {
+    assert.ok(slider.min <= Number(landscapeFit) + 1e-9, `Slider minimum covers the fit: ${slider.min} <= ${landscapeFit}`);
+    assert.equal(slider.label, `${Math.round(Number(landscapeFit) * 100)}%`, 'Slider label shows the fitted scale');
+  }
+  // A user zoom stays fixed through rotation, and a stack taller than the viewport is top-aligned, not cut off.
+  await rotateTo(390, 844);
+  await rotHeader(async () => { await rot.getByRole('slider', { name: 'Stave scale', exact: true }).fill('0.5'); await rot.waitForFunction(() => document.querySelector('.score-content').dataset.staveScale === '0.5', null, { timeout: 8000 }); });
+  await rotReady();
+  await rotateTo(844, 390);
+  assert.equal(await rotZoom(), '0.5', 'A user zoom stays fixed on rotation');
+  const tall = await reachable();
+  assert.ok(tall.stack > tall.viewHeight, `The user zoom makes the stack taller than the viewport (${JSON.stringify(tall)})`);
+  assert.ok(tall.staffTop >= tall.viewTop, `Tall Endless stack is top-aligned so the first staff is reachable (${JSON.stringify(tall)})`);
+  assert.ok(tall.titleBottom <= tall.staffTop + 1, `The title does not overlap the first staff (${JSON.stringify(tall)})`);
+  // Vertical keeps the same guarantee.
+  await rotHeader(() => rot.getByRole('button', { name: 'Vertical view', exact: true }).click());
+  await rotReady();
+  const vertical = await reachable();
+  assert.ok(vertical.staffTop >= vertical.viewTop, `Tall Vertical stack is reachable (${JSON.stringify(vertical)})`);
+  assert.deepEqual(rotErrors, []);
+  await rotateContext.close();
+  console.log(`${engine}: rotation re-fits default zoom, keeps user zoom and keeps tall stacks reachable passed`);
+
   // Silent fallback: an AudioContext that never resumes must not hang playback.
   const silentContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const silent = await silentContext.newPage();

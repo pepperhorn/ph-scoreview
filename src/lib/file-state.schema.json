@@ -188,7 +188,7 @@
       "properties": {
         "zoom": {
           "type": "number",
-          "minimum": 0.2,
+          "minimum": 0.02,
           "maximum": 4,
           "description": "Absolute stave scale: rendered px per Verovio layout unit at scale 100 (1 = a 72px staff)."
         },
@@ -199,7 +199,8 @@
           ],
           "description": "Device class the zoom was chosen on; it is only restored on the same class."
         }
-      }
+      },
+      "description": "Only a user-chosen zoom (slider or pinch) is saved; without it the device default (or many-staff height fit) applies and is re-resolved on resize."
     }
   },
   "description": "Version 2 record in the IndexedDB database `scoreflow`, object store `scores`, keyed by source.sha256 (see src/lib/score-db.ts). Version 1 records (localStorage `scoreflow-file-v1:<sha256>`, zoom inside settings as a width-fit multiplier) are migrated on first read. Only settings and hashes are stored, never score content."

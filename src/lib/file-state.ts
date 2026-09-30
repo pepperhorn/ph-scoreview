@@ -1,5 +1,5 @@
 import { isGmSoundfont, type InstrumentId, type Score } from './score';
-import { STAVE_SCALE_MAX, STAVE_SCALE_MIN, type DeviceClass } from './stave-scale';
+import { STAVE_SCALE_FLOOR, STAVE_SCALE_MAX, type DeviceClass } from './stave-scale';
 
 export type FileSource = { name: string; size: number; sha256: string; format: string };
 export type FileSettings = {
@@ -86,7 +86,7 @@ export function textSource(format: string, text: string, name: string): FileSour
   return { name, size: bytes.length - format.length - 1, sha256: sha256Hex(bytes), format };
 }
 
-const validZoom = (zoom: unknown): zoom is number => typeof zoom === 'number' && Number.isFinite(zoom) && zoom >= STAVE_SCALE_MIN && zoom <= STAVE_SCALE_MAX;
+const validZoom = (zoom: unknown): zoom is number => typeof zoom === 'number' && Number.isFinite(zoom) && zoom >= STAVE_SCALE_FLOOR && zoom <= STAVE_SCALE_MAX;
 /** Validate and normalise shared v1/v2 fields in place; false when the record is unusable. */
 function validSettingsAndParts(state: { settings: FileSettings; parts: Record<string, PartState> }): boolean {
   const settings = state.settings;
@@ -135,7 +135,8 @@ export function parseFileState(raw: unknown, sha256: string): FileState | null {
   try {
     const state = (typeof raw === 'string' ? JSON.parse(raw) : structuredClone(raw)) as FileState;
     if (!state || state.version !== 2 || state.source?.sha256 !== sha256 || !Number.isFinite(state.lastOpened)) return null;
-    if (state.view !== undefined && (!validZoom(state.view?.zoom) || !['desktop', 'compact'].includes(state.view.zoomDevice))) return null;
+    // An unusable view only loses the saved zoom, not the score's other settings.
+    if (state.view !== undefined && (!validZoom(state.view?.zoom) || !['desktop', 'compact'].includes(state.view.zoomDevice))) delete state.view;
     if ('zoom' in (state.settings || {})) delete (state.settings as Partial<FileSettings> & { zoom?: number }).zoom;
     return validSettingsAndParts(state) ? state : null;
   } catch { return null; }
