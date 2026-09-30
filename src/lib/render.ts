@@ -3,6 +3,7 @@ import { inferChordSymbol } from './chords';
 import { importVerovio, renderVerovio } from './verovio-runtime';
 import { staffDefXmlId } from './notation/document';
 import { musicFontOptions } from './music-fonts';
+import { DEFAULT_VERTICAL_BARS, HEIGHT_FIT_STAVES, STAVE_SCALE_FLOOR, STAVE_SCALE_MAX } from './stave-scale';
 
 const MEI = 'http://www.music-encoding.org/ns/mei';
 const XML = 'http://www.w3.org/XML/1998/namespace';
@@ -26,7 +27,7 @@ export type RenderOptions = { font?: 'Bravura' | 'Petaluma'; textFont?: 'Sans' |
    * staff of `STAFF_UNITS * zoom` px before rendering; the final gutter uses the measured staves.
    */
   gutterFor?: (stavePx: number, staffPitchPx: number) => number;
-  /** Upper bound of a 'fit' zoom (the device default); a many-staff stack is height-fitted below it. */
+  /** Endless 'fit' zoom (the device's Endless default); a many-staff stack is height-fitted below it. Vertical 'fit' ignores it. */
   fitCap?: number };
 
 const latestGeneration = new WeakMap<HTMLElement, number>();
@@ -59,6 +60,24 @@ export function autoBarsPerLine(width: number, score: Score, minimumBar = portra
   const limit = portraitBarLimit(width, score, minimumBar);
   const count = Math.max(1, score.parts[0]?.measures.length || 1);
   return Math.ceil(count / Math.ceil(count / limit));
+}
+/** Narrowest layout width (Verovio units) that engraves `bars` bars at their minimum width with no width fit (matches `layoutAt`). */
+export const systemMinimumWidth = (bars: number, barFloor: number) => bars * Math.max(190, barFloor) + 120;
+/** Slack (px) for the measured staff and gutter being a pixel or two larger than the layout model. */
+const BAR_FIT_SLACK = 4;
+/**
+ * Largest stave scale at which `bars` bars fit on the first system (beside the zoom-dependent control gutter) at their
+ * minimum width, so Auto yields that many bars per line. Usable width `(viewport - gutter(z)) / z` falls as z grows
+ * (the gutter never shrinks with the staff), so a bisection finds it. Deterministic, render-free, rounded down to 0.001.
+ */
+export function barFitZoom(viewportWidth: number, bars: number, barFloor: number, gutterAt: (zoom: number) => number = () => 0): number {
+  const need = systemMinimumWidth(bars, barFloor);
+  const fits = (zoom: number) => Math.max(180, viewportWidth - gutterAt(zoom) - BAR_FIT_SLACK) / zoom >= need;
+  if (fits(STAVE_SCALE_MAX)) return STAVE_SCALE_MAX;
+  if (!fits(STAVE_SCALE_FLOOR)) return STAVE_SCALE_FLOOR;
+  let low = STAVE_SCALE_FLOOR, high = STAVE_SCALE_MAX;
+  for (let step = 0; step < 40; step++) { const mid = (low + high) / 2; if (fits(mid)) low = mid; else high = mid; }
+  return Math.floor(low * 1000) / 1000;
 }
 const lyricCache = new Map<string, number>();
 /** Most lyric syllables in any one staff-measure of the engraving (per verse line). */
@@ -300,13 +319,15 @@ export async function renderScore(
     const view = viewMei(baseline, score, endlessSingle ? 0 : bars, hiddenIds, showChordSymbols);
     // A bar never gets narrower than its minimum (the system is width-fitted instead); explicit counts are not stretched
     // past a comfortable width, so their systems stay narrower than the viewport and are centred.
-    const least = bars * barFloor + 120;
+    const least = systemMinimumWidth(bars, barFloor);
     const most = explicit ? bars * barFloor * 2 + 120 : Infinity;
     return { zoom: scale, bars, explicit, view, pageCount: endlessSingle ? 1 : Math.ceil(view.measureIds.length / bars),
       firstWidth: Math.max(least, Math.min(most, usableUnits)), restWidth: Math.max(least, Math.min(most, restUnits)) };
   };
-  const fitCap = options.fitCap ?? 1;
-  const heightFit = (naturalHeight: number) => structure.visibleParts.length > 4 && availableHeight > 0 ? Math.min(fitCap, availableHeight / naturalHeight) : fitCap;
+  // 'fit' (the default zoom): Endless uses the device cap; Vertical fits DEFAULT_VERTICAL_BARS bars (or every bar of a
+  // shorter score) across the first system, so Auto yields that many per line. Many staves are height-fitted below either.
+  const fitCap = mode === 'landscape' ? options.fitCap ?? 1 : barFitZoom(viewportWidth, Math.min(DEFAULT_VERTICAL_BARS, count), barFloor, layoutGutter);
+  const heightFit = (naturalHeight: number) => structure.visibleParts.length > HEIGHT_FIT_STAVES && availableHeight > 0 ? Math.min(fitCap, availableHeight / naturalHeight) : fitCap;
   const renderPages = async (layout: Layout): Promise<string[]> => {
     if (mode === 'landscape') return (await renderVerovio(layout.view.mei, verovioOptions(100000))).pages.map(item => item.svg);
     // Only the first system gives up width to the staff controls; later systems use the full viewport.
@@ -330,12 +351,14 @@ export async function renderScore(
     pages = await renderPages(layout);
     layout.zoom = Math.round(heightFit(Math.max(...pages.map(naturalHeightOf))) * 1000) / 1000;
   } else {
-    // Height fit: measure the first system at the cap, then lay out again at the fitted scale.
+    // Vertical: the bar fit; many staves then measure the first system there and lay out again at the height fit.
     layout = layoutAt(fitCap);
-    const probe = await renderVerovio(layout.view.mei, verovioOptions(layout.firstWidth), layout.pageCount > 1 && layout.firstWidth !== layout.restWidth ? [1] : undefined);
-    if (!isCurrent()) throw new Error('Superseded score render.');
-    const fitted = Math.round(heightFit(naturalHeightOf(probe.pages[0]?.svg || '')) * 1000) / 1000;
-    if (fitted < fitCap - .001) layout = layoutAt(fitted);
+    if (structure.visibleParts.length > HEIGHT_FIT_STAVES) {
+      const probe = await renderVerovio(layout.view.mei, verovioOptions(layout.firstWidth), layout.pageCount > 1 && layout.firstWidth !== layout.restWidth ? [1] : undefined);
+      if (!isCurrent()) throw new Error('Superseded score render.');
+      const fitted = Math.round(heightFit(naturalHeightOf(probe.pages[0]?.svg || '')) * 1000) / 1000;
+      if (fitted < fitCap - .001) layout = layoutAt(fitted);
+    }
     pages = await renderPages(layout);
   }
   const { bars, view: { measureIds, staffOf, visibleParts } } = layout;

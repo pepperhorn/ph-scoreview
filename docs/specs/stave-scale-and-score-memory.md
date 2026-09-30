@@ -27,17 +27,24 @@ Date: 2026-09-30 · Status: approved for implementation · Branch: `feat/stave-s
 - **Endless:** a single system at the chosen stave size; the vertical centring is unchanged.
 - **Many staves (more than 4):** the default zoom is the full-stack height fit (as today). After that, zoom is absolute.
 - **Staff controls and gutter:** they keep following the rendered stave (from #5). The gutter is included in the layout-width calculation, so notation never collides with the controls.
-- **Width changes** (window resize or rotation) re-lay out at the same *user-chosen* zoom and do not change it. A **default** zoom (no slider or pinch change, and no saved user zoom for this score and device class) is re-resolved on every layout, so resize, rotation or a mode switch re-fits it (the device default, or the many-staff height fit).
+- **Width changes** (window resize or rotation) re-lay out at the same *user-chosen* zoom and do not change it. A **default** zoom (no slider or pinch change, and no saved user zoom for this score and device class) is re-resolved on every layout, so resize, rotation or a mode switch re-fits it (the Vertical four-bar fit or the Endless device default, or the many-staff height fit).
 - **Reachability:** content is never placed above the scroll origin. When a system or stack is taller than the viewport it is top-aligned instead of centred, in Vertical and in Endless (including the short-landscape layout that centres the stage on the viewport).
 
 ### Defaults (when a score has no saved zoom)
-| Device class | Default stave scale |
-| --- | --- |
-| Desktop (`(pointer: fine)` and viewport width > 850px) | 0.75 × today's rendered scale for the single-stave sample (measured; expected ≈ 0.75) |
-| Phone and tablet | The current rendered scale of the sample at 390px, so phones look unchanged |
-| More than 4 staves | Height fit (at most the device default above) |
+Revised 2026-09-30 (`feat/four-bar-default`): the fixed Vertical device defaults (desktop 0.75, compact 1.0) are replaced by a four-bar fit. The user can still scale up or down from it.
 
-The defaults live in one typed module, `src/lib/stave-scale.ts`, next to the slider range and step. The slider's effective minimum is `min(STAVE_SCALE_MIN, current fit)`, so a height fit below the usual minimum is shown as is and never clamped up.
+| View | Default stave scale |
+| --- | --- |
+| Vertical | The largest scale at which `min(4, measure count)` bars fit the first system beside the staff controls at their minimum width, so Auto shows four bars per line (or every bar of a shorter score) |
+| Endless | Unchanged: desktop (`(pointer: fine)` and viewport width > 850px) 0.75, phone and tablet 1.0 |
+| More than 4 staves | `min(the view's default above, full-stack height fit)` |
+
+- **Width model:** the fit uses the same model as the layout. The minimum bar width is the Auto one (busiest bar, lyric density from the engraving). The first system needs `bars × barFloor + 120` Verovio units. Its usable width is `(viewport − gutter(zoom) − 4px slack) / zoom`, where the gutter is the staff-control gutter for a `72 × zoom` px staff. Usable width falls as zoom rises, so `barFitZoom` in `src/lib/render.ts` bisects for the largest fitting zoom. It is deterministic, rounded down to 0.001 and clamped to `[0.02, 4]`, and it needs no extra Verovio render. Only the many-staff height fit keeps its one probe render.
+- **Balancing:** Auto balances lines, so a score whose count leaves a short last line (for example 5 or 6 bars) shows 3 per line at the four-bar zoom.
+- **Explicit bar counts** (1–4) keep the four-bar default zoom, and their systems are centred as before.
+- **Re-resolving:** the reader requests `'fit'` whenever there is no user zoom, and `renderScore` resolves it on every layout (resize, rotation, mode switch).
+- **Where it lives:** the constants are in `src/lib/stave-scale.ts`: `DEFAULT_VERTICAL_BARS`, `ENDLESS_STAVE_SCALE` and `HEIGHT_FIT_STAVES`, next to the slider range and step.
+- **Slider minimum:** the effective minimum is `min(STAVE_SCALE_MIN, current default)`, so a default below the usual minimum is shown as is and never clamped up.
 
 ### Per-score memory (local database)
 - A small IndexedDB wrapper, `src/lib/score-db.ts`: database `scoreflow`, object store `scores`, keyed by `sha256`. It stores the existing `FileState` (version bumped to 2 and adding `lastOpened`) plus `view: { zoom, zoomDevice: 'desktop' | 'compact' }`.
@@ -65,7 +72,7 @@ The defaults live in one typed module, `src/lib/stave-scale.ts`, next to the sli
   - the anchor measure stays within half a bar of the viewport centre;
   - at 50% on 1280px, Auto shows more bars per line than at 100% and systems fill at least 90% of the usable width;
   - explicit bar counts produce centred systems;
-  - desktop default for the sample is about 0.75× the baseline;
+  - with no saved zoom, the sample shows exactly four bars on every Vertical system at 1280×800 and 390×844, drawn at the default scale with no horizontal overflow; a two-bar score shows two bars per line; the Endless default is unchanged;
   - reopening a file (and reloading with the sample) restores its zoom;
   - a desktop-saved zoom is not applied at 390px;
   - existing assertions stay green.
