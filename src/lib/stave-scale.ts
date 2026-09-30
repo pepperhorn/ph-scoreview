@@ -28,8 +28,9 @@ export const deviceClass = (): DeviceClass => typeof window !== 'undefined' && w
  */
 export const ENDLESS_STAVE_SCALE: Record<DeviceClass, number> = { desktop: .75, compact: 1 };
 /**
- * Vertical default: the largest stave scale at which this many bars (or every bar of a shorter score) fit the first
- * system beside the staff controls at their minimum width, so Auto shows that many per line (`barFitZoom` in render.ts).
+ * Vertical default: the largest stave scale at which this many bars fit the first system beside the staff controls at
+ * their minimum width, so Auto shows that many per line (`barFitZoom` in render.ts). It depends on the viewport, not the
+ * score length: a shorter score is drawn at the same size on a shorter, centred system.
  */
 export const DEFAULT_VERTICAL_BARS = 4;
 /**

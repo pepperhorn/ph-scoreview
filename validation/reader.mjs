@@ -496,6 +496,7 @@ try {
     const sample = await fourLayout();
     assert.ok(sample.systems.length > 2, `${label}: the sample has several systems`);
     assert.ok(fits(sample), `${label}: default systems fit the viewport width (${JSON.stringify(sample)})`);
+    assert.equal(await four.evaluate(() => [...document.querySelectorAll('.score-system')].every(system => system.querySelectorAll('svg g.system').length === 1)), true, `${label}: every sample line is one engraved system`);
     assert.ok(sample.systems.every(system => drawnAt(system, sample.zoom)), `${label}: every system is drawn at the default scale, none width-fitted (${JSON.stringify(sample)})`);
     if (compact) {
       assert.ok(sample.systems.every(system => system.staff >= READABLE_STAFF - .5 && system.bars <= 4), `${label}: the compact default keeps a readable staff, with up to four bars per line (${JSON.stringify(sample)})`);
@@ -520,17 +521,20 @@ try {
     await four.reload();
     await fourReady();
     assert.equal(await fourZoom(), String(chosen), `${label}: a user stave scale is restored instead of the default`);
-    // A two-bar score shows both bars on its one line at its own default (on phones, as many as a readable staff allows).
+    // The default stave size depends on the viewport, not the score length: a two-bar score is drawn at the same scale
+    // as the sample, on one shorter line (not stretched to fill the viewport).
     await four.locator('input[type=file]').setInputFiles({ name: 'two-bars.musicxml', mimeType: 'application/xml', buffer: Buffer.from(twoBars) });
     await four.waitForFunction(() => document.querySelector('h1')?.textContent === 'Two bars');
     await fourReady();
     const short = await fourLayout();
-    assert.ok(fits(short), `${label}: the two-bar systems fit the viewport width (${JSON.stringify(short)})`);
-    if (compact) assert.ok(short.systems.every(system => system.bars <= 2 && system.staff >= READABLE_STAFF - .5), `${label}: a two-bar score keeps a readable staff (${JSON.stringify(short)})`);
-    else {
-      assert.deepEqual(short.systems.map(system => system.bars), [2], `${label}: a two-bar score shows two bars per line (${JSON.stringify(short)})`);
-      assert.ok(short.zoom > sample.zoom, `${label}: two bars default to a larger stave than four (${short.zoom} > ${sample.zoom})`);
-    }
+    const shortLines = await four.evaluate(() => ({ wrapped: [...document.querySelectorAll('.score-system')].some(system => system.querySelectorAll('svg g.system').length !== 1), width: document.querySelector('.score-system').getBoundingClientRect().width, canvas: document.querySelector('.score-staves').getBoundingClientRect().width }));
+    assert.equal(short.zoom, sample.zoom, `${label}: a two-bar score defaults to the same stave scale as the sample`);
+    assert.ok(fits(short), `${label}: the two-bar system fits the viewport width (${JSON.stringify(short)})`);
+    // Every line is one engraved system (Verovio never wraps inside a line); on phones the 40px floor may leave one bar per line.
+    assert.equal(shortLines.wrapped, false, `${label}: no line wraps inside its system (${JSON.stringify(short)})`);
+    if (!compact) assert.deepEqual(short.systems.map(system => system.bars), [2], `${label}: a two-bar score shows both bars on one line (${JSON.stringify(short)})`);
+    assert.ok(short.systems.every(system => drawnAt(system, short.zoom)), `${label}: the two-bar line is drawn at the default scale (${JSON.stringify(short)})`);
+    if (!compact) assert.ok(shortLines.width < shortLines.canvas * .8, `${label}: the two-bar line is shorter than a full line (${JSON.stringify(shortLines)})`);
     // Five staves with lyrics: phones keep the readable floor (the stack scrolls); desktop fits four bars or the height.
     await four.locator('input[type=file]').setInputFiles({ name: 'ensemble.musicxml', mimeType: 'application/xml', buffer: fourEnsembleXml });
     await four.waitForFunction(() => document.querySelector('h1')?.textContent === 'Migration ensemble');
