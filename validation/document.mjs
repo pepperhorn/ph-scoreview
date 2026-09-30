@@ -27,8 +27,9 @@ try {
   const xml = `<?xml version="1.0"?><score-timewise version="4.0"><work><work-title>Source retained</work-title></work><part-list><score-part id="P1"><part-name>Drum</part-name></score-part></part-list><measure number="0" implicit="yes"><part id="P1"><attributes><divisions>4</divisions><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>percussion</sign></clef></attributes><note><unpitched><display-step>C</display-step><display-octave>5</display-octave></unpitched><duration>2</duration><type>eighth</type><voice>1</voice><lyric><text>tap</text></lyric></note><backup><duration>2</duration></backup><note><rest/><duration>2</duration><voice>2</voice><type>eighth</type></note></part></measure></score-timewise>`;
   // M7: an archive whose other members would inflate hugely, and a percent-encoded rootfile path.
   const zeros = new Uint8Array(9_000_000);
+  const oversizedZeros = new Uint8Array(130 * 1024 * 1024);
   const encodedArchive = zipSync({ 'META-INF/container.xml': strToU8('<?xml version="1.0"?><container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="My%20Score.musicxml" media-type="application/vnd.recordare.musicxml+xml"/></rootfiles></container>'), 'My Score.musicxml': strToU8(xml), 'padding.xml': zeros });
-  const oversizedArchive = zipSync({ 'META-INF/container.xml': strToU8('<?xml version="1.0"?><container><rootfiles><rootfile full-path="big.musicxml"/></rootfiles></container>'), 'big.musicxml': zeros });
+  const oversizedArchive = zipSync({ 'META-INF/container.xml': strToU8('<?xml version="1.0"?><container><rootfiles><rootfile full-path="big.musicxml"/></rootfiles></container>'), 'big.musicxml': oversizedZeros });
   const archive = zipSync({ 'META-INF/container.xml': strToU8('<?xml version="1.0"?><container><rootfiles><rootfile full-path="score.musicxml"/></rootfiles></container>'), 'score.musicxml': strToU8(xml) });
   const actual = await page.evaluate(async ({ xml, archive }) => {
     const { parseMusicXml, parseMei, parseAbc, importFile, parseMidi } = await import('/src/lib/import.ts');
@@ -71,6 +72,11 @@ try {
     const saved = readFileState(source);
     localStorage.removeItem(`scoreflow-file-v1:${source.sha256}`);
     const encoded = await importFile(new File([new Uint8Array(encodedArchive)], 'encoded.mxl'));
+    // Files above the old 8 MB cap open; only files above the 64 MB cap are refused, with their size.
+    const padded = (await (await fetch('/validation/fixtures/expressive.musicxml')).text()).replace('<part-list>', `<!--${'x'.repeat(12 * 1024 * 1024)}--><part-list>`);
+    const largeTitle = (await importFile(new File([padded], 'large.musicxml'))).parts.length;
+    let tooLarge = '';
+    try { await importFile(new File([new Uint8Array(65 * 1024 * 1024)], 'huge.musicxml')); } catch (error) { tooLarge = error.message; }
     let oversized = '';
     try { await importFile(new File([new Uint8Array(oversizedArchive)], 'big.mxl')); } catch (error) { oversized = error.message; }
     // N: ABC navigation is engraved through the MEI adapter (repeat barlines, volta endings, segno/coda, D.C./D.S./Fine).
@@ -91,7 +97,7 @@ try {
       meiMeter: `${mei.beats}/${mei.beatType}`, meiBeats: mei.parts[0].measures.map(m => m.beats).join(),
       meiMidi: mei.parts[0].measures.flatMap(m => m.notes.map(n => n.pitches[0].midi)).join(),
       savedBpm: saved?.settings.bpm ?? null,
-      encodedTitle: encoded.title, encodedNotes: encoded.parts[0].measures[0].notes.length, oversized,
+      largeParts: largeTitle, tooLarge, encodedTitle: encoded.title, encodedNotes: encoded.parts[0].measures[0].notes.length, oversized,
     };
   }, { encodedArchive: Array.from(encodedArchive), oversizedArchive: Array.from(oversizedArchive) });
   assert.equal(review.drumInstrument, 'drum-kit');
@@ -108,7 +114,9 @@ try {
   assert.equal(review.meiNavigation, JSON.stringify([['7a', { repeatStart: true, segno: true }], ['8', { repeatEnd: true, endings: [1, 2] }]]), 'MEI navigation and measure labels');
   assert.equal(review.encodedTitle, 'Source retained');
   assert.ok(review.encodedNotes >= 1);
-  assert.match(review.oversized, /larger than 8 MB uncompressed/);
+  assert.ok(review.largeParts > 0, 'A 12 MB MusicXML file opens');
+  assert.match(review.tooLarge, /65 MB; scores up to 64 MB can be opened/);
+  assert.match(review.oversized, /130 MB uncompressed; the limit is 128 MB/);
   assert.equal(actual.xmlSame, true);
   assert.equal(actual.xmlFormat, 'musicxml');
   assert.equal(actual.timewiseConverted, true);
