@@ -107,10 +107,32 @@ export function normalizeTimewiseMusicXml(text: string): string {
   return new XMLSerializer().serializeToString(output);
 }
 
-/** Make stable source IDs in an engraving copy. The original source is untouched. */
+/**
+ * Reader policy for multi-measure rests: every source measure is engraved as its own bar.
+ * Verovio's MusicXML import collapses a `<multiple-rest>` span into ONE MEI measure, so the
+ * engraved measures would no longer correspond 1:1 with source (and Score) measures and every
+ * later note would be looked up in the wrong bar. Dropping the `<multiple-rest>` hint (and a
+ * `<measure-style>` left empty by it) makes each bar of the span an ordinary whole-bar rest,
+ * which is also what a reader following along with playback wants to see.
+ */
+function expandMultipleRests(doc: XMLDocument): void {
+  const hints = Array.from(doc.getElementsByTagName('*')).filter(element => element.localName === 'multiple-rest');
+  for (const hint of hints) {
+    const style = hint.parentElement;
+    hint.remove();
+    if (style?.localName === 'measure-style' && !style.children.length) style.remove();
+  }
+}
+
+/**
+ * Make the MusicXML engraving copy: stable source IDs on every `<note>` (kept when the source has
+ * them, generated deterministically when it does not) and multi-measure rests expanded to one bar
+ * per source measure. The original source is untouched.
+ */
 export function identifyMusicXmlNotes(text: string): { text: string; sourceIds: string[] } {
   const doc = new DOMParser().parseFromString(text, 'application/xml');
   if (doc.querySelector('parsererror')) throw new Error('This file is not valid XML.');
+  expandMultipleRests(doc);
   const sourceIds: string[] = [];
   const used = new Set<string>();
   for (const [partIndex, part] of Array.from(doc.documentElement.children).filter(e => e.localName === 'part').entries()) {

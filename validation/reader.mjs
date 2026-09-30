@@ -432,7 +432,8 @@ try {
   await assertControlsAligned(5);
   await page.getByRole('button', { name: 'Play score', exact: true }).click();
   // Devices without a usable audio output (e.g. CI runners) fall back to silent playback, which must say so.
-  await page.waitForFunction(() => document.querySelector('.playback-line') && (window.__audioStarts > 0 || document.querySelector('.playback-notice')));
+  // The playhead can show at the bar start a frame before the first note highlights, so wait for both.
+  await page.waitForFunction(() => document.querySelector('.playback-line') && document.querySelector('.is-playing') && (window.__audioStarts > 0 || document.querySelector('.playback-notice')));
   assert.ok(await page.locator('.is-playing').count() > 0);
   if (await page.locator('.playback-notice').count() === 0) assert.ok(await page.evaluate(() => window.__audioStarts) > 0, 'Audible playback starts audio sources');
   else console.log(`${engine}: audio unavailable, reader playback ran silently`);
@@ -827,6 +828,56 @@ try {
   assert.deepEqual(silentErrors, []);
   await silentContext.close();
   console.log(`${engine}: silent playback fallback passed`);
+
+  // Real-world exports (e.g. Sibelius) carry no note IDs and open with a multi-measure rest whose first bar holds
+  // only directions and second only a <forward>. Every source measure must engrave, every event must map to its
+  // engraved note, and the playhead must move through the empty intro before highlighting the first note.
+  const idlessContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const idless = await idlessContext.newPage();
+  const idlessErrors = [];
+  idless.on('pageerror', e => idlessErrors.push(e.message));
+  // Silent wall-clock playback: deterministic timing without loading soundfonts.
+  await idless.addInitScript(() => {
+    Object.defineProperty(AudioContext.prototype, 'state', { configurable: true, get: () => 'suspended' });
+    AudioContext.prototype.resume = () => new Promise(() => {});
+  });
+  await idless.goto(url);
+  await idless.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg') && !document.querySelector('.score-content').getAnimations().length, undefined, { timeout: 30000 });
+  await idless.locator('input[type=file]').setInputFiles(resolve(root, 'validation/fixtures/idless-sibelius.musicxml'));
+  await idless.waitForFunction(() => document.querySelector('h1')?.textContent === 'ID-less export');
+  await idless.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg') && !document.querySelector('.score-content').getAnimations().length, undefined, { timeout: 30000 });
+  assert.equal(await idless.locator('.toast').count(), 0, await idless.locator('.toast').allTextContents());
+  assert.equal(await idless.locator('svg g.measure').count(), 5, 'Each source measure engraves, including both bars of the multi-measure rest');
+  assert.equal(await idless.locator('svg .multiRest').count(), 0, 'Multi-measure rests are expanded to one bar per source measure');
+  // 9 events: C3, E3, G3 (tied) | G3, A2+E3 chord, rest, C2 (voice 2) | grace E2, F2.
+  assert.equal(await idless.locator('svg .reader-note').count(), 9, 'Every source event maps to its engraved note');
+  assert.equal(await idless.locator('svg .chord.reader-note').count(), 1, 'The chord maps as one event');
+  assert.deepEqual(await idless.evaluate(() => [...document.querySelectorAll('svg .reader-note')].map(note => note.closest('g.measure') && [...document.querySelectorAll('svg g.measure')].indexOf(note.closest('g.measure')))), [2, 2, 2, 3, 3, 3, 3, 4, 4], 'Notes map into their own source measures after the intro rest');
+  // Record the playhead and the first highlight as they happen.
+  await idless.evaluate(() => {
+    window.__idless = { linesBeforeNote: [], firstPlaying: null };
+    new MutationObserver(() => {
+      const playing = document.querySelector('.reader-note.is-playing');
+      if (playing && !window.__idless.firstPlaying) window.__idless.firstPlaying = { noteId: playing.getAttribute('data-note-id'), id: playing.id, pname: playing.getAttribute('data-pname'), oct: playing.getAttribute('data-oct') };
+      const line = document.querySelector('.playback-line');
+      if (line && !window.__idless.firstPlaying) window.__idless.linesBeforeNote.push(parseFloat(line.style.left));
+    }).observe(document.querySelector('.score-content'), { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+  });
+  await idless.getByRole('button', { name: 'Play score', exact: true }).click();
+  await idless.waitForFunction(() => document.querySelector('.playback-line') && !document.querySelector('.is-playing'), undefined, { timeout: 5000 });
+  const introLeft = await idless.evaluate(() => parseFloat(document.querySelector('.playback-line').style.left));
+  await idless.waitForFunction(first => !document.querySelector('.is-playing') && parseFloat(document.querySelector('.playback-line')?.style.left ?? 'NaN') > first, introLeft, { timeout: 5000 });
+  await idless.waitForFunction(() => window.__idless.firstPlaying, undefined, { timeout: 10000 });
+  const { linesBeforeNote, firstPlaying } = await idless.evaluate(() => window.__idless);
+  assert.ok(new Set(linesBeforeNote).size > 2, `The playhead moves through the empty intro: ${linesBeforeNote.length} positions`);
+  // The timeline's first sounding event is the first note of source bar 3 (C3); its engraved element keeps the ID injected into the engraving copy.
+  assert.deepEqual(firstPlaying, { noteId: 'P1-1-2-0', id: 'mx_p1_m3_n1', pname: 'c', oct: '3' }, 'The first highlight lands on the first sounding note');
+  await idless.getByRole('button', { name: 'Stop playback', exact: true }).click();
+  await idless.getByRole('button', { name: 'Play score', exact: true }).waitFor();
+  assert.equal(await idless.locator('.playback-line').count(), 0, 'Stop clears the playhead');
+  assert.deepEqual(idlessErrors, []);
+  await idlessContext.close();
+  console.log(`${engine}: ID-less MusicXML with a multi-measure rest intro passed`);
 
   // Open dialog: outlined header button, format guide, pasted ABC, dropped files and folders.
   const openContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });

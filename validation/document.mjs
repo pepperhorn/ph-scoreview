@@ -130,6 +130,49 @@ try {
   assert.ok(actual.abcIds > 0);
   assert.equal(actual.meiSame, true);
   assert.equal(actual.meiId, '1-0-0');
+  // ID-less MusicXML (typical of notation-program exports): the engraving copy gets deterministic note IDs and
+  // expanded multi-measure rests; the original text stays byte-identical; ID'd sources keep their own IDs.
+  const idless = await page.evaluate(async () => {
+    const { importFile } = await import('/src/lib/import.ts');
+    const text = await (await fetch('/validation/fixtures/idless-sibelius.musicxml')).text();
+    const score = await importFile(new File([text], 'idless.musicxml'));
+    const engraving = new DOMParser().parseFromString(score.document.engravingText, 'application/xml');
+    const notes = [...engraving.getElementsByTagName('note')];
+    const events = score.parts[0].measures.flatMap(measure => measure.notes);
+    const expressiveText = await (await fetch('/validation/fixtures/expressive.musicxml')).text();
+    const expressive = await importFile(new File([expressiveText], 'expressive.musicxml'));
+    const expressiveIds = [...new DOMParser().parseFromString(expressiveText, 'application/xml').getElementsByTagName('note')].map(note => note.getAttribute('id'));
+    const expressiveEngraved = [...new DOMParser().parseFromString(expressive.document.engravingText, 'application/xml').getElementsByTagName('note')].map(note => note.getAttribute('id'));
+    return {
+      originalSame: score.document.originalText === text,
+      bytesSame: new TextDecoder().decode(score.document.readOriginalBytes()) === text,
+      sourceHasIds: /<note[^>]*\sid=/.test(text), sourceMultiRest: text.includes('<multiple-rest>'),
+      engravedIds: notes.map(note => note.getAttribute('id')),
+      engravedMultiRest: engraving.getElementsByTagName('multiple-rest').length,
+      engravedMeasureStyle: engraving.getElementsByTagName('measure-style').length,
+      measures: score.parts[0].measures.length,
+      eventSourceIds: events.map(event => [event.id, event.sourceId ?? null, event.pitches.map(pitch => pitch.sourceId)]),
+      identity: score.document.identity.noteIdToSourceId,
+      expressiveKept: JSON.stringify(expressiveIds) === JSON.stringify(expressiveEngraved),
+    };
+  });
+  assert.equal(idless.originalSame, true, 'ID-less MusicXML original text is byte-identical');
+  assert.equal(idless.bytesSame, true, 'ID-less MusicXML original bytes are untouched');
+  assert.equal(idless.sourceHasIds, false, 'Fixture has no note IDs');
+  assert.equal(idless.sourceMultiRest, true, 'Fixture has a multi-measure rest');
+  assert.deepEqual(idless.engravedIds, ['mx_p1_m3_n1', 'mx_p1_m3_n2', 'mx_p1_m3_n3', 'mx_p1_m4_n1', 'mx_p1_m4_n2', 'mx_p1_m4_n3', 'mx_p1_m4_n4', 'mx_p1_m4_n5', 'mx_p1_m5_n1', 'mx_p1_m5_n2'], 'Every engraved <note> gets a deterministic ID');
+  assert.equal(idless.engravedMultiRest, 0, 'Multi-measure rests are expanded in the engraving copy');
+  assert.equal(idless.engravedMeasureStyle, 0, 'An emptied <measure-style> is removed');
+  assert.equal(idless.measures, 5, 'Every source measure is a Score measure');
+  assert.deepEqual(idless.eventSourceIds, [
+    ['P1-1-2-0', 'mx_p1_m3_n1', ['mx_p1_m3_n1']], ['P1-1-2-1', 'mx_p1_m3_n2', ['mx_p1_m3_n2']], ['P1-1-2-2', 'mx_p1_m3_n3', ['mx_p1_m3_n3']],
+    // Measure events are ordered by onset: the voice-2 whole note shares beat 1 with the tied G3.
+    ['P1-1-3-0', 'mx_p1_m4_n1', ['mx_p1_m4_n1']], ['P1-1-3-3', 'mx_p1_m4_n5', ['mx_p1_m4_n5']], ['P1-1-3-1', 'mx_p1_m4_n2', ['mx_p1_m4_n2', 'mx_p1_m4_n3']], ['P1-1-3-2', 'mx_p1_m4_n4', []],
+    ['P1-1-4-0', 'mx_p1_m5_n1', ['mx_p1_m5_n1']], ['P1-1-4-1', 'mx_p1_m5_n2', ['mx_p1_m5_n2']],
+  ], 'Events and chord pitches carry the injected source IDs');
+  assert.equal(idless.identity['P1-1-3-1'], 'mx_p1_m4_n2', 'Identity maps a chord to its first source note');
+  assert.equal(idless.expressiveKept, true, 'Sources with note IDs keep them unchanged');
+  console.log('Document import: ID-less MusicXML identity and multi-measure rest expansion passed');
   console.log('Document import: timewise, MXL source bytes and hash, percussion, voices, ABC adapter and MEI identity passed');
   console.log('Document review regressions: drum kit program, MEI accidentals/key/meter changes, saved BPM clamp, MXL encoded path and size bound, ABC/MEI navigation engraving passed');
 } finally {
