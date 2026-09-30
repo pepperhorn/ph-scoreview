@@ -397,18 +397,33 @@ try {
   const track = await deskSlider().boundingBox();
   const ratio = value => (value - .2) / (4 - .2);
   const thumbX = value => track.x + 8 + ratio(value) * (track.width - 16);
+  // Log slider pointer/input/change events so a drag failure explains itself.
+  await desk.evaluate(() => {
+    window.__sliderEvents = [];
+    const input = document.querySelector('.header-stave-scale-input');
+    for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'gotpointercapture', 'lostpointercapture', 'mousedown', 'mouseup', 'input', 'change']) {
+      document.addEventListener(type, event => {
+        if (event.target !== input) return;
+        const last = window.__sliderEvents.at(-1);
+        const entry = `${type}:${input.value}`;
+        if (type === 'pointermove' && last?.startsWith('pointermove')) window.__sliderEvents[window.__sliderEvents.length - 1] = entry; else window.__sliderEvents.push(entry);
+      }, true);
+    }
+  });
+  const sliderState = () => desk.evaluate(() => ({ value: document.querySelector('.header-stave-scale-input').value, label: document.querySelector('.header-stave-scale-value').textContent, committed: document.querySelector('.score-content').dataset.staveScale, transform: getComputedStyle(document.querySelector('.score-content')).transform, events: window.__sliderEvents }));
   await desk.mouse.move(thumbX(1), track.y + track.height / 2);
   await desk.mouse.down();
   for (let step = 1; step <= 6; step++) await desk.mouse.move(thumbX(1) + step * 4, track.y + track.height / 2);
   await desk.waitForTimeout(400);
   const dragging = await desk.evaluate(() => ({ transform: getComputedStyle(document.querySelector('.score-content')).transform, same: !!document.querySelector('.score-system svg').__marker, label: document.querySelector('.header-stave-scale-value').textContent, committed: document.querySelector('.score-content').dataset.staveScale }));
-  assert.notEqual(dragging.transform, 'none', 'Dragging previews with a transform');
-  assert.equal(dragging.same, true, 'No re-render while dragging');
-  assert.equal(dragging.committed, '1', 'Zoom is not committed while dragging');
-  assert.notEqual(dragging.label, '100%', `The label follows the drag: ${dragging.label}`);
+  const dragDiagnostics = `track ${JSON.stringify(track)}; ${JSON.stringify(await sliderState())}`;
+  assert.notEqual(dragging.transform, 'none', `Dragging previews with a transform: ${dragDiagnostics}`);
+  assert.equal(dragging.same, true, `No re-render while dragging: ${dragDiagnostics}`);
+  assert.equal(dragging.committed, '1', `Zoom is not committed while dragging: ${dragDiagnostics}`);
+  assert.notEqual(dragging.label, '100%', `The label follows the drag: ${dragDiagnostics}`);
   await desk.mouse.up();
   const released = Number(await deskSlider().inputValue());
-  assert.ok(released > 1, `Drag raised the stave scale: ${released}`);
+  assert.ok(released > 1, `Drag raised the stave scale: ${released}; ${JSON.stringify(await sliderState())}`);
   await deskCommitted(released);
   assert.equal(await desk.evaluate(() => !!document.querySelector('.score-system svg').__marker), false, 'Release re-renders');
   assert.equal(await desk.evaluate(() => getComputedStyle(document.querySelector('.score-content')).transform), 'none', 'The preview transform is cleared after the commit');
