@@ -1,22 +1,32 @@
 import { isGmSoundfont, type InstrumentId, type Score } from './score';
+import { STAVE_SCALE_MAX, STAVE_SCALE_MIN, type DeviceClass } from './stave-scale';
 
 export type FileSource = { name: string; size: number; sha256: string; format: string };
 export type FileSettings = {
   mode: 'portrait' | 'landscape'; notationFont: 'Bravura' | 'Petaluma'; barsPerLine: 'auto' | number;
   overlap: number; names: boolean; chordSymbols: boolean; inferChordSymbols: boolean;
-  counts: boolean; subdivisions: boolean; annotationFont: 'Sans' | 'Serif' | 'Mono'; bpm: number; zoom: number; semitones: number; scorePitch: 'written' | 'concert';
+  counts: boolean; subdivisions: boolean; annotationFont: 'Sans' | 'Serif' | 'Mono'; bpm: number; semitones: number; scorePitch: 'written' | 'concert';
 };
+/** Saved view: an absolute stave scale and the device class it was chosen on (see stave-scale.ts). */
+export type ScoreView = { zoom: number; zoomDevice: DeviceClass };
+export type PartState = { visible: boolean; instrument: InstrumentId; gmSoundfont?: string; volume?: number };
+/** Per-score record (schema: file-state.schema.json). Only settings and hashes, never score content. */
 export type FileState = {
-  version: 1;
+  version: 2;
   source: FileSource;
+  /** Epoch ms of the last time the score was opened; the store keeps the most recent records. */
+  lastOpened: number;
   settings: FileSettings;
-  parts: Record<string, { visible: boolean; instrument: InstrumentId; gmSoundfont?: string; volume?: number }>;
+  parts: Record<string, PartState>;
+  view?: ScoreView;
 };
+/** The localStorage v1 record: zoom was a multiplier of the width fit and lived in settings. */
+export type FileStateV1 = { version: 1; source: FileSource; settings: FileSettings & { zoom: number }; parts: Record<string, PartState> };
 
 export const MIN_BPM = 30, MAX_BPM = 240;
 /** The reader's BPM control range; saved and source tempos outside it are clamped. */
 export const clampBpm = (bpm: number) => Math.max(MIN_BPM, Math.min(MAX_BPM, bpm));
-const storageKey = (hash: string) => `scoreflow-file-v1:${hash}`;
+export const legacyStorageKey = (hash: string) => `scoreflow-file-v1:${hash}`;
 const instruments = new Set<InstrumentId>(['piano', 'guitar', 'bassguitar', 'double-bass', 'drum-kit', 'alto-saxophone', 'tenor-saxophone', 'bari-saxophone', 'flute', 'clarinet', 'trumpet', 'trombone', 'violin', 'viola', 'cello', 'microphone']);
 const legacyInstruments: Record<string, InstrumentId> = { bass: 'double-bass', drums: 'drum-kit', saxophone: 'alto-saxophone' };
 const roundConstants = [
@@ -70,35 +80,77 @@ export async function fileSource(file: File): Promise<FileSource> {
   const sha256 = sha256Hex(new Uint8Array(await file.arrayBuffer()));
   return { name: file.name, size: file.size, sha256, format: file.name.split('.').pop()?.toLowerCase() || '' };
 }
+/** Source identity for text without a file (the sample, pasted ABC, the musicXml prop): a hash of the text with a format prefix. */
+export function textSource(format: string, text: string, name: string): FileSource {
+  const bytes = new TextEncoder().encode(`${format}:${text}`);
+  return { name, size: bytes.length - format.length - 1, sha256: sha256Hex(bytes), format };
+}
 
-export function readFileState(source: FileSource): FileState | null {
+const validZoom = (zoom: unknown): zoom is number => typeof zoom === 'number' && Number.isFinite(zoom) && zoom >= STAVE_SCALE_MIN && zoom <= STAVE_SCALE_MAX;
+/** Validate and normalise shared v1/v2 fields in place; false when the record is unusable. */
+function validSettingsAndParts(state: { settings: FileSettings; parts: Record<string, PartState> }): boolean {
+  const settings = state.settings;
+  if (!settings || !state.parts || typeof state.parts !== 'object') return false;
+  if (!['portrait', 'landscape'].includes(settings.mode) || !['Bravura', 'Petaluma'].includes(settings.notationFont)) return false;
+  if (settings.barsPerLine !== 'auto' && (!Number.isInteger(settings.barsPerLine) || settings.barsPerLine < 1 || settings.barsPerLine > 4)) return false;
+  if (!Number.isInteger(settings.overlap) || settings.overlap < 0 || settings.overlap > 3) return false;
+  // Out-of-range tempos (e.g. cut-time 160 → 320 quarter BPM) are clamped, not a reason to drop the state.
+  if (!Number.isFinite(settings.bpm)) return false;
+  settings.bpm = clampBpm(settings.bpm);
+  if (settings.semitones !== undefined && (!Number.isInteger(settings.semitones) || Math.abs(settings.semitones) > 12)) return false;
+  if (settings.scorePitch !== undefined && !['written', 'concert'].includes(settings.scorePitch)) return false;
+  if (settings.annotationFont !== undefined && !['Sans', 'Serif', 'Mono'].includes(settings.annotationFont)) return false;
+  if (['names', 'chordSymbols', 'inferChordSymbols', 'counts', 'subdivisions'].some(key => typeof settings[key as keyof FileSettings] !== 'boolean')) return false;
+  Object.values(state.parts).forEach(part => { part.instrument = legacyInstruments[part.instrument] || part.instrument; });
+  if (Object.values(state.parts).some(part => typeof part.visible !== 'boolean' || !instruments.has(part.instrument) || (part.gmSoundfont !== undefined && !isGmSoundfont(part.gmSoundfont)) || (part.volume !== undefined && (!Number.isInteger(part.volume) || part.volume < 0 || part.volume > 100)))) return false;
+  state.settings = { ...settings, annotationFont: settings.annotationFont ?? 'Sans', semitones: settings.semitones ?? 0, scorePitch: settings.scorePitch ?? 'written' };
+  return true;
+}
+
+/** Validate a stored v1 (legacy localStorage) record for `sha256`. */
+export function parseLegacyFileState(raw: unknown, sha256: string): FileStateV1 | null {
   try {
-    const raw = localStorage.getItem(storageKey(source.sha256));
-    if (!raw) return null;
-    const state = JSON.parse(raw) as FileState;
-    if (state.version !== 1 || state.source?.sha256 !== source.sha256 || !state.settings || !state.parts) return null;
-    if (!['portrait', 'landscape'].includes(state.settings.mode) || !['Bravura', 'Petaluma'].includes(state.settings.notationFont)) return null;
-    if (!Number.isFinite(state.settings.zoom) || state.settings.zoom < .5 || state.settings.zoom > 4) return null;
-    if (state.settings.barsPerLine !== 'auto' && (!Number.isInteger(state.settings.barsPerLine) || state.settings.barsPerLine < 1 || state.settings.barsPerLine > 4)) return null;
-    if (!Number.isInteger(state.settings.overlap) || state.settings.overlap < 0 || state.settings.overlap > 3) return null;
-    // Out-of-range tempos (e.g. cut-time 160 → 320 quarter BPM) are clamped, not a reason to drop the state.
-    if (!Number.isFinite(state.settings.bpm)) return null;
-    state.settings.bpm = clampBpm(state.settings.bpm);
-    if (state.settings.semitones !== undefined && (!Number.isInteger(state.settings.semitones) || Math.abs(state.settings.semitones) > 12)) return null;
-    if (state.settings.scorePitch !== undefined && !['written', 'concert'].includes(state.settings.scorePitch)) return null;
-    if (state.settings.annotationFont !== undefined && !['Sans', 'Serif', 'Mono'].includes(state.settings.annotationFont)) return null;
-    if (['names', 'chordSymbols', 'inferChordSymbols', 'counts', 'subdivisions'].some(key => typeof state.settings[key as keyof FileSettings] !== 'boolean')) return null;
-    Object.values(state.parts).forEach(part => { part.instrument = legacyInstruments[part.instrument] || part.instrument; });
-    if (Object.values(state.parts).some(part => typeof part.visible !== 'boolean' || !instruments.has(part.instrument) || (part.gmSoundfont !== undefined && !isGmSoundfont(part.gmSoundfont)) || (part.volume !== undefined && (!Number.isInteger(part.volume) || part.volume < 0 || part.volume > 100)))) return null;
-    return { ...state, settings: { ...state.settings, annotationFont: state.settings.annotationFont ?? 'Sans', semitones: state.settings.semitones ?? 0, scorePitch: state.settings.scorePitch ?? 'written' } };
+    const state = (typeof raw === 'string' ? JSON.parse(raw) : raw) as FileStateV1;
+    if (!state || state.version !== 1 || state.source?.sha256 !== sha256) return null;
+    if (!validZoom(state.settings?.zoom)) return null;
+    const zoom = state.settings.zoom;
+    if (!validSettingsAndParts(state)) return null;
+    state.settings.zoom = zoom;
+    return state;
   } catch { return null; }
 }
 
-export function writeFileState(source: FileSource, settings: FileSettings, score: Score, hiddenIds: string[], volumes: Record<string, number> = {}): void {
+/**
+ * v1 → v2. A v1 zoom multiplied the width fit; for the default single-stave layouts
+ * that fit was the baseline scale 1, so a changed v1 zoom carries over as an absolute
+ * scale for the current device. The v1 default (1) becomes "no saved view".
+ */
+export function migrateFileState(legacy: FileStateV1, device: DeviceClass, lastOpened = Date.now()): FileState {
+  const { zoom, ...settings } = legacy.settings;
+  return { version: 2, source: legacy.source, lastOpened, settings, parts: legacy.parts, ...(zoom !== 1 ? { view: { zoom, zoomDevice: device } } : {}) };
+}
+
+/** Validate a stored v2 record for `sha256`. */
+export function parseFileState(raw: unknown, sha256: string): FileState | null {
+  try {
+    const state = (typeof raw === 'string' ? JSON.parse(raw) : structuredClone(raw)) as FileState;
+    if (!state || state.version !== 2 || state.source?.sha256 !== sha256 || !Number.isFinite(state.lastOpened)) return null;
+    if (state.view !== undefined && (!validZoom(state.view?.zoom) || !['desktop', 'compact'].includes(state.view.zoomDevice))) return null;
+    if ('zoom' in (state.settings || {})) delete (state.settings as Partial<FileSettings> & { zoom?: number }).zoom;
+    return validSettingsAndParts(state) ? state : null;
+  } catch { return null; }
+}
+
+/** Read the legacy localStorage v1 record for a source. */
+export function readFileState(source: FileSource): FileStateV1 | null {
+  try { return parseLegacyFileState(localStorage.getItem(legacyStorageKey(source.sha256)), source.sha256); }
+  catch { return null; }
+}
+
+export function buildFileState(source: FileSource, settings: FileSettings, score: Score, hiddenIds: string[], volumes: Record<string, number> = {}, view?: ScoreView, lastOpened = Date.now()): FileState {
   const hidden = new Set(hiddenIds);
   const parts: FileState['parts'] = {};
   for (const part of score.parts) parts[part.id] = { visible: !hidden.has(part.id), instrument: part.instrument, ...(part.gmSoundfont ? { gmSoundfont: part.gmSoundfont } : {}), volume: volumes[part.id] ?? 100 };
-  const state: FileState = { version: 1, source, settings: { ...settings, bpm: clampBpm(settings.bpm) }, parts };
-  try { localStorage.setItem(storageKey(source.sha256), JSON.stringify(state)); }
-  catch { /* Storage may be unavailable; the current session still works. */ }
+  const { mode, notationFont, barsPerLine, overlap, names, chordSymbols, inferChordSymbols, counts, subdivisions, annotationFont, bpm, semitones, scorePitch } = settings;
+  return { version: 2, source, lastOpened, settings: { mode, notationFont, barsPerLine, overlap, names, chordSymbols, inferChordSymbols, counts, subdivisions, annotationFont, bpm: clampBpm(bpm), semitones, scorePitch }, parts, ...(view ? { view } : {}) };
 }

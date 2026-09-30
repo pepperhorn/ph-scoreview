@@ -66,7 +66,10 @@ try {
     const icon = document.querySelector('.part-control .part-icon').getBoundingClientRect().height;
     const font = parseFloat(getComputedStyle(document.querySelector('.part-control .part-name')).fontSize);
     const controlsRight = Math.max(...[...document.querySelectorAll('.part-control')].map(control => control.getBoundingClientRect().right));
-    return { staff, icon, font, controlsRight, systemLeft: document.querySelector('.score-system:first-child').getBoundingClientRect().left };
+    // Later systems use the full width; at phone widths the first system is width-limited beside the controls.
+    const rest = [...(document.querySelector('.score-system:nth-child(2) svg g.measure > g.staff') || document.querySelector('.score-system svg g.measure > g.staff')).querySelectorAll(':scope > path')].slice(0, 5).map(line => line.getBoundingClientRect());
+    const restStaff = Math.max(...rest.map(line => line.bottom)) - Math.min(...rest.map(line => line.top));
+    return { staff, restStaff, icon, font, controlsRight, systemLeft: document.querySelector('.score-system:first-child').getBoundingClientRect().left };
   });
   const ready = async () => {
     await page.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg') && !document.querySelector('.score-content').getAnimations().length, { timeout: 30000 });
@@ -136,12 +139,13 @@ try {
     await staveScale().fill('1.25');
     await page.locator('.header-stave-scale-value', { hasText: '125%' }).waitFor();
   });
-  // The slider commits zoom once the value settles, then re-renders.
-  const zoomCommitted = zoom => page.waitForFunction(value => JSON.parse(localStorage.getItem('scoreflow-prefs') || '{}').zoom === value, zoom, { timeout: 5000 });
+  // The slider commits zoom once the value settles, then re-lays out at that absolute stave scale.
+  const zoomCommitted = zoom => page.waitForFunction(value => document.querySelector('.score-content')?.dataset.staveScale === String(value), zoom, { timeout: 5000 });
   await zoomCommitted(1.25);
   await ready();
   const zoomed = await staffMetrics();
-  assert.ok(zoomed.staff > atDefault.staff * 1.15, `Stave grows with stave scale: ${atDefault.staff} -> ${zoomed.staff}`);
+  assert.ok(zoomed.restStaff > atDefault.restStaff * 1.15, `Stave grows with stave scale: ${atDefault.restStaff} -> ${zoomed.restStaff}`);
+  assert.ok(zoomed.staff >= atDefault.staff - .5, `The width-limited first system never shrinks when zooming in: ${atDefault.staff} -> ${zoomed.staff}`);
   for (const key of ['icon', 'font']) assert.ok(Math.abs(zoomed[key] / zoomed.staff - atDefault[key] / atDefault.staff) < .03, `Control ${key} keeps its ratio to the stave: ${(atDefault[key] / atDefault.staff).toFixed(3)} vs ${(zoomed[key] / zoomed.staff).toFixed(3)}`);
   for (const metrics of [atDefault, zoomed]) assert.ok(metrics.controlsRight <= metrics.systemLeft, `Staff controls stay clear of the notation: ${metrics.controlsRight} <= ${metrics.systemLeft}`);
   await assertControlsAligned(1);
@@ -256,9 +260,14 @@ try {
   assert.equal(await page.evaluate(() => document.querySelector('.score-system svg g.measure').querySelectorAll(':scope > g.staff').length), 4, 'Hidden staff is removed from the engraving');
   assert.deepEqual(await page.locator('.part-control .part-name').allTextContents(), ['Track 1', 'Track 3', 'Track 4', 'Track 5']);
   await assertControlsAligned(4);
+  // Per-score memory: an explicit stave scale is saved with the file and restored when it is reopened.
+  await header(async () => { await staveScale().fill('0.8'); await page.locator('.header-stave-scale-value', { hasText: '80%' }).waitFor(); });
+  await zoomCommitted(0.8);
+  await ready();
   await page.locator('input[type=file]').setInputFiles(fixture);
   await ready();
   assert.equal(await page.locator('.part-control').count(), 4, 'Old staff identities preserve hidden state');
+  await header(async () => assert.equal(await staveScale().inputValue(), '0.8', 'Reopening a file restores its stave scale'));
   await openMore();
   await page.getByRole('button', { name: 'Track mixer', exact: true }).click();
   assert.equal(await page.locator('[aria-label="Volume for Track 1"]').inputValue(), '42');
@@ -296,6 +305,145 @@ try {
   assert.deepEqual(errors, []);
   assert.deepEqual(remote, [], 'Scores and resources stay local');
   console.log(`${engine}: reader import, engraving, layout, annotations, fonts, mixer, persistence and playback passed`);
+
+  // Stave scale reflow (desktop): zoom is an absolute stave size, Verovio reflows at (width - gutter) / zoom.
+  const deskContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const desk = await deskContext.newPage();
+  const deskErrors = [];
+  desk.on('pageerror', e => deskErrors.push(e.message));
+  const deskReady = async () => {
+    await desk.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg') && !document.querySelector('.score-content').getAnimations().length, { timeout: 30000 });
+    assert.equal(await desk.locator('.toast').count(), 0, await desk.locator('.toast').allTextContents());
+  };
+  const deskSlider = () => desk.getByRole('slider', { name: 'Stave scale', exact: true });
+  const deskCommitted = async zoom => { await desk.waitForFunction(value => document.querySelector('.score-content')?.dataset.staveScale === String(value), zoom, { timeout: 8000 }); await deskReady(); };
+  const deskZoom = async zoom => { await deskSlider().fill(String(zoom)); await deskCommitted(zoom); };
+  const deskStaff = () => desk.evaluate(() => {
+    const lines = [...document.querySelector('.score-system:first-child svg g.measure > g.staff').querySelectorAll(':scope > path')].slice(0, 5).map(line => line.getBoundingClientRect());
+    return Math.max(...lines.map(line => line.bottom)) - Math.min(...lines.map(line => line.top));
+  });
+  // Width, bar count and side gaps of each system, relative to the score canvas and the first system's gutter.
+  const systemLayout = () => desk.evaluate(() => {
+    const canvas = document.querySelector('.score-staves').getBoundingClientRect();
+    const gutter = parseFloat(getComputedStyle(document.querySelector('.score-stage')).getPropertyValue('--control-gutter')) || 0;
+    return [...document.querySelectorAll('.score-system')].map((system, index) => {
+      const rect = system.getBoundingClientRect();
+      const usable = canvas.width - (index === 0 ? gutter : 0);
+      return { bars: system.querySelectorAll('svg g.measure').length, width: rect.width, usable, left: rect.left - canvas.left - (index === 0 ? gutter : 0), right: canvas.right - rect.right };
+    });
+  });
+  await desk.goto(url);
+  await deskReady();
+  // Baseline: on main the sample rendered its stave at scale 1 (72px staff) at 1280x800; the desktop default is 0.75x.
+  assert.equal(await deskSlider().inputValue(), '0.75', 'Desktop default stave scale');
+  const deskDefaultStaff = await deskStaff();
+  assert.ok(Math.abs(deskDefaultStaff - 72 * .75) <= 1.5, `Desktop default stave is 0.75x the 72px baseline: ${deskDefaultStaff}`);
+  // Auto bars reflow: 50% fits more bars per line than 100%, and full systems fill the usable width.
+  await deskZoom(1);
+  const atFull = await systemLayout();
+  await deskZoom(.5);
+  const atHalf = await systemLayout();
+  assert.ok(atHalf[1].bars > atFull[1].bars, `50% shows more bars per line than 100%: ${atHalf[1].bars} > ${atFull[1].bars}`);
+  for (const layout of [atFull, atHalf]) for (const system of layout.slice(0, -1)) assert.ok(system.width >= system.usable * .9, `Systems fill the usable width: ${system.width.toFixed(0)} of ${system.usable.toFixed(0)}`);
+  // Explicit bar counts keep their count and centre narrower systems.
+  await desk.locator('[aria-label="Bars per line"]').selectOption('1');
+  await deskReady();
+  const explicit = await systemLayout();
+  assert.ok(explicit.every(system => system.bars === 1), 'Explicit one bar per line');
+  for (const system of explicit.slice(1)) {
+    assert.ok(system.width < system.usable - 20, `Explicit systems are narrower than the viewport at 50%: ${system.width}`);
+    assert.ok(Math.abs(system.left - system.right) <= 2, `Explicit systems are centred: ${system.left.toFixed(1)} vs ${system.right.toFixed(1)}`);
+  }
+  await desk.locator('[aria-label="Bars per line"]').selectOption('auto');
+  await deskReady();
+  await deskZoom(1);
+  // The measure under the viewport centre, with its rendered rect.
+  const centreMeasure = () => desk.evaluate(() => {
+    const view = document.querySelector('.score-viewport').getBoundingClientRect();
+    const cx = view.left + view.width / 2, cy = view.top + view.height / 2;
+    const measures = [...document.querySelectorAll('.score-system svg g.measure')];
+    const rects = measures.map(measure => measure.getBoundingClientRect());
+    const distance = rect => Math.hypot(Math.max(rect.left - cx, 0, cx - rect.right), Math.max(rect.top - cy, 0, cy - rect.bottom));
+    let index = 0;
+    rects.forEach((rect, i) => { if (distance(rect) < distance(rects[index])) index = i; });
+    return { index, cx, cy, rect: rects[index].toJSON() };
+  });
+  const anchorAfter = index => desk.evaluate(i => {
+    const view = document.querySelector('.score-viewport').getBoundingClientRect();
+    return { cx: view.left + view.width / 2, cy: view.top + view.height / 2, rect: document.querySelectorAll('.score-system svg g.measure')[i].getBoundingClientRect().toJSON() };
+  }, index);
+  // Watch for any loading overlay, paint reveal or score-content animation from here on.
+  const watchPaint = () => desk.evaluate(() => {
+    window.__sawPaint = [];
+    const content = document.querySelector('.score-content');
+    const check = () => {
+      if (document.querySelector('.score-loading')) window.__sawPaint.push('loading');
+      if (content.classList.contains('is-painting')) window.__sawPaint.push('is-painting');
+      if (content.getAnimations().length) window.__sawPaint.push('animation');
+    };
+    window.__paintObserver?.disconnect();
+    window.__paintObserver = new MutationObserver(check);
+    window.__paintObserver.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+    const frame = () => { check(); window.__paintFrame = requestAnimationFrame(frame); };
+    frame();
+  });
+  const sawPaint = () => desk.evaluate(() => { cancelAnimationFrame(window.__paintFrame); window.__paintObserver.disconnect(); return [...new Set(window.__sawPaint)]; });
+  // Drag the slider: a live transform preview with no re-render until release, then a quiet in-place commit.
+  await desk.locator('.score-viewport').evaluate(view => view.scrollTo({ top: view.scrollHeight / 2 - view.clientHeight / 2 }));
+  await desk.waitForTimeout(100);
+  const before = await centreMeasure();
+  await desk.evaluate(() => { document.querySelector('.score-system svg').__marker = true; });
+  await watchPaint();
+  const track = await deskSlider().boundingBox();
+  const ratio = value => (value - .2) / (4 - .2);
+  const thumbX = value => track.x + 8 + ratio(value) * (track.width - 16);
+  await desk.mouse.move(thumbX(1), track.y + track.height / 2);
+  await desk.mouse.down();
+  for (let step = 1; step <= 6; step++) await desk.mouse.move(thumbX(1) + step * 4, track.y + track.height / 2);
+  await desk.waitForTimeout(400);
+  const dragging = await desk.evaluate(() => ({ transform: getComputedStyle(document.querySelector('.score-content')).transform, same: !!document.querySelector('.score-system svg').__marker, label: document.querySelector('.header-stave-scale-value').textContent, committed: document.querySelector('.score-content').dataset.staveScale }));
+  assert.notEqual(dragging.transform, 'none', 'Dragging previews with a transform');
+  assert.equal(dragging.same, true, 'No re-render while dragging');
+  assert.equal(dragging.committed, '1', 'Zoom is not committed while dragging');
+  assert.notEqual(dragging.label, '100%', `The label follows the drag: ${dragging.label}`);
+  await desk.mouse.up();
+  const released = Number(await deskSlider().inputValue());
+  assert.ok(released > 1, `Drag raised the stave scale: ${released}`);
+  await deskCommitted(released);
+  assert.equal(await desk.evaluate(() => !!document.querySelector('.score-system svg').__marker), false, 'Release re-renders');
+  assert.equal(await desk.evaluate(() => getComputedStyle(document.querySelector('.score-content')).transform), 'none', 'The preview transform is cleared after the commit');
+  assert.deepEqual(await sawPaint(), [], 'A zoom commit shows no loading overlay and no paint reveal');
+  const after = await anchorAfter(before.index);
+  assert.ok(Math.abs(after.cy - (after.rect.top + after.rect.bottom) / 2) <= after.rect.height / 2 + 4, `Vertical: the anchor measure stays at the viewport centre (${JSON.stringify(after)})`);
+  // Endless: the anchor bar stays within half a bar of the viewport centre.
+  await desk.getByRole('button', { name: 'Endless view', exact: true }).click();
+  await deskReady();
+  await desk.locator('.score-viewport').evaluate(view => view.scrollTo({ left: view.scrollWidth / 2 - view.clientWidth / 2 }));
+  await desk.waitForTimeout(100);
+  const endlessBefore = await centreMeasure();
+  await watchPaint();
+  await deskZoom(.6);
+  assert.deepEqual(await sawPaint(), [], 'Endless zoom commit shows no paint reveal');
+  const endlessAfter = await anchorAfter(endlessBefore.index);
+  assert.ok(Math.abs(endlessAfter.cx - (endlessAfter.rect.left + endlessAfter.rect.right) / 2) <= endlessAfter.rect.width, `Endless: the anchor bar stays within half a bar of the centre (${JSON.stringify(endlessAfter)})`);
+  await desk.getByRole('button', { name: 'Vertical view', exact: true }).click();
+  await deskReady();
+  // Reloading the sample restores its zoom; a desktop zoom is not applied on a phone.
+  await deskZoom(1.5);
+  await desk.waitForTimeout(600);
+  await desk.reload();
+  await deskReady();
+  assert.equal(await deskSlider().inputValue(), '1.5', 'Reloading the sample restores its stave scale');
+  assert.ok(Math.abs(await deskStaff() - 72 * 1.5) <= 2, 'The restored scale is applied before paint');
+  const phone = await deskContext.newPage();
+  await phone.setViewportSize({ width: 390, height: 844 });
+  await phone.goto(url);
+  await phone.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg') && !document.querySelector('.score-content').getAnimations().length, { timeout: 30000 });
+  assert.equal(await phone.evaluate(() => document.querySelector('.score-content').dataset.staveScale), '1', 'A desktop-saved zoom is not applied at 390px');
+  await phone.close();
+  assert.deepEqual(deskErrors, []);
+  await deskContext.close();
+  console.log(`${engine}: stave scale reflow, quiet zoom commits, anchoring and per-score memory passed`);
 
   // Silent fallback: an AudioContext that never resumes must not hang playback.
   const silentContext = await browser.newContext({ viewport: { width: 390, height: 844 } });

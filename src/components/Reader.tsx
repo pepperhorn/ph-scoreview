@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { flushSync } from 'react-dom';
 import { ChevronDown, ChevronLeft, ChevronRight, Ellipsis, Eye, EyeOff, FileMusic, FolderOpen, Minus, Pause, Play, Plus, RotateCcw, SlidersHorizontal, Square, Settings2, VolumeX, X } from 'lucide-react';
 import { exampleScore, gmSoundfontLabel, GM_FAMILIES, GM_SOUNDS, instrumentDetails, type GmFamily, type GmSound, type Part, type Score } from '../lib/score';
 import { importFile, parseAbc, parseMusicXml } from '../lib/import';
-import { portraitBarLimit, renderScore, type RenderResult } from '../lib/render';
+import { portraitBarLimit, renderScore, type MeasureGeometry, type RenderResult } from '../lib/render';
 import { partControlMetrics, type PartControlMetrics } from '../lib/part-controls';
-import { clampStaveScale, HEADER_CONTROLS, MOBILE_HEADER_QUERY, STAVE_SCALE_MAX, STAVE_SCALE_MIN, STAVE_SCALE_STEP, type HeaderControlId } from '../lib/header-controls';
-import { clampBpm, fileSource, MAX_BPM, MIN_BPM, readFileState, writeFileState, type FileSettings, type FileSource } from '../lib/file-state';
+import { HEADER_CONTROLS, MOBILE_HEADER_QUERY, type HeaderControlId } from '../lib/header-controls';
+import { clampStaveScale, DEFAULT_STAVE_SCALE, defaultStaveScale, deviceClass, STAVE_SCALE_MAX, STAVE_SCALE_MIN, STAVE_SCALE_STEP, type DeviceClass } from '../lib/stave-scale';
+import { buildFileState, clampBpm, fileSource, MAX_BPM, MIN_BPM, textSource, type FileSettings, type FileSource, type FileState, type ScoreView } from '../lib/file-state';
+import { sampleSource, scoreDb } from '../lib/score-db';
 import { scoreForView } from '../lib/transpose';
 import { buildPerformanceTimeline, eventsFromSeconds, positionAtSeconds } from '../lib/playback/timeline';
 import { disposeVerovio, importVerovio } from '../lib/verovio-runtime';
@@ -17,8 +20,9 @@ import '@fontsource/poppins/500.css';
 import '@fontsource/poppins/600.css';
 import '@fontsource/poppins/700.css';
 
-type Prefs = FileSettings;
-const defaults: Prefs = { mode: 'portrait', notationFont: 'Bravura', barsPerLine: 'auto', overlap: 1, names: false, chordSymbols: false, inferChordSymbols: false, counts: false, subdivisions: false, annotationFont: 'Sans', bpm: 96, zoom: 1, semitones: 0, scorePitch: 'written' };
+/** Reader settings; `zoom` is the score's explicit stave scale, or null for the device default (see stave-scale.ts). */
+type Prefs = FileSettings & { zoom: number | null };
+const defaults: Prefs = { mode: 'portrait', notationFont: 'Bravura', barsPerLine: 'auto', overlap: 1, names: false, chordSymbols: false, inferChordSymbols: false, counts: false, subdivisions: false, annotationFont: 'Sans', bpm: 96, zoom: null, semitones: 0, scorePitch: 'written' };
 const sampleScore = () => withEngravingDocument(exampleScore());
 const textFonts = { Sans: 'Poppins, Arial, sans-serif', Serif: 'Georgia, serif', Mono: 'ui-monospace, monospace' } as const;
 const sampleAbc = `X:1\nT:A little room to play\nM:4/4\nL:1/4\nQ:1/4=96\nK:C\nC E G c | B A G E | C E G c | d2 c2 | G E D C | E G A G | F E D B, | C4 |`;
@@ -52,11 +56,18 @@ function useMediaQuery(query: string): boolean {
   }, [query]);
   return useSyncExternalStore(subscribe, () => window.matchMedia(query).matches, () => false);
 }
-/** The first-system control gutter used for engraving layout; it depends only on width so zooming reuses the cached layout. */
-const layoutGutter = (width: number) => Math.min(190, Math.max(128, Math.round(width * .36)));
 /** The widest control gutter a viewport can spare. */
 const maxControlGutter = (width: number) => Math.max(120, Math.round(width * .42));
+/** Keyboard steps on the stave scale slider commit once they settle; drags and pinches commit on release. */
 const STAVE_SCALE_COMMIT_MS = 180;
+/** A per-score record read never holds up the first paint for longer than this. */
+const SCORE_RECORD_TIMEOUT_MS = 1200;
+const readScoreRecord = (source: FileSource) => Promise.race([
+  scoreDb.read(source).catch(() => null),
+  new Promise<null>(resolve => setTimeout(() => resolve(null), SCORE_RECORD_TIMEOUT_MS)),
+]);
+/** Where the viewport centre sits in a measure, so a re-layout can put that point back at the centre. */
+type ZoomAnchor = { index: number; fx: number; fy: number };
 
 export default function Reader({ musicXml }: ReaderProps) {
   const [score, setScore] = useState<Score>(sampleScore);
@@ -88,6 +99,20 @@ export default function Reader({ musicXml }: ReaderProps) {
   const [controlMetrics, setControlMetrics] = useState<PartControlMetrics>(() => partControlMetrics(72));
   const [zoomDraft, setZoomDraft] = useState<number | null>(null);
   const zoomCommitRef = useRef(0);
+  /** Stave scale of the score on screen (the resolved default when prefs.zoom is null). */
+  const [renderedZoom, setRenderedZoom] = useState(1);
+  const renderedZoomRef = useRef(1);
+  const prefsZoomRef = useRef<number | null>(null);
+  prefsZoomRef.current = prefs.zoom;
+  /** Default for this score when it has no saved zoom: a device scale, or 'fit' until a many-staff render resolves it. */
+  const defaultZoomRef = useRef<number | 'fit'>(DEFAULT_STAVE_SCALE.compact);
+  const loadDeviceRef = useRef<DeviceClass>('compact');
+  const savedViewRef = useRef<ScoreView | undefined>(undefined);
+  /** The next render is a zoom commit: no paint reveal or loading overlay, and the anchor measure is kept centred. */
+  const quietRenderRef = useRef(false);
+  const zoomAnchorRef = useRef<ZoomAnchor | null>(null);
+  const previewOriginRef = useRef<{ x: number; y: number } | null>(null);
+  const sliderDragRef = useRef(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
   const compactHeader = useMediaQuery(MOBILE_HEADER_QUERY);
@@ -104,7 +129,7 @@ export default function Reader({ musicXml }: ReaderProps) {
   const renderRunRef = useRef(0);
   const swipeRef = useRef<{ x: number; y: number } | null>(null);
   const pinchRef = useRef<{ distance: number; zoom: number; nextZoom: number } | null>(null);
-  const stageRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const hasPaintedRef = useRef(false);
   const hiddenSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
   const visibleScore = useMemo(() => {
@@ -125,8 +150,9 @@ export default function Reader({ musicXml }: ReaderProps) {
 
   useEffect(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem('scoreflow-prefs') || '{}');
-      const next = { ...defaults, ...saved };
+      // Zoom is per score (score-db), so a legacy global zoom is ignored.
+      const { zoom: _legacyZoom, ...saved } = JSON.parse(localStorage.getItem('scoreflow-prefs') || '{}');
+      const next = { ...defaults, ...saved, zoom: null };
       if (typeof next.barsPerLine === 'number') next.barsPerLine = Math.max(1, Math.min(4, next.barsPerLine));
       if (!Number.isInteger(next.semitones)) next.semitones = 0;
       next.semitones = Math.max(-12, Math.min(12, next.semitones));
@@ -135,13 +161,37 @@ export default function Reader({ musicXml }: ReaderProps) {
       setPrefs(next);
     }
     catch { /* keep defaults */ }
-    setReady(true);
+    // The sample's record (saved zoom and settings) is read before the first paint; the musicXml prop loads its own.
+    if (musicXml) { setReady(true); return; }
+    let cancelled = false;
+    const sample = score;
+    const src = sampleSource(sample);
+    void readScoreRecord(src).then(saved => {
+      if (cancelled) return;
+      if (importRunRef.current === 0) loadScore(sample, src, saved);
+      setReady(true);
+    });
+    return () => { cancelled = true; };
   }, []);
-  useEffect(() => { if (ready) localStorage.setItem('scoreflow-prefs', JSON.stringify(prefs)); }, [prefs, ready]);
-  useEffect(() => { if (ready && source) writeFileState(source, prefs, score, hiddenIds, trackVolumes); }, [ready, source, prefs, score, hiddenIds, trackVolumes]);
+  useEffect(() => { if (ready) { const { zoom: _zoom, ...global } = prefs; localStorage.setItem('scoreflow-prefs', JSON.stringify(global)); } }, [prefs, ready]);
+  useEffect(() => {
+    if (!ready || !source) return;
+    const view = prefs.zoom !== null ? { zoom: prefs.zoom, zoomDevice: deviceClass() } : savedViewRef.current;
+    savedViewRef.current = view;
+    scoreDb.write(buildFileState(source, prefs, score, hiddenIds, trackVolumes, view));
+  }, [ready, source, prefs, score, hiddenIds, trackVolumes]);
+  useEffect(() => {
+    const flush = () => void scoreDb.flush();
+    window.addEventListener('pagehide', flush);
+    return () => { window.removeEventListener('pagehide', flush); flush(); };
+  }, []);
   const update = (patch: Partial<Prefs>) => {
-    if (['mode', 'notationFont', 'annotationFont', 'barsPerLine', 'names', 'chordSymbols', 'inferChordSymbols', 'counts', 'subdivisions', 'zoom', 'semitones', 'scorePitch'].some(key => key in patch && patch[key as keyof Prefs] !== prefs[key as keyof Prefs])) setPainting(true);
-    if (patch.mode && patch.mode !== prefs.mode) viewportRef.current?.scrollTo({ left: 0, top: 0 });
+    if (['mode', 'notationFont', 'annotationFont', 'barsPerLine', 'names', 'chordSymbols', 'inferChordSymbols', 'counts', 'subdivisions', 'semitones', 'scorePitch'].some(key => key in patch && patch[key as keyof Prefs] !== prefs[key as keyof Prefs])) setPainting(true);
+    if (patch.mode && patch.mode !== prefs.mode) {
+      viewportRef.current?.scrollTo({ left: 0, top: 0 });
+      // A many-staff default is the height fit of the current view.
+      if (prefs.zoom === null) defaultZoomRef.current = defaultStaveScale(loadDeviceRef.current, score.parts.length);
+    }
     setPrefs(prev => ({ ...prev, ...patch }));
   };
   const stop = useCallback((reset = false) => {
@@ -155,8 +205,13 @@ export default function Reader({ musicXml }: ReaderProps) {
     if (reset) { setPosition(0); setActive(null); setActiveNotes([]); }
   }, []);
   const changePitch = (patch: Partial<Prefs>) => { stop(true); update(patch); };
-  const loadScore = (next: Score, nextSource: FileSource | null = null) => {
-    const saved = nextSource && readFileState(nextSource);
+  /** Show a score with its saved record (if any). The saved zoom applies only on the device class it was chosen on. */
+  const loadScore = (next: Score, nextSource: FileSource, saved: FileState | null) => {
+    const device = deviceClass();
+    loadDeviceRef.current = device;
+    defaultZoomRef.current = defaultStaveScale(device, next.parts.length);
+    savedViewRef.current = saved?.view;
+    const zoom = saved?.view?.zoomDevice === device ? saved.view.zoom : null;
     const restored = saved ? { ...next, parts: next.parts.map(part => {
       const state = saved.parts[part.id];
       if (!state) return part;
@@ -166,7 +221,7 @@ export default function Reader({ musicXml }: ReaderProps) {
     setHiddenIds(saved ? next.parts.filter(part => saved.parts[part.id]?.visible === false).map(part => part.id) : []);
     setTrackVolumes(saved ? Object.fromEntries(next.parts.map(part => [part.id, saved.parts[part.id]?.volume ?? 100])) : {});
     setError('');
-    setPrefs(prev => saved ? { ...prev, ...saved.settings } : { ...prev, bpm: clampBpm(Math.round(next.tempo)), zoom: 1, semitones: 0, scorePitch: next.parts.some(part => part.pitchBasis === 'concert') ? 'concert' : 'written' });
+    setPrefs(prev => saved ? { ...prev, ...saved.settings, zoom } : { ...prev, bpm: clampBpm(Math.round(next.tempo)), zoom: null, semitones: 0, scorePitch: next.parts.some(part => part.pitchBasis === 'concert') ? 'concert' : 'written' });
     viewportRef.current?.scrollTo({ left: 0, top: 0 });
     setDrawer(false);
   };
@@ -176,9 +231,12 @@ export default function Reader({ musicXml }: ReaderProps) {
     stop(true); setPainting(true);
     void (async () => {
       try {
+        const src = textSource('musicxml', musicXml, 'MusicXML');
+        const record = readScoreRecord(src);
         const next = parseMusicXml(musicXml);
         if (next.document) await importVerovio(next.document.engravingText);
-        if (run === importRunRef.current) loadScore(next);
+        const saved = await record;
+        if (run === importRunRef.current) loadScore(next, src, saved);
       } catch (e) {
         if (run === importRunRef.current) { setPainting(false); setError(e instanceof Error ? e.message : 'Could not read the supplied MusicXML.'); }
       }
@@ -192,16 +250,30 @@ export default function Reader({ musicXml }: ReaderProps) {
     setPainting(true);
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
     try {
-      const [nextSource, nextScore] = await Promise.all([fileSource(file), importFile(file)]);
+      // The saved record is read while the score imports, so its zoom is applied before the first paint.
+      const hashed = fileSource(file);
+      const [nextSource, saved, nextScore] = await Promise.all([hashed, hashed.then(readScoreRecord), importFile(file)]);
       if (nextScore.document) await importVerovio(nextScore.document.engravingText);
-      if (run === importRunRef.current) loadScore(nextScore, nextSource);
+      if (run === importRunRef.current) loadScore(nextScore, nextSource, saved);
     }
     catch (e) { if (run === importRunRef.current) { setPainting(false); setError(e instanceof Error ? e.message : 'Could not open this file.'); } }
   };
   const readAbc = async (text: string) => {
+    const run = ++importRunRef.current;
     setPainting(true);
-    try { loadScore(await parseAbc(text)); }
-    catch (e) { setPainting(false); setError(e instanceof Error ? e.message : 'Could not read ABC notation.'); }
+    try {
+      const src = textSource('abc', text, 'Pasted ABC');
+      const [next, saved] = await Promise.all([parseAbc(text), readScoreRecord(src)]);
+      if (run === importRunRef.current) loadScore(next, src, saved);
+    } catch (e) { if (run === importRunRef.current) { setPainting(false); setError(e instanceof Error ? e.message : 'Could not read ABC notation.'); } }
+  };
+  const loadSample = async () => {
+    const run = ++importRunRef.current;
+    setPainting(true);
+    const sample = sampleScore();
+    const src = sampleSource(sample);
+    const saved = await readScoreRecord(src);
+    if (run === importRunRef.current) loadScore(sample, src, saved);
   };
   const togglePart = (id: string) => {
     if (!hiddenSet.has(id) && visibleScore.parts.length <= 1) return;
@@ -210,12 +282,80 @@ export default function Reader({ musicXml }: ReaderProps) {
     viewportRef.current?.scrollTo({ left: 0, top: 0 });
   };
   const resetStaves = () => { stop(true); setPainting(true); setHiddenIds([]); viewportRef.current?.scrollTo({ left: 0, top: 0 }); };
-  // The slider label follows the drag at once; the re-render waits until the value settles.
-  const changeStaveScale = (value: number) => {
+  // Stave scale: while dragging or pinching, a GPU transform previews the new size around the viewport centre;
+  // the commit re-lays out at the new scale in place (no paint reveal) and keeps the centre measure centred.
+  const viewportCentre = () => {
+    const viewport = viewportRef.current;
+    if (!viewport) return null;
+    const view = viewport.getBoundingClientRect();
+    return { x: view.left + viewport.clientLeft + viewport.clientWidth / 2, y: view.top + viewport.clientTop + viewport.clientHeight / 2 };
+  };
+  // The whole score content (title included) is scaled, with the paint-reveal transition off so it tracks the pointer.
+  const previewStaveScale = (draft: number) => {
+    const content = contentRef.current, centre = viewportCentre();
+    if (!content || !centre) return;
+    if (!previewOriginRef.current) {
+      const box = content.getBoundingClientRect();
+      previewOriginRef.current = { x: centre.x - box.left, y: centre.y - box.top };
+      content.style.transition = 'none';
+      content.style.transformOrigin = `${previewOriginRef.current.x}px ${previewOriginRef.current.y}px`;
+      content.style.willChange = 'transform';
+    }
+    content.style.transform = `scale(${draft / renderedZoomRef.current})`;
+  };
+  const clearStaveScalePreview = () => {
+    const content = contentRef.current;
+    if (!previewOriginRef.current || !content) return;
+    previewOriginRef.current = null;
+    content.style.transform = ''; content.style.transformOrigin = ''; content.style.willChange = '';
+    // Settle the style without a transition, then hand the reveal transition back.
+    void getComputedStyle(content).transform;
+    content.style.transition = '';
+  };
+  const captureZoomAnchor = (): ZoomAnchor | null => {
+    const centre = viewportCentre(), measures = renderRef.current?.measures;
+    if (!centre || !measures?.length) return null;
+    let best: { measure: MeasureGeometry; rect: DOMRect; distance: number } | null = null;
+    for (const measure of measures) {
+      const rect = measure.element?.getBoundingClientRect();
+      if (!rect || !rect.width) continue;
+      const distance = Math.hypot(Math.max(rect.left - centre.x, 0, centre.x - rect.right), Math.max(rect.top - centre.y, 0, centre.y - rect.bottom));
+      if (!best || distance < best.distance) best = { measure, rect, distance };
+    }
+    if (!best) return null;
+    const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+    return { index: best.measure.index, fx: clamp01((centre.x - best.rect.left) / best.rect.width), fy: clamp01((centre.y - best.rect.top) / best.rect.height) };
+  };
+  const restoreZoomAnchor = (anchor: ZoomAnchor, result: RenderResult, mode: Prefs['mode']) => {
+    const viewport = viewportRef.current, centre = viewportCentre();
+    const rect = result.measures.find(measure => measure.index === anchor.index)?.element?.getBoundingClientRect();
+    if (!viewport || !centre || !rect) return;
+    const dx = rect.left + anchor.fx * rect.width - centre.x, dy = rect.top + anchor.fy * rect.height - centre.y;
+    // Endless keeps its vertical centring; Vertical scrolls the anchor's system back to the centre.
+    if (mode === 'landscape') viewport.scrollLeft += dx;
+    else viewport.scrollTop += dy;
+  };
+  const commitStaveScale = (value: number) => {
+    window.clearTimeout(zoomCommitRef.current);
+    const next = clampStaveScale(value);
+    setZoomDraft(null);
+    if (next === prefsZoomRef.current) { clearStaveScalePreview(); return; }
+    zoomAnchorRef.current = captureZoomAnchor();
+    quietRenderRef.current = true;
+    setPrefs(prev => ({ ...prev, zoom: next }));
+  };
+  // The label follows the slider at once; drags commit on release and keyboard steps once they settle.
+  const draftStaveScale = (value: number) => {
     const next = clampStaveScale(value);
     setZoomDraft(next);
+    previewStaveScale(next);
     window.clearTimeout(zoomCommitRef.current);
-    zoomCommitRef.current = window.setTimeout(() => { setZoomDraft(null); update({ zoom: next }); }, STAVE_SCALE_COMMIT_MS);
+    if (!sliderDragRef.current) zoomCommitRef.current = window.setTimeout(() => commitStaveScale(next), STAVE_SCALE_COMMIT_MS);
+  };
+  const releaseStaveScale = (input: HTMLInputElement) => {
+    if (!sliderDragRef.current) return;
+    sliderDragRef.current = false;
+    commitStaveScale(Number(input.value));
   };
   useEffect(() => () => window.clearTimeout(zoomCommitRef.current), []);
   useEffect(() => {
@@ -248,7 +388,12 @@ export default function Reader({ musicXml }: ReaderProps) {
     const generation = ++renderRunRef.current;
     let timer = 0;
     let frame = 0;
-    setPainting(true);
+    // A zoom commit keeps the current score on screen until the new layout replaces it in place.
+    const quiet = quietRenderRef.current;
+    quietRenderRef.current = false;
+    const anchor = quiet ? zoomAnchorRef.current : null;
+    zoomAnchorRef.current = null;
+    if (!quiet) setPainting(true);
     const draw = async () => {
       try {
         if (disposed) return;
@@ -258,12 +403,20 @@ export default function Reader({ musicXml }: ReaderProps) {
         const metricsFor = (stavePx: number, staffPitchPx: number) => partControlMetrics(stavePx, { staffPitchPx, maxGutter, eye: many });
         const metaHeight = canvas.closest('.score-content')?.querySelector('.score-meta')?.getBoundingClientRect().height || 0;
         const availableHeight = Math.max(120, (viewportRef.current?.clientHeight || 600) - metaHeight - 70);
-        const result = await renderScore(canvas, displayScore, prefs.mode, prefs.names, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.chordSymbols, prefs.inferChordSymbols, availableHeight, prefs.zoom, layoutGutter(canvas.clientWidth), { gutterFor: (stavePx, staffPitchPx) => metricsFor(stavePx, staffPitchPx).gutter, font: prefs.notationFont, textFont: prefs.annotationFont, transpose: prefs.semitones, scorePitch, hiddenPartIds: hiddenIds, generation });
+        const requested = prefs.zoom ?? defaultZoomRef.current;
+        const result = await renderScore(canvas, displayScore, prefs.mode, prefs.names, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.chordSymbols, prefs.inferChordSymbols, availableHeight, requested, 0, { gutterFor: (stavePx, staffPitchPx) => metricsFor(stavePx, staffPitchPx).gutter, fitCap: DEFAULT_STAVE_SCALE[loadDeviceRef.current], font: prefs.notationFont, textFont: prefs.annotationFont, transpose: prefs.semitones, scorePitch, hiddenPartIds: hiddenIds, generation });
         if (disposed || generation !== renderRunRef.current) return;
         renderRef.current = result;
-        setStaffCenters(Object.fromEntries(result.visiblePartIds.map((id, index) => [id, result.staffCenters[index]])));
+        // A resolved height fit stays fixed through later resizes (width changes never change zoom).
+        if (requested === 'fit') defaultZoomRef.current = result.zoom;
+        renderedZoomRef.current = result.zoom;
         const metrics = metricsFor(result.stavePx, result.staffPitchPx);
-        setControlMetrics(metrics);
+        // Commit the controls with the new SVG so no frame shows them against the other layout.
+        flushSync(() => {
+          setStaffCenters(Object.fromEntries(result.visiblePartIds.map((id, index) => [id, result.staffCenters[index]])));
+          setControlMetrics(metrics);
+          setRenderedZoom(result.zoom);
+        });
         const content = canvas.closest<HTMLElement>('.score-content');
         // Staff controls size from the rendered stave, so their ratio to it holds at every zoom and fit.
         content?.style.setProperty('--stave-px', `${result.stavePx.toFixed(2)}px`);
@@ -272,6 +425,8 @@ export default function Reader({ musicXml }: ReaderProps) {
         content?.style.setProperty('--landscape-content-width', `${canvas.scrollWidth + 88}px`);
         const stage = canvas.closest<HTMLElement>('.score-stage');
         stage?.style.setProperty('--control-gutter', `${result.gutter}px`);
+        clearStaveScalePreview();
+        if (anchor) restoreZoomAnchor(anchor, result, prefs.mode);
         setError('');
       } catch (e) { if (!disposed) setError(e instanceof Error ? e.message : 'Could not draw this score.'); }
       finally {
@@ -283,7 +438,7 @@ export default function Reader({ musicXml }: ReaderProps) {
       }
     };
     setLoadingFont(false);
-    const delay = hasPaintedRef.current && !window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 260 : 0;
+    const delay = !quiet && hasPaintedRef.current && !window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 260 : 0;
     timer = window.setTimeout(() => void draw(), delay);
     return () => { disposed = true; window.clearTimeout(timer); cancelAnimationFrame(frame); };
   }, [ready, resizeTick, scoreRevision, hiddenIds, prefs.mode, prefs.notationFont, prefs.annotationFont, prefs.names, prefs.chordSymbols, prefs.inferChordSymbols, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.zoom, prefs.semitones, scorePitch]);
@@ -456,11 +611,11 @@ export default function Reader({ musicXml }: ReaderProps) {
   const pickerPages = Math.ceil(familySounds.length / 16);
   const pickerSounds = familySounds.slice(pickerPage * 16, (pickerPage + 1) * 16);
   const hasScoreText = Boolean(score.title || score.subtitle || score.composer || score.credits?.length);
-  const firstLineWidth = (scoreWidth || 800) - layoutGutter(scoreWidth || 800);
-  const barsLimit = portraitBarLimit(firstLineWidth, visibleScore);
+  // Auto bars follow the layout width in Verovio units: (width - gutter) / stave scale.
+  const barsLimit = portraitBarLimit(Math.max(180, (scoreWidth || 800) - controlMetrics.gutter) / renderedZoom, visibleScore);
   const barsSetting = prefs.mode === 'portrait' && <label className="header-bars-setting"><span>Bars</span><select aria-label="Bars per line" title={`Auto fits up to ${barsLimit} bars`} value={prefs.barsPerLine} onChange={event => update({ barsPerLine: event.target.value === 'auto' ? 'auto' : Number(event.target.value) })}><option value="auto">Auto</option>{[1, 2, 3, 4].map(count => <option value={count} key={count}>{count}</option>)}</select></label>;
 
-  const staveScale = zoomDraft ?? prefs.zoom;
+  const staveScale = zoomDraft ?? prefs.zoom ?? renderedZoom;
   const staveScalePercent = Math.round(staveScale * 100);
   const headerElements: Record<HeaderControlId, React.ReactNode> = {
     stop: <button className="icon-button stop-button" aria-label="Stop playback" title="Stop playback" onClick={() => { stop(true); viewportRef.current?.scrollTo({ top: 0, left: 0, behavior: 'smooth' }); }}><Square size={17} fill="currentColor"/></button>,
@@ -471,7 +626,9 @@ export default function Reader({ musicXml }: ReaderProps) {
     bars: barsSetting || null,
     staveScale: <label className="header-stave-scale" title="Stave scale">
       <span className="header-stave-scale-label">Scale</span>
-      <input className="header-stave-scale-input" type="range" min={STAVE_SCALE_MIN} max={STAVE_SCALE_MAX} step={STAVE_SCALE_STEP} value={staveScale} aria-label="Stave scale" aria-valuetext={`${staveScalePercent}%`} onChange={event => changeStaveScale(Number(event.target.value))}/>
+      <input className="header-stave-scale-input" type="range" min={STAVE_SCALE_MIN} max={STAVE_SCALE_MAX} step={STAVE_SCALE_STEP} value={staveScale} aria-label="Stave scale" aria-valuetext={`${staveScalePercent}%`} onChange={event => draftStaveScale(Number(event.target.value))}
+        onPointerDown={event => { sliderDragRef.current = true; window.clearTimeout(zoomCommitRef.current); try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* synthetic pointer */ } }}
+        onPointerUp={event => releaseStaveScale(event.currentTarget)} onPointerCancel={event => releaseStaveScale(event.currentTarget)} onLostPointerCapture={event => releaseStaveScale(event.currentTarget)}/>
       <output className="header-stave-scale-value">{staveScalePercent}%</output>
     </label>,
     mixer: <button className="icon-button mixer-trigger" aria-label="Track mixer" title="Track mixer" aria-haspopup="dialog" aria-expanded={mixer} onClick={() => { setDrawer(false); setMoreOpen(false); setMixer(true); }}><SlidersHorizontal size={18}/><span className="mixer-trigger-label">Track mixer</span></button>,
@@ -516,20 +673,20 @@ export default function Reader({ musicXml }: ReaderProps) {
       <div className="score-viewport" ref={viewportRef} onTouchStart={e => {
         if (score.parts.length > 4 && e.touches.length === 2) {
           const distance = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-          pinchRef.current = { distance, zoom: prefs.zoom, nextZoom: prefs.zoom };
+          pinchRef.current = { distance, zoom: renderedZoomRef.current, nextZoom: renderedZoomRef.current };
           swipeRef.current = null;
         } else if (!pinchRef.current && e.touches.length === 1) swipeRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
       }} onTouchMove={e => {
         if (!pinchRef.current || e.touches.length !== 2) return;
         const distance = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
         pinchRef.current.nextZoom = clampStaveScale(pinchRef.current.zoom * distance / Math.max(1, pinchRef.current.distance));
-        if (stageRef.current) { stageRef.current.style.transformOrigin = 'center top'; stageRef.current.style.transform = `scale(${pinchRef.current.nextZoom / pinchRef.current.zoom})`; }
+        setZoomDraft(pinchRef.current.nextZoom);
+        previewStaveScale(pinchRef.current.nextZoom);
       }} onTouchEnd={e => {
         if (pinchRef.current) {
           const nextZoom = pinchRef.current.nextZoom;
           pinchRef.current = null;
-          if (stageRef.current) stageRef.current.style.transform = '';
-          update({ zoom: clampStaveScale(nextZoom) });
+          commitStaveScale(nextZoom);
           swipeRef.current = null;
           return;
         }
@@ -538,10 +695,10 @@ export default function Reader({ musicXml }: ReaderProps) {
         const delta = prefs.mode === 'landscape' ? dx : dy;
         if (Math.abs(delta) > 65) turn(delta < 0 ? 1 : -1);
         swipeRef.current = null;
-      }} onTouchCancel={() => { pinchRef.current = null; swipeRef.current = null; if (stageRef.current) stageRef.current.style.transform = ''; }}>
+      }} onTouchCancel={() => { if (pinchRef.current) { setZoomDraft(null); clearStaveScalePreview(); } pinchRef.current = null; swipeRef.current = null; }}>
         {loadingFont && <div className="font-load-progress" role="status" aria-label="Loading notation font"/>}
         {painting && <div className="score-loading" role="status" aria-label={painted ? 'Rendering score' : 'Preparing score'}><span className="score-loading-spinner"/><span>{painted ? 'Rendering score' : 'Preparing score'}</span></div>}
-        <div className={`score-content ${painting || !painted ? 'is-painting' : ''}`} style={{ '--landscape-meta-offset': prefs.chordSymbols ? '0px' : '35px', '--annotation-font': textFonts[prefs.annotationFont] || textFonts.Sans, '--score-text-font': textFonts[prefs.annotationFont] || textFonts.Sans, '--music-font': prefs.notationFont } as React.CSSProperties}>
+        <div ref={contentRef} className={`score-content ${painting || !painted ? 'is-painting' : ''}`} data-stave-scale={painted ? renderedZoom : undefined} style={{ '--landscape-meta-offset': prefs.chordSymbols ? '0px' : '35px', '--annotation-font': textFonts[prefs.annotationFont] || textFonts.Sans, '--score-text-font': textFonts[prefs.annotationFont] || textFonts.Sans, '--music-font': prefs.notationFont } as React.CSSProperties}>
           {(hasScoreText || hiddenIds.length > 0) && <div className="score-meta">
             {score.title && <h1>{score.title}</h1>}
             {score.subtitle && <p className="score-subtitle">{score.subtitle}</p>}
@@ -549,7 +706,7 @@ export default function Reader({ musicXml }: ReaderProps) {
             {score.credits?.map((line, i) => <p className="score-credit" key={`${line}-${i}`}>{line}</p>)}
             {hiddenIds.length > 0 && <div className="hidden-staves" aria-label="Hidden staves">{score.parts.filter(part => hiddenSet.has(part.id)).map(part => <button key={part.id} onClick={() => togglePart(part.id)} title={`Show ${part.name}`} aria-label={`Show ${part.name}`}><img src={instrumentDetails(part.instrument).icon} alt=""/><EyeOff size={15}/><span>{part.name}</span></button>)}</div>}
           </div>}
-          <div className="score-stage" ref={stageRef}>
+          <div className="score-stage">
             <div className="score-staves" ref={canvasRef}/>
             <div className="part-controls" style={{ '--part-icon': `${controlMetrics.icon}px`, '--part-font': `${controlMetrics.font}px`, '--part-eye': `${controlMetrics.eye}px`, '--part-control-height': `${controlMetrics.height}px` } as React.CSSProperties}>{visibleScore.parts.map((part, index) => <div key={part.id} className="part-control" style={{ top: `${staffCenters[part.id] ?? 86 + index * ((prefs.names || prefs.counts) ? 125 : 100)}px` }} title={`Sound for ${part.name}`}><button className="instrument-control" aria-label={`Instrument for ${part.name}`} aria-haspopup="dialog" onClick={() => openInstrumentPicker(part)}><img className="part-icon" src={instrumentDetails(part.instrument).icon} alt=""/></button><span className="part-name" title={part.name}>{part.name}</span>{score.parts.length > 4 && <button className="staff-eye" aria-label={`Hide ${part.name}`} title={`Hide ${part.name}`} onClick={() => togglePart(part.id)} disabled={visibleScore.parts.length <= 1}><Eye size={17}/></button>}</div>)}</div>
           </div>
@@ -565,7 +722,7 @@ export default function Reader({ musicXml }: ReaderProps) {
       <div className="drawer-grid">
 
         <div className="drawer-panel"><h3><Settings2 size={17}/> Reading</h3><div className="font-choice"><span>Notation font</span><div className="font-toggle" role="group" aria-label="Notation font"><button className={prefs.notationFont === 'Bravura' ? 'selected' : ''} aria-pressed={prefs.notationFont === 'Bravura'} onClick={() => update({ notationFont: 'Bravura' })}>Bravura</button><button className={prefs.notationFont === 'Petaluma' ? 'selected' : ''} aria-pressed={prefs.notationFont === 'Petaluma'} onClick={() => update({ notationFont: 'Petaluma' })}>Petaluma</button></div></div><div className="font-choice"><span>Stave text font</span><div className="font-toggle" role="group" aria-label="Stave text font">{(['Sans', 'Serif', 'Mono'] as const).map(font => <button key={font} className={prefs.annotationFont === font ? 'selected' : ''} aria-pressed={prefs.annotationFont === font} onClick={() => update({ annotationFont: font })}>{font}</button>)}</div></div><label className="field-label" htmlFor="overhang">Overhang <span>{prefs.overlap === 0 ? 'Off' : `${prefs.overlap} ${prefs.mode === 'portrait' ? (prefs.overlap === 1 ? 'stave line' : 'stave lines') : (prefs.overlap === 1 ? 'bar' : 'bars')}`}</span></label><input id="overhang" className="range" type="range" min="0" max="3" step="1" value={prefs.overlap} onChange={e => update({ overlap: Number(e.target.value) })}/><div className="switch-row"><span>Note names</span><button className={`switch ${prefs.names ? 'on' : ''}`} role="switch" aria-label="Note names" aria-checked={prefs.names} onClick={() => update({ names: !prefs.names })}/></div><div className="switch-row"><span>Chord symbols</span><button className={`switch ${prefs.chordSymbols ? 'on' : ''}`} role="switch" aria-label="Chord symbols" aria-checked={prefs.chordSymbols} onClick={() => update({ chordSymbols: !prefs.chordSymbols })}/></div><label className="switch-row inference-row"><span>Infer chord symbols</span><input type="checkbox" checked={prefs.inferChordSymbols} onChange={e => update({ inferChordSymbols: e.target.checked })}/></label><div className="switch-row"><span>Beat counts</span><button className={`switch ${prefs.counts ? 'on' : ''}`} role="switch" aria-label="Beat counts" aria-checked={prefs.counts} onClick={() => update({ counts: !prefs.counts })}/></div><div className="switch-row"><span>Count subdivisions</span><button className={`switch ${prefs.subdivisions ? 'on' : ''}`} role="switch" aria-label="Count subdivisions" aria-checked={prefs.subdivisions} onClick={() => update({ subdivisions: !prefs.subdivisions, counts: true })}/></div>{score.parts.length > 4 && <button className="text-action reset-staves" onClick={resetStaves}><RotateCcw size={15}/> Reset score staves</button>}</div>
-        <div className="drawer-panel abc-panel"><h3><FileMusic size={17}/> ABC notation</h3><p>Paste ABC text here, or use the open button in the header for files and folders.</p><textarea value={abc} onChange={e => setAbc(e.target.value)} spellCheck={false} aria-label="ABC notation"/><button className="primary-action" onClick={() => void readAbc(abc)}>View notation <ChevronRight size={17}/></button><button className="text-action" onClick={() => loadScore(sampleScore())}><FileMusic size={16}/> Open sample score</button></div>
+        <div className="drawer-panel abc-panel"><h3><FileMusic size={17}/> ABC notation</h3><p>Paste ABC text here, or use the open button in the header for files and folders.</p><textarea value={abc} onChange={e => setAbc(e.target.value)} spellCheck={false} aria-label="ABC notation"/><button className="primary-action" onClick={() => void readAbc(abc)}>View notation <ChevronRight size={17}/></button><button className="text-action" onClick={loadSample}><FileMusic size={16}/> Open sample score</button></div>
         <div className="drawer-panel pitch-panel"><h3><Settings2 size={17}/> Pitch</h3><div className="pitch-options"><div><span className="pitch-label">Transpose score</span><div className="semitone-control"><button aria-label="Transpose down one semitone" disabled={prefs.semitones <= -12} onClick={() => changePitch({ semitones: prefs.semitones - 1 })}><Minus size={16}/></button><output aria-live="polite">{prefs.semitones > 0 ? '+' : ''}{prefs.semitones} semitones</output><button aria-label="Transpose up one semitone" disabled={prefs.semitones >= 12} onClick={() => changePitch({ semitones: prefs.semitones + 1 })}><Plus size={16}/></button><button className="pitch-reset" aria-label="Reset transposition" title="Reset transposition" disabled={prefs.semitones === 0} onClick={() => changePitch({ semitones: 0 })}><RotateCcw size={15}/></button></div></div>{!concertBasis && <div><span className="pitch-label">Score view</span><div className="font-toggle pitch-view" role="group" aria-label="Score pitch view"><button className={prefs.scorePitch === 'written' ? 'selected' : ''} aria-pressed={prefs.scorePitch === 'written'} onClick={() => changePitch({ scorePitch: 'written' })}>Transposing</button><button className={prefs.scorePitch === 'concert' ? 'selected' : ''} aria-pressed={prefs.scorePitch === 'concert'} onClick={() => changePitch({ scorePitch: 'concert' })}>Concert</button></div></div>}</div><p className="pitch-hint">{concertBasis ? 'This score is written at concert pitch, so it is shown at concert pitch. Playback stays at concert pitch.' : hasTransposingParts ? 'Transposing shows written parts; Concert shows sounding pitches. Playback stays at concert pitch.' : 'This score has no instrument transposition data, so both views match.'}</p></div>
       </div>
       {error && <div className="error" role="alert">{error}</div>}
