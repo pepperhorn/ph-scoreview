@@ -476,20 +476,34 @@ export default function Reader({ musicXml }: ReaderProps) {
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
   }, [turn, mixer, pickerPartId, openDialog]);
+  // Where the playhead is when no engraved note marks it (an empty intro, rest bars, or an unmapped note):
+  // the measure and its fraction, quantized to a 32nd of the bar so the effect below re-runs only as the line moves.
+  const measureCursor = useMemo(() => {
+    if (!playing && position <= 0) return null;
+    if (active && renderRef.current?.points.some(point => point.id === active && point.element)) return null;
+    const current = positionAtSeconds(timeline, position);
+    const length = visibleScore.parts[0]?.measures[current.measureIndex]?.beats || 0;
+    const fraction = length > 0 ? Math.max(0, Math.min(1, current.measureBeat / length)) : 0;
+    return { measureIndex: current.measureIndex, fraction: Math.floor(fraction * 32) / 32 };
+  }, [active, playing, position, timeline, visibleScore]);
+  const measureCursorKey = measureCursor ? `${measureCursor.measureIndex}:${measureCursor.fraction}` : '';
   useEffect(() => {
-    const note = active && renderRef.current?.points.find(p => p.id === active);
+    const note = active ? renderRef.current?.points.find(p => p.id === active) : undefined;
     canvasRef.current?.querySelectorAll('.reader-note.is-playing').forEach(n => n.classList.remove('is-playing'));
     canvasRef.current?.querySelectorAll('.playback-line').forEach(n => n.remove());
-    if (!note || !note.element) return;
     const sounding = new Set(activeNotes);
     renderRef.current?.points.forEach(point => {
       if (!point.rest && sounding.has(point.id)) point.element?.classList.add('is-playing');
     });
-    const block = note.element.closest<HTMLElement>('.score-system');
+    // A note marks the playhead; otherwise it moves through the current measure's engraved bounds.
+    const measure = !note?.element && measureCursor ? renderRef.current?.measures.find(item => item.index === measureCursor.measureIndex) : undefined;
+    const anchor = note?.element || measure?.element;
+    if (!anchor) return;
+    const block = anchor.closest<HTMLElement>('.score-system');
     if (!block) return;
     const line = document.createElement('div');
     line.className = 'playback-line';
-    line.style.left = `${note.x}px`;
+    line.style.left = `${note?.element ? note.x : measure!.x + measure!.width * measureCursor!.fraction}px`;
     block.appendChild(line);
     const viewport = viewportRef.current;
     if (!viewport) return;
@@ -498,11 +512,12 @@ export default function Reader({ musicXml }: ReaderProps) {
       const x = line.getBoundingClientRect().left;
       if (x > view.left + view.width * .78 || x < view.left + view.width * .18) viewport.scrollBy({ left: x - view.left - view.width * .35, behavior: 'smooth' });
     } else {
-      const head = note.element.getBoundingClientRect();
+      const head = anchor.getBoundingClientRect();
       const y = head.top + head.height / 2;
       if (y > view.top + view.height * .72 || y < view.top + view.height * .18) viewport.scrollBy({ top: y - view.top - view.height * .38, behavior: 'smooth' });
     }
-  }, [active, activeNotes, prefs.mode, painting]);
+  // measureCursor is read through its key, so the effect re-runs when the line moves rather than on every frame.
+  }, [active, activeNotes, prefs.mode, painting, measureCursorKey]);
 
   // Returns null when the device can't produce sound (no output device, autoplay blocked, resume() never settling),
   // so playback falls back to a silent wall-clock run instead of hanging on a suspended AudioContext.

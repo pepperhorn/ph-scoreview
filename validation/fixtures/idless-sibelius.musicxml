@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
+<!-- Original test fixture in the shape of a notation-program export: no note IDs, a two-bar
+     multiple-rest intro (bar 1 holds only directions, bar 2 only a forward), harmony, a wedge
+     with a silent offset, a tie across the barline, a chord, a grace note and backup/forward voices. -->
+<score-partwise version="3.0">
+  <work><work-title>ID-less export</work-title></work>
+  <identification><encoding><software>Fixture writer</software></encoding></identification>
+  <part-list>
+    <score-part id="P1"><part-name>Bass</part-name></score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>2</divisions>
+        <key><fifths>0</fifths><mode>major</mode></key>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>F</sign><line>4</line></clef>
+        <measure-style><multiple-rest>2</multiple-rest></measure-style>
+      </attributes>
+      <direction placement="above">
+        <direction-type><words>Opening</words></direction-type>
+        <sound tempo="150"/>
+      </direction>
+      <direction placement="above">
+        <direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>150</per-minute></metronome></direction-type>
+      </direction>
+    </measure>
+    <measure number="2">
+      <forward><duration>8</duration></forward>
+    </measure>
+    <measure number="3">
+      <harmony><root><root-step>C</root-step></root><kind>major</kind></harmony>
+      <direction placement="below">
+        <direction-type><wedge type="crescendo" number="1"/></direction-type>
+        <offset sound="no">1</offset>
+      </direction>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>2</duration><voice>1</voice><type>quarter</type><stem>up</stem></note>
+      <note><pitch><step>E</step><octave>3</octave></pitch><duration>2</duration><voice>1</voice><type>quarter</type><stem>down</stem></note>
+      <direction placement="below">
+        <direction-type><wedge type="stop" number="1"/></direction-type>
+      </direction>
+      <note><pitch><step>G</step><octave>3</octave></pitch><duration>4</duration><tie type="start"/><voice>1</voice><type>half</type><stem>down</stem><notations><tied type="start"/></notations></note>
+    </measure>
+    <measure number="4">
+      <harmony><root><root-step>A</root-step></root><kind>minor</kind></harmony>
+      <note><pitch><step>G</step><octave>3</octave></pitch><duration>2</duration><tie type="stop"/><voice>1</voice><type>quarter</type><stem>down</stem><notations><tied type="stop"/></notations></note>
+      <note><pitch><step>A</step><octave>2</octave></pitch><duration>2</duration><voice>1</voice><type>quarter</type><stem>up</stem></note>
+      <note><chord/><pitch><step>E</step><octave>3</octave></pitch><duration>2</duration><voice>1</voice><type>quarter</type><stem>up</stem></note>
+      <note><rest/><duration>2</duration><voice>1</voice><type>quarter</type></note>
+      <forward><duration>2</duration></forward>
+      <backup><duration>8</duration></backup>
+      <note><pitch><step>C</step><octave>2</octave></pitch><duration>8</duration><voice>2</voice><type>whole</type><stem>down</stem></note>
+    </measure>
+    <measure number="5">
+      <harmony><root><root-step>F</root-step></root><kind>major</kind></harmony>
+      <note><grace/><pitch><step>E</step><octave>2</octave></pitch><voice>1</voice><type>eighth</type><stem>up</stem></note>
+      <note><pitch><step>F</step><octave>2</octave></pitch><duration>8</duration><voice>1</voice><type>whole</type></note>
+      <barline location="right"><bar-style>light-heavy</bar-style></barline>
+    </measure>
+  </part>
+</score-partwise>
