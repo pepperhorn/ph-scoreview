@@ -901,10 +901,12 @@ try {
   assert.equal(await setOverhang(1), '1 bar', 'Endless overhang stays in bars');
   await pager.getByRole('button', { name: 'Vertical view', exact: true }).click();
   await pagerReady();
-  // Twelve staves at the default height fit: one system nearly fills the viewport, so overhang is always dropped.
+  // Twelve staves at 25%: one system nearly fills the viewport, so overhang is always dropped.
   await pager.locator('input[type=file]').setInputFiles({ name: 'twelve-paged.musicxml', mimeType: 'application/xml', buffer: Buffer.from(twelve) });
   await pager.waitForFunction(() => document.querySelector('h1')?.textContent === 'Twelve paged staves' && document.querySelectorAll('.part-control').length === 12);
   await pagerHeader(() => pager.locator('[aria-label="Bars per line"]').selectOption('2'));
+  await pagerReady();
+  await pagerHeader(async () => { await pager.getByRole('slider', { name: 'Stave scale', exact: true }).fill('0.25'); await pager.waitForFunction(() => document.querySelector('.score-content').dataset.staveScale === '0.25', null, { timeout: 8000 }); });
   await pagerReady();
   const twelvePages = await walkPages('Twelve staves');
   assert.ok(twelvePages.length >= 4, `Twelve staves spans several pages (${twelvePages.length})`);
@@ -995,14 +997,15 @@ try {
     return line && line.top >= rect.top + view.clientTop - 1 && line.bottom <= rect.top + view.clientTop + view.clientHeight + 1;
   }, null, { timeout: 6000 });
   await pager.getByRole('button', { name: 'Stop playback', exact: true }).click();
-  // At a user zoom one system is taller than the viewport: turns step through it, overlapping a little, and then
-  // continue at the next system's top, so every part of every system is shown.
-  await pagerHeader(async () => { await pager.getByRole('slider', { name: 'Stave scale', exact: true }).fill('0.5'); await pager.waitForFunction(() => document.querySelector('.score-content').dataset.staveScale === '0.5', null, { timeout: 8000 }); });
+  // At the phone default (a readable 40px staff) a twelve-staff system is taller than the viewport, as with Cielito:
+  // turns step through it, overlapping a little, then continue at the next system's top, so all of every system is shown.
+  await pager.locator('input[type=file]').setInputFiles({ name: 'twelve-tall.musicxml', mimeType: 'application/xml', buffer: Buffer.from(twelve.replace('Twelve paged staves', 'Twelve tall staves')) });
+  await pager.waitForFunction(() => document.querySelector('h1')?.textContent === 'Twelve tall staves');
   await pagerReady();
   await pager.locator('.score-viewport').evaluate(view => view.scrollTo({ top: 0 }));
   await settle();
   const tallViews = [await pageView()];
-  assert.ok(tallViews[0].systems[0].bottom - tallViews[0].systems[0].top > tallViews[0].height, 'A twelve-staff system at 50% is taller than the viewport');
+  assert.ok(tallViews[0].systems[0].bottom - tallViews[0].systems[0].top > tallViews[0].height, 'A twelve-staff system at the phone default is taller than the viewport');
   for (let guard = 0; guard < 80; guard++) {
     await pager.keyboard.press('PageDown');
     const top = await settle();
@@ -1022,6 +1025,31 @@ try {
     assert.ok(tallViews.some(view => system.top - view.scrollTop >= -1 && system.top - view.scrollTop <= PAD + 1), `Tall paging stops at each system top (${system.top})`);
     assert.ok(tallViews.some(view => system.bottom - view.scrollTop <= view.height + 1 && system.bottom - view.scrollTop > 0), `Tall paging shows each system bottom (${system.bottom})`);
   }
+  // Tall playback: the view pages forward only, and some of the playback line is always in view but for a page turn.
+  await pager.locator('.score-viewport').evaluate(view => view.scrollTo({ top: 0 }));
+  await settle();
+  await pager.evaluate(() => {
+    window.__tall = [];
+    const view = document.querySelector('.score-viewport');
+    const frame = () => {
+      const rect = view.getBoundingClientRect(), top = rect.top + view.clientTop, bottom = top + view.clientHeight;
+      const line = document.querySelector('.playback-line')?.getBoundingClientRect();
+      if (line) window.__tall.push({ t: performance.now(), top: view.scrollTop, visible: line.bottom > top + 1 && line.top < bottom - 1 });
+      window.__tallFrame = requestAnimationFrame(frame);
+    };
+    frame();
+  });
+  await pager.getByRole('button', { name: 'Play score', exact: true }).click();
+  await pager.waitForTimeout(7000);
+  const tallSamples = await pager.evaluate(() => { cancelAnimationFrame(window.__tallFrame); return window.__tall; });
+  await pager.getByRole('button', { name: 'Stop playback', exact: true }).click();
+  assert.ok(tallSamples.at(-1).top > tallSamples[0].top, 'Tall playback pages on to later systems');
+  for (let index = 1; index < tallSamples.length; index++) assert.ok(tallSamples[index].top >= tallSamples[index - 1].top - .5, `Tall playback only scrolls forward (${tallSamples[index - 1].top} -> ${tallSamples[index].top})`);
+  let tallGap = 0;
+  for (let index = 0, since = null; index < tallSamples.length; index++) {
+    if (tallSamples[index].visible) since = null; else { since ??= tallSamples[index].t; tallGap = Math.max(tallGap, tallSamples[index].t - since); }
+  }
+  assert.ok(tallGap < 1200, `Tall playback keeps the line in view but for a page turn (${tallGap.toFixed(0)}ms)`);
   // Endless follow only moves forward too.
   await pager.getByRole('button', { name: 'Endless view', exact: true }).click();
   await pagerReady();
