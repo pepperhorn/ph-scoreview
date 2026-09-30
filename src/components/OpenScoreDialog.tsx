@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { ChevronLeft, FileMusic, FolderOpen, FolderSearch, Upload, X } from 'lucide-react';
-import { collectDroppedScoreFiles, collectFolderInputFiles, FOLDER_MAX_ENTRIES, looksLikeAbc, type CollectedScoreFiles, type ScoreFileCandidate } from '../lib/score-files';
+import { ChevronLeft, FileMusic, FolderOpen, Upload, X } from 'lucide-react';
+import { collectDroppedScoreFiles, FOLDER_MAX_ENTRIES, looksLikeAbc, type CollectedScoreFiles, type ScoreFileCandidate } from '../lib/score-files';
 import './open-score-dialog.css';
 
 export type OpenScoreDialogProps = {
@@ -21,17 +21,15 @@ const FORMATS = [
 ] as const;
 const TIP = 'Paste ABC notation here, or drop a score file or a folder of scores.';
 const NOT_ABC = 'This doesn’t look like ABC notation yet: a tune needs a K: (key) line, e.g. K:C.';
-const supportsFolderInput = () => typeof HTMLInputElement !== 'undefined' && 'webkitdirectory' in HTMLInputElement.prototype;
 const hasFiles = (data: DataTransfer | null) => Boolean(data && Array.from(data.types || []).includes('Files'));
 const FOCUSABLE = 'button:not([disabled]), textarea, input:not([type=file]):not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
 
-/** "Open a score" modal: format guide, file/folder browsing, and one box that takes pasted ABC or dropped files and folders. */
+/** "Open a score" modal: format guide, file browsing, and one box that takes pasted ABC or dropped files and folders. */
 export default function OpenScoreDialog({ onClose, onOpenFile, onOpenAbc, onBrowse }: OpenScoreDialogProps) {
   const headingId = useId();
   const tipId = useId();
   const panelRef = useRef<HTMLElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
-  const folderRef = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
   const [abc, setAbc] = useState('');
   const [dragging, setDragging] = useState(false);
@@ -39,7 +37,6 @@ export default function OpenScoreDialog({ onClose, onOpenFile, onOpenAbc, onBrow
   const [message, setMessage] = useState('');
   const [choices, setChoices] = useState<ScoreFileCandidate[] | null>(null);
   const [truncated, setTruncated] = useState(false);
-  const [folderInput] = useState(supportsFolderInput);
 
   // Focus the entry box on open; hand focus back to whatever opened the dialog on close.
   useEffect(() => {
@@ -135,10 +132,8 @@ export default function OpenScoreDialog({ onClose, onOpenFile, onOpenAbc, onBrow
 
       <div className="open-dialog-actions">
         <button className="open-dialog-browse" onClick={() => { onBrowse(); onClose(); }}><FolderOpen size={16}/> Browse files</button>
-        {folderInput && <button className="open-dialog-folder" onClick={() => folderRef.current?.click()}><FolderSearch size={16}/> Choose folder</button>}
         {!choices && <button className="primary-action open-dialog-open-abc" disabled={!abc.trim()} onClick={submitAbc}>Open ABC</button>}
       </div>
-      {folderInput && <input ref={folderRef} className="open-dialog-folder-input" type="file" hidden multiple {...{ webkitdirectory: '' }} onChange={event => { const files = event.target.files; if (files?.length) scan(collectFolderInputFiles(files), true); event.target.value = ''; }}/>}
     </section>
   </div>;
 }

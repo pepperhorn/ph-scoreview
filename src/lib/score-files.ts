@@ -108,15 +108,3 @@ export function collectDroppedScoreFiles(data: DataTransfer): Promise<CollectedS
     return collector.result();
   })();
 }
-
-/** Collects score files chosen through an `<input webkitdirectory>`; relative paths come from webkitRelativePath. */
-export async function collectFolderInputFiles(list: FileList | File[]): Promise<CollectedScoreFiles> {
-  const collector = new Collector(() => true);
-  for (const file of Array.from(list)) {
-    if (collector.full()) break;
-    const path = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
-    if (path.split('/').length - 1 > FOLDER_MAX_DEPTH) { collector.truncated = true; continue; }
-    await collector.add(file, path);
-  }
-  return collector.result();
-}
