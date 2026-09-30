@@ -242,3 +242,4 @@ html,body,#root{height:100%;overflow:hidden}
   .mode-toggle{padding:1px}
   .mode-toggle button{min-width:34px;padding:0 4px}
 }
+.portrait .score-content{padding-bottom:calc(70px + var(--page-tail,0px))}

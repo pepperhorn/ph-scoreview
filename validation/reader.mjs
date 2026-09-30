@@ -791,6 +791,256 @@ try {
   await rotateContext.close();
   console.log(`${engine}: rotation re-fits default zoom, keeps user zoom and keeps tall stacks reachable passed`);
 
+  // System paging (Vertical): pages hold whole systems, overhang repeats systems only when a new one still fits,
+  // and playback follows in page jumps without ping-pong.
+  const pagingContext = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: engine !== 'firefox' });
+  const pager = await pagingContext.newPage();
+  const pagingErrors = [];
+  pager.on('pageerror', e => pagingErrors.push(e.message));
+  // Silent, wall-clock playback: an AudioContext that never resumes (same path as devices without audio).
+  await pager.addInitScript(() => {
+    Object.defineProperty(AudioContext.prototype, 'state', { configurable: true, get: () => 'suspended' });
+    AudioContext.prototype.resume = () => new Promise(() => {});
+  });
+  const pagerReady = async () => {
+    await pager.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg') && !document.querySelector('.score-content').getAnimations().length, { timeout: 30000 });
+    assert.equal(await pager.locator('.toast').count(), 0, await pager.locator('.toast').allTextContents());
+  };
+  const pagerHeader = async action => {
+    const toggle = pager.getByRole('button', { name: 'More controls', exact: true });
+    if (await toggle.count() && await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
+    await action();
+    if (await toggle.count() && await toggle.getAttribute('aria-expanded') === 'true') await pager.keyboard.press('Escape');
+  };
+  const setOverhang = async value => {
+    await pager.getByRole('button', { name: 'Options', exact: true }).click();
+    await pager.locator('#overhang').fill(String(value));
+    const label = await pager.locator('label[for=overhang] span').textContent();
+    await pager.locator('button[aria-label="Close options"]').click();
+    return label;
+  };
+  // Wait until the viewport has not scrolled for several frames.
+  const settle = () => pager.evaluate(() => new Promise(resolve => {
+    const view = document.querySelector('.score-viewport');
+    let last = view.scrollTop, still = 0;
+    const frame = () => { if (Math.abs(view.scrollTop - last) < .5) still++; else { still = 0; last = view.scrollTop; } if (still >= 8) resolve(view.scrollTop); else requestAnimationFrame(frame); };
+    requestAnimationFrame(frame);
+  }));
+  const pageView = () => pager.evaluate(() => {
+    const view = document.querySelector('.score-viewport');
+    const rect = view.getBoundingClientRect();
+    const top = rect.top + view.clientTop, bottom = top + view.clientHeight;
+    return { scrollTop: view.scrollTop, height: view.clientHeight, systems: [...document.querySelectorAll('.score-system')].map(system => { const box = system.getBoundingClientRect(); return { top: box.top - top, bottom: box.bottom - top }; }) };
+  });
+  // What a page shows: whole systems, at most a blank sliver of the previous one on top and one cut-off system below.
+  const PAD = 8;
+  const checkPage = (view, label) => {
+    const whole = [];
+    let cut = 0;
+    view.systems.forEach((system, index) => {
+      if (system.bottom <= 0 || system.top >= view.height) return;
+      if (system.top < -1) assert.ok(system.bottom <= PAD + 1, `${label}: no system is cut at the top (${index}: ${JSON.stringify(system)})`);
+      else if (system.bottom > view.height + 1) cut++;
+      else whole.push(index);
+    });
+    assert.ok(cut <= 1, `${label}: at most the next system is cut off at the bottom`);
+    return whole;
+  };
+  // Page down to the end, checking every page; then page up back through the same starts.
+  const walkPages = async label => {
+    await pager.locator('.score-viewport').evaluate(view => view.scrollTo({ top: 0 }));
+    await settle();
+    const pages = [];
+    for (let guard = 0; guard < 60; guard++) {
+      const view = await pageView();
+      const whole = checkPage(view, `${label} page ${pages.length + 1}`);
+      if (pages.length) {
+        assert.ok(whole.length > 0, `${label} page ${pages.length + 1} shows a whole system`);
+        const top = view.systems[whole[0]].top;
+        assert.ok(top >= 0 && top <= PAD + 1, `${label} page ${pages.length + 1}: the viewport top aligns to a system top (${top.toFixed(1)})`);
+      }
+      pages.push({ scrollTop: view.scrollTop, whole, systems: view.systems, height: view.height });
+      await pager.keyboard.press('PageDown');
+      const next = await settle();
+      if (Math.abs(next - view.scrollTop) < 1) break;
+      assert.ok(next > view.scrollTop, `${label}: page down moves down`);
+    }
+    const last = pages.at(-1);
+    assert.ok(last.whole.includes(last.systems.length - 1), `${label}: paging reaches the last system`);
+    for (let index = pages.length - 2; index >= 0; index--) {
+      await pager.keyboard.press('PageUp');
+      const top = await settle();
+      assert.ok(Math.abs(top - pages[index].scrollTop) <= 1.5, `${label}: page up returns to the previous page start (${top} vs ${pages[index].scrollTop})`);
+    }
+    return pages;
+  };
+  // Overhang: consecutive pages repeat the previous page's last system when a new whole system still fits after it.
+  const overhangs = (pages, overlap) => pages.slice(1).map((page, index) => {
+    const previous = pages[index];
+    const repeated = page.whole[0] === previous.whole.at(-1);
+    const systems = page.systems;
+    if (repeated) assert.ok(page.whole.at(-1) > previous.whole.at(-1), 'An overhang page still shows a new whole system');
+    else {
+      assert.equal(page.whole[0], previous.whole.at(-1) + 1, 'Without overhang the next page starts at the next system');
+      const repeat = previous.whole.at(-1), next = page.whole[0];
+      if (overlap > 0) assert.ok(systems[next].bottom - (systems[repeat].top - PAD) > page.height, 'Overhang is dropped only when no new system would fit');
+    }
+    return repeated;
+  });
+  const twelve = (() => {
+    const parts = Array.from({ length: 12 }, (_, index) => `P${index + 1}`);
+    const measure = number => `<measure number="${number}">${number === 1 ? '<attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>' : ''}${['C', 'E', 'G', 'C'].map((step, beat) => `<note><pitch><step>${step}</step><octave>${beat === 3 ? 5 : 4}</octave></pitch><duration>1</duration><type>quarter</type></note>`).join('')}</measure>`;
+    return `<?xml version="1.0"?><score-partwise version="4.0"><work><work-title>Twelve paged staves</work-title></work><part-list>${parts.map(id => `<score-part id="${id}"><part-name>Staff ${id.slice(1)}</part-name></score-part>`).join('')}</part-list>${parts.map(id => `<part id="${id}">${Array.from({ length: 16 }, (_, index) => measure(index + 1)).join('')}</part>`).join('')}</score-partwise>`;
+  })();
+  await pager.goto(url);
+  await pagerReady();
+  assert.equal(await setOverhang(1), '1 system', 'Vertical overhang is counted in systems');
+  assert.equal(await setOverhang(2), '2 systems');
+  await pager.getByRole('button', { name: 'Endless view', exact: true }).click();
+  await pagerReady();
+  assert.equal(await setOverhang(1), '1 bar', 'Endless overhang stays in bars');
+  await pager.getByRole('button', { name: 'Vertical view', exact: true }).click();
+  await pagerReady();
+  // Twelve staves at the default height fit: one system nearly fills the viewport, so overhang is always dropped.
+  await pager.locator('input[type=file]').setInputFiles({ name: 'twelve-paged.musicxml', mimeType: 'application/xml', buffer: Buffer.from(twelve) });
+  await pager.waitForFunction(() => document.querySelector('h1')?.textContent === 'Twelve paged staves' && document.querySelectorAll('.part-control').length === 12);
+  await pagerHeader(() => pager.locator('[aria-label="Bars per line"]').selectOption('2'));
+  await pagerReady();
+  const twelvePages = await walkPages('Twelve staves');
+  assert.ok(twelvePages.length >= 4, `Twelve staves spans several pages (${twelvePages.length})`);
+  assert.ok(twelvePages.slice(1).every(page => page.systems[page.whole[0]].bottom - page.systems[page.whole[0]].top > page.height / 2), 'One twelve-staff system nearly fills a page');
+  assert.ok(overhangs(twelvePages, 1).every(repeated => !repeated), 'Overhang is dropped when no new system would fit');
+  // Ensemble at a zoom where two systems fit: overhang 1 repeats the previous page's last system.
+  await pager.locator('input[type=file]').setInputFiles(resolve(root, 'validation/fixtures/ensemble.musicxml'));
+  await pager.waitForFunction(() => document.querySelector('h1')?.textContent === 'Migration ensemble');
+  await pagerReady();
+  await pagerHeader(async () => { await pager.getByRole('slider', { name: 'Stave scale', exact: true }).fill('0.35'); await pager.waitForFunction(() => document.querySelector('.score-content').dataset.staveScale === '0.35', null, { timeout: 8000 }); });
+  await pagerReady();
+  // One bar per line gives eight short systems, so playback turns a page every bar or two.
+  await pagerHeader(() => pager.locator('[aria-label="Bars per line"]').selectOption('1'));
+  await pagerReady();
+  const ensemblePages = await walkPages('Ensemble overhang 1');
+  assert.ok(ensemblePages.slice(1).some(page => page.whole.length >= 2), 'Two ensemble systems fit a page at this zoom');
+  assert.ok(overhangs(ensemblePages, 1).some(repeated => repeated), 'Overhang 1 repeats the previous page’s last system');
+  await setOverhang(0);
+  assert.ok(overhangs(await walkPages('Ensemble overhang 0'), 0).every(repeated => !repeated), 'Overhang 0 never repeats a system');
+  await setOverhang(1);
+  // Manual scrolling between page starts: next is the first page start below, previous the last one above.
+  await pager.locator('.score-viewport').evaluate((view, top) => view.scrollTo({ top }), (ensemblePages[1].scrollTop + ensemblePages[2].scrollTop) / 2);
+  await settle();
+  await pager.keyboard.press('PageDown');
+  assert.ok(Math.abs(await settle() - ensemblePages[2].scrollTop) <= 1.5, 'From between pages, next goes to the page start below');
+  await pager.locator('.score-viewport').evaluate((view, top) => view.scrollTo({ top }), (ensemblePages[1].scrollTop + ensemblePages[2].scrollTop) / 2);
+  await settle();
+  await pager.keyboard.press('PageUp');
+  assert.ok(Math.abs(await settle() - ensemblePages[1].scrollTop) <= 1.5, 'From between pages, previous goes to the page start above');
+  // Playback follow: sample every frame; the view only moves forward between page starts, and the line stays in view.
+  const followPlayback = async (label, starts, seconds) => {
+    await pager.locator('.score-viewport').evaluate(view => view.scrollTo({ top: 0 }));
+    await settle();
+    await pager.evaluate(() => {
+      window.__follow = [];
+      const view = document.querySelector('.score-viewport');
+      const frame = () => {
+        const rect = view.getBoundingClientRect(), top = rect.top + view.clientTop, bottom = top + view.clientHeight;
+        const line = document.querySelector('.playback-line')?.getBoundingClientRect();
+        window.__follow.push({ t: performance.now(), top: view.scrollTop, line: !!line, visible: !!line && line.top >= top - 1 && line.bottom <= bottom + 1 });
+        window.__followFrame = requestAnimationFrame(frame);
+      };
+      frame();
+    });
+    await pager.getByRole('button', { name: 'Play score', exact: true }).click();
+    await pager.waitForTimeout(seconds * 1000);
+    const samples = await pager.evaluate(() => { cancelAnimationFrame(window.__followFrame); return window.__follow.filter(sample => sample.line); });
+    await pager.getByRole('button', { name: 'Stop playback', exact: true }).click();
+    assert.ok(samples.length > seconds * 20, `${label}: sampled playback frames (${samples.length})`);
+    for (let index = 1; index < samples.length; index++) assert.ok(samples[index].top >= samples[index - 1].top - .5, `${label}: scroll only moves forward (${samples[index - 1].top} -> ${samples[index].top})`);
+    // Settled positions (held for 5+ frames) are page starts, one per page traversed.
+    const settled = [];
+    for (let index = 0, run = 0; index < samples.length; index++) {
+      run = index && Math.abs(samples[index].top - samples[index - 1].top) < .5 ? run + 1 : 0;
+      if (run === 4 && !settled.some(top => Math.abs(top - samples[index].top) < 2)) settled.push(samples[index].top);
+    }
+    for (const top of settled) assert.ok(starts.some(start => Math.abs(start - top) <= 1.5), `${label}: playback rests on page starts (${top} not in ${starts})`);
+    const traversed = starts.filter(start => start >= settled[0] - 1.5 && start <= settled.at(-1) + 1.5).length;
+    assert.ok(settled.length >= 3, `${label}: playback turned pages (${settled})`);
+    assert.ok(settled.length <= traversed + 1, `${label}: no extra scroll positions (${settled.length} for ${traversed} pages: ${settled} vs ${starts})`);
+    // The line leaves the view only while a page turn scrolls, never for long.
+    let longest = 0;
+    for (let index = 0, since = null; index < samples.length; index++) {
+      if (samples[index].visible) since = null; else { since ??= samples[index].t; longest = Math.max(longest, samples[index].t - since); }
+    }
+    assert.ok(longest < 1200, `${label}: the playback line is out of view only during a page turn (${longest.toFixed(0)}ms)`);
+    assert.ok(samples.filter(sample => sample.visible).length >= samples.length * .8, `${label}: the playback line stays in view`);
+  };
+  await pagerHeader(() => pager.locator('.bpm-control input').fill('240'));
+  await followPlayback('Ensemble playback', ensemblePages.map(page => page.scrollTop), 6);
+  await pager.locator('input[type=file]').setInputFiles({ name: 'twelve-paged.musicxml', mimeType: 'application/xml', buffer: Buffer.from(twelve) });
+  await pager.waitForFunction(() => document.querySelector('h1')?.textContent === 'Twelve paged staves');
+  await pagerReady();
+  await pagerHeader(() => pager.locator('.bpm-control input').fill('240'));
+  await followPlayback('Twelve-staff playback', twelvePages.map(page => page.scrollTop), 7);
+  // A reader who scrolls during playback keeps their view; follow resumes afterwards.
+  await pager.getByRole('button', { name: 'Play score', exact: true }).click();
+  await pager.waitForFunction(() => document.querySelector('.score-viewport').scrollTop > 0, null, { timeout: 15000 });
+  await settle();
+  const box = await pager.locator('.score-viewport').boundingBox();
+  await pager.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await pager.mouse.wheel(0, -120);
+  const scrolled = await settle();
+  await pager.waitForTimeout(1200);
+  assert.ok(Math.abs(await pager.evaluate(() => document.querySelector('.score-viewport').scrollTop) - scrolled) <= 1, 'Follow waits after a manual scroll');
+  await pager.waitForFunction(() => {
+    const view = document.querySelector('.score-viewport'), line = document.querySelector('.playback-line')?.getBoundingClientRect(), rect = view.getBoundingClientRect();
+    return line && line.top >= rect.top + view.clientTop - 1 && line.bottom <= rect.top + view.clientTop + view.clientHeight + 1;
+  }, null, { timeout: 6000 });
+  await pager.getByRole('button', { name: 'Stop playback', exact: true }).click();
+  // At a user zoom one system is taller than the viewport: turns step through it, overlapping a little, and then
+  // continue at the next system's top, so every part of every system is shown.
+  await pagerHeader(async () => { await pager.getByRole('slider', { name: 'Stave scale', exact: true }).fill('0.5'); await pager.waitForFunction(() => document.querySelector('.score-content').dataset.staveScale === '0.5', null, { timeout: 8000 }); });
+  await pagerReady();
+  await pager.locator('.score-viewport').evaluate(view => view.scrollTo({ top: 0 }));
+  await settle();
+  const tallViews = [await pageView()];
+  assert.ok(tallViews[0].systems[0].bottom - tallViews[0].systems[0].top > tallViews[0].height, 'A twelve-staff system at 50% is taller than the viewport');
+  for (let guard = 0; guard < 80; guard++) {
+    await pager.keyboard.press('PageDown');
+    const top = await settle();
+    if (Math.abs(top - tallViews.at(-1).scrollTop) < 1) break;
+    tallViews.push(await pageView());
+  }
+  const tallSystems = tallViews[0].systems.map(system => ({ top: system.top + tallViews[0].scrollTop, bottom: system.bottom + tallViews[0].scrollTop }));
+  for (let index = 1; index < tallViews.length; index++) {
+    const [previous, view] = [tallViews[index - 1], tallViews[index]];
+    assert.ok(view.scrollTop - previous.scrollTop < view.height - 8, `Tall paging overlaps consecutive views (${previous.scrollTop} -> ${view.scrollTop})`);
+    const containing = tallSystems.findIndex(system => system.top < view.scrollTop - 1 && system.bottom > view.scrollTop + 1);
+    const aligned = tallSystems.some(system => system.top - view.scrollTop >= 0 && system.top - view.scrollTop <= PAD + 1);
+    assert.ok(aligned || containing >= 0, `Each tall page starts at a system top or inside a tall system (${view.scrollTop})`);
+  }
+  // Every system top is shown at a page top, and every system bottom is shown in some view.
+  for (const system of tallSystems) {
+    assert.ok(tallViews.some(view => system.top - view.scrollTop >= -1 && system.top - view.scrollTop <= PAD + 1), `Tall paging stops at each system top (${system.top})`);
+    assert.ok(tallViews.some(view => system.bottom - view.scrollTop <= view.height + 1 && system.bottom - view.scrollTop > 0), `Tall paging shows each system bottom (${system.bottom})`);
+  }
+  // Endless follow only moves forward too.
+  await pager.getByRole('button', { name: 'Endless view', exact: true }).click();
+  await pagerReady();
+  await pager.evaluate(() => {
+    window.__lefts = [];
+    const view = document.querySelector('.score-viewport');
+    const frame = () => { if (document.querySelector('.playback-line')) window.__lefts.push(view.scrollLeft); window.__leftFrame = requestAnimationFrame(frame); };
+    frame();
+  });
+  await pager.getByRole('button', { name: 'Play score', exact: true }).click();
+  await pager.waitForTimeout(6000);
+  const lefts = await pager.evaluate(() => { cancelAnimationFrame(window.__leftFrame); return window.__lefts; });
+  await pager.getByRole('button', { name: 'Stop playback', exact: true }).click();
+  assert.ok(lefts.at(-1) > lefts[0], 'Endless playback scrolls along');
+  for (let index = 1; index < lefts.length; index++) assert.ok(lefts[index] >= lefts[index - 1] - .5, `Endless follow only moves forward (${lefts[index - 1]} -> ${lefts[index]})`);
+  assert.deepEqual(pagingErrors, []);
+  await pagingContext.close();
+  console.log(`${engine}: system paging, overhang and page-jump playback follow passed`);
+
   // Silent fallback: an AudioContext that never resumes must not hang playback.
   const silentContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const silent = await silentContext.newPage();
