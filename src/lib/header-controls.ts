@@ -5,7 +5,8 @@
  * tiers. Array order is render order. `primary` controls always sit inline in
  * the header; `secondary` controls sit inline above MOBILE_HEADER_BREAKPOINT
  * and move into the "More controls" dropdown at or below it. Reader.tsx maps
- * each id to its element (and may skip one, e.g. `bars` outside Vertical view).
+ * each id to its element; every control is always rendered (`bars` is disabled outside Vertical view) so the
+ * header footprint never depends on client-only state.
  */
 export type HeaderControlId = 'stop' | 'play' | 'openFile' | 'bpm' | 'mode' | 'bars' | 'staveScale' | 'mixer';
 export type HeaderControlTier = 'primary' | 'secondary';

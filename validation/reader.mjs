@@ -40,7 +40,7 @@ try {
       secondary: Object.fromEntries(controls.filter(id => document.querySelector(`[data-header-control="${id}"]`)).map(id => [id, visible(document.querySelector(`[data-header-control="${id}"] :is(input, select, button)`))])),
       counts: [...document.querySelectorAll('[data-header-control]')].map(element => element.dataset.headerControl).join(','),
       fits: document.querySelector('.topbar').scrollWidth <= document.querySelector('.topbar').clientWidth,
-      boxes: Object.fromEntries(Object.entries({ stop: '.stop-button', play: '.play-button', open: '.header-open-file', mode: '.mode-toggle', more: '.header-more-toggle' }).map(([key, selector]) => [key, box(selector)])),
+      boxes: Object.fromEntries(Object.entries({ stop: '.stop-button', play: '.play-button', open: '.header-open-file', mode: '.mode-toggle', more: '.header-more-toggle', bars: '.header-bars-setting' }).map(([key, selector]) => [key, box(selector)])),
     };
   });
   const expectedArrangement = (width, layout) => {
@@ -66,25 +66,33 @@ try {
     expectedArrangement(width, ssr[width]);
   }
   await noJsContext.close();
-  for (const width of [breakpoint - 30, 1280]) {
+  // Fresh visitors (default prefs) and a returning visitor whose saved Endless preference is applied after hydration.
+  for (const [width, savedMode] of [[breakpoint - 30, null], [1280, null], [breakpoint - 30, 'landscape'], [1280, 'landscape']]) {
     const hydrateContext = await browser.newContext({ viewport: { width, height: 844 } });
     await hydrateContext.route(/poppins/i, route => route.abort());
     const hydrate = await hydrateContext.newPage();
+    if (savedMode) await hydrate.addInitScript(mode => localStorage.setItem('scoreflow-prefs', JSON.stringify({ mode })), savedMode);
     const hydrateErrors = [];
     hydrate.on('pageerror', e => hydrateErrors.push(e.message));
     await hydrate.addInitScript(() => document.addEventListener('DOMContentLoaded', () => {
       const box = selector => { const element = document.querySelector(selector); if (!element || !element.getClientRects().length) return null; const rect = element.getBoundingClientRect(); return [rect.left, rect.top, rect.width, rect.height].map(value => Math.round(value * 10) / 10); };
-      window.__firstPaint = Object.fromEntries(Object.entries({ stop: '.stop-button', play: '.play-button', open: '.header-open-file', mode: '.mode-toggle', more: '.header-more-toggle' }).map(([key, selector]) => [key, box(selector)]));
+      window.__firstPaint = Object.fromEntries(Object.entries({ stop: '.stop-button', play: '.play-button', open: '.header-open-file', mode: '.mode-toggle', more: '.header-more-toggle', bars: '.header-bars-setting' }).map(([key, selector]) => [key, box(selector)]));
     }));
     await hydrate.goto(url);
+    if (savedMode) await hydrate.waitForFunction(() => document.querySelector('.mode-toggle-endless.selected'), null, { timeout: 30000 });
     await hydrate.waitForFunction(() => !document.querySelector('astro-island[ssr]') && !document.querySelector('.score-loading') && document.querySelector('.score-system svg') && !document.querySelector('.score-content').getAnimations().length, null, { timeout: 30000 });
     const hydrated = await headerArrangement(hydrate);
     const firstPaint = await hydrate.evaluate(() => window.__firstPaint);
     expectedArrangement(width, hydrated);
-    assert.deepEqual(hydrated.boxes, firstPaint, `Header controls do not move between DOMContentLoaded and hydration at ${width}px`);
-    assert.deepEqual(hydrated.boxes, ssr[width].boxes, `Hydrated header matches the no-JS server render at ${width}px`);
-    assert.deepEqual(hydrated.secondary, ssr[width].secondary, `Secondary controls keep their SSR arrangement at ${width}px`);
-    if (width <= breakpoint) {
+    const scenario = `${width}px${savedMode ? ` with saved mode ${savedMode}` : ''}`;
+    assert.deepEqual(hydrated.boxes, firstPaint, `Header controls do not move between DOMContentLoaded and hydration at ${scenario}`);
+    assert.deepEqual(hydrated.boxes, ssr[width].boxes, `Hydrated header matches the no-JS server render at ${scenario}`);
+    assert.deepEqual(hydrated.secondary, ssr[width].secondary, `Secondary controls keep their SSR arrangement at ${scenario}`);
+    if (savedMode) {
+      // Bars stays in the header in Endless (same footprint), disabled with an explanation.
+      const bars = await hydrate.evaluate(() => { const select = document.querySelector('[aria-label="Bars per line"]'); return { disabled: select.disabled, aria: select.getAttribute('aria-disabled'), title: select.title }; });
+      assert.deepEqual(bars, { disabled: true, aria: 'true', title: 'Bars per line applies to Vertical view' }, `Bars is disabled in Endless at ${width}px`);
+    } else if (width <= breakpoint) {
       // Collapsed panel controls are display:none, so they can't take focus; Tab goes from More straight out of the header.
       assert.equal(await hydrate.evaluate(() => [...document.querySelectorAll('.header-secondary-panel :is(input, select, button)')].every(control => { control.focus(); return document.activeElement !== control; })), true, 'Closed More panel controls are not focusable');
       await hydrate.getByRole('button', { name: 'Endless view', exact: true }).focus();

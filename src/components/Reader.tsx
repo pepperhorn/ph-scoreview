@@ -621,7 +621,9 @@ export default function Reader({ musicXml }: ReaderProps) {
   const hasScoreText = Boolean(score.title || score.subtitle || score.composer || score.credits?.length);
   // Auto bars follow the layout width in Verovio units: (width - gutter) / stave scale.
   const barsLimit = portraitBarLimit(Math.max(180, (scoreWidth || 800) - controlMetrics.gutter) / renderedZoom, visibleScore);
-  const barsSetting = prefs.mode === 'portrait' && <label className="header-bars-setting"><span>Bars</span><select aria-label="Bars per line" title={`Auto fits up to ${barsLimit} bars`} value={prefs.barsPerLine} onChange={event => update({ barsPerLine: event.target.value === 'auto' ? 'auto' : Number(event.target.value) })}><option value="auto">Auto</option>{[1, 2, 3, 4].map(count => <option value={count} key={count}>{count}</option>)}</select></label>;
+  // Always rendered (disabled in Endless, same footprint) so a saved mode applied after hydration can't add/remove it and shift the header.
+  const barsDisabled = prefs.mode !== 'portrait';
+  const barsSetting = <label className={`header-bars-setting ${barsDisabled ? 'is-disabled' : ''}`} title={barsDisabled ? 'Bars per line applies to Vertical view' : undefined}><span>Bars</span><select aria-label="Bars per line" title={barsDisabled ? 'Bars per line applies to Vertical view' : `Auto fits up to ${barsLimit} bars`} disabled={barsDisabled} aria-disabled={barsDisabled} value={prefs.barsPerLine} onChange={event => update({ barsPerLine: event.target.value === 'auto' ? 'auto' : Number(event.target.value) })}><option value="auto">Auto</option>{[1, 2, 3, 4].map(count => <option value={count} key={count}>{count}</option>)}</select></label>;
 
   const staveScale = zoomDraft ?? prefs.zoom ?? renderedZoom;
   const staveScaleMin = Math.min(STAVE_SCALE_MIN, renderedZoom);
@@ -636,7 +638,7 @@ export default function Reader({ musicXml }: ReaderProps) {
       <button aria-label="Vertical view" title="Vertical view" className={`mode-toggle-vertical ${prefs.mode === 'portrait' ? 'selected' : ''}`} onClick={() => update({ mode: 'portrait' })}><span className="mode-toggle-label-full">Vertical</span><span className="mode-toggle-label-short" aria-hidden="true">V</span></button>
       <button aria-label="Endless view" title="Endless view" className={`mode-toggle-endless ${prefs.mode === 'landscape' ? 'selected' : ''}`} onClick={() => update({ mode: 'landscape' })}><span className="mode-toggle-label-full">Endless</span><span className="mode-toggle-label-short" aria-hidden="true">E</span></button>
     </div>,
-    bars: barsSetting || null,
+    bars: barsSetting,
     staveScale: <label className="header-stave-scale" title="Stave scale">
       <span className="header-stave-scale-label">Scale</span>
       <input className="header-stave-scale-input" type="range" min={staveScaleMin} max={STAVE_SCALE_MAX} step={STAVE_SCALE_STEP} value={staveScale} aria-label="Stave scale" aria-valuetext={`${staveScalePercent}%`} onChange={event => draftStaveScale(Number(event.target.value))}
