@@ -112,7 +112,13 @@ export default function Reader({ musicXml }: ReaderProps) {
   const quietRenderRef = useRef(false);
   const zoomAnchorRef = useRef<ZoomAnchor | null>(null);
   const previewOriginRef = useRef<{ x: number; y: number } | null>(null);
-  const sliderDragRef = useRef(false);
+  /** A pointer is pressed on the stave scale slider. */
+  const sliderPointerRef = useRef(false);
+  /** Zoom handed to the pending quiet render, so a duplicate release (change + pointerup) does not commit twice. */
+  const pendingZoomRef = useRef<number | null>(null);
+  /** Latest native `change` handler for the slider (React's onChange is the `input` event). */
+  const staveScaleChangeRef = useRef<(input: HTMLInputElement) => void>(() => {});
+  const staveScaleInputRef = useRef<HTMLInputElement | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
   const compactHeader = useMediaQuery(MOBILE_HEADER_QUERY);
@@ -339,24 +345,39 @@ export default function Reader({ musicXml }: ReaderProps) {
     window.clearTimeout(zoomCommitRef.current);
     const next = clampStaveScale(value);
     setZoomDraft(null);
-    if (next === prefsZoomRef.current) { clearStaveScalePreview(); return; }
+    const committed = quietRenderRef.current ? pendingZoomRef.current : prefsZoomRef.current;
+    if (next === committed) { if (!quietRenderRef.current) clearStaveScalePreview(); return; }
     zoomAnchorRef.current = captureZoomAnchor();
     quietRenderRef.current = true;
+    pendingZoomRef.current = next;
     setPrefs(prev => ({ ...prev, zoom: next }));
   };
-  // The label follows the slider at once; drags commit on release and keyboard steps once they settle.
+  // `input` (React onChange) previews and moves the label; the native `change` event commits. Range inputs fire
+  // `change` on release after a drag and once per keyboard step, so keyboard steps are debounced.
   const draftStaveScale = (value: number) => {
     const next = clampStaveScale(value);
     setZoomDraft(next);
     previewStaveScale(next);
-    window.clearTimeout(zoomCommitRef.current);
-    if (!sliderDragRef.current) zoomCommitRef.current = window.setTimeout(() => commitStaveScale(next), STAVE_SCALE_COMMIT_MS);
   };
+  staveScaleChangeRef.current = input => {
+    window.clearTimeout(zoomCommitRef.current);
+    const value = Number(input.value);
+    if (sliderPointerRef.current) { sliderPointerRef.current = false; commitStaveScale(value); }
+    else zoomCommitRef.current = window.setTimeout(() => commitStaveScale(value), STAVE_SCALE_COMMIT_MS);
+  };
+  // Fallback for engines that end a drag without `change`: commit on release if the value moved.
   const releaseStaveScale = (input: HTMLInputElement) => {
-    if (!sliderDragRef.current) return;
-    sliderDragRef.current = false;
+    if (!sliderPointerRef.current) return;
+    sliderPointerRef.current = false;
     commitStaveScale(Number(input.value));
   };
+  const onStaveScaleChange = useCallback((event: Event) => staveScaleChangeRef.current(event.currentTarget as HTMLInputElement), []);
+  // The slider remounts when it moves in or out of the More panel, so (re)attach the native listener by ref.
+  const staveScaleInput = useCallback((input: HTMLInputElement | null) => {
+    staveScaleInputRef.current?.removeEventListener('change', onStaveScaleChange);
+    staveScaleInputRef.current = input;
+    input?.addEventListener('change', onStaveScaleChange);
+  }, [onStaveScaleChange]);
   useEffect(() => () => window.clearTimeout(zoomCommitRef.current), []);
   useEffect(() => {
     if (!compactHeader) setMoreOpen(false);
@@ -627,8 +648,8 @@ export default function Reader({ musicXml }: ReaderProps) {
     staveScale: <label className="header-stave-scale" title="Stave scale">
       <span className="header-stave-scale-label">Scale</span>
       <input className="header-stave-scale-input" type="range" min={STAVE_SCALE_MIN} max={STAVE_SCALE_MAX} step={STAVE_SCALE_STEP} value={staveScale} aria-label="Stave scale" aria-valuetext={`${staveScalePercent}%`} onChange={event => draftStaveScale(Number(event.target.value))}
-        onPointerDown={event => { sliderDragRef.current = true; window.clearTimeout(zoomCommitRef.current); try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* synthetic pointer */ } }}
-        onPointerUp={event => releaseStaveScale(event.currentTarget)} onPointerCancel={event => releaseStaveScale(event.currentTarget)} onLostPointerCapture={event => releaseStaveScale(event.currentTarget)}/>
+        ref={staveScaleInput} onPointerDown={() => { sliderPointerRef.current = true; window.clearTimeout(zoomCommitRef.current); }}
+        onPointerUp={event => releaseStaveScale(event.currentTarget)} onPointerCancel={event => releaseStaveScale(event.currentTarget)}/>
       <output className="header-stave-scale-value">{staveScalePercent}%</output>
     </label>,
     mixer: <button className="icon-button mixer-trigger" aria-label="Track mixer" title="Track mixer" aria-haspopup="dialog" aria-expanded={mixer} onClick={() => { setDrawer(false); setMoreOpen(false); setMixer(true); }}><SlidersHorizontal size={18}/><span className="mixer-trigger-label">Track mixer</span></button>,
