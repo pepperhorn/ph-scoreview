@@ -638,10 +638,13 @@ export default function Reader({ musicXml }: ReaderProps) {
   const staveScalePercent = Math.round(staveScale * 100);
   const headerElements: Record<HeaderControlId, React.ReactNode> = {
     stop: <button className="icon-button stop-button" aria-label="Stop playback" title="Stop playback" onClick={() => { stop(true); viewportRef.current?.scrollTo({ top: 0, left: 0, behavior: 'smooth' }); }}><Square size={17} fill="currentColor"/></button>,
-    play: <button className="play-button" aria-label={playing || loadingAudio ? 'Pause playback' : 'Play score'} onClick={play}>{playing || loadingAudio ? <Pause size={17} fill="currentColor"/> : <Play size={17} fill="currentColor"/>}<span>{loadingAudio ? 'Loading sounds' : playing ? 'Pause' : 'Play'}</span></button>,
-    openFile: <button className="icon-button header-open-file" aria-label="Open score file" title="Open score file" aria-haspopup="dialog" aria-expanded={openDialog} onClick={() => { setDrawer(false); setMoreOpen(false); setOpenDialog(true); }}><FolderOpen size={18}/></button>,
+    play: <button className={`play-button ${loadingAudio ? 'is-loading' : ''}`} aria-label={playing || loadingAudio ? 'Pause playback' : 'Play score'} onClick={play}>{playing || loadingAudio ? <Pause size={17} fill="currentColor"/> : <Play size={17} fill="currentColor"/>}<span className="play-button-label">{loadingAudio ? 'Loading' : playing ? 'Pause' : 'Play'}</span></button>,
+    openFile: <button className="header-open-file" aria-label="Open score file" title="Open score file" aria-haspopup="dialog" aria-expanded={openDialog} onClick={() => { setDrawer(false); setMoreOpen(false); setOpenDialog(true); }}><FolderOpen size={17}/><span className="header-open-file-label">Open</span></button>,
     bpm: <label className="bpm-control"><span>BPM</span><input type="number" min={MIN_BPM} max={MAX_BPM} value={prefs.bpm} onChange={e => { stop(true); update({ bpm: clampBpm(Number(e.target.value) || 96) }); }}/></label>,
-    mode: <div className="mode-toggle" role="group" aria-label="Reading mode"><button aria-label="Vertical view" title="Vertical view" className={prefs.mode === 'portrait' ? 'selected' : ''} onClick={() => update({ mode: 'portrait' })}><span>Vertical</span></button><button aria-label="Endless view" title="Endless view" className={prefs.mode === 'landscape' ? 'selected' : ''} onClick={() => update({ mode: 'landscape' })}><span>Endless</span></button></div>,
+    mode: <div className="mode-toggle" role="group" aria-label="Reading mode">
+      <button aria-label="Vertical view" title="Vertical view" className={`mode-toggle-vertical ${prefs.mode === 'portrait' ? 'selected' : ''}`} onClick={() => update({ mode: 'portrait' })}><span className="mode-toggle-label-full">Vertical</span><span className="mode-toggle-label-short" aria-hidden="true">V</span></button>
+      <button aria-label="Endless view" title="Endless view" className={`mode-toggle-endless ${prefs.mode === 'landscape' ? 'selected' : ''}`} onClick={() => update({ mode: 'landscape' })}><span className="mode-toggle-label-full">Endless</span><span className="mode-toggle-label-short" aria-hidden="true">E</span></button>
+    </div>,
     bars: barsSetting || null,
     staveScale: <label className="header-stave-scale" title="Stave scale">
       <span className="header-stave-scale-label">Scale</span>
