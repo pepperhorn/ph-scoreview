@@ -1,53 +1,207 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://scoreflow.local/schemas/file-state-v1.json",
-  "title": "Scoreflow file settings",
+  "$id": "https://scoreflow.local/schemas/file-state-v2.json",
+  "title": "Scoreflow per-score settings",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "source", "settings", "parts"],
+  "required": [
+    "version",
+    "source",
+    "lastOpened",
+    "settings",
+    "parts"
+  ],
   "properties": {
-    "version": { "const": 1 },
+    "version": {
+      "const": 2
+    },
     "source": {
-      "type": "object", "additionalProperties": false,
-      "required": ["name", "size", "sha256", "format"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "size",
+        "sha256",
+        "format"
+      ],
       "properties": {
-        "name": { "type": "string" },
-        "size": { "type": "integer", "minimum": 0 },
-        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-        "format": { "type": "string" }
+        "name": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Original file bytes for opened files; for text sources (sample, pasted ABC, musicXml prop) the hash of `<format>:<text>`."
+        },
+        "format": {
+          "type": "string"
+        }
       }
     },
+    "lastOpened": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Epoch ms of the last open; only the 200 most recently opened scores are kept."
+    },
     "settings": {
-      "type": "object", "additionalProperties": false,
-      "required": ["mode", "notationFont", "barsPerLine", "overlap", "names", "chordSymbols", "inferChordSymbols", "counts", "subdivisions", "bpm", "zoom"],
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "notationFont",
+        "barsPerLine",
+        "overlap",
+        "names",
+        "chordSymbols",
+        "inferChordSymbols",
+        "counts",
+        "subdivisions",
+        "bpm"
+      ],
       "properties": {
-        "mode": { "enum": ["portrait", "landscape"] },
-        "notationFont": { "enum": ["Bravura", "Petaluma"] },
-        "barsPerLine": { "oneOf": [{ "const": "auto" }, { "type": "integer", "minimum": 1, "maximum": 4 }] },
-        "overlap": { "type": "integer", "minimum": 0, "maximum": 3 },
-        "names": { "type": "boolean" },
-        "chordSymbols": { "type": "boolean" },
-        "inferChordSymbols": { "type": "boolean" },
-        "counts": { "type": "boolean" },
-        "subdivisions": { "type": "boolean" },
-        "annotationFont": { "enum": ["Sans", "Serif", "Mono"] },
-        "bpm": { "type": "number", "minimum": 30, "maximum": 240, "description": "Playback BPM. Writers clamp to 30-240; readers clamp out-of-range saved values instead of discarding the state." },
-        "zoom": { "type": "number", "minimum": 0.5, "maximum": 4 },
-        "semitones": { "type": "integer", "minimum": -12, "maximum": 12 },
-        "scorePitch": { "enum": ["written", "concert"] }
+        "mode": {
+          "enum": [
+            "portrait",
+            "landscape"
+          ]
+        },
+        "notationFont": {
+          "enum": [
+            "Bravura",
+            "Petaluma"
+          ]
+        },
+        "barsPerLine": {
+          "oneOf": [
+            {
+              "const": "auto"
+            },
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4
+            }
+          ]
+        },
+        "overlap": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "names": {
+          "type": "boolean"
+        },
+        "chordSymbols": {
+          "type": "boolean"
+        },
+        "inferChordSymbols": {
+          "type": "boolean"
+        },
+        "counts": {
+          "type": "boolean"
+        },
+        "subdivisions": {
+          "type": "boolean"
+        },
+        "annotationFont": {
+          "enum": [
+            "Sans",
+            "Serif",
+            "Mono"
+          ]
+        },
+        "bpm": {
+          "type": "number",
+          "minimum": 30,
+          "maximum": 240,
+          "description": "Playback BPM. Writers clamp to 30-240; readers clamp out-of-range saved values instead of discarding the state."
+        },
+        "semitones": {
+          "type": "integer",
+          "minimum": -12,
+          "maximum": 12
+        },
+        "scorePitch": {
+          "enum": [
+            "written",
+            "concert"
+          ]
+        }
       }
     },
     "parts": {
-      "type": "object", "additionalProperties": {
-        "type": "object", "additionalProperties": false,
-        "required": ["visible", "instrument"],
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "visible",
+          "instrument"
+        ],
         "properties": {
-          "visible": { "type": "boolean" },
-          "instrument": { "enum": ["piano", "guitar", "bassguitar", "double-bass", "drum-kit", "alto-saxophone", "tenor-saxophone", "bari-saxophone", "flute", "clarinet", "trumpet", "trombone", "violin", "viola", "cello", "microphone"] },
-          "gmSoundfont": { "type": "string", "pattern": "^[a-z0-9_]+$" },
-          "volume": { "type": "integer", "minimum": 0, "maximum": 100 }
+          "visible": {
+            "type": "boolean"
+          },
+          "instrument": {
+            "enum": [
+              "piano",
+              "guitar",
+              "bassguitar",
+              "double-bass",
+              "drum-kit",
+              "alto-saxophone",
+              "tenor-saxophone",
+              "bari-saxophone",
+              "flute",
+              "clarinet",
+              "trumpet",
+              "trombone",
+              "violin",
+              "viola",
+              "cello",
+              "microphone"
+            ]
+          },
+          "gmSoundfont": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+$"
+          },
+          "volume": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          }
         }
       }
+    },
+    "view": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "zoom",
+        "zoomDevice"
+      ],
+      "properties": {
+        "zoom": {
+          "type": "number",
+          "minimum": 0.02,
+          "maximum": 4,
+          "description": "Absolute stave scale: rendered px per Verovio layout unit at scale 100 (1 = a 72px staff)."
+        },
+        "zoomDevice": {
+          "enum": [
+            "desktop",
+            "compact"
+          ],
+          "description": "Device class the zoom was chosen on; it is only restored on the same class."
+        }
+      },
+      "description": "Only a user-chosen zoom (slider or pinch) is saved; without it the device default (or many-staff height fit) applies and is re-resolved on resize."
     }
-  }
+  },
+  "description": "Version 2 record in the IndexedDB database `scoreflow`, object store `scores`, keyed by source.sha256 (see src/lib/score-db.ts). Version 1 records (localStorage `scoreflow-file-v1:<sha256>`, zoom inside settings as a width-fit multiplier) are migrated on first read. Only settings and hashes are stored, never score content."
 }

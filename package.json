@@ -10,11 +10,12 @@
     "test:manifest": "node scripts/verify-gm-manifest.mjs",
     "test:example": "npm run test:manifest && npm run build && node tests/cielito-import.mjs",
     "test:document": "node validation/document.mjs",
+    "test:score-db": "node validation/score-db.mjs",
     "test:performance": "node validation/performance.mjs",
     "test:reader": "node validation/reader.mjs",
     "test:reader:firefox": "BROWSER=firefox node validation/reader.mjs",
     "test:reader:webkit": "BROWSER=webkit node validation/reader.mjs",
-    "test:validation": "npm run test:document && npm run test:performance && npm run test:reader",
+    "test:validation": "npm run test:document && npm run test:score-db && npm run test:performance && npm run test:reader",
     "test:browsers": "playwright-core install chromium firefox webkit"
   },
   "dependencies": {

@@ -188,3 +188,10 @@ html,body,#root{height:100%;overflow:hidden}
 /* Between the mobile breakpoint and ~760px every control is inline, so drop their text labels. */
 @media(max-width:760px){.topbar:not(.is-compact) .transport{gap:6px}.topbar:not(.is-compact) .header-stave-scale-label,.topbar:not(.is-compact) .play-button span,.topbar:not(.is-compact) .bpm-control span,.topbar:not(.is-compact) .header-bars-setting>span{display:none}.topbar:not(.is-compact) .play-button{padding:9px 12px}.topbar:not(.is-compact) .bpm-control{margin-left:0}.topbar:not(.is-compact) .header-stave-scale-input{width:64px}}
 @media(max-width:580px){.mixer-panel{padding:15px}.mixer-track{grid-template-columns:24px minmax(0,1fr) 120px;gap:6px}}
+/* Short landscape Endless centres the stage on the viewport. A stack taller than the viewport is top-aligned instead,
+   so no staff ends up above the scroll origin; the title stays just above the stage. */
+@media(max-height:500px) and (orientation:landscape){
+  .landscape .score-stage{top:max(40px,calc(50% - var(--landscape-staff-center, 70px)))}
+  .landscape .score-meta{bottom:calc(100% - max(40px,calc(50% - var(--landscape-staff-center, 70px))) - var(--landscape-meta-offset, 35px))}
+  .landscape.has-many-staves .score-stage{top:max(30px,calc(50% - var(--landscape-staff-center, 70px) + 30px))}
+}
