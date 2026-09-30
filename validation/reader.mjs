@@ -24,6 +24,92 @@ await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const url = process.env.READER_URL || `http://127.0.0.1:${server.address().port}`;
 const browser = await launcher.launch({ headless: true, ...(engine === 'chromium' ? { args: ['--no-sandbox'] } : {}) });
 try {
+  // First paint: the header's mobile/desktop arrangement is pure CSS, so the server-rendered HTML already matches the
+  // viewport and hydration never reflows it (a JS media-query hook used to swap desktop -> mobile after hydration).
+  const breakpoint = Number((await readFile(resolve(root, 'src/lib/header-controls.ts'), 'utf8')).match(/MOBILE_HEADER_BREAKPOINT = (\d+);/)[1]);
+  assert.match(await readFile(resolve(root, 'src/styles.css'), 'utf8'), new RegExp(`/\\* HEADER BREAKPOINT \\(mobile\\)[^*]*\\*/\\s*@media\\(max-width:${breakpoint}px\\)`), `The header's CSS breakpoint matches MOBILE_HEADER_BREAKPOINT (${breakpoint}px)`);
+  const headerArrangement = target => target.evaluate(() => {
+    const visible = element => !!element && element.getClientRects().length > 0 && getComputedStyle(element).visibility !== 'hidden';
+    const box = selector => { const element = document.querySelector(selector); if (!visible(element)) return null; const rect = element.getBoundingClientRect(); return [rect.left, rect.top, rect.width, rect.height].map(value => Math.round(value * 10) / 10); };
+    const controls = ['bpm', 'bars', 'staveScale', 'mixer'];
+    return {
+      more: visible(document.querySelector('.header-more-toggle')),
+      expanded: document.querySelector('.header-more-toggle')?.getAttribute('aria-expanded') ?? null,
+      controls: document.querySelector('.header-more-toggle')?.getAttribute('aria-controls') ?? null,
+      panel: !!document.getElementById('header-secondary-panel'),
+      secondary: Object.fromEntries(controls.filter(id => document.querySelector(`[data-header-control="${id}"]`)).map(id => [id, visible(document.querySelector(`[data-header-control="${id}"] :is(input, select, button)`))])),
+      counts: [...document.querySelectorAll('[data-header-control]')].map(element => element.dataset.headerControl).join(','),
+      fits: document.querySelector('.topbar').scrollWidth <= document.querySelector('.topbar').clientWidth,
+      boxes: Object.fromEntries(Object.entries({ stop: '.stop-button', play: '.play-button', open: '.header-open-file', mode: '.mode-toggle', more: '.header-more-toggle' }).map(([key, selector]) => [key, box(selector)])),
+    };
+  });
+  const expectedArrangement = (width, layout) => {
+    const mobile = width <= breakpoint;
+    assert.equal(layout.more, mobile, `More toggle is ${mobile ? 'shown' : 'hidden'} at ${width}px`);
+    assert.equal(layout.expanded, 'false', `More starts collapsed at ${width}px`);
+    assert.equal(layout.controls, 'header-secondary-panel', 'More toggle controls the secondary panel');
+    assert.equal(layout.panel, true, 'The secondary panel is always in the DOM');
+    assert.ok(Object.keys(layout.secondary).length >= 3, `Secondary controls are rendered: ${JSON.stringify(layout.secondary)}`);
+    for (const [id, shown] of Object.entries(layout.secondary)) assert.equal(shown, !mobile, `Secondary control ${id} is ${mobile ? 'collapsed' : 'inline'} at ${width}px`);
+    assert.equal(new Set(layout.counts.split(',')).size, layout.counts.split(',').length, `No duplicate header controls: ${layout.counts}`);
+    assert.equal(layout.fits, true, `Header fits at ${width}px`);
+  };
+  const ssr = {};
+  const noJsContext = await browser.newContext({ viewport: { width: 390, height: 844 }, javaScriptEnabled: false });
+  // Poppins is blocked in these contexts so a late font swap can't masquerade as (or hide) a hydration shift.
+  await noJsContext.route(/poppins/i, route => route.abort());
+  const noJs = await noJsContext.newPage();
+  for (const width of [breakpoint - 30, breakpoint, breakpoint + 1, 1280]) {
+    await noJs.setViewportSize({ width, height: 844 });
+    await noJs.goto(url, { waitUntil: 'load' });
+    ssr[width] = await headerArrangement(noJs);
+    expectedArrangement(width, ssr[width]);
+  }
+  await noJsContext.close();
+  for (const width of [breakpoint - 30, 1280]) {
+    const hydrateContext = await browser.newContext({ viewport: { width, height: 844 } });
+    await hydrateContext.route(/poppins/i, route => route.abort());
+    const hydrate = await hydrateContext.newPage();
+    const hydrateErrors = [];
+    hydrate.on('pageerror', e => hydrateErrors.push(e.message));
+    await hydrate.addInitScript(() => document.addEventListener('DOMContentLoaded', () => {
+      const box = selector => { const element = document.querySelector(selector); if (!element || !element.getClientRects().length) return null; const rect = element.getBoundingClientRect(); return [rect.left, rect.top, rect.width, rect.height].map(value => Math.round(value * 10) / 10); };
+      window.__firstPaint = Object.fromEntries(Object.entries({ stop: '.stop-button', play: '.play-button', open: '.header-open-file', mode: '.mode-toggle', more: '.header-more-toggle' }).map(([key, selector]) => [key, box(selector)]));
+    }));
+    await hydrate.goto(url);
+    await hydrate.waitForFunction(() => !document.querySelector('astro-island[ssr]') && !document.querySelector('.score-loading') && document.querySelector('.score-system svg') && !document.querySelector('.score-content').getAnimations().length, null, { timeout: 30000 });
+    const hydrated = await headerArrangement(hydrate);
+    const firstPaint = await hydrate.evaluate(() => window.__firstPaint);
+    expectedArrangement(width, hydrated);
+    assert.deepEqual(hydrated.boxes, firstPaint, `Header controls do not move between DOMContentLoaded and hydration at ${width}px`);
+    assert.deepEqual(hydrated.boxes, ssr[width].boxes, `Hydrated header matches the no-JS server render at ${width}px`);
+    assert.deepEqual(hydrated.secondary, ssr[width].secondary, `Secondary controls keep their SSR arrangement at ${width}px`);
+    if (width <= breakpoint) {
+      // Collapsed panel controls are display:none, so they can't take focus; Tab goes from More straight out of the header.
+      assert.equal(await hydrate.evaluate(() => [...document.querySelectorAll('.header-secondary-panel :is(input, select, button)')].every(control => { control.focus(); return document.activeElement !== control; })), true, 'Closed More panel controls are not focusable');
+      await hydrate.getByRole('button', { name: 'Endless view', exact: true }).focus();
+      await hydrate.keyboard.press('Tab');
+      assert.equal(await hydrate.evaluate(() => document.activeElement?.classList.contains('header-more-toggle')), true, 'Tab reaches More after the mode toggle');
+      await hydrate.keyboard.press('Tab');
+      assert.equal(await hydrate.evaluate(() => !document.activeElement?.closest('.header-secondary-panel')), true, 'Tab skips the closed panel');
+    } else if (engine !== 'webkit') {
+      // Desktop tab order follows the registry and never lands on the hidden More toggle.
+      await hydrate.getByRole('button', { name: 'Stop playback', exact: true }).focus();
+      const order = [await hydrate.evaluate(() => document.activeElement.closest('[data-header-control]')?.dataset.headerControl)];
+      for (let step = 0; step < 8; step++) {
+        await hydrate.keyboard.press('Tab');
+        const focused = await hydrate.evaluate(() => ({ id: document.activeElement.closest('[data-header-control]')?.dataset.headerControl, more: document.activeElement.classList.contains('header-more-toggle') }));
+        assert.equal(focused.more, false, 'The hidden More toggle is not in the desktop tab order');
+        if (!focused.id) break;
+        if (focused.id !== order.at(-1)) order.push(focused.id);
+      }
+      assert.deepEqual(order, ['stop', 'play', 'openFile', 'mode', 'bpm', 'bars', 'staveScale', 'mixer'], 'Desktop tab order follows the header registry');
+    }
+    assert.deepEqual(hydrateErrors, []);
+    await hydrateContext.close();
+  }
+  console.log(`${engine}: header first paint matches the server render (no hydration reflow) passed`);
+
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: engine !== 'firefox' });
   const errors = [], remote = [], consoleLines = [];
   page.on('console', m => consoleLines.push(`${m.type()}: ${m.text()}`));
@@ -146,7 +232,7 @@ try {
   assert.equal(await firstChord(), 'ceg');
   // Mobile header: secondary controls stay in a closed "More controls" dropdown until opened.
   assert.equal(await moreToggle().getAttribute('aria-expanded'), 'false', 'More controls start closed');
-  for (const hidden of [staveScale(), page.getByRole('button', { name: 'Track mixer', exact: true }), page.locator('.bpm-control input')]) assert.equal(await hidden.count(), 0, 'Secondary controls are hidden while More is closed');
+  for (const hidden of [staveScale(), page.getByRole('button', { name: 'Track mixer', exact: true }), page.locator('.bpm-control input')]) assert.equal(await hidden.isVisible(), false, 'Secondary controls are hidden while More is closed');
   for (const shown of [page.getByRole('button', { name: 'Vertical view', exact: true }), page.getByRole('button', { name: 'Endless view', exact: true })]) assert.ok(await shown.isVisible(), 'Vertical/Endless stay top level on mobile');
   await assertHeader(390, { modeText: ['V', 'E'], minTarget: 36 });
   await moreToggle().click();
@@ -193,7 +279,7 @@ try {
   };
   // Just above the mobile breakpoint every control is inline and must still fit.
   await page.setViewportSize({ width: 600, height: 800 });
-  await moreToggle().waitFor({ state: 'detached' });
+  await page.locator('.header-more-toggle').waitFor({ state: 'hidden' });
   assert.equal(await page.evaluate(() => document.querySelector('.topbar').scrollWidth <= document.querySelector('.topbar').clientWidth), true, 'Inline header fits at 600px');
   await assertHeader(600, { modeText: ['V', 'E'] });
   await page.setViewportSize({ width: 700, height: 800 });
