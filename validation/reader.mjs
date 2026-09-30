@@ -334,4 +334,112 @@ try {
   assert.deepEqual(silentErrors, []);
   await silentContext.close();
   console.log(`${engine}: silent playback fallback passed`);
+
+  // Open dialog: outlined header button, format guide, pasted ABC, dropped files and folders.
+  const openContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const opener = await openContext.newPage();
+  const openErrors = [];
+  opener.on('pageerror', e => openErrors.push(e.message));
+  const openReady = async () => {
+    await opener.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg') && !document.querySelector('.score-content').getAnimations().length, { timeout: 30000 });
+    assert.equal(await opener.locator('.toast').count(), 0, await opener.locator('.toast').allTextContents());
+  };
+  const openButton = () => opener.locator('.header-open-file');
+  const dialog = () => opener.getByRole('dialog', { name: 'Open a score' });
+  // Simulates a drop with File and Directory Entries API mocks; nodes are { name, text } files or { name, children } folders.
+  const dropIntoDialog = (nodes, types = ['dragenter', 'dragover', 'drop']) => opener.evaluate(({ nodes, types }) => {
+    const makeFile = node => new File([node.text], node.name);
+    const toEntry = (node, parent) => {
+      const fullPath = `${parent}/${node.name}`;
+      if (!node.children) return { isFile: true, isDirectory: false, name: node.name, fullPath, file: ok => setTimeout(() => ok(makeFile(node))) };
+      return { isFile: false, isDirectory: true, name: node.name, fullPath, createReader() { let done = false; return { readEntries(ok) { const out = done ? [] : node.children.map(child => toEntry(child, fullPath)); done = true; setTimeout(() => ok(out)); } }; } };
+    };
+    const entries = nodes.map(node => toEntry(node, ''));
+    const dataTransfer = { types: ['Files'], items: entries.map(entry => ({ kind: 'file', webkitGetAsEntry: () => entry })), files: nodes.filter(node => !node.children).map(makeFile), dropEffect: 'none' };
+    const target = document.querySelector('.open-dialog-abc-input');
+    for (const type of types) {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'dataTransfer', { value: dataTransfer });
+      target.dispatchEvent(event);
+    }
+  }, { nodes, types });
+  await opener.goto(url);
+  await openReady();
+  const outline = await openButton().evaluate(button => { const style = getComputedStyle(button); return { width: style.borderTopWidth, style: style.borderTopStyle, color: style.borderTopColor }; });
+  assert.ok(outline.width === '1px' && outline.style === 'solid' && !/rgba\(0, 0, 0, 0\)|transparent/.test(outline.color), `Open button has a visible outline: ${JSON.stringify(outline)}`);
+  assert.equal(await openButton().getAttribute('aria-label'), 'Open score file');
+  await openButton().click();
+  await dialog().waitFor();
+  assert.equal(await dialog().getAttribute('aria-modal'), 'true');
+  assert.deepEqual(await opener.locator('.open-dialog-format-name').allTextContents(), ['MusicXML', 'MIDI', 'MEI', 'ABC notation'], 'Dialog lists the four formats');
+  assert.match(await opener.locator('.open-dialog-formats').textContent(), /\.musicxml.*\.xml.*\.mxl.*\.mid.*\.midi.*\.mei.*\.abc.*\.txt/s);
+  assert.match(await opener.locator('.open-dialog-tip').textContent(), /Paste ABC notation here, or drop a score file or a folder of scores/);
+  assert.equal(await opener.evaluate(() => document.activeElement?.classList.contains('open-dialog-abc-input')), true, 'Entry box is focused on open');
+  assert.equal(await opener.locator('.open-dialog-open-abc').isDisabled(), true, 'Open ABC waits for text');
+  // Page-turn keys stay inert while the dialog is open.
+  await opener.locator('.open-dialog-close').focus();
+  const scrollBefore = await opener.evaluate(() => document.querySelector('.score-viewport').scrollTop);
+  await opener.keyboard.press('PageDown');
+  await opener.waitForTimeout(300);
+  assert.equal(await opener.evaluate(() => document.querySelector('.score-viewport').scrollTop), scrollBefore, 'Page turns are ignored under the dialog');
+  await opener.keyboard.press('Escape');
+  await dialog().waitFor({ state: 'detached' });
+  assert.equal(await opener.evaluate(() => document.activeElement?.classList.contains('header-open-file')), true, 'Escape returns focus to the open button');
+  // Pasted ABC: a non-ABC hint first, then Ctrl+Enter opens it through the reader's ABC path.
+  await openButton().click();
+  await opener.locator('.open-dialog-abc-input').fill('just some words');
+  await opener.locator('.open-dialog-open-abc').click();
+  assert.match(await opener.locator('.open-dialog-message').textContent(), /K: \(key\) line/, 'Non-ABC text gets an inline hint');
+  await opener.locator('.open-dialog-abc-input').fill('X:1\nT:Pasted tune\nM:4/4\nL:1/4\nK:G\nG A B c | d4 |]');
+  await opener.locator('.open-dialog-abc-input').press('Control+Enter');
+  await dialog().waitFor({ state: 'detached' });
+  await opener.waitForFunction(() => document.querySelector('h1')?.textContent === 'Pasted tune');
+  await openReady();
+  // An unsupported dropped file is reported inline and nothing else changes.
+  await openButton().click();
+  await dropIntoDialog([{ name: 'photo.png', text: 'png' }]);
+  await opener.locator('.open-dialog-message.is-error').waitFor();
+  assert.match(await opener.locator('.open-dialog-message').textContent(), /“photo\.png” isn’t a supported score/);
+  assert.equal(await dialog().count(), 1, 'Dialog stays open for an unsupported file');
+  // Drag-over styling while files hover the dialog.
+  await dropIntoDialog([{ name: 'a.abc', text: 'K:C' }], ['dragenter', 'dragover']);
+  assert.equal(await opener.locator('.open-dialog-dropzone.is-drag-over').count(), 1, 'Drop zone highlights on drag-over');
+  await dropIntoDialog([{ name: 'a.abc', text: 'K:C' }], ['dragleave']);
+  assert.equal(await opener.locator('.open-dialog-dropzone.is-drag-over').count(), 0, 'Drag-over clears on leave');
+  // A dropped folder with two scores (plus files to skip) offers a picker; choosing one opens it.
+  const ensembleXml = await readFile(resolve(root, 'validation/fixtures/ensemble.musicxml'), 'utf8');
+  await dropIntoDialog([{ name: 'Set list', children: [
+    { name: 'README.md', text: '# notes' },
+    { name: 'notes.txt', text: 'Rehearsal at eight.' },
+    { name: 'Ensemble.musicxml', text: ensembleXml },
+    { name: 'Tunes', children: [{ name: 'reel.abc', text: 'X:1\nT:Folder reel\nM:4/4\nL:1/8\nK:D\nDEFG ABcd | d8 |]' }] },
+  ] }]);
+  await opener.locator('.open-dialog-choice').first().waitFor();
+  const listed = await opener.locator('.open-dialog-choice').evaluateAll(choices => choices.map(choice => [choice.querySelector('.open-dialog-choice-name').textContent, choice.querySelector('.open-dialog-choice-path').textContent, choice.querySelector('.open-dialog-choice-format').textContent]));
+  assert.deepEqual(listed, [['Ensemble.musicxml', 'Set list/Ensemble.musicxml', 'MusicXML'], ['reel.abc', 'Set list/Tunes/reel.abc', 'ABC']], 'Folder picker lists only the scores, with paths and formats');
+  await opener.getByRole('button', { name: /reel\.abc/ }).click();
+  await dialog().waitFor({ state: 'detached' });
+  await opener.waitForFunction(() => document.querySelector('h1')?.textContent === 'Folder reel');
+  await openReady();
+  // A folder holding exactly one score opens it directly.
+  await openButton().click();
+  await dropIntoDialog([{ name: 'One', children: [{ name: 'ensemble.musicxml', text: ensembleXml }, { name: 'cover.jpg', text: 'x' }] }]);
+  await dialog().waitFor({ state: 'detached' });
+  await opener.waitForFunction(() => document.querySelector('h1')?.textContent === 'Migration ensemble');
+  await openReady();
+  assert.equal(await opener.locator('.part-control').count(), 5, 'Single score in a folder opens directly');
+  assert.equal(await opener.locator('input[type=file]').count(), 1, 'Only one file input while the dialog is closed');
+  // Phone widths: the dialog fits without horizontal overflow.
+  for (const width of [320, 390]) {
+    await opener.setViewportSize({ width, height: 700 });
+    await openButton().click();
+    await dialog().waitFor();
+    const fit = await opener.evaluate(() => { const panel = document.querySelector('.open-dialog'); const rect = panel.getBoundingClientRect(); return { left: rect.left, right: rect.right, page: document.documentElement.scrollWidth <= innerWidth, panel: panel.scrollWidth <= panel.clientWidth + 1, width: innerWidth }; });
+    assert.ok(fit.left >= 0 && fit.right <= fit.width && fit.page && fit.panel, `Open dialog fits ${width}px: ${JSON.stringify(fit)}`);
+    await opener.keyboard.press('Escape');
+    await dialog().waitFor({ state: 'detached' });
+  }
+  assert.deepEqual(openErrors, []);
+  await openContext.close();
+  console.log(`${engine}: open dialog passed`);
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
