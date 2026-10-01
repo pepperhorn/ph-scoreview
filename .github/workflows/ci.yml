@@ -32,7 +32,7 @@ jobs:
         run: npm run build
       - name: Verify GM soundfont manifest
         run: npm run test:manifest
-      - name: Validation suite (document, performance, reader on chromium)
+      - name: Validation suite (document, performance, reader and large score on chromium)
         run: npm run test:validation
         timeout-minutes: 10
 
