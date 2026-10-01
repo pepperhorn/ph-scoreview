@@ -26,6 +26,11 @@ const budgetScale = Number(process.env.LARGE_SCORE_BUDGET_SCALE || (process.env.
 const FIRST_PAINT_MS = 15000 * budgetScale;
 const MAX_DRAWN_SYSTEMS = 8;
 const MAX_HEAP_MB = 400;
+/**
+ * Phase 3: the score is engraved in chunks, so Verovio's WASM heap stays small (about 130-200 MB here; a whole import
+ * of this score grew it past 300 MB, and 32 MB scores reached the 2 GiB cap). Reported by the runtime, any browser.
+ */
+const MAX_WASM_HEAP_MB = 512;
 /** Phase 2: reading the file (hash, parse, Score transfer) must not block the main thread; Chromium reports long tasks. */
 const IMPORT_LONG_TASK_MS = 200 * budgetScale;
 const MEASURES = 150;
@@ -99,6 +104,18 @@ try {
   const blankPlaceholders = await page.evaluate(() => [...document.querySelectorAll('.score-system.is-pending')].every(block => parseFloat(block.style.height) > 0 && parseFloat(block.style.width) > 0));
   assert.ok(blankPlaceholders, 'Placeholders reserve the laid-out size of their systems');
 
+  // Chunked engraving: a system deep in the score draws on demand from its own chunk, with the Score's measure (one bar
+  // per line: system k holds bar k + 1) under its stable chunk measure ID, and its notes mapped.
+  const middle = Math.floor(MEASURES / 2) + 3;
+  await page.evaluate(index => document.querySelector(`.score-staves > .score-system[data-system="${index}"]`).scrollIntoView({ block: 'center' }), middle);
+  await page.waitForFunction(index => document.querySelector(`.score-staves > .score-system[data-system="${index}"] > svg`), middle, { timeout: 120000 });
+  const deep = await page.evaluate(index => {
+    const block = document.querySelector(`.score-staves > .score-system[data-system="${index}"]`);
+    return { firstMeasure: block.dataset.firstMeasure, measureIds: [...block.querySelectorAll('g.measure')].map(measure => measure.id), notes: block.querySelectorAll('.reader-note').length };
+  }, middle);
+  assert.deepEqual({ firstMeasure: deep.firstMeasure, measureIds: deep.measureIds }, { firstMeasure: String(middle + 1), measureIds: [`reader-m${middle + 1}`] }, `A system deep in the score engraves its own bar from a chunk (${JSON.stringify(deep)})`);
+  assert.ok(deep.notes > 0, 'Notes of a system deep in the score are mapped');
+
   // Scroll to the end: the last system is drawn and the first is released.
   await page.evaluate(() => { const view = document.querySelector('.score-viewport'); view.scrollTop = view.scrollHeight; });
   await page.waitForFunction(() => { const systems = document.querySelectorAll('.score-staves > .score-system'); return systems[systems.length - 1].querySelector(':scope > svg') && !systems[0].querySelector(':scope > svg'); }, null, { timeout: 120000 });
@@ -108,6 +125,9 @@ try {
   assert.ok(end.drawn.length <= MAX_DRAWN_SYSTEMS, `Drawn systems stay bounded after scrolling (${end.drawn.length})`);
   // The last system's notes are mapped (geometry is computed for systems as they are drawn).
   assert.ok(await page.evaluate(() => { const systems = document.querySelectorAll('.score-staves > .score-system'); return systems[systems.length - 1].querySelectorAll('.reader-note').length > 0; }), 'Notes of a system drawn on demand are mapped');
+  const wasmHeapMB = await page.evaluate(() => window.__scoreflowVerovioHeapPeak ? Math.round(window.__scoreflowVerovioHeapPeak / 2 ** 20) : null);
+  console.log(`${engine}: Verovio WASM heap peak ${wasmHeapMB} MB after drawing the first, a middle and the last systems`);
+  assert.ok(wasmHeapMB !== null && wasmHeapMB <= MAX_WASM_HEAP_MB, `Verovio's WASM heap stays under ${MAX_WASM_HEAP_MB} MB (${wasmHeapMB} MB)`);
 
   // Back at the top, play fast: the playhead reaches a system that was not drawn at first paint and highlights it.
   await page.evaluate(() => { document.querySelector('.score-viewport').scrollTop = 0; });

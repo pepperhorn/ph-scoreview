@@ -1,16 +1,19 @@
 import createVerovioModule from 'verovio/wasm';
 import { VerovioToolkit, enableLogToBuffer } from 'verovio/esm';
 import { buildViewMei, scanBaseline, type BaselineInfo, type ViewSpec } from './notation/mei-view';
+import { indexMusicXml, measureId, planChunk, sliceMusicXml, tailFor, type ChunkIndex, type ChunkPlan } from './notation/musicxml-chunks';
 import type { VerovioReply, VerovioRequest } from './verovio-protocol';
 
 /**
  * One persistent Verovio document per score view (see docs/specs/large-score-performance.md).
  *
  * - `import` converts a source once and keeps Verovio's MEI baseline here; the main thread only receives its
- *   structure (`BaselineInfo`), never the MEI.
- * - `render` builds the view MEI from the baseline (breaks, hidden staves, chord symbols), loads it only when the
- *   view or a load-time option (transposition) changed, re-lays it out with `redoLayout` when only layout options
- *   changed, and serializes just the requested pages.
+ *   structure (`BaselineInfo`), never the MEI. A long MusicXML score is not converted whole (Verovio's import grows
+ *   super-linearly with its length and its heap is capped at 2 GiB): the worker indexes the text and engraves it in
+ *   chunks, each a small document of a few systems cut from the source (`notation/musicxml-chunks.ts`).
+ * - `render` builds the view MEI (breaks, hidden staves, chord symbols) of the whole baseline, or of the chunk that
+ *   holds the requested systems, loads it only when the view, chunk or a load-time option (transposition) changed,
+ *   re-lays it out with `redoLayout` when only layout options changed, and serializes just the requested pages.
  * - `probe` lays out a small document of the first measures in a second toolkit: the first system, its height for
  *   the many-staff height fit, and the Auto-bars wrap check, without laying out the whole score.
  *
@@ -22,17 +25,31 @@ import type { VerovioReply, VerovioRequest } from './verovio-protocol';
 const LOAD_OPTIONS = ['breaks', 'transpose', 'transposeToSoundingPitch', 'xmlIdChecksum'];
 /** Baselines kept for re-rendering: the current score and the previous one (still on screen while a new one imports). */
 const BASELINE_LIMIT = 2;
+/**
+ * A MusicXML score of at least this many staff-measures (parts x measures) is engraved in chunks. Below it a whole
+ * import is quick (about a second) and keeps the whole-document path, unless chunking is forced (an out-of-memory retry).
+ */
+const CHUNK_MIN_STAFF_MEASURES = 2400;
+/** Imported chunk MEI kept per score, so scrolling back or changing the view does not convert the MusicXML again. */
+const CHUNK_MEI_LIMIT = 8;
 
 type Toolkit = InstanceType<typeof VerovioToolkit>;
-let modulePromise: Promise<unknown> | undefined;
+type Module = Awaited<ReturnType<typeof createVerovioModule>>;
+let modulePromise: Promise<Module> | undefined;
+let currentModule: Module | undefined;
 // Verovio logs every import and layout warning to the console; a large score logs tens of thousands, which costs
 // real time in the worker. Logs are buffered instead and summarized once per request (see drainLog).
-const moduleReady = () => modulePromise ??= createVerovioModule().then(module => { enableLogToBuffer(1, module); return module; });
+const moduleReady = () => modulePromise ??= createVerovioModule().then(module => { enableLogToBuffer(1, module); currentModule = module; return module; });
 let main: Toolkit | undefined;
 let probe: Toolkit | undefined;
 /** What the main toolkit holds: the loaded view and the options it was last laid out with. */
 let loaded: { loadKey: string; optionsKey: string } | undefined;
-const baselines = new Map<number, { mei: string; info: BaselineInfo }>();
+type WholeBaseline = { kind: 'whole'; mei: string; info: BaselineInfo };
+type ChunkedBaseline = { kind: 'chunked'; index: ChunkIndex; info: BaselineInfo; meis: Map<string, string> };
+type Baseline = WholeBaseline | ChunkedBaseline;
+const baselines = new Map<number, Baseline>();
+/** Log text of toolkits destroyed during a request, reported with it. */
+const pendingLog: string[] = [];
 
 class RequestError extends Error {
   constructor(message: string, readonly code: VerovioReply['code']) { super(message); }
@@ -42,7 +59,7 @@ function discardToolkits(resetModule: boolean): void {
   for (const toolkit of [main, probe]) { try { toolkit?.destroy(); } catch { /* already unusable */ } }
   main = probe = undefined;
   loaded = undefined;
-  if (resetModule) modulePromise = undefined;
+  if (resetModule) { modulePromise = undefined; currentModule = undefined; }
 }
 
 async function toolkit(which: 'main' | 'probe'): Promise<Toolkit> {
@@ -51,7 +68,13 @@ async function toolkit(which: 'main' | 'probe'): Promise<Toolkit> {
   return probe ??= new VerovioToolkit(module);
 }
 
-function baseline(revision: number): { mei: string; info: BaselineInfo } {
+/** Current size of the WASM heap in bytes (it only grows; the runtime recycles the worker when it is large). */
+function heapBytes(): number | undefined {
+  const module = currentModule as { HEAPU8?: Uint8Array; wasmMemory?: WebAssembly.Memory } | undefined;
+  return module?.HEAPU8?.length ?? module?.wasmMemory?.buffer.byteLength;
+}
+
+function baseline(revision: number): Baseline {
   const entry = baselines.get(revision);
   if (!entry) throw new RequestError('The score is no longer loaded in the renderer.', 'missing');
   baselines.delete(revision); baselines.set(revision, entry);
@@ -65,17 +88,45 @@ function load(target: Toolkit, data: string, options: Record<string, unknown>): 
   if (!target.loadData(data)) throw new Error('Verovio could not import this score.');
 }
 
+const IMPORT_OPTIONS = { breaks: 'none', inputFrom: 'auto', xmlIdChecksum: true };
+
+/** Convert MusicXML text to Verovio's MEI in a toolkit of its own, destroyed afterwards so its document is freed. */
+async function convert(text: string): Promise<string> {
+  const target = new VerovioToolkit(await moduleReady());
+  try {
+    load(target, text, IMPORT_OPTIONS);
+    return target.getMEI();
+  } finally {
+    try { pendingLog.push(target.getLog() || ''); } catch { /* no log */ }
+    try { target.destroy(); } catch { /* already unusable */ }
+  }
+}
+
+/** The MEI of a chunk's measure range `[from, to)`, converted once and kept in a small per-score cache. */
+async function chunkMei(entry: ChunkedBaseline, from: number, to: number): Promise<string> {
+  const key = `${from}-${to}`;
+  let mei = entry.meis.get(key);
+  if (mei !== undefined) { entry.meis.delete(key); entry.meis.set(key, mei); return mei; }
+  mei = await convert(sliceMusicXml(entry.index, from, to));
+  entry.meis.set(key, mei);
+  while (entry.meis.size > CHUNK_MEI_LIMIT) entry.meis.delete(entry.meis.keys().next().value!);
+  return mei;
+}
+
 const pick = (options: Record<string, unknown>, keys: string[]) => Object.fromEntries(keys.map(key => [key, options[key] ?? null]));
 
-/** Make the main toolkit hold `view` of `revision` laid out with `options`, reloading only when it must. */
-async function ensureLayout(revision: number, view: ViewSpec, options: Record<string, unknown>): Promise<Toolkit> {
-  const loadKey = JSON.stringify([revision, view, pick(options, LOAD_OPTIONS)]);
+/**
+ * Make the main toolkit hold `view` of `revision` (or of one chunk of it) laid out with `options`, reloading only
+ * when it must. `document` builds the view MEI when a load is needed.
+ */
+async function ensureLayout(documentKey: unknown[], view: ViewSpec, options: Record<string, unknown>, document: () => Promise<string>): Promise<Toolkit> {
+  const loadKey = JSON.stringify([...documentKey, view, pick(options, LOAD_OPTIONS)]);
   const optionsKey = JSON.stringify(options);
   const target = await toolkit('main');
   if (loaded?.loadKey !== loadKey) {
-    const { mei } = baseline(revision);
     loaded = undefined;
-    load(target, buildViewMei(mei, view), options);
+    const data = await document();
+    load(target, data, options);
     loaded = { loadKey, optionsKey };
   } else if (loaded.optionsKey !== optionsKey) {
     // Same document, new layout options (width, scale, font, staff spacing): re-lay out without re-importing.
@@ -125,31 +176,82 @@ function spanEnd(mei: string, measures: number, cap: number): number {
   return Math.min(cap - 1, farthest);
 }
 
-async function handle(request: VerovioRequest): Promise<unknown> {
-  if (request.kind === 'import') {
+/** Import a source: a long MusicXML score is indexed for chunked engraving, anything else converted whole. */
+async function importSource(revision: number, bytes: ArrayBuffer, force: boolean): Promise<BaselineInfo> {
+  const text = new TextDecoder().decode(bytes);
+  const index = indexMusicXml(text);
+  let entry: Baseline;
+  if (index && (force || index.parts.length * index.measureCount >= CHUNK_MIN_STAFF_MEASURES)) {
+    // The staff structure (staffDef numbers and IDs, groups) comes from Verovio's import of the first measure.
+    const { staffDefs, groups } = scanBaseline(await convert(sliceMusicXml(index, 0, 1)));
+    const info: BaselineInfo = { measureIds: Array.from({ length: index.measureCount }, (_, measure) => measureId(measure)), lyricDensity: index.lyricDensity, staffDefs, groups, chunked: true };
+    entry = { kind: 'chunked', index, info, meis: new Map() };
+  } else {
     const target = await toolkit('main');
     loaded = undefined;
-    load(target, new TextDecoder().decode(request.bytes), { breaks: 'none', inputFrom: 'auto', xmlIdChecksum: true });
+    load(target, text, IMPORT_OPTIONS);
     const mei = target.getMEI();
-    const info = scanBaseline(mei);
-    baselines.delete(request.revision);
-    baselines.set(request.revision, { mei, info });
-    while (baselines.size > BASELINE_LIMIT) baselines.delete(baselines.keys().next().value!);
-    return info;
+    entry = { kind: 'whole', mei, info: scanBaseline(mei) };
   }
+  baselines.delete(revision);
+  baselines.set(revision, entry);
+  while (baselines.size > BASELINE_LIMIT) baselines.delete(baselines.keys().next().value!);
+  return entry.info;
+}
+
+/** Staves a view engraves (a chunk's size is set in staff-measures). */
+const stavesOf = (info: BaselineInfo, view: ViewSpec) => Math.max(1, info.staffDefs.length - view.hiddenStaves.length);
+
+async function handle(request: VerovioRequest): Promise<unknown> {
+  if (request.kind === 'import') return importSource(request.revision, request.bytes, !!request.chunking?.force);
   if (request.kind === 'release') { baselines.delete(request.revision); return null; }
+  // Test hook (see verovio-runtime takeSimulatedOom): fail the way emscripten reports a heap that cannot grow.
+  if (request.simulateOom) throw new RangeError('Cannot enlarge memory arrays (simulated).');
+  const entry = baseline(request.revision);
   if (request.kind === 'probe') {
-    const { mei, info } = baseline(request.revision);
-    const limit = request.measures >= info.measureIds.length ? info.measureIds.length : probeLimit(mei, request.measures, info.measureIds.length);
     const target = await toolkit('probe');
+    if (entry.kind === 'chunked') {
+      // The first two systems and the measures their spans end in: the probe's own small chunk.
+      const total = entry.index.measureCount;
+      const core = Math.min(total, request.measures * 2);
+      const limit = request.measures >= total ? total : core + tailFor(entry.index, core);
+      load(target, buildViewMei(await chunkMei(entry, 0, limit), request.view), request.options);
+      return { svg: target.renderToSVG(1), pageCount: target.getPageCount(), measures: limit };
+    }
+    const { mei, info } = entry;
+    const limit = request.measures >= info.measureIds.length ? info.measureIds.length : probeLimit(mei, request.measures, info.measureIds.length);
     load(target, buildViewMei(mei, request.view, limit), request.options);
     const svg = target.renderToSVG(1);
     return { svg, pageCount: target.getPageCount(), measures: limit };
   }
-  const target = await ensureLayout(request.revision, request.view, request.options);
-  const count = target.getPageCount();
-  const pages = request.pages.filter(page => page >= 1 && page <= count).map(page => ({ page, svg: target.renderToSVG(page) }));
-  return { pageCount: count, pages };
+  if (entry.kind === 'whole') {
+    const target = await ensureLayout([request.revision], request.view, request.options, async () => buildViewMei(entry.mei, request.view));
+    const count = target.getPageCount();
+    const pages = request.pages.filter(page => page >= 1 && page <= count).map(page => ({ page, svg: target.renderToSVG(page) }));
+    return { pageCount: count, pages };
+  }
+  // Chunked: pages are systems of `breakEvery` measures; each is drawn from the chunk document that holds it.
+  const bars = request.view.breakEvery;
+  const total = bars > 0 ? Math.ceil(entry.index.measureCount / bars) : 1;
+  const plans = new Map<string, { plan: ChunkPlan; pages: number[] }>();
+  for (const page of request.pages) {
+    if (page < 1 || page > total) continue;
+    const plan = planChunk(entry.index, page - 1, bars, stavesOf(entry.info, request.view), request.chunkBudget);
+    const key = `${plan.from}-${plan.to}`;
+    (plans.get(key) ?? plans.set(key, { plan, pages: [] }).get(key)!).pages.push(page);
+  }
+  const pages: { page: number; svg: string }[] = [];
+  for (const { plan, pages: wanted } of plans.values()) {
+    const target = await ensureLayout([request.revision, plan.from, plan.to], request.view, request.options,
+      async () => buildViewMei(await chunkMei(entry, plan.from, plan.to), request.view, Infinity, plan.from));
+    const count = target.getPageCount();
+    for (const page of wanted) {
+      const local = plan.firstPage + (page - 1 - plan.firstSystem);
+      if (local > count) throw new Error(`A score chunk laid out ${count} pages where ${local} were expected.`);
+      pages.push({ page, svg: target.renderToSVG(local) });
+    }
+  }
+  return { pageCount: total, pages };
 }
 
 /** WASM out-of-memory surfaces as an abort, a RangeError or a WebAssembly.Exception; name it so the reader can say so. */
@@ -165,8 +267,8 @@ function failure(error: unknown): { message: string; code?: VerovioReply['code']
 
 /** Report a request's buffered Verovio log as one console message: the count and the first lines. */
 function drainLog(kind: VerovioRequest['kind']): void {
-  let text = '';
-  try { text = (main ?? probe)?.getLog() || ''; } catch { return; }
+  let text = pendingLog.splice(0).join('');
+  try { text += (main ?? probe)?.getLog() || ''; } catch { /* no log */ }
   if (!text) return;
   const lines = text.split('\n').filter(Boolean);
   const errors = lines.filter(line => line.startsWith('[Error]')).length;
@@ -184,13 +286,13 @@ async function step(): Promise<void> {
   if (request.kind !== 'import' && request.kind !== 'release' && request.ticket < latestTicket) {
     reply({ id: request.id, error: 'Superseded score render.', code: 'superseded' });
   } else {
-    try { const value = await handle(request); drainLog(request.kind); reply({ id: request.id, value }); }
+    try { const value = await handle(request); drainLog(request.kind); reply({ id: request.id, value, heap: heapBytes() }); }
     catch (error) {
       drainLog(request.kind);
       const { message, code } = failure(error);
       // A failed Verovio call can leave the toolkit (or, after an abort, the module) unusable: start clean next time.
       if (code !== 'missing') discardToolkits(code === 'oom' || !(error instanceof Error && error.message === 'Verovio could not import this score.'));
-      reply({ id: request.id, error: message, code });
+      reply({ id: request.id, error: message, code, heap: heapBytes() });
     }
   }
   // Yield so newer requests (and their tickets) arrive before the next queued one runs.
