@@ -19,9 +19,10 @@
     "test:reader:webkit": "BROWSER=webkit node validation/reader.mjs",
     "test:large": "node validation/large-score.mjs",
     "test:chunks": "node validation/chunks.mjs",
+    "test:transpose": "node validation/transpose.mjs",
     "test:guardrails": "node validation/guardrails.mjs",
     "test:guardrails:firefox": "BROWSER=firefox node validation/guardrails.mjs",
-    "test:validation": "npm run test:spelling && npm run test:document && npm run test:parser-diff && npm run test:score-db && npm run test:performance && npm run test:reader && npm run test:chunks && npm run test:large && npm run test:guardrails",
+    "test:validation": "npm run test:spelling && npm run test:transpose && npm run test:document && npm run test:parser-diff && npm run test:score-db && npm run test:performance && npm run test:reader && npm run test:chunks && npm run test:large && npm run test:guardrails",
     "test:browsers": "playwright-core install chromium firefox webkit"
   },
   "dependencies": {
