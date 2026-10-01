@@ -1,6 +1,6 @@
 # Large-score performance
 
-Date: 2026-10-01 · Status: Phase 1 implemented (`perf/large-scores-1`); Phases 2–3 proposed
+Date: 2026-10-01 · Status: Phases 1–3 implemented (`perf/large-scores-1`, `-2`, `-3`)
 
 ## Problem
 
@@ -76,16 +76,55 @@ These targets cover all three phases. Phase 1 alone cannot reach them, because t
 - **Transfer.** Bytes are transferred ArrayBuffers. The document keeps bytes, not strings: `originalText`/`engravingText` are decoded on demand, and an unedited engraving reuses the source bytes. Verovio gets a transferred copy of the engraving bytes and decodes them itself. The Score and the timeline are plain objects posted in chunks (4000 notes, 8000 events), because one structured clone of orch32's Score costs about 0.5 s and its events about 0.4 s to deserialize. In chunks each message costs a few milliseconds, so a compact typed-array form was not needed.
 - Exit criteria: no main-thread task over 200 ms while the file is read and imported (phone profile), and one copy of the source on the main thread (as bytes).
 
-### Phase 3: chunked import and guardrails for very long scores
+### Phase 3: chunked engraving and guardrails for very long scores (implemented)
 
-- **Chunked import.** Import and lay out measure-range slices (MusicXML slices with carried attributes, or Verovio `select({measureRange})` on a loaded slice). This bounds the quadratic import and the 2 GiB heap.
-  - Cross-chunk ties, slurs, hairpins and beam spans are resolved by overlapping slices and by trimming spans to the drawn chunk.
-  - The current clef, key, meter and transposition are carried into each slice.
-  - The chunk index maps measures to chunks for paging and playback.
-- **Guardrails.**
-  - A large-file warning with an estimated time, before import.
-  - A clear WASM out-of-memory message with a retry at a smaller chunk size.
-  - The last opened file is remembered in IndexedDB (a blob handle and its hash), so after a crash the reader offers to reopen it.
+**Choice: per-chunk MusicXML slices, not one document with `select`.** Both options were measured in Node on Verovio 6.3.0 with orch32 (30 parts, 670 measures):
+
+| Approach | Cost before a page can be drawn | WASM heap |
+|---|---|---|
+| (a) Slice the MusicXML, then import, lay out and draw page 1 of a 16 / 32 / 64-bar chunk (one system every 4 bars) | 0.6 / 1.4 / 2.7 s | 134 MB |
+| (b) Import the whole score once, load its MEI, `select({measureRange})` 16 bars, then draw page 1 | 35.5 s import + 86 s MEI load + 12.9 s first render | 980 MB |
+
+Option (b) needs the whole-score import, which is the cost Phase 3 must remove. There is no cheaper way to get MEI: our MusicXML reader builds a reduced Score, not MEI. A whole-score MEI document also loads and lays out at O(document) (item 14 in `docs/verovio-upstream-notes.md`). Slices bound both the time and the heap by the chunk size.
+
+- **Index, not import** (`notation/musicxml-chunks.ts`, in the Verovio worker). A MusicXML engraving of at least 2400 staff-measures (parts × measures) is indexed in one string pass: about 0.1 s for 32 MB. The pass records:
+  - each part's measure offsets;
+  - its `<attributes>` blocks;
+  - lyric density;
+  - where spans start and stop (slur, wedge, octave shift, pedal, bracket, dashes, tuplet, glissando, slide, ending and cross-bar beams).
+
+  Verovio converts only the first measure, for the staff structure (staffDef numbers, IDs and groups). Smaller scores, MEI, ABC and MIDI keep the whole-document path. Timewise sources are already partwise text (Phase 2). A namespace-prefixed or malformed source does not index and is engraved whole.
+- **Slices** (`sliceMusicXml`). A slice of measures `[from, to)` is a complete partwise score:
+  - It keeps the header and part-list. Credits are kept only in a slice that starts at bar 1.
+  - Each part's prevailing attributes before `from` are carried into its first measure: divisions, key, time, staves, part symbol, instruments, clefs, staff details, transposition and `for-part`. A key, clef, time or transposition without `number` replaces any per-staff ones.
+  - The carried time signature gets `print-object="no"`, so a chunk start does not reprint the meter (Verovio maps this to `meterSig@visible="false"`). A real meter change in the first measure still prints.
+  - Every measure gets the ID `reader-m<n>`. Verovio uses a MusicXML measure `id` as its MEI `xml:id`, so the engraving maps 1:1 to Score measures in every chunk. Note IDs are the spliced Phase 2 IDs, so they are stable too.
+- **Chunks follow systems** (`planChunk`). Systems keep their global grid: a page break before every multiple of `bars`, as in the whole score. A chunk holds whole systems: about 640 staff-measures, for example 5 systems of 4 bars × 30 staves, or 32 systems of 4 bars × 5 staves.
+  - Its document adds *overlap* measures before and after the chunk. They cover the spans crossing its edges, at least one bar on each side (a tie from or into the next bar) and at most 16 bars.
+  - Overlap measures fall on pages of their own, split at the same multiples of `bars`, and are never drawn.
+  - A span crossing a chunk edge is therefore laid out exactly as at a system break in the whole score: open at the end of the last drawn system, continued at the start of the next chunk's first system. Overlap pages are at most one system's width, so a page never overflows into an extra page.
+  - The worker caches the converted MEI of the last 8 chunk ranges per score. Scrolling back or changing the view (hidden parts, chord symbols) does not convert the MusicXML again. A width, font or spacing change re-lays out the loaded chunk with `redoLayout`.
+- **Rendering** (`render.ts`). Virtualization (Phase 1) is unchanged: a system that scrolls near asks the worker for its page, and the worker loads the chunk that holds it.
+  - The first-system probe is the first two systems plus their tail overlap.
+  - For a large score, the first paint parses and draws only the first system (and a zoom anchor's) after a yield. Other systems fetched with it are kept as SVG text, sized from it, and drawn by the pump one per task.
+  - In Endless, a chunked score uses blocks of about 480 staff-measures (16 bars for 30 staves, at most 120) instead of 120 bars. The single Endless system is kept only while it is a small document.
+  - Auto bars per line, the 4-bar default, wrap checks, measure numbering, per-system clefs and keys, paging, follow, highlights, zoom anchors and playback are unchanged. They work on the same system grid.
+- **WASM memory.** Each chunk is converted in a toolkit of its own, destroyed afterwards, and laid out in the main toolkit, so the heap stays near the largest chunk: 128 MB for the 5 MB test score. Every worker reply reports the heap size. The runtime:
+  - recycles the worker before the next import when the heap is above 384 MB;
+  - recycles it as soon as it is idle when the heap is above 1 GiB;
+  - recycles it after an out-of-memory error.
+  The next request re-imports the score it needs, which costs one index pass.
+- **Guardrails** (`Reader.tsx`, `large-file.ts`, `last-file.ts`).
+  - **Large-score notice.** It appears for a file of at least 8 MB, or for a score of at least 2400 staff-measures once it is read, with an expected wait from a linear model. It is non-blocking, dismissible and `role="status"`, and it clears when the score paints.
+  - **Out of memory.** Verovio's WASM exceptions, `RangeError` and allocation failures become a clear message with guidance. A *Try again with smaller sections* button halves the chunk budget, forces chunking (even for a score below the threshold) on a fresh worker, and opens or draws the score again.
+  - **Reopen after a reload or crash.**
+    - After a successful open, the original file bytes (up to the 64 MB limit) are kept in IndexedDB (`scoreflow-last-file`), on this device only.
+    - On start the reader offers *Reopen <name>?* with *Reopen*, *Not now* (for this tab) and *Forget*. It never opens the file automatically. The settings drawer also has *Forget last opened file*.
+- **Diagnostics.**
+  - localStorage `scoreflow-chunking` = `{"force": true, "budget": N}` engraves every MusicXML score in chunks of N staff-measures.
+  - `scoreflow-simulate-oom` fails the next render as out of memory, once.
+  - `scoreflow-large-file-bytes` lowers the notice threshold.
+  - `window.__scoreflowVerovioHeapPeak` is the largest WASM heap reported.
 
 ## Risks
 
@@ -94,6 +133,11 @@ These targets cover all three phases. Phase 1 alone cannot reach them, because t
 - **Auto bars wrap check.** Verovio can still wrap a line. It is checked on the probe and on the systems drawn for the first paint. A later system that wraps is drawn as two lines in one block rather than relaid out.
 - **`redoLayout` equivalence** was verified with a Node probe on Verovio 6.3.0 (ensemble and Cielito fixtures, every page) for width, font, staff spacing and their combinations. Any option outside that set is treated as a reload key.
 - **Worker restarts** (crash, or recycling after a large score) drop baselines. The runtime re-imports the current score once on `missing`.
+- **Chunk edges (Phase 3).** A span that reaches more than 16 bars across a chunk edge is cut there. Verovio drops a span whose start is not in the document ("could not be matched to a start element"), and keeps one whose end is missing as open at the end of the chunk. Such a span is drawn open at the edge, and its continuation in the next chunk is missing. Sixteen bars cover ties, slurs and most hairpins, pedals and octave lines.
+  - Things that depend on a whole-score scan are local to the chunk: a cautionary key or clef at the end of the last drawn system (the next bar is always in the overlap, so these usually match), and repeat/ending brackets (spans, carried by the overlap like any other).
+  - `measure-style` (slash and beat-repeat state) is not carried into a slice; multi-measure rests are already expanded (Phase 2).
+  - Lyric density for a chunked score is read from the MusicXML per part, not per MEI staff.
+- **Chunked first paint differs from Phase 1/2 only in where the document comes from.** `validation/chunks.mjs` checks a fixture with spans across chunk edges: system by system, the chunked engraving has the same measures, mapped notes and engraved elements as the whole engraving.
 
 ## Validation
 
@@ -107,6 +151,11 @@ These targets cover all three phases. Phase 1 alone cannot reach them, because t
   - that playback highlights a note in a system not drawn at first paint;
   - the JS heap stays at or under 400 MB on Chromium.
 - The perf probe (`e2e` on the built app) is re-run for orch12 and orch32 on desktop and the phone profile, with small scores (median of 5) on main and on the branch. See *Results*.
+- Phase 3 adds:
+  - **`validation/chunks.mjs`** (`test:chunks`; Chromium in `test:validation`, Firefox and WebKit in CI). It engraves a 16-bar, three-staff fixture twice: whole, and forced into chunks of two systems. The fixture has a tie, slurs, a hairpin, an octave line and a pedal across a chunk edge, a triplet in a chunk's last bar, and key, clef and meter changes. Every system must have the same first bar, bar count, mapped Score notes and counts of slurs, ties, hairpins, octave lines, pedals, tuplets, key and meter signatures, clefs, barlines and notes. Measure IDs are `reader-m1…16` in order, no note is mapped twice, the spans are drawn on both sides of the edge, and no meter is reprinted at a chunk start.
+  - **`validation/document.mjs`** checks the chunk slices directly: carried attributes per staff, the unprinted meter, credits only in the first slice, stable IDs, span-aware overlaps, page-aligned plans, and that timewise, prefixed and malformed sources are rejected.
+  - **`validation/large-score.mjs`** now checks a system deep in the score: it draws on demand with its bar under the stable chunk ID, and its notes are mapped. Verovio's WASM heap must stay at or under 512 MB, and it measures 128 MB.
+  - **`validation/guardrails.mjs`** (`test:guardrails`) checks reopen after a reload (offered, never opened automatically; Reopen, Not now and Forget), the out-of-memory message and its retry (simulated), and the large-file notice.
 
 ## Results (Phase 1)
 
@@ -163,4 +212,48 @@ Against the targets:
 - **Main-thread blocking to first paint:** not yet. One 270–350 ms task remains after the score is shown, while the first system is drawn.
 - **orch32 first paint:** not yet; 31.7 s on desktop (target 8 s) and 37.6 s on the phone profile (target 30 s). Most of what remains is Verovio's MusicXML import of the whole score in its worker, about 25 s. That is Phase 3: chunked import.
 - **Peak memory:** about 1.07 GB on orch32 (target 1 GB), down from 2.1 GB. Most of it is Verovio's WASM heap for the whole-score import, which is also Phase 3.
+- **Small scores:** within the +10% budget.
+
+## Results (Phase 3)
+
+These runs use the same machine, fixtures and e2e probe as before, extended:
+- Peak renderer RSS is reported twice: up to first paint, and after scrolling.
+- After first paint, the probe scrolls to the middle and then to the end, and times how long until a drawn system is in view.
+
+Before is the Phase 2 build (`main` at `e96bbeb`), measured in the same session. The machine was busier than in the Phase 2 session, so the Phase 2 orch32 numbers are higher than the ones reported there (phone: 58.6 s here, 37.6 s there).
+
+| Fixture · profile | First paint | Longest main-thread task | Peak RSS to first paint | Peak RSS after scrolling | Middle / end of score drawn after scrolling |
+|---|---|---|---|---|---|
+| orch12 · desktop | 9.9 s → **3.3 s** | 355 → **186 ms** | 734 → **561 MB** | 1263 → 816 MB | 13.7 s / 1.7 s → **4.3 s / 1.4 s** |
+| orch12 · phone | 8.8 s → **3.1 s** | 262 → **196 ms** | 652 → **473 MB** | 856 → 541 MB | 13.0 s / 0.6 s → **1.8 s / 0.7 s** |
+| orch32 · desktop | 33.0 s → **4.4 s** | 326 → **158 ms** | 1074 → **768 MB** | 1593 → 1084 MB | 49.6 s / 2.5 s → **3.2 s / 3.9 s** |
+| orch32 · phone | 58.6 s → **6.0 s** | 1196 → **244 ms** | 996 → **777 MB** | 1634 → 777 MB | 80.8 s / 0.9 s → **3.2 s / 1.3 s** |
+| ens32 · desktop | 197.9 s → **3.7 s** | 91 → **83 ms** | 1441 → **737 MB** | 1738 → 1005 MB | 11.8 s / 0.3 s → **1.1 s / 0.2 s** |
+| ens32 · phone | 173.2 s → **9.5 s** | 1176 → **682 ms** | 1538 → **922 MB** | 3259 → 962 MB | never drawn → **2.5 s / 0.7 s** |
+
+- **ens32 at phone width** (9640 one-bar systems) no longer runs out of WASM memory. Phase 2 painted its first system after 173 s, but systems never drew on scroll, and the renderer peaked at 3.3 GB. Phase 3 paints it in 9.5 s and draws the middle and the end of the score, with Verovio's heap bounded by one chunk.
+- **Endless** (Phase 3 build):
+  - orch32 on desktop paints in 5.4 s, with a longest task of 255 ms and 805 MB to first paint (1.3 GB after scrolling across 42 blocks of 16 bars).
+  - ens32 on the phone profile paints in 11.7 s, with a longest task of 1166 ms (one 96-bar block).
+- **Small scores** (median of 5, time to a painted score, Phase 2 → Phase 3, with a second Phase 2 run for noise) stay within the +10% budget:
+
+| Score | Desktop | Phone viewport (unthrottled) |
+|---|---|---|
+| Sample (page load) | 967 / 998 → 983 ms | 1021 / 1025 → 1021 ms |
+| Ensemble (file) | 608 / 627 → 625 ms | 600 / 603 → 605 ms |
+| Cielito, 12 staves (file) | 1024 / 1073 → 1070 ms | 1117 / 1091 → 1080 ms |
+
+Against the targets:
+
+- **orch32 first paint:** met. 4.4 s on desktop (target 8 s) and 6.0 s on the phone profile (target 30 s).
+  - About 2.2 s of that is the import worker, until the score is shown; the rest is the index pass and the first chunk.
+  - The phone profile throttles only the main thread, so a real phone's workers are slower than measured here.
+- **Peak memory to first paint:** met. 768–777 MB on orch32 and 737–922 MB on ens32 (target 1 GB). After scrolling through the score, the renderer peaks at 1.0–1.1 GB on desktop. That is the drawn systems' DOM and the chunk documents; Verovio's heap stays at one chunk.
+- **orch12 / ens12 at ≤ 40% of the orch32 budgets:**
+  - orch12 met (3.3 s and 3.1 s).
+  - ens12 was not re-measured separately; ens32, which is larger, paints in 3.7 s on desktop.
+- **Main-thread blocks over 200 ms:**
+  - Met on desktop for every fixture.
+  - On the phone profile, orch32 has one 244 ms task: parsing and sanitizing its first 30-staff system, at 4× CPU throttling. orch12 stays under 200 ms.
+  - ens32 on the phone profile is not met. Opening it creates 9640 placeholder blocks (one bar per line at 390 px with lyrics), whose layout and first geometry take one 682 ms task. Its Phase 2 import also posts about 70 tasks of 100–200 ms. Virtualizing the placeholders themselves (one spacer instead of a block per system) is the next step if very long scores on phones matter.
 - **Small scores:** within the +10% budget.
