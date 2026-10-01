@@ -1,6 +1,7 @@
 import type { Part, Pitch, Score, ScoreDirection } from '../score';
 import { soundingMidi } from '../transpose';
 import { musicXmlTextNavigation } from '../notation/navigation';
+import { musicXmlPlaybackMarks, type NoteMark, type PedalChange, type PlaybackMarks } from './source-marks';
 import { fractionValue } from './fraction';
 import { buildRoadmap, generatedSegments, measureLengths, resolveRoadmap, roadmapFromNavigation, type ResolvedSegment, type Roadmap } from './roadmap';
 
@@ -53,8 +54,6 @@ const FERMATA_HOLD = .5;
 const GRACE_BEATS = .125, GRACE_TOTAL = .25;
 const dynamics: Record<string, number> = { pppp: 20, ppp: 28, pp: 39, p: 52, mp: 66, mf: 82, f: 96, ff: 108, fff: 118, ffff: 124, sf: 112, sfz: 112, fz: 112, fp: 96, sforzando: 112 };
 
-function xmlChildren(el: Element, name: string): Element[] { return Array.from(el.children).filter(item => item.localName === name); }
-function first(el: Element, name: string): Element | undefined { return xmlChildren(el, name)[0]; }
 function scoreOffsets(lengths: number[]): number[] {
   let offset = 0;
   return lengths.map(length => { const here = offset; offset += length; return here; });
@@ -90,96 +89,6 @@ function slices(segments: ResolvedSegment[], lengths: number[]): Slice[] {
 }
 
 type TempoPoint = { beat: number; bpm: number };
-type NoteMark = { durationScale: number; velocityDelta: number; fermata: boolean; silent: boolean };
-function sourceNoteMarks(xml: string | undefined, diagnostics: string[]): Map<string, NoteMark> {
-  const result = new Map<string, NoteMark>();
-  if (!xml || typeof DOMParser === 'undefined') return result;
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
-  if (doc.getElementsByTagName('parsererror').length) return result;
-  for (const note of Array.from(doc.getElementsByTagName('*')).filter(el => el.localName === 'note')) {
-    const id = note.getAttribute('id');
-    const notations = first(note, 'notations');
-    // Cue notes are engraved for reference only and never sound.
-    const silent = Boolean(first(note, 'cue'));
-    if (!notations && !silent) continue;
-    const art = notations && first(notations, 'articulations');
-    const names = art ? Array.from(art.children).map(el => el.localName) : [];
-    let durationScale = 1, velocityDelta = 0;
-    if (names.includes('staccatissimo')) durationScale = .25;
-    else if (names.includes('staccato')) durationScale = .5;
-    else if (names.includes('detached-legato')) durationScale = .75;
-    else if (names.includes('tenuto')) durationScale = .96;
-    if (names.includes('strong-accent')) velocityDelta = 18;
-    else if (names.includes('accent')) velocityDelta = 12;
-    const fermata = Boolean(notations && first(notations, 'fermata'));
-    const meaningful = durationScale !== 1 || velocityDelta || fermata || silent;
-    if (id && meaningful) result.set(id, { durationScale, velocityDelta, fermata, silent });
-    else if (!id && meaningful) diagnostics.push('Some articulations lack MusicXML note IDs and could not be mapped to sound.');
-    if (notations && first(notations, 'ornaments')) diagnostics.push('Ornaments are engraved but not synthesized.');
-  }
-  return result;
-}
-
-type PedalChange = { measureIndex: number; beat: number; kind: 'down' | 'up' | 'change' };
-/**
- * Damper (sustain) pedal changes per source part, in written measure/beat
- * position. <pedal> marks in a direction win; a bare <sound damper-pedal>
- * (yes/no or 0-100) is used when the direction has no pedal mark.
- * Sostenuto is not synthesized and is diagnosed.
- */
-function sourcePedals(xml: string | undefined, diagnostics: string[]): Map<string, PedalChange[]> {
-  const result = new Map<string, PedalChange[]>();
-  if (!xml || typeof DOMParser === 'undefined') return result;
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
-  if (doc.getElementsByTagName('parsererror').length) return result;
-  const root = doc.documentElement;
-  const partMeasures = new Map<string, Element[]>();
-  if (root.localName === 'score-timewise') {
-    for (const measure of xmlChildren(root, 'measure')) for (const part of xmlChildren(measure, 'part')) {
-      const id = part.getAttribute('id') || '';
-      partMeasures.set(id, [...(partMeasures.get(id) || []), part]);
-    }
-  } else for (const part of xmlChildren(root, 'part')) partMeasures.set(part.getAttribute('id') || '', xmlChildren(part, 'measure'));
-  const duration = (el: Element) => Number(first(el, 'duration')?.textContent) || 0;
-  for (const [partId, measures] of partMeasures) {
-    const changes: PedalChange[] = [];
-    let divisions = 1;
-    measures.forEach((measure, measureIndex) => {
-      let cursor = 0;
-      const damper = (sound: Element | undefined, beat: number) => {
-        if (sound?.hasAttribute('sostenuto-pedal')) diagnostics.push('Sostenuto pedal is engraved but not synthesized.');
-        const value = sound?.getAttribute('damper-pedal');
-        if (value === null || value === undefined) return;
-        const down = value === 'yes' || (value !== 'no' && Number(value) > 0);
-        changes.push({ measureIndex, beat, kind: down ? 'down' : 'up' });
-      };
-      for (const item of Array.from(measure.children)) {
-        const name = item.localName;
-        if (name === 'attributes') { const d = Number(first(item, 'divisions')?.textContent); if (d > 0) divisions = d; }
-        else if (name === 'note') { if (!first(item, 'chord') && !first(item, 'grace')) cursor += duration(item) / divisions; }
-        else if (name === 'backup') cursor = Math.max(0, cursor - duration(item) / divisions);
-        else if (name === 'forward') cursor += duration(item) / divisions;
-        else if (name === 'sound') damper(item, cursor);
-        else if (name === 'direction') {
-          const offset = first(item, 'offset');
-          const beat = Math.max(0, cursor + (offset?.getAttribute('sound') === 'yes' ? (Number(offset.textContent) || 0) / divisions : 0));
-          const pedals = xmlChildren(item, 'direction-type').flatMap(type => xmlChildren(type, 'pedal'));
-          for (const pedal of pedals) {
-            const type = pedal.getAttribute('type');
-            if (type === 'start' || type === 'resume') changes.push({ measureIndex, beat, kind: 'down' });
-            else if (type === 'stop' || type === 'discontinue') changes.push({ measureIndex, beat, kind: 'up' });
-            else if (type === 'change') changes.push({ measureIndex, beat, kind: 'change' });
-            else if (type === 'sostenuto') diagnostics.push('Sostenuto pedal is engraved but not synthesized.');
-          }
-          if (pedals.length) { if (first(item, 'sound')?.hasAttribute('sostenuto-pedal')) diagnostics.push('Sostenuto pedal is engraved but not synthesized.'); }
-          else damper(first(item, 'sound'), beat);
-        }
-      }
-    });
-    if (changes.length) result.set(partId, changes);
-  }
-  return result;
-}
 function tempoPoints(score: Score, offsets: number[], diagnostics: string[]): TempoPoint[] {
   const byBeat = new Map<number, number>();
   for (const part of score.parts) for (const measure of part.measures) for (const direction of measure.directions || []) {
@@ -266,6 +175,7 @@ function velocityFor(points: DynamicPoint[], staffId: string, targetBeat: number
   return Math.max(1, Math.min(127, value));
 }
 
+
 /** Prefer the identified partwise engraving text: it carries generated note IDs and normalized timewise layout. */
 function documentXml(score: Score): string | undefined {
   const document = score.document;
@@ -275,20 +185,61 @@ function documentXml(score: Score): string | undefined {
   return undefined;
 }
 
-/** Build one ordered performed timeline, with source tempo scaled by the displayed BPM. */
-export function buildPerformanceTimeline(score: Score, options: TimelineOptions): PerformanceTimeline {
+/** Grace notes sound for at least this long, in seconds at the score's opening tempo. */
+const GRACE_FLOOR_SECONDS = .03;
+type PerformedPedal = { seconds: number; kind: PedalChange['kind'] };
+
+/**
+ * The performance built once per score, independent of BPM, transposition and hidden parts.
+ *
+ * Every `...Seconds` field (events, visual segments, positions, `durationSeconds`, pedal times) is in performed
+ * beats at the score's opening tempo: where the tempo doubles, a written beat counts 1/2. Playback seconds are
+ * those values times 60 / bpm (playbackScale), so a BPM change never rebuilds the timeline. MIDI numbers are at
+ * 0 semitones; playback adds the transposition to every event of a non-percussion part.
+ *
+ * Plain data (arrays and Maps of plain values), so a worker can build it and post it.
+ */
+export type BaseTimeline = PerformanceTimeline & {
+  /** Source part (pedal scope) of each event, parallel to `events`. */
+  eventSources: string[];
+  /** Pedal changes in performed time per source part, in performed order. */
+  performedPedals: Map<string, PerformedPedal[]>;
+  /** End of the performed roadmap, before the last notes' tails. */
+  pieceEnd: number;
+  /** Parts whose events are never transposed (percussion). */
+  percussionPartIds: string[];
+  /** Diagnostics not tied to one part, in the order they were found. */
+  headDiagnostics: string[];
+  /** Per-part diagnostics (unmatched ties), in the order they were found. */
+  partDiagnostics: { partId: string; message: string }[];
+};
+
+export type BaseTimelineOptions = {
+  /** A caller's own MusicXML: navigation, marks and pedals are read from it instead of the score. */
+  musicXml?: string;
+  roadmap?: Roadmap;
+  /** Note marks and pedals already read from the source (for example by the import worker). */
+  marks?: PlaybackMarks;
+  /** Parts to perform; all parts of the score by default. Tempo, fermatas and dynamics always come from the whole score. */
+  parts?: Part[];
+};
+
+/** Build the BPM-independent performance of `full` (see BaseTimeline). */
+export function buildBaseTimeline(full: Score, options: BaseTimelineOptions = {}): BaseTimeline {
   const diagnostics: string[] = [];
-  const full = options.fullScore && options.fullScore.parts.length ? options.fullScore : score;
+  const partDiagnostics: { partId: string; message: string }[] = [];
+  const parts = options.parts || full.parts;
   // Measure lengths, navigation and the roadmap come from the full score, so hiding a part never changes them.
   const exactLengths = measureLengths(full);
   const lengths = exactLengths.map(fractionValue);
   const offsets = scoreOffsets(lengths);
   const points = tempoPoints(full, offsets, diagnostics);
   const initialBpm = tempoAt(points, 0);
-  const requestedBpm = Number.isFinite(options.bpm) && options.bpm > 0 ? options.bpm : initialBpm;
-  const tempoScale = requestedBpm / initialBpm;
-  const xml = options.musicXml || documentXml(score) || documentXml(full);
-  const marks = sourceNoteMarks(xml, diagnostics);
+  /** Timeline units (opening-tempo beats) per written beat at a score beat. */
+  const unitsPerBeat = (beat: number) => initialBpm / tempoAt(points, beat);
+  const source = options.marks || musicXmlPlaybackMarks(options.musicXml || documentXml(full));
+  const marks = source.marks;
+  diagnostics.push(...source.markDiagnostics);
   const markFor = (note: { sourceId?: string; pitches: (Pitch & { sourceId?: string })[] }) => [note.sourceId, ...note.pitches.map(p => p.sourceId)].map(id => id ? marks.get(id) : undefined).find((item): item is NoteMark => Boolean(item));
   const dynamicGroups = dynamicPoints(full, offsets);
   // Navigation lives on the Score; an explicit musicXml option (a caller's own source) is read instead.
@@ -299,13 +250,15 @@ export function buildPerformanceTimeline(score: Score, options: TimelineOptions)
   const roadmap = override ? options.roadmap! : built;
   // Only a user override is validated; a rejected one falls back to the generated roadmap, which always plays.
   const performedSlices = slices(override || generatedSegments(built), lengths);
-  const pedals = sourcePedals(xml, diagnostics);
-  /** Pedal changes in performed time, per source part, in performed order. */
-  const performedPedals = new Map<string, { seconds: number; kind: PedalChange['kind'] }[]>();
+  const pedals = source.pedals;
+  diagnostics.push(...source.pedalDiagnostics);
+  const performedPedals = new Map<string, PerformedPedal[]>();
   const eventSource = new Map<PerformanceEvent, string>();
   const events: PerformanceEvent[] = [];
   const positions: PlaybackPosition[] = [];
   const openTies = new Map<string, PerformanceEvent>();
+  // The floor is in timeline units, so it scales with BPM like every other duration: 30 ms at the opening tempo.
+  const graceFloor = GRACE_FLOOR_SECONDS * initialBpm / 60;
   let elapsed = 0;
   for (const slice of performedSlices) {
     const { measureIndex, from, to } = slice;
@@ -316,17 +269,14 @@ export function buildPerformanceTimeline(score: Score, options: TimelineOptions)
     const localTempos = points.filter(point => point.beat > offset + from + EPS && point.beat < offset + horizon - EPS);
     const boundaries = [from, ...localTempos.map(point => point.beat - offset), horizon];
     const times = [0];
-    for (let i = 1; i < boundaries.length; i++) {
-      const bpm = tempoAt(points, offset + boundaries[i - 1] + EPS) * tempoScale;
-      times.push(times[i - 1] + (boundaries[i] - boundaries[i - 1]) * 60 / bpm);
-    }
+    for (let i = 1; i < boundaries.length; i++) times.push(times[i - 1] + (boundaries[i] - boundaries[i - 1]) * unitsPerBeat(offset + boundaries[i - 1] + EPS));
     const baseAt = (beat: number) => {
       const limited = Math.max(from, Math.min(horizon, beat));
       let segment = boundaries.length - 2;
       for (let i = 0; i < boundaries.length - 1; i++) if (limited < boundaries[i + 1] - EPS) { segment = i; break; }
-      return elapsed + times[segment] + (limited - boundaries[segment]) * 60 / (tempoAt(points, offset + boundaries[segment] + EPS) * tempoScale);
+      return elapsed + times[segment] + (limited - boundaries[segment]) * unitsPerBeat(offset + boundaries[segment] + EPS);
     };
-    const secondsPerBeat = (beat: number) => 60 / (tempoAt(points, offset + beat + EPS) * tempoScale);
+    const secondsPerBeat = (beat: number) => unitsPerBeat(offset + beat + EPS);
     const inSlice = (beat: number) => beat >= from - EPS && beat < to - EPS;
     // Fermatas hold the music: time is inserted where the shortest held note of
     // each fermata onset ends, so later notes wait instead of overlapping.
@@ -368,7 +318,7 @@ export function buildPerformanceTimeline(score: Score, options: TimelineOptions)
       list.push({ seconds: secondsAt(Math.min(to, change.beat)), kind: change.kind });
       performedPedals.set(sourceId, list);
     }
-    for (const part of score.parts) {
+    for (const part of parts) {
       const measure = part.measures[measureIndex];
       if (!measure) continue;
       const graceGroups = new Map<string, string[]>();
@@ -394,7 +344,7 @@ export function buildPerformanceTimeline(score: Score, options: TimelineOptions)
           // Graces on the downbeat delay their principal; others steal from the previous beat.
           if (note.start <= EPS) { start = principal + i * step; end = principal + (i + 1) * step; }
           else { start = Math.max(baseAt(from), principal - (n - i) * step); end = principal - (n - i - 1) * step; }
-          end = Math.max(start + .03, end);
+          end = Math.max(start + graceFloor, end);
         } else {
           const opening = note.start <= EPS ? (graceGroups.get(`${voice}:${note.start.toFixed(6)}`)?.length || 0) : 0;
           start = secondsAt(note.start) + (opening ? opening * graceBeat(opening) * secondsPerBeat(0) : 0);
@@ -403,7 +353,7 @@ export function buildPerformanceTimeline(score: Score, options: TimelineOptions)
         const mark = markFor(note);
         if (mark?.silent) continue;
         note.pitches.forEach((pitch: Pitch & { sourceId?: string }, pitchIndex) => {
-          const midi = soundingMidi(part, measure, pitch, options.semitones || 0);
+          const midi = soundingMidi(part, measure, pitch, 0);
           const pitchMark = (pitch.sourceId ? marks.get(pitch.sourceId) : undefined) || mark;
           const soundingEnd = start + (end - start) * (pitchMark?.durationScale ?? 1);
           const tieKey = `${part.id}:${voice}:${midi}`;
@@ -416,7 +366,7 @@ export function buildPerformanceTimeline(score: Score, options: TimelineOptions)
             if (!pitch.tieStart) openTies.delete(tieKey);
             return;
           }
-          if (pitch.tieStop && !old) diagnostics.push(`Unmatched tie stop at ${note.id}, pitch ${pitchIndex}.`);
+          if (pitch.tieStop && !old) partDiagnostics.push({ partId: part.id, message: `Unmatched tie stop at ${note.id}, pitch ${pitchIndex}.` });
           const event: PerformanceEvent = {
             id: `${note.id}:${pitchIndex}:${slice.occurrence}`, noteId: note.id,
             pitchId: pitch.sourceId || `${note.id}:${pitchIndex}`, pitchIndex, partId: part.id, voice,
@@ -435,8 +385,137 @@ export function buildPerformanceTimeline(score: Score, options: TimelineOptions)
     elapsed = secondsAt(to);
   }
   events.sort((a, b) => a.startSeconds - b.startSeconds || a.partId.localeCompare(b.partId) || a.pitchIndex - b.pitchIndex);
-  applySustainPedal(events, eventSource, performedPedals, elapsed);
+  const eventSources = events.map(event => eventSource.get(event)!);
+  applySustainPedal(events, eventSources, performedPedals, elapsed);
+  return {
+    events, positions, durationSeconds: timelineEnd(events, elapsed), initialBpm,
+    diagnostics: [...new Set([...diagnostics, ...partDiagnostics.map(item => item.message)])], roadmap,
+    eventSources, performedPedals, pieceEnd: elapsed, percussionPartIds: parts.filter(part => part.clef === 'percussion').map(part => part.id),
+    headDiagnostics: diagnostics, partDiagnostics,
+  };
+}
+
+function timelineEnd(events: PerformanceEvent[], pieceEnd: number): number {
+  let end = pieceEnd;
+  for (const event of events) end = Math.max(end, event.endSeconds, event.soundEndSeconds);
+  return end;
+}
+
+/**
+ * The base timeline restricted to `visiblePartIds` (hidden parts muted). Events of each part do not depend on the
+ * others, so this filters them and re-applies the sustain pedal, whose re-attack damping is scoped to what sounds.
+ * Tempo, fermatas, dynamics and navigation stay those of the whole score. Returns `base` when nothing is hidden.
+ */
+export function deriveTimeline(base: BaseTimeline, options: { visiblePartIds?: readonly string[] } = {}): BaseTimeline {
+  if (!options.visiblePartIds) return base;
+  const visible = new Set(options.visiblePartIds);
+  if (base.events.every(event => visible.has(event.partId)) && base.partDiagnostics.every(item => visible.has(item.partId))) return base;
+  const events: PerformanceEvent[] = [];
+  const eventSources: string[] = [];
+  base.events.forEach((event, index) => {
+    if (!visible.has(event.partId)) return;
+    events.push({ ...event });
+    eventSources.push(base.eventSources[index]);
+  });
+  applySustainPedal(events, eventSources, base.performedPedals, base.pieceEnd);
+  const partDiagnostics = base.partDiagnostics.filter(item => visible.has(item.partId));
+  return {
+    ...base, events, eventSources, partDiagnostics, durationSeconds: timelineEnd(events, base.pieceEnd),
+    percussionPartIds: base.percussionPartIds.filter(id => visible.has(id)),
+    diagnostics: [...new Set([...base.headDiagnostics, ...partDiagnostics.map(item => item.message)])],
+  };
+}
+
+/** Playback seconds per timeline unit at `bpm` (an invalid BPM plays at the score's opening tempo). */
+export function playbackScale(timeline: Pick<PerformanceTimeline, 'initialBpm'>, bpm: number): number {
+  return 60 / (Number.isFinite(bpm) && bpm > 0 ? bpm : timeline.initialBpm);
+}
+const transposable = (timeline: BaseTimeline) => {
+  const percussion = new Set(timeline.percussionPartIds);
+  return (event: PerformanceEvent) => !percussion.has(event.partId);
+};
+function scaledEvent(event: PerformanceEvent, scale: number, semitones: number): PerformanceEvent {
+  return {
+    ...event, startSeconds: event.startSeconds * scale, endSeconds: event.endSeconds * scale, soundEndSeconds: event.soundEndSeconds * scale,
+    midi: event.midi + semitones, visualNoteIds: [...event.visualNoteIds],
+    visualSegments: event.visualSegments.map(segment => ({ ...segment, startSeconds: segment.startSeconds * scale, endSeconds: segment.endSeconds * scale })),
+  };
+}
+
+/** Playback length in seconds at `bpm`. */
+export function playbackDuration(timeline: BaseTimeline, bpm: number): number {
+  return timeline.durationSeconds * playbackScale(timeline, bpm);
+}
+/** The position at playback `seconds` when the timeline plays at `bpm`. */
+export function playbackPositionAt(timeline: BaseTimeline, seconds: number, bpm: number): PlaybackPosition {
+  const scale = playbackScale(timeline, bpm);
+  const position = positionAtSeconds(timeline, seconds / scale);
+  return { ...position, seconds: position.seconds * scale };
+}
+/**
+ * Events still sounding from playback `seconds` on (as eventsFromSeconds: tails of events begun earlier are clipped
+ * to start there), in playback seconds at `bpm` and transposed by `semitones`. Only these events are copied.
+ */
+export function playbackEventsFrom(timeline: BaseTimeline, seconds: number, bpm: number, semitones = 0): PerformanceEvent[] {
+  const scale = playbackScale(timeline, bpm);
+  const units = seconds / scale;
+  const shifts = transposable(timeline);
+  const result: PerformanceEvent[] = [];
+  for (const event of timeline.events) {
+    if (event.soundEndSeconds <= units + EPS) continue;
+    const scaled = scaledEvent(event, scale, shifts(event) ? semitones : 0);
+    if (event.startSeconds < units) { scaled.startSeconds = seconds; scaled.endSeconds = Math.max(seconds, scaled.endSeconds); }
+    result.push(scaled);
+  }
+  return result;
+}
+/** Sounding MIDI numbers of the given parts' events, transposed by `semitones`. */
+export function playbackMidis(timeline: BaseTimeline, partIds: ReadonlySet<string>, semitones = 0): number[] {
+  const shifts = transposable(timeline);
+  return timeline.events.filter(event => partIds.has(event.partId)).map(event => event.midi + (shifts(event) ? semitones : 0));
+}
+
+/** The timeline in playback seconds at `bpm`, transposed by `semitones` (the shape buildPerformanceTimeline returns). */
+export function materializeTimeline(timeline: BaseTimeline, bpm: number, semitones = 0): PerformanceTimeline {
+  const scale = playbackScale(timeline, bpm);
+  const shifts = transposable(timeline);
+  return {
+    events: timeline.events.map(event => scaledEvent(event, scale, shifts(event) ? semitones : 0)),
+    positions: timeline.positions.map(position => ({ ...position, seconds: position.seconds * scale, activeNoteIds: [...position.activeNoteIds] })),
+    durationSeconds: timeline.durationSeconds * scale, initialBpm: timeline.initialBpm, diagnostics: [...timeline.diagnostics], roadmap: timeline.roadmap,
+  };
+}
+
+/** Base timelines registered for a score's source document (for example built by the import worker). */
+const registered = new WeakMap<object, Promise<BaseTimeline>>();
+export function registerBaseTimeline(document: object, timeline: Promise<BaseTimeline>): void {
+  registered.set(document, timeline);
+}
+export function registeredBaseTimeline(document: object): Promise<BaseTimeline> | undefined {
+  return registered.get(document);
+}
+/**
+ * The base timeline of a full score: the one registered for its document (falling back to building here if that
+ * fails), else one built here on first use. It is kept per document, so instrument changes, BPM and transposition
+ * never rebuild it.
+ */
+export function baseTimelineFor(score: Score): Promise<BaseTimeline> {
+  const key: object = score.document || score;
+  const known = registered.get(key);
+  if (known) return known.catch(() => buildBaseTimeline(score));
+  const timeline = new Promise<BaseTimeline>(resolve => resolve(buildBaseTimeline(score)));
+  registered.set(key, timeline);
+  return timeline;
+}
+
+/** Build one ordered performed timeline, with source tempo scaled by the displayed BPM. */
+export function buildPerformanceTimeline(score: Score, options: TimelineOptions): PerformanceTimeline {
+  const full = options.fullScore && options.fullScore.parts.length ? options.fullScore : score;
+  const xml = options.musicXml || documentXml(score) || documentXml(full);
+  const base = buildBaseTimeline(full, { musicXml: options.musicXml, roadmap: options.roadmap, marks: musicXmlPlaybackMarks(xml), parts: score.parts });
+  const timeline = materializeTimeline(base, options.bpm, options.semitones || 0);
   if (options.verovioTimemap !== undefined) {
+    const diagnostics = [...timeline.diagnostics];
     if (!Array.isArray(options.verovioTimemap)) diagnostics.push('Verovio timemap shape is unrecognized; source timing was used.');
     else {
       // Verovio 6.3.0 exposes {on,off,qstamp,tstamp}. qstamp is a useful
@@ -449,17 +528,16 @@ export function buildPerformanceTimeline(score: Score, options: TimelineOptions)
         for (const id of row.on) if (typeof id === 'string' && !firstOnset.has(id)) firstOnset.set(id, row.qstamp);
       }
       const checked = new Set<string>();
-      for (const event of events) {
+      for (const event of timeline.events) {
         if (checked.has(event.pitchId)) continue;
         checked.add(event.pitchId);
         const qstamp = firstOnset.get(event.pitchId);
         if (qstamp !== undefined && Math.abs(qstamp - event.scoreBeat) > .01) diagnostics.push(`Verovio/source onset differs for ${event.pitchId}.`);
       }
     }
+    timeline.diagnostics = [...new Set(diagnostics)];
   }
-  let durationSeconds = elapsed;
-  for (const event of events) durationSeconds = Math.max(durationSeconds, event.endSeconds, event.soundEndSeconds);
-  return { events, positions, durationSeconds, initialBpm, diagnostics: [...new Set(diagnostics)], roadmap };
+  return timeline;
 }
 
 /**
@@ -468,7 +546,7 @@ export function buildPerformanceTimeline(score: Score, options: TimelineOptions)
  * and re-depress at the same instant, so notes released before it end there.
  * Only soundEndSeconds moves; written ends and highlighting are untouched.
  */
-function applySustainPedal(events: PerformanceEvent[], eventSource: Map<PerformanceEvent, string>, performed: Map<string, { seconds: number; kind: PedalChange['kind'] }[]>, pieceEnd: number) {
+function applySustainPedal(events: PerformanceEvent[], eventSources: string[], performed: Map<string, PerformedPedal[]>, pieceEnd: number) {
   // Tie chains extend endSeconds after creation; the audible end starts from the final written end.
   for (const event of events) event.soundEndSeconds = event.endSeconds;
   const spans = new Map<string, { down: number; up: number }[]>();
@@ -486,14 +564,15 @@ function applySustainPedal(events: PerformanceEvent[], eventSource: Map<Performa
   }
   if (!spans.size) return;
   const byKey = new Map<string, PerformanceEvent[]>();
-  for (const event of events) {
-    const sourceId = eventSource.get(event);
-    if (sourceId === undefined) continue;
+  events.forEach((event, index) => {
+    const sourceId = eventSources[index];
+    if (sourceId === undefined) return;
     const key = `${sourceId}:${event.midi}`;
-    byKey.set(key, [...(byKey.get(key) || []), event]);
+    const group = byKey.get(key);
+    if (group) group.push(event); else byKey.set(key, [event]);
     const span = spans.get(sourceId)?.find(item => item.down < event.endSeconds - EPS && event.endSeconds < item.up - EPS);
     if (span) event.soundEndSeconds = span.up;
-  }
+  });
   // Re-striking a sustained pitch damps the previous string at the new attack.
   for (const group of byKey.values()) for (const event of group) {
     if (event.soundEndSeconds <= event.endSeconds + EPS) continue;
@@ -505,14 +584,24 @@ function applySustainPedal(events: PerformanceEvent[], eventSource: Map<Performa
 /** Includes sustained notes; useful for cursor, highlights, seek and resume. */
 export function positionAtSeconds(timeline: PerformanceTimeline, seconds: number): PlaybackPosition {
   const clamped = Math.max(0, Math.min(timeline.durationSeconds, seconds));
-  let current = timeline.positions[0] || { seconds: 0, scoreBeat: 0, measureIndex: 0, occurrence: 0, measureBeat: 0, noteId: null, activeNoteIds: [] };
-  for (const position of timeline.positions) { if (position.seconds > clamped + EPS) break; current = position; }
-  const next = timeline.positions[timeline.positions.indexOf(current) + 1];
+  const positions = timeline.positions;
+  let index = positions.length ? 0 : -1;
+  for (let i = 0; i < positions.length; i++) { if (positions[i].seconds > clamped + EPS) break; index = i; }
+  const current = positions[index] || { seconds: 0, scoreBeat: 0, measureIndex: 0, occurrence: 0, measureBeat: 0, noteId: null, activeNoteIds: [] };
+  const next = index >= 0 ? positions[index + 1] : undefined;
   const ratio = next && next.seconds > current.seconds && next.measureIndex === current.measureIndex && next.occurrence === current.occurrence ? (clamped - current.seconds) / (next.seconds - current.seconds) : 0;
   const scoreBeat = current.scoreBeat + ratio * (next ? next.scoreBeat - current.scoreBeat : 0);
-  const sounding = timeline.events.filter(event => event.startSeconds <= clamped + EPS && event.endSeconds > clamped + EPS);
-  const latest = [...timeline.events].reverse().find(event => event.startSeconds <= clamped + EPS && event.measureIndex === current.measureIndex && event.occurrence === current.occurrence);
-  const activeNoteIds = [...new Set(sounding.flatMap(event => event.visualSegments.filter(segment => segment.startSeconds <= clamped + EPS && segment.endSeconds > clamped + EPS).map(segment => segment.noteId)))];
+  const active = new Set<string>();
+  for (const event of timeline.events) {
+    if (event.startSeconds > clamped + EPS || event.endSeconds <= clamped + EPS) continue;
+    for (const segment of event.visualSegments) if (segment.startSeconds <= clamped + EPS && segment.endSeconds > clamped + EPS) active.add(segment.noteId);
+  }
+  let latest: PerformanceEvent | undefined;
+  for (let i = timeline.events.length - 1; i >= 0; i--) {
+    const event = timeline.events[i];
+    if (event.startSeconds <= clamped + EPS && event.measureIndex === current.measureIndex && event.occurrence === current.occurrence) { latest = event; break; }
+  }
+  const activeNoteIds = [...active];
   return { ...current, seconds: clamped, scoreBeat, measureBeat: current.measureBeat + scoreBeat - current.scoreBeat, noteId: activeNoteIds[0] || latest?.noteId || null, activeNoteIds };
 }
 
