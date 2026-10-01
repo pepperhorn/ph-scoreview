@@ -9,6 +9,7 @@
     "check": "astro check && tsc --noEmit",
     "test:manifest": "node scripts/verify-gm-manifest.mjs",
     "test:example": "npm run test:manifest && npm run build && node tests/cielito-import.mjs",
+    "test:spelling": "node validation/spelling.mjs",
     "test:document": "node validation/document.mjs",
     "test:parser-diff": "node validation/parser-diff.mjs",
     "test:score-db": "node validation/score-db.mjs",
@@ -17,7 +18,7 @@
     "test:reader:firefox": "BROWSER=firefox node validation/reader.mjs",
     "test:reader:webkit": "BROWSER=webkit node validation/reader.mjs",
     "test:large": "node validation/large-score.mjs",
-    "test:validation": "npm run test:document && npm run test:parser-diff && npm run test:score-db && npm run test:performance && npm run test:reader && npm run test:large",
+    "test:validation": "npm run test:spelling && npm run test:document && npm run test:parser-diff && npm run test:score-db && npm run test:performance && npm run test:reader && npm run test:large",
     "test:browsers": "playwright-core install chromium firefox webkit"
   },
   "dependencies": {
