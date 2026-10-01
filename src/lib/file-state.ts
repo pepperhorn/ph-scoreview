@@ -6,6 +6,8 @@ export type FileSettings = {
   mode: 'portrait' | 'landscape'; notationFont: 'Bravura' | 'Petaluma'; barsPerLine: 'auto' | number;
   overlap: number; names: boolean; chordSymbols: boolean; inferChordSymbols: boolean;
   counts: boolean; subdivisions: boolean; annotationFont: 'Sans' | 'Serif' | 'Mono'; bpm: number; semitones: number; scorePitch: 'written' | 'concert';
+  /** Spell the transposed view in the enharmonic key (F# major shown as Gb major); optional on read, default false. */
+  keyFlip: boolean;
 };
 /** Saved view: an absolute stave scale and the device class it was chosen on (see stave-scale.ts). */
 export type ScoreView = { zoom: number; zoomDevice: DeviceClass };
@@ -140,11 +142,12 @@ function validSettingsAndParts(state: { settings: FileSettings; parts: Record<st
   settings.bpm = clampBpm(settings.bpm);
   if (settings.semitones !== undefined && (!Number.isInteger(settings.semitones) || Math.abs(settings.semitones) > 12)) return false;
   if (settings.scorePitch !== undefined && !['written', 'concert'].includes(settings.scorePitch)) return false;
+  if (settings.keyFlip !== undefined && typeof settings.keyFlip !== 'boolean') return false;
   if (settings.annotationFont !== undefined && !['Sans', 'Serif', 'Mono'].includes(settings.annotationFont)) return false;
   if (['names', 'chordSymbols', 'inferChordSymbols', 'counts', 'subdivisions'].some(key => typeof settings[key as keyof FileSettings] !== 'boolean')) return false;
   Object.values(state.parts).forEach(part => { part.instrument = legacyInstruments[part.instrument] || part.instrument; });
   if (Object.values(state.parts).some(part => typeof part.visible !== 'boolean' || !instruments.has(part.instrument) || (part.gmSoundfont !== undefined && !isGmSoundfont(part.gmSoundfont)) || (part.volume !== undefined && (!Number.isInteger(part.volume) || part.volume < 0 || part.volume > 100)))) return false;
-  state.settings = { ...settings, annotationFont: settings.annotationFont ?? 'Sans', semitones: settings.semitones ?? 0, scorePitch: settings.scorePitch ?? 'written' };
+  state.settings = { ...settings, annotationFont: settings.annotationFont ?? 'Sans', semitones: settings.semitones ?? 0, scorePitch: settings.scorePitch ?? 'written', keyFlip: settings.keyFlip ?? false };
   return true;
 }
 
@@ -193,6 +196,6 @@ export function buildFileState(source: FileSource, settings: FileSettings, score
   const hidden = new Set(hiddenIds);
   const parts: FileState['parts'] = {};
   for (const part of score.parts) parts[part.id] = { visible: !hidden.has(part.id), instrument: part.instrument, ...(part.gmSoundfont ? { gmSoundfont: part.gmSoundfont } : {}), volume: volumes[part.id] ?? 100 };
-  const { mode, notationFont, barsPerLine, overlap, names, chordSymbols, inferChordSymbols, counts, subdivisions, annotationFont, bpm, semitones, scorePitch } = settings;
-  return { version: 2, source, lastOpened, settings: { mode, notationFont, barsPerLine, overlap, names, chordSymbols, inferChordSymbols, counts, subdivisions, annotationFont, bpm: clampBpm(bpm), semitones, scorePitch }, parts, ...(view ? { view } : {}) };
+  const { mode, notationFont, barsPerLine, overlap, names, chordSymbols, inferChordSymbols, counts, subdivisions, annotationFont, bpm, semitones, scorePitch, keyFlip } = settings;
+  return { version: 2, source, lastOpened, settings: { mode, notationFont, barsPerLine, overlap, names, chordSymbols, inferChordSymbols, counts, subdivisions, annotationFont, bpm: clampBpm(bpm), semitones, scorePitch, keyFlip: !!keyFlip }, parts, ...(view ? { view } : {}) };
 }

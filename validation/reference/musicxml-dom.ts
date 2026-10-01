@@ -275,6 +275,7 @@ export function referenceParseMusicXml(text: string) {
   const scoreParts = new Map(children(list || root, 'score-part').map(p => [p.getAttribute('id'), p]));
   const names = new Map([...scoreParts].map(([id, p]) => [id, value(p, 'part-name')]));
   let beats = 4, beatType = 4, key = 0, tempo = 100;
+  let keyMode: 'major' | 'minor' | undefined;
   let openingMeter = false, openingTempo = false;
   const parts: Part[] = [];
   for (const [partNo, element] of children(root, 'part').entries()) {
@@ -295,6 +296,7 @@ export function referenceParseMusicXml(text: string) {
     const staffMap = new Map<number, Part>();
     let divisions = 1;
     let partKey = key;
+    let partKeyMode: 'major' | 'minor' | undefined;
     let partBeats = 4, partBeatType = 4;
     let partClef = '';
     let partTransposition: Transposition = { semitones: 0 };
@@ -312,7 +314,7 @@ export function referenceParseMusicXml(text: string) {
           if (partNo === 0 && !openingMeter) { beats = partBeats; beatType = partBeatType; openingMeter = true; }
         }
         const k = child(attributes, 'key');
-        if (k) { partKey = number(k, 'fifths', partKey); if (partNo === 0 && index === 0) key = partKey; }
+        if (k) { partKey = number(k, 'fifths', partKey); partKeyMode = value(k, 'mode') === 'minor' ? 'minor' : 'major'; if (partNo === 0 && index === 0) { key = partKey; keyMode = partKeyMode; } }
         const clefElement = children(attributes, 'clef').find(c => Number(c.getAttribute('number') || 1) === 1);
         if (clefElement) {
           const sign = value(clefElement, 'sign');
@@ -331,7 +333,7 @@ export function referenceParseMusicXml(text: string) {
           if (!measure) return;
           const clefElement = children(attributes, 'clef').find(c => Number(c.getAttribute('number') || 1) === staff);
           if (clefElement) { const sign = value(clefElement, 'sign'); part.clef = sign === 'F' ? 'bass' : sign === 'C' ? number(clefElement, 'line', 3) === 4 ? 'tenor' : 'alto' : sign === 'percussion' ? 'percussion' : 'treble'; }
-          measure.key = partKey; measure.clef = part.clef; measure.beatsPerBar = partBeats; measure.beatType = partBeatType;
+          measure.key = partKey; if (partKeyMode) measure.keyMode = partKeyMode; measure.clef = part.clef; measure.beatsPerBar = partBeats; measure.beatType = partBeatType;
           measure.nominalBeats = partBeats * 4 / partBeatType;
         });
       };
@@ -343,10 +345,10 @@ export function referenceParseMusicXml(text: string) {
           const clefEl = attrs && children(attrs, 'clef').find(c => Number(c.getAttribute('number') || 1) === staff);
           const sign = clefEl ? value(clefEl, 'sign') : '';
           const clef = sign === 'F' ? 'bass' : sign === 'C' ? number(clefEl!, 'line', 3) === 4 ? 'tenor' : 'alto' : sign === 'percussion' ? 'percussion' : partClef || (/bass/i.test(name) ? 'bass' : 'treble');
-          staffMap.set(staff, { id: `${id}-${staff}`, name: staff === 1 ? name : `${name} · ${staff}`, clef, key: partKey, instrument: drumKit ? 'drum-kit' : gm ? gm.icon as Part['instrument'] : instrumentForName(name), gmProgram: gm?.program, gmSoundfont: gm?.soundfont, pitchBasis: concertScore ? 'concert' : 'written', transposition, measures: Array.from({ length: index }, (_, i) => empty(i, measureBeats)) });
+          staffMap.set(staff, { id: `${id}-${staff}`, name: staff === 1 ? name : `${name} · ${staff}`, clef, key: partKey, ...(partKeyMode ? { keyMode: partKeyMode } : {}), instrument: drumKit ? 'drum-kit' : gm ? gm.icon as Part['instrument'] : instrumentForName(name), gmProgram: gm?.program, gmSoundfont: gm?.soundfont, pitchBasis: concertScore ? 'concert' : 'written', transposition, measures: Array.from({ length: index }, (_, i) => empty(i, measureBeats)) });
         }
         const p = staffMap.get(staff)!;
-        if (!p.measures[index]) p.measures[index] = { ...empty(index, measureBeats), nominalBeats: measureBeats, number: m.getAttribute('number') || String(index + 1), implicit: m.getAttribute('implicit') === 'yes', key: partKey, clef: p.clef, beatsPerBar: partBeats, beatType: partBeatType };
+        if (!p.measures[index]) p.measures[index] = { ...empty(index, measureBeats), nominalBeats: measureBeats, number: m.getAttribute('number') || String(index + 1), implicit: m.getAttribute('implicit') === 'yes', key: partKey, ...(partKeyMode ? { keyMode: partKeyMode } : {}), clef: p.clef, beatsPerBar: partBeats, beatType: partBeatType };
         p.measures[index].transposition = transposition;
         return p.measures[index];
       };
@@ -433,7 +435,7 @@ export function referenceParseMusicXml(text: string) {
   const shapesPlayback = (part: Part) => part.measures.some(measure => measure.directions?.some(direction => (direction.tempo ?? 0) > 0
     || (soundingSources.has(sourcePart(part)) && (direction.symbols?.length || direction.wedge || direction.soundDynamics !== undefined))));
   const playableParts = parts.filter(part => sounding(part) || shapesPlayback(part));
-  const score = normalized({ title, subtitle, composer, credits: otherCredits, source: 'MusicXML', tempo, beats, beatType, key, parts: playableParts.length ? playableParts : parts });
+  const score = normalized({ title, subtitle, composer, credits: otherCredits, source: 'MusicXML', tempo, beats, beatType, key, ...(keyMode ? { keyMode } : {}), parts: playableParts.length ? playableParts : parts });
   // Navigation is read once from the first source part and shared by every staff.
   const navigationNotes: string[] = [];
   attachNavigation(score, musicXmlNavigation(root, score.parts[0].measures.length, navigationNotes));

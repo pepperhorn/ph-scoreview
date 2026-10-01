@@ -1,4 +1,4 @@
-import { instrumentForName, instrumentForProgram, midiPitch, pitch, type BarlineNavigation, type Measure, type MeasureNavigation, type Part, type Score, type ScoreNote, type Transposition } from './score';
+import { instrumentForName, instrumentForProgram, midiPitch, pitch, type BarlineNavigation, type KeyMode, type Measure, type MeasureNavigation, type Part, type Score, type ScoreNote, type Transposition } from './score';
 import { IdentityBuilder, identityForScore, makeSourceDocument, scoreToMei, type SourceDocument } from './notation/document';
 import { abcDecorationWord, attachNavigation, endingNumbers, meiNavigation, navigationWord, resolveCodaSigns, type NavigationWord } from './notation/navigation';
 import { durationBeats, normalizedScore as normalized, readMusicXml } from './notation/musicxml-source';
@@ -44,7 +44,9 @@ export function parseMei(text: string): Score {
     const match = /^(\d+)([sf])$/.exec((sig || '').trim());
     return sig?.trim() === '0' ? 0 : match ? Number(match[1]) * (match[2] === 'f' ? -1 : 1) : undefined;
   };
-  const defKey = (def: Element) => parseKey(def.getAttribute('key.sig')) ?? parseKey(children(def, 'keySig')[0]?.getAttribute('sig'));
+  const defKey = (def: Element) => parseKey(def.getAttribute('key.sig')) ?? parseKey(def.getAttribute('keysig')) ?? parseKey(children(def, 'keySig')[0]?.getAttribute('sig'));
+  // Each key area's mode: a key without one is major (so a change back from minor is major again).
+  const defMode = (def: Element): KeyMode => (def.getAttribute('key.mode') || children(def, 'keySig')[0]?.getAttribute('mode')) === 'minor' ? 'minor' : 'major';
   const defMeter = (def: Element) => {
     const sig = children(def, 'meterSig')[0];
     const count = Number(def.getAttribute('meter.count') || sig?.getAttribute('count'));
@@ -54,22 +56,24 @@ export function parseMei(text: string): Score {
   let meterNow: { count: number; unit: number } | undefined;
   let defaultKey: number | undefined;
   const staffKeys = new Map<string, number>();
-  const measureState: { count: number; unit: number; keys: Map<string, number>; defaultKey: number }[] = [];
+  let defaultMode: KeyMode = 'major';
+  const staffModes = new Map<string, KeyMode>();
+  const measureState: { count: number; unit: number; keys: Map<string, number>; defaultKey: number; modes: Map<string, KeyMode>; defaultMode: KeyMode }[] = [];
   let openingMeter: { count: number; unit: number } | undefined;
   let openingKey: number | undefined;
   for (const el of everything) {
     if (el.localName === 'scoreDef') {
       const k = defKey(el);
-      if (k !== undefined) { defaultKey = k; staffKeys.clear(); }
+      if (k !== undefined) { defaultKey = k; staffKeys.clear(); defaultMode = defMode(el); staffModes.clear(); }
       meterNow = defMeter(el) || meterNow;
     } else if (el.localName === 'staffDef') {
       const k = defKey(el);
-      if (k !== undefined) staffKeys.set(el.getAttribute('n') || '1', k);
+      if (k !== undefined) { staffKeys.set(el.getAttribute('n') || '1', k); staffModes.set(el.getAttribute('n') || '1', defMode(el)); }
       meterNow = defMeter(el) || meterNow;
     } else if (el.localName === 'measure') {
       openingMeter ||= meterNow;
       if (openingKey === undefined) openingKey = staffKeys.values().next().value ?? defaultKey;
-      measureState.push({ count: meterNow?.count || 4, unit: meterNow?.unit || 4, keys: new Map(staffKeys), defaultKey: defaultKey || 0 });
+      measureState.push({ count: meterNow?.count || 4, unit: meterNow?.unit || 4, keys: new Map(staffKeys), defaultKey: defaultKey || 0, modes: new Map(staffModes), defaultMode });
     }
   }
   const beats = openingMeter?.count || meterNow?.count || 4;
@@ -86,9 +90,9 @@ export function parseMei(text: string): Score {
     const clef = sign === 'F' ? 'bass' : sign === 'C' ? 'alto' : sign === 'perc' ? 'percussion' : 'treble';
     const transposition: Transposition = { semitones: Number(def.getAttribute('trans.semi')) || 0, diatonic: def.hasAttribute('trans.diat') ? Number(def.getAttribute('trans.diat')) : undefined };
     return { id: n, name, clef, key: measureState[0]?.keys.get(n) ?? measureState[0]?.defaultKey ?? key, instrument: instrumentForName(name), pitchBasis: 'written', transposition, measures: measures.map((measure, index) => {
-      const state = measureState[index] || { count: beats, unit: beatType, keys: new Map<string, number>(), defaultKey: key };
+      const state = measureState[index] || { count: beats, unit: beatType, keys: new Map<string, number>(), defaultKey: key, modes: new Map<string, KeyMode>(), defaultMode: 'major' as KeyMode };
       const staffKey = state.keys.get(n) ?? state.defaultKey;
-      const out: Measure = { ...empty(index, state.count * 4 / state.unit), nominalBeats: state.count * 4 / state.unit, number: measure.getAttribute('n') || String(index + 1), key: staffKey, beatsPerBar: state.count, beatType: state.unit };
+      const out: Measure = { ...empty(index, state.count * 4 / state.unit), nominalBeats: state.count * 4 / state.unit, number: measure.getAttribute('n') || String(index + 1), key: staffKey, keyMode: state.modes.get(n) ?? state.defaultMode, beatsPerBar: state.count, beatType: state.unit };
       const staff = Array.from(measure.getElementsByTagName('*')).find(e => e.localName === 'staff' && e.getAttribute('n') === n);
       if (!staff) return out;
       // Written accidentals persist for the same step and octave until the barline.
@@ -160,7 +164,10 @@ export function parseMei(text: string): Score {
   const title = (titles.find(e => ['main', 'uniform'].includes(e.getAttribute('type') || '')) || titles[0])?.textContent?.trim() || '';
   const subtitle = titles.find(e => ['subordinate', 'subtitle'].includes(e.getAttribute('type') || ''))?.textContent?.trim() || '';
   const composer = all('composer')[0]?.textContent?.trim() || all('persName').find(e => e.getAttribute('role') === 'composer')?.textContent?.trim() || '';
-  const score = normalized({ title, subtitle, composer, source: 'MEI', tempo: 100, beats, beatType, key, parts });
+  // Key mode of the opening key (absent means major), for spelling minor keys' raised degrees.
+  const openingDef = all('scoreDef')[0];
+  const openingMode = openingDef?.getAttribute('key.mode') || openingDef?.getElementsByTagName('keySig')[0]?.getAttribute('mode');
+  const score = normalized({ title, subtitle, composer, source: 'MEI', tempo: 100, beats, beatType, key, ...(openingMode === 'minor' ? { keyMode: 'minor' as const } : {}), parts });
   attachNavigation(score, meiNavigation(measures, innerBarlines));
   score.document = makeSourceDocument({ format: 'mei', engravingFormat: 'mei', originalText: text, engravingText: text, identity: identityForScore(score) });
   return score;
@@ -179,8 +186,9 @@ export async function parseAbc(text: string): Promise<Score> {
   const map = new Map<string, Part>();
   for (const [staffIndex, staff] of firstStaff.entries()) for (const [voiceIndex] of (staff as any).voices.entries()) {
     const name = staff.title?.[voiceIndex] || staff.title?.[0] || (voiceIndex ? `Voice ${voiceIndex + 1}` : 'Melody');
-    const clef = /bass|cello|trombone/i.test(name) ? 'bass' : staff.voices.length === 1 && staff.clef?.type === 'bass' ? 'bass' : 'treble';
-    const part: Part = { id: `abc-${staffIndex}-${voiceIndex}`, name, clef, instrument: instrumentForName(name), measures: [] };
+    const percussion = staff.clef?.type === 'perc';
+    const clef = percussion ? 'percussion' : /bass|cello|trombone/i.test(name) ? 'bass' : staff.voices.length === 1 && staff.clef?.type === 'bass' ? 'bass' : 'treble';
+    const part: Part = { id: `abc-${staffIndex}-${voiceIndex}`, name, clef, instrument: percussion ? 'drum-kit' : instrumentForName(name), measures: [] };
     parts.push(part); map.set(`${staffIndex}-${voiceIndex}`, part);
   }
   // Navigation is read from the first voice: abcjs puts repeat/ending marks on bars
@@ -240,7 +248,10 @@ export async function parseAbc(text: string): Promise<Score> {
         if (explicit !== undefined) accidentalMap.set(`${step}${octave}`, explicit);
         const fromKey = keyAccidentals.find((a: any) => a.note.toUpperCase() === step);
         const alter = accidentalMap.get(`${step}${octave}`) ?? (fromKey?.acc === 'sharp' ? 1 : fromKey?.acc === 'flat' ? -1 : 0);
-        return { ...pitch(step, octave, alter), tieStart: Boolean(p.startTie), tieStop: Boolean(p.endTie) };
+        // Percussion (clef=perc) is written by staff position: it keeps its written pitch for playback and is engraved
+        // unpitched at that position.
+        const position = part.clef === 'percussion' ? { unpitched: true, displayStep: step, displayOctave: octave } : {};
+        return { ...pitch(step, octave, alter), ...position, tieStart: Boolean(p.startTie), tieStop: Boolean(p.endTie) };
       });
       if (leading) {
         if (!current.notes.length) {
@@ -281,7 +292,8 @@ export async function parseAbc(text: string): Promise<Score> {
     delete navigation[after].toCoda;
     navigation[before].toCoda = true;
   });
-  const score = normalized({ title: tune.metaText?.title || '', subtitle: tune.lines.find((line: any) => line.subtitle)?.subtitle?.text || '', composer: tune.metaText?.composer || '', source: 'ABC', tempo: Number(tune.metaText?.tempo?.bpm) || 100, beats, beatType, key, parts });
+  const minor = /^m(?:in)?$/i.test(String(tune.getKeySignature?.()?.mode || ''));
+  const score = normalized({ ...(minor ? { keyMode: 'minor' as const } : {}), title: tune.metaText?.title || '', subtitle: tune.lines.find((line: any) => line.subtitle)?.subtitle?.text || '', composer: tune.metaText?.composer || '', source: 'ABC', tempo: Number(tune.metaText?.tempo?.bpm) || 100, beats, beatType, key, parts });
   attachNavigation(score, navigation);
   score.document = makeSourceDocument({ format: 'abc', engravingFormat: 'mei', originalText: text, engravingText: scoreToMei(score), identity: identityForScore(score) });
   return score;
@@ -321,6 +333,17 @@ export async function parseMidi(buffer: ArrayBuffer): Promise<Score> {
     return { id: `midi-${ti}`, name, clef: track.instrument.percussion ? 'percussion' : /bass/i.test(name) ? 'bass' : 'treble', instrument: track.instrument.percussion ? 'drum-kit' : instrumentForProgram(track.instrument.number), pitchBasis: 'concert' as const, measures };
   });
   const score = normalized({ title: midi.name || '', source: 'MIDI · quantized', tempo, beats, beatType, key: 0, parts });
+  // MIDI has no written accidentals: show one wherever a pitch differs from the one in force on its line (C major, or
+  // an earlier accidental in the measure), so a sharp is drawn and not just played.
+  for (const part of score.parts) if (part.clef !== 'percussion') for (const measure of part.measures) {
+    const inForce = new Map<string, number>();
+    for (const note of measure.notes) for (const pitch of note.pitches) {
+      const line = `${pitch.step}${pitch.octave}`;
+      if (pitch.tieStop || pitch.alter === (inForce.get(line) ?? 0)) continue;
+      pitch.accidental = pitch.alter > 0 ? 'sharp' : pitch.alter < 0 ? 'flat' : 'natural';
+      inForce.set(line, pitch.alter);
+    }
+  }
   score.document = makeSourceDocument({ format: 'midi', engravingFormat: 'mei', originalBytes: new Uint8Array(buffer), engravingText: scoreToMei(score), identity: identityForScore(score) });
   return score;
 }

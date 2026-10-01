@@ -1,5 +1,7 @@
 import type { Part, Score, ScoreNote } from './score';
 import { inferChordSymbol } from './chords';
+import { spellChordSymbol } from './spelling';
+import { measureKey, scoreForView, spellingSpecFor } from './transpose';
 import { isSuperseded, nextRenderTicket, probeVerovio, renderVerovioPages, VerovioError, verovioBaseline } from './verovio-runtime';
 import { staffDefXmlId, type SourceDocument } from './notation/document';
 import type { BaselineInfo, ViewSpec } from './notation/mei-view';
@@ -37,7 +39,9 @@ export type RenderResult = { systemSize: number; staffCenters: number[]; scale: 
   onChange(listener: () => void): () => void;
   /** Stop drawing systems on demand (a newer render replaced this one). */
   dispose(): void };
-export type RenderOptions = { font?: 'Bravura' | 'Petaluma'; textFont?: 'Sans' | 'Serif' | 'Mono'; transpose?: number; semitones?: number; scorePitch?: 'written' | 'concert'; generation?: number; hiddenPartIds?: string[];
+export type RenderOptions = { font?: 'Bravura' | 'Petaluma'; textFont?: 'Sans' | 'Serif' | 'Mono'; transpose?: number; semitones?: number; scorePitch?: 'written' | 'concert';
+  /** Spell in the enharmonic key (with `transpose`, applied when `score` is not already a `scoreForView` result). */
+  flip?: boolean; generation?: number; hiddenPartIds?: string[];
   /**
    * Control gutter for a rendered staff height and staff pitch (px). The layout reserves the gutter for a
    * staff of `STAFF_UNITS * zoom` px before rendering; the final gutter uses the measured staves.
@@ -150,7 +154,7 @@ function box(element: Element, svg: SVGSVGElement, rootInverse?: DOMMatrix | nul
  * carries the part ID; semantic MEI from scoreToMei has deterministic staffDef
  * IDs; original MEI keeps its staff numbers.
  */
-function staffNumbers(info: BaselineInfo, score: Score): { byPart: Map<string, string>; engraved: string[] } {
+export function staffNumbers(info: BaselineInfo, score: Score): { byPart: Map<string, string>; engraved: string[] } {
   const defs = info.staffDefs;
   const engraved = [...new Set(defs.map(def => def.n).filter(Boolean))];
   const identity = score.document?.identity?.staffIdToSource || {};
@@ -259,6 +263,8 @@ export async function renderScore(
   barsPerLine: 'auto' | number, showChordSymbols: boolean, inferChordSymbols: boolean,
   availableHeight = 0, zoom: number | 'fit' = 1, firstSystemGutter = 0, options: RenderOptions = {},
 ): Promise<RenderResult> {
+  // A caller passing the source Score with pitch options gets its view here (Reader passes `scoreForView`'s result).
+  if (!score.pitchView) score = scoreForView(score, score.parts.some(part => part.pitchBasis === 'concert') ? 'concert' : options.scorePitch ?? 'written', options.transpose ?? options.semitones ?? 0, !!options.flip);
   const generation = options.generation ?? (latestGeneration.get(container) || 0) + 1;
   latestGeneration.set(container, generation);
   const isCurrent = () => latestGeneration.get(container) === generation;
@@ -297,16 +303,15 @@ export async function renderScore(
   const laneHeight = laneRows ? LANE_GAP + laneRows * LANE_ROW + 4 : 0;
   const spacingStaff = Math.min(48, 12 + Math.ceil(laneHeight / 9) + (showChordSymbols && inferChordSymbols ? 2 : 0));
 
-  const concertBasis = score.parts.some(part => part.pitchBasis === 'concert');
-  const semitones = options.transpose ?? options.semitones ?? 0;
+  // Transposition and spelling: the worker moves and respells the baseline (notation/mei-spelling.ts) with the plan
+  // `scoreForView` used for this Score view, so the view is loaded untransposed.
+  const spelling = spellingSpecFor(score, staffOf);
   // `natural`: one unbroken system at its natural width (Endless, and a Vertical score shorter than a full line).
   const verovioOptions = (pageWidth: number, natural = false): Record<string, unknown> => ({
     breaks: endlessSingle || natural ? 'none' : 'encoded', font: options.font || 'Bravura', fontFallback: 'Bravura',
     pageWidth: Math.min(100000, Math.max(100, Math.round(pageWidth))), pageHeight: 60000,
     pageMarginLeft: 25, pageMarginRight: 25, pageMarginTop: 20, pageMarginBottom: 20,
     adjustPageHeight: true, adjustPageWidth: mode === 'landscape' || natural, svgViewBox: true, scale: 100, xmlIdChecksum: true,
-    // Verovio can only move written pitch to sounding pitch, so concert-basis scores are engraved as encoded.
-    transposeToSoundingPitch: options.scorePitch === 'concert' && !concertBasis, transpose: semitones ? String(semitones) : '',
     spacingStaff, smuflTextFont: 'none', header: 'none', footer: 'none', svgAdditionalAttribute: ['staff@n', 'note@pname', 'note@oct'],
     ...musicFontOptions(options.font),
   });
@@ -321,7 +326,7 @@ export async function renderScore(
     // A score shorter than a full Auto line is not stretched to fill it: one system at Verovio's natural width, centred.
     const fullLine = Math.max(1, Math.min(AUTO_BAR_CAP, Math.floor((Math.max(240, usableUnits) - 56) / minimumBar)));
     const short = mode === 'portrait' && !explicit && count < fullLine;
-    const view: ViewSpec = { breakEvery: endlessSingle ? 0 : bars, hiddenStaves, chordSymbols: showChordSymbols };
+    const view: ViewSpec = { breakEvery: endlessSingle ? 0 : bars, hiddenStaves, chordSymbols: showChordSymbols, spelling };
     // A bar never gets narrower than its minimum (the system is width-fitted instead); explicit counts are not stretched
     // past a comfortable width, so their systems stay narrower than the viewport and are centred.
     const least = systemMinimumWidth(bars, barFloor);
@@ -555,7 +560,8 @@ export async function renderScore(
           if (showCounts) annotation(layer, 'count-label', x, band.laneTop + LANE_ROW * (nameRows + 1) - 4, beatLabel(event.start, subdivisions));
           if (laneRows) laneBottom = Math.max(laneBottom, band.laneTop + laneRows * LANE_ROW + 2);
           if (showChordSymbols && inferChordSymbols && !event.chordSymbol && labelled) {
-            const chord = inferChordSymbol(event.pitches); if (chord) annotation(layer, 'chord-symbol', x, band.top - 20, chord);
+            // Inferred names follow the view's key like the engraved chord symbols.
+            const chord = inferChordSymbol(event.pitches); if (chord) annotation(layer, 'chord-symbol', x, band.top - 20, score.pitchView ? spellChordSymbol(chord, measureKey(part, measure, score)) : chord);
           }
         }
       }

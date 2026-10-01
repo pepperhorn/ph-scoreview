@@ -93,6 +93,15 @@ try {
     const { withEngravingDocument } = await import('/src/lib/notation/document.ts');
     const { sampleSource } = await import('/src/lib/score-db.ts');
     out.sampleKey = sampleSource(withEngravingDocument(exampleScore())).sha256;
+
+    // keyFlip: optional on read (records written before it default to false), validated, and always written.
+    const { parseFileState, buildFileState } = await import('/src/lib/file-state.ts');
+    const record = (extra) => ({ version: 2, source: source(hex(7)), lastOpened: 1, settings: { ...settings, ...extra }, parts: {} });
+    out.keyFlipDefault = parseFileState(record({}), hex(7))?.settings.keyFlip;
+    out.keyFlipKept = parseFileState(record({ keyFlip: true }), hex(7))?.settings.keyFlip;
+    out.keyFlipInvalid = parseFileState(record({ keyFlip: 'yes' }), hex(7));
+    out.keyFlipBuilt = buildFileState(source(hex(7)), { ...settings, keyFlip: true }, { parts: [] }, []).settings.keyFlip;
+    out.keyFlipBuiltDefault = buildFileState(source(hex(7)), settings, { parts: [] }, []).settings.keyFlip;
     return out;
   });
 
@@ -112,6 +121,11 @@ try {
   assert.deepEqual(result.cappedLocalKeys, result.expectedLocalKeys, 'localStorage fallback evicts past the cap');
   assert.equal(result.beforeFlush, false, 'Writes are debounced');
   assert.equal(result.readYourWrites, 1.2, 'Reads see queued writes');
+  assert.equal(result.keyFlipDefault, false, 'A record without keyFlip reads as keyFlip false');
+  assert.equal(result.keyFlipKept, true, 'A saved key flip is read back');
+  assert.equal(result.keyFlipInvalid, null, 'A non-boolean keyFlip makes the record unusable');
+  assert.equal(result.keyFlipBuilt, true, 'buildFileState writes keyFlip');
+  assert.equal(result.keyFlipBuiltDefault, false, 'buildFileState writes keyFlip false when unset');
   assert.equal(result.afterFlush, 1.2, 'The latest debounced write wins');
   assert.equal(result.abcKey, result.abcKeyAgain, 'ABC key is stable');
   assert.notEqual(result.abcKey, result.xmlKey, 'Keys carry a format prefix');
@@ -120,7 +134,7 @@ try {
   // Write-ahead: records still inside the debounce window survive an immediate reload.
   await page.evaluate(async () => {
     const { createScoreDb } = await import('/src/lib/score-db.ts');
-    const settings = { mode: 'portrait', notationFont: 'Bravura', barsPerLine: 'auto', overlap: 1, names: false, chordSymbols: false, inferChordSymbols: false, counts: false, subdivisions: false, annotationFont: 'Sans', bpm: 96, semitones: 3, scorePitch: 'written' };
+    const settings = { mode: 'portrait', notationFont: 'Bravura', barsPerLine: 'auto', overlap: 1, names: false, chordSymbols: false, inferChordSymbols: false, counts: false, subdivisions: false, annotationFont: 'Sans', bpm: 96, semitones: 3, scorePitch: 'written', keyFlip: true };
     const source = { name: 'wal.musicxml', size: 1, sha256: 'a'.repeat(64), format: 'musicxml' };
     const db = createScoreDb({ dbName: 'scoreflow-test-wal', debounceMs: 400 });
     db.write({ version: 2, source, lastOpened: Date.now(), settings, parts: {}, view: { zoom: 1.7, zoomDevice: 'desktop' } });
@@ -145,13 +159,14 @@ try {
     localStorage.setItem(`scoreflow-pending-v2:${'a'.repeat(64)}`, JSON.stringify({ updatedAt: Date.now() - 60000, state: { ...restored, view: { zoom: .9, zoomDevice: 'desktop' } } }));
     const stale = await db.read(source('a'));
     return {
-      zoom: restored?.view?.zoom, semitones: restored?.settings.semitones, localZoom: localRestored?.view?.zoom, stale: stale?.view?.zoom,
+      zoom: restored?.view?.zoom, semitones: restored?.settings.semitones, keyFlip: restored?.settings.keyFlip, localZoom: localRestored?.view?.zoom, stale: stale?.view?.zoom,
       pendingLeft: Object.keys(localStorage).filter(key => key.startsWith('scoreflow-pending-v2:') && !key.endsWith('a'.repeat(64))),
       inDb: (await db.keys()).includes('a'.repeat(64)),
     };
   });
   assert.equal(wal.zoom, 1.7, 'A pending write survives an immediate reload');
   assert.equal(wal.semitones, 3);
+  assert.equal(wal.keyFlip, true, 'A pending key flip survives an immediate reload');
   assert.equal(wal.inDb, true, 'The recovered record is persisted to IndexedDB');
   assert.equal(wal.localZoom, 1.9, 'The localStorage fallback recovers pending writes too');
   assert.deepEqual(wal.pendingLeft, [], 'Recovered pending keys are removed');

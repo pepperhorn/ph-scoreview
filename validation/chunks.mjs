@@ -12,6 +12,7 @@ import { extname, join, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { chromium, firefox, webkit } from 'playwright-core';
+import { indexMusicXml, sliceMusicXml } from '../src/lib/notation/musicxml-chunks.ts';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const dist = resolve(root, 'dist');
@@ -19,6 +20,23 @@ const engine = process.env.BROWSER || 'chromium';
 const launcher = { chromium, firefox, webkit }[engine];
 if (!launcher) throw new Error(`BROWSER must be chromium, firefox or webkit (got "${engine}")`);
 if (!existsSync(resolve(dist, 'index.html'))) throw new Error('dist/index.html is missing: run `npm run build` before validation/chunks.mjs');
+
+// A slice's first measure: a key it sets before its first note replaces the carried key (two keys there make Verovio
+// write two key signatures); a key change later in the measure keeps the carried key for the notes before it.
+{
+  const bar = (n, body) => `<measure number="${n}">${body}</measure>`;
+  const quarter = step => `<note><pitch><step>${step}</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note>`;
+  const keyBlock = fifths => `<attributes><key><fifths>${fifths}</fifths></key></attributes>`;
+  const score = measures => indexMusicXml(`<?xml version="1.0"?><score-partwise version="4.0"><part-list><score-part id="P1"><part-name>P</part-name></score-part></part-list><part id="P1">${measures.join('')}</part></score-partwise>`);
+  const first = `<measure number="1"><attributes><divisions>1</divisions><key><fifths>-3</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>${quarter('E').repeat(4)}</measure>`;
+  const keysBeforeFirstNote = slice => { const measure = slice.slice(slice.indexOf('<measure number="2"')); return [...measure.slice(0, measure.indexOf('<note')).matchAll(/<fifths>(-?\d+)<\/fifths>/g)].map(match => Number(match[1])); };
+  const leading = sliceMusicXml(score([first, bar(2, keyBlock(2) + quarter('F').repeat(4)), bar(3, quarter('G').repeat(4))]), 1, 3);
+  assert.deepEqual(keysBeforeFirstNote(leading), [2], 'A key set before the first note replaces the carried key');
+  const later = sliceMusicXml(score([first, bar(2, quarter('A').repeat(2) + keyBlock(2) + quarter('F').repeat(2)), bar(3, quarter('G').repeat(4))]), 1, 3);
+  assert.deepEqual(keysBeforeFirstNote(later), [-3], 'A key change after notes keeps the carried key for the notes before it');
+  assert.match(later, /<fifths>2<\/fifths>/, 'The mid-measure key change is still there');
+  console.log('Slice keys: a leading key replaces the carried key; a mid-measure change keeps it passed');
+}
 
 const MEASURES = 16;
 /** Two bars per line, three staves: a 12 staff-measure budget puts two systems in each chunk (boundaries before bars 5, 9, 13). */
@@ -94,7 +112,7 @@ const started = Date.now();
  * Open the fixture and read every system's measures, notes and engraved elements. `chunking` is the diagnostics
  * setting (`scoreflow-chunking`): forced chunks, and/or a tiny worker-recycle threshold.
  */
-async function engrave(chunking) {
+async function engrave(chunking, semitones = 0) {
   const chunked = !!chunking?.force;
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   await context.route(/poppins/i, route => route.abort());
@@ -111,6 +129,12 @@ async function engrave(chunking) {
   await page.locator('input[type=file]').first().setInputFiles(xmlPath);
   await page.waitForFunction(() => document.querySelector('.score-meta h1')?.textContent === 'Chunk Boundaries', null, { timeout: 120000 });
   await ready();
+  // Transposed view: the header's transpose control, then the re-engraving.
+  for (let step = 0; step < semitones; step++) {
+    await page.getByRole('button', { name: 'Transpose up a semitone' }).first().click();
+    await page.waitForFunction(count => [...document.querySelectorAll('.header-transpose-readout')].some(output => output.textContent.trim().startsWith(`+${count}`)), step + 1, { timeout: 60000 });
+  }
+  if (semitones) { await page.waitForTimeout(300); await ready(); }
   // A small score draws every system before the first paint; wait until none is pending.
   await page.waitForFunction(() => document.querySelectorAll('.score-staves > .score-system').length > 0 && !document.querySelector('.score-staves > .score-system.is-pending'), null, { timeout: 60000 });
   const systems = await page.evaluate(() => [...document.querySelectorAll('.score-staves > .score-system')].map(block => {
@@ -121,6 +145,8 @@ async function engrave(chunking) {
       measureIds: [...svg.querySelectorAll('g.measure')].map(measure => measure.id),
       notes: [...svg.querySelectorAll('.reader-note')].map(element => element.getAttribute('data-note-id')),
       clefs: [...svg.querySelectorAll('g.clef use')].map(use => (use.getAttribute('xlink:href') || use.getAttribute('href') || '').replace(/-.*$/, '')),
+      pitches: [...svg.querySelectorAll('g.note')].map(note => `${note.getAttribute('data-pname') || note.querySelector('[data-pname]')?.getAttribute('data-pname') || ''}${note.getAttribute('data-oct') || ''}${note.querySelector('g.accid') ? '!' : ''}`),
+      keyAccids: [...svg.querySelectorAll('g.keySig')].map(sig => sig.querySelectorAll('.keyAccid').length),
       elements: { slur: count('g.slur'), tie: count('g.tie'), hairpin: count('g.hairpin'), octave: count('g.octave'), pedal: count('g.pedal'), tuplet: count('g.tuplet'),
         keySig: count('g.keySig'), meterSig: count('g.meterSig'), clef: count('g.clef'), barLine: count('g.barLine'), noteheads: count('g.note') },
     };
@@ -165,6 +191,17 @@ try {
     const recycled = await engrave(chunking);
     assert.deepEqual(recycled.map(system => system.notes), whole.map(system => system.notes), `A tiny recycle threshold still renders every system (${JSON.stringify(chunking)})`);
   }
+  // Transposed (+6: C major to F#, the D major change in bar 7 to Ab): every chunk shows the keys and spellings the
+  // whole engraving shows, across chunk boundaries.
+  const wholeUp = await engrave(null, 6);
+  const chunkedUp = await engrave({ force: true, budget: BUDGET }, 6);
+  assert.notDeepEqual(wholeUp.map(system => system.pitches), whole.map(system => system.pitches), 'The transposition changes the engraved pitches');
+  assert.equal(chunkedUp.length, wholeUp.length, 'Transposed: as many systems');
+  chunkedUp.forEach((system, index) => {
+    assert.deepEqual(system.pitches, wholeUp[index].pitches, `Transposed system ${index + 1}: same spellings and accidentals`);
+    assert.deepEqual(system.keyAccids, wholeUp[index].keyAccids, `Transposed system ${index + 1}: same key signatures (${JSON.stringify(wholeUp[index].keyAccids)} vs ${JSON.stringify(system.keyAccids)})`);
+  });
+  assert.ok(wholeUp[0].keyAccids.some(count => count === 6), `Bar 1 is in F# (6 sharps): ${JSON.stringify(wholeUp[0].keyAccids)}`);
   console.log(`${engine}: chunked engraving matches the whole engraving across chunk boundaries passed (${((Date.now() - started) / 1000).toFixed(1)} s)`);
 } finally {
   await browser.close();

@@ -318,11 +318,12 @@ function readPartwise(text: string, timewiseInventory: FeatureInventory | undefi
   let scoreParts = new Map<string | null, XmlElement>();
   let partNames = new Map<string | null, string>();
   let beats = 4, beatType = 4, key = 0, tempo = 100;
+  let keyMode: 'major' | 'minor' | undefined;
   let openingMeter = false, openingTempo = false;
   const parts: Part[] = [];
   type PartState = {
     element: XmlElement; id: string; name: string; definition?: XmlElement; channel10: boolean; unpitched: boolean;
-    staffMap: Map<number, Part>; divisions: number; partKey: number; partBeats: number; partBeatType: number; partClef: string;
+    staffMap: Map<number, Part>; divisions: number; partKey: number; partKeyMode?: 'major' | 'minor'; partBeats: number; partBeatType: number; partClef: string;
     partTransposition: Transposition; staffTranspositions: Map<number, Transposition>;
   };
   let part: PartState | undefined;
@@ -379,7 +380,7 @@ function readPartwise(text: string, timewiseInventory: FeatureInventory | undefi
         if (partNo === 0 && !openingMeter) { beats = state.partBeats; beatType = state.partBeatType; openingMeter = true; }
       }
       const k = child(attributes, 'key');
-      if (k) { state.partKey = number(k, 'fifths', state.partKey); if (partNo === 0 && index === 0) key = state.partKey; }
+      if (k) { state.partKey = number(k, 'fifths', state.partKey); state.partKeyMode = value(k, 'mode') === 'minor' ? 'minor' : 'major'; if (partNo === 0 && index === 0) { key = state.partKey; keyMode = state.partKeyMode; } }
       const clefElement = children(attributes, 'clef').find(c => Number(c.getAttribute('number') || 1) === 1);
       if (clefElement) state.partClef = clefName(clefElement);
       const forPart = children(attributes, 'for-part').map(item => musicXmlTranspose(child(item, 'part-transpose'))).find(Boolean);
@@ -395,7 +396,7 @@ function readPartwise(text: string, timewiseInventory: FeatureInventory | undefi
         if (!measure) return;
         const staffClef = children(attributes, 'clef').find(c => Number(c.getAttribute('number') || 1) === staff);
         if (staffClef) staffPart.clef = clefName(staffClef);
-        measure.key = state.partKey; measure.clef = staffPart.clef; measure.beatsPerBar = state.partBeats; measure.beatType = state.partBeatType;
+        measure.key = state.partKey; if (state.partKeyMode) measure.keyMode = state.partKeyMode; measure.clef = staffPart.clef; measure.beatsPerBar = state.partBeats; measure.beatType = state.partBeatType;
         measure.nominalBeats = state.partBeats * 4 / state.partBeatType;
       });
     };
@@ -407,10 +408,10 @@ function readPartwise(text: string, timewiseInventory: FeatureInventory | undefi
         const clefEl = attrs && children(attrs, 'clef').find(c => Number(c.getAttribute('number') || 1) === staff);
         const clef = clefEl ? clefName(clefEl) : state.partClef || (/bass/i.test(name) ? 'bass' : 'treble');
         const provisional = instrumentFields(state);
-        staffMap.set(staff, { id: `${id}-${staff}`, name: staff === 1 ? name : `${name} · ${staff}`, clef, key: state.partKey, instrument: provisional.instrument, gmProgram: provisional.gmProgram, gmSoundfont: provisional.gmSoundfont, pitchBasis: concertScore ? 'concert' : 'written', transposition, measures: Array.from({ length: index }, (_, i) => empty(i, measureBeats)) });
+        staffMap.set(staff, { id: `${id}-${staff}`, name: staff === 1 ? name : `${name} · ${staff}`, clef, key: state.partKey, ...(state.partKeyMode ? { keyMode: state.partKeyMode } : {}), instrument: provisional.instrument, gmProgram: provisional.gmProgram, gmSoundfont: provisional.gmSoundfont, pitchBasis: concertScore ? 'concert' : 'written', transposition, measures: Array.from({ length: index }, (_, i) => empty(i, measureBeats)) });
       }
       const p = staffMap.get(staff)!;
-      if (!p.measures[index]) p.measures[index] = { ...empty(index, measureBeats), nominalBeats: measureBeats, number: m.getAttribute('number') || String(index + 1), implicit: m.getAttribute('implicit') === 'yes', key: state.partKey, clef: p.clef, beatsPerBar: state.partBeats, beatType: state.partBeatType };
+      if (!p.measures[index]) p.measures[index] = { ...empty(index, measureBeats), nominalBeats: measureBeats, number: m.getAttribute('number') || String(index + 1), implicit: m.getAttribute('implicit') === 'yes', key: state.partKey, ...(state.partKeyMode ? { keyMode: state.partKeyMode } : {}), clef: p.clef, beatsPerBar: state.partBeats, beatType: state.partBeatType };
       p.measures[index].transposition = transposition;
       return p.measures[index];
     };
@@ -599,7 +600,7 @@ function readPartwise(text: string, timewiseInventory: FeatureInventory | undefi
   const shapesPlayback = (p: Part) => p.measures.some(measure => measure.directions?.some(direction => (direction.tempo ?? 0) > 0
     || (soundingSources.has(sourcePart(p)) && (direction.symbols?.length || direction.wedge || direction.soundDynamics !== undefined))));
   const playableParts = parts.filter(p => sounding(p) || shapesPlayback(p));
-  const score = normalizedScore({ title, subtitle, composer, credits: otherCredits, source: 'MusicXML', tempo, beats, beatType, key, parts: playableParts.length ? playableParts : parts });
+  const score = normalizedScore({ title, subtitle, composer, credits: otherCredits, source: 'MusicXML', tempo, beats, beatType, key, ...(keyMode ? { keyMode } : {}), parts: playableParts.length ? playableParts : parts });
   // Navigation is read once from the first source part and shared by every staff.
   const measureCount = score.parts[0].measures.length;
   const navigation = Array.from({ length: measureCount }, (_, i) => navigationMeasures[i] || {});

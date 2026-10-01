@@ -31,7 +31,7 @@ try {
   const headerArrangement = target => target.evaluate(() => {
     const visible = element => !!element && element.getClientRects().length > 0 && getComputedStyle(element).visibility !== 'hidden';
     const box = selector => { const element = document.querySelector(selector); if (!visible(element)) return null; const rect = element.getBoundingClientRect(); return [rect.left, rect.top, rect.width, rect.height].map(value => Math.round(value * 10) / 10); };
-    const controls = ['bpm', 'bars', 'staveScale', 'mixer'];
+    const controls = ['bpm', 'transpose', 'keyFlip', 'bars', 'staveScale', 'mixer'];
     return {
       more: visible(document.querySelector('.header-more-toggle')),
       expanded: document.querySelector('.header-more-toggle')?.getAttribute('aria-expanded') ?? null,
@@ -40,7 +40,7 @@ try {
       secondary: Object.fromEntries(controls.filter(id => document.querySelector(`[data-header-control="${id}"]`)).map(id => [id, visible(document.querySelector(`[data-header-control="${id}"] :is(input, select, button)`))])),
       counts: [...document.querySelectorAll('[data-header-control]')].map(element => element.dataset.headerControl).join(','),
       fits: document.querySelector('.topbar').scrollWidth <= document.querySelector('.topbar').clientWidth,
-      boxes: Object.fromEntries(Object.entries({ stop: '.stop-button', play: '.play-button', open: '.header-open-file', mode: '.mode-toggle', more: '.header-more-toggle', bars: '.header-bars-setting' }).map(([key, selector]) => [key, box(selector)])),
+      boxes: Object.fromEntries(Object.entries({ stop: '.stop-button', play: '.play-button', open: '.header-open-file', mode: '.mode-toggle', more: '.header-more-toggle', bars: '.header-bars-setting', transpose: '.header-transpose-readout', keyFlip: '.header-key-flip-button' }).map(([key, selector]) => [key, box(selector)])),
     };
   });
   const expectedArrangement = (width, layout) => {
@@ -76,7 +76,7 @@ try {
     hydrate.on('pageerror', e => hydrateErrors.push(e.message));
     await hydrate.addInitScript(() => document.addEventListener('DOMContentLoaded', () => {
       const box = selector => { const element = document.querySelector(selector); if (!element || !element.getClientRects().length) return null; const rect = element.getBoundingClientRect(); return [rect.left, rect.top, rect.width, rect.height].map(value => Math.round(value * 10) / 10); };
-      window.__firstPaint = Object.fromEntries(Object.entries({ stop: '.stop-button', play: '.play-button', open: '.header-open-file', mode: '.mode-toggle', more: '.header-more-toggle', bars: '.header-bars-setting' }).map(([key, selector]) => [key, box(selector)]));
+      window.__firstPaint = Object.fromEntries(Object.entries({ stop: '.stop-button', play: '.play-button', open: '.header-open-file', mode: '.mode-toggle', more: '.header-more-toggle', bars: '.header-bars-setting', transpose: '.header-transpose-readout', keyFlip: '.header-key-flip-button' }).map(([key, selector]) => [key, box(selector)]));
     }));
     await hydrate.goto(url);
     if (savedMode) await hydrate.waitForFunction(() => document.querySelector('.mode-toggle-endless.selected'), null, { timeout: 30000 });
@@ -104,14 +104,15 @@ try {
       // Desktop tab order follows the registry and never lands on the hidden More toggle.
       await hydrate.getByRole('button', { name: 'Stop playback', exact: true }).focus();
       const order = [await hydrate.evaluate(() => document.activeElement.closest('[data-header-control]')?.dataset.headerControl)];
-      for (let step = 0; step < 8; step++) {
+      for (let step = 0; step < 12; step++) {
         await hydrate.keyboard.press('Tab');
         const focused = await hydrate.evaluate(() => ({ id: document.activeElement.closest('[data-header-control]')?.dataset.headerControl, more: document.activeElement.classList.contains('header-more-toggle') }));
         assert.equal(focused.more, false, 'The hidden More toggle is not in the desktop tab order');
         if (!focused.id) break;
         if (focused.id !== order.at(-1)) order.push(focused.id);
       }
-      assert.deepEqual(order, ['stop', 'play', 'openFile', 'mode', 'bpm', 'bars', 'staveScale', 'mixer'], 'Desktop tab order follows the header registry');
+      // The key flip is aria-disabled (not disabled) on the C major sample, so it stays in the tab order with its explanation.
+      assert.deepEqual(order, ['stop', 'play', 'openFile', 'mode', 'bpm', 'transpose', 'keyFlip', 'bars', 'staveScale', 'mixer'], 'Desktop tab order follows the header registry');
     }
     assert.deepEqual(hydrateErrors, []);
     await hydrateContext.close();
@@ -242,12 +243,13 @@ try {
   assert.equal(await firstChord(), 'ceg');
   // Mobile header: secondary controls stay in a closed "More controls" dropdown until opened.
   assert.equal(await moreToggle().getAttribute('aria-expanded'), 'false', 'More controls start closed');
-  for (const hidden of [staveScale(), page.getByRole('button', { name: 'Track mixer', exact: true }), page.locator('.bpm-control input')]) assert.equal(await hidden.isVisible(), false, 'Secondary controls are hidden while More is closed');
+  for (const hidden of [staveScale(), page.getByRole('button', { name: 'Track mixer', exact: true }), page.locator('.bpm-control input'), page.locator('.header-transpose-readout'), page.locator('.header-key-flip-button')]) assert.equal(await hidden.isVisible(), false, 'Secondary controls are hidden while More is closed');
   for (const shown of [page.getByRole('button', { name: 'Vertical view', exact: true }), page.getByRole('button', { name: 'Endless view', exact: true })]) assert.ok(await shown.isVisible(), 'Vertical/Endless stay top level on mobile');
   await assertHeader(390, { modeText: ['V', 'E'], minTarget: 36 });
   await moreToggle().click();
   assert.equal(await moreToggle().getAttribute('aria-expanded'), 'true');
-  for (const shown of [staveScale(), page.getByRole('button', { name: 'Track mixer', exact: true }), page.locator('.bpm-control input')]) assert.ok(await shown.isVisible(), 'Secondary controls are usable in the More panel');
+  for (const shown of [staveScale(), page.getByRole('button', { name: 'Track mixer', exact: true }), page.locator('.bpm-control input'), page.locator('.header-transpose-readout'), page.locator('.header-key-flip-button')]) assert.ok(await shown.isVisible(), 'Secondary controls are usable in the More panel');
+  assert.equal(await page.locator('.header-secondary-panel .header-transpose-readout').textContent(), '0 · C', 'The More panel shows the transpose readout');
   assert.equal(await page.locator('.header-secondary-panel .mode-toggle').count(), 0, 'The mode toggle is not in the More panel');
   await page.keyboard.press('Escape');
   assert.equal(await moreToggle().getAttribute('aria-expanded'), 'false', 'Escape closes More');
@@ -297,13 +299,16 @@ try {
     await page.waitForFunction(previous => document.querySelector('.score-system')?.style.width !== previous, before, { timeout: 10000 });
     await ready();
   };
-  // Just above the mobile breakpoint every control is inline and must still fit.
-  await page.setViewportSize({ width: 600, height: 800 });
+  // Just above the mobile breakpoint every control is inline and must still fit, through each inline step (styles.css).
+  await page.setViewportSize({ width: breakpoint + 1, height: 800 });
   await page.locator('.header-more-toggle').waitFor({ state: 'hidden' });
-  assert.equal(await page.evaluate(() => document.querySelector('.topbar').scrollWidth <= document.querySelector('.topbar').clientWidth), true, 'Inline header fits at 600px');
-  await assertHeader(600, { modeText: ['V', 'E'] });
-  await page.setViewportSize({ width: 700, height: 800 });
-  await assertHeader(700, { modeText: ['V', 'E'] });
+  assert.equal(await page.evaluate(() => document.querySelector('.topbar').scrollWidth <= document.querySelector('.topbar').clientWidth), true, `Inline header fits at ${breakpoint + 1}px`);
+  await assertHeader(breakpoint + 1, { modeText: ['V', 'E'] });
+  for (const [width, modeText] of [[900, ['V', 'E']], [901, ['Vertical', 'Endless']], [1140, ['Vertical', 'Endless']], [1141, ['Vertical', 'Endless']]]) {
+    await page.setViewportSize({ width, height: 800 });
+    await assertHeader(width, { modeText });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `No horizontal page overflow at ${width}px`);
+  }
   await page.waitForTimeout(400);
   await ready();
   await resizeTo(1280, 800);
@@ -314,8 +319,8 @@ try {
   assert.ok(Math.abs(desktop.icon - 56) <= 1 && Math.abs(desktop.font - 22) <= .5, `Default desktop controls are double size: ${desktop.icon}px icon, ${desktop.font}px name`);
   await resizeTo(390, 844);
   await page.getByRole('button', { name: 'Options', exact: true }).click();
-  await page.getByRole('button', { name: 'Transpose up one semitone', exact: true }).click();
-  await page.getByRole('button', { name: 'Transpose up one semitone', exact: true }).click();
+  await page.locator('.pitch-panel').getByRole('button', { name: 'Transpose up a semitone', exact: true }).click();
+  await page.locator('.pitch-panel').getByRole('button', { name: 'Transpose up a semitone', exact: true }).click();
   await page.locator('button[aria-label="Close options"]').click();
   await ready();
   assert.equal(await firstChord(), 'adf', 'Sample transposed +2 engraves D-F#-A once, not twice');
@@ -449,6 +454,8 @@ try {
   await assertHeader(320, { modeText: ['V', 'E'], minTarget: 34 });
   await openMore();
   assert.equal(await page.evaluate(() => { const panel = document.querySelector('.header-secondary-panel').getBoundingClientRect(); return panel.left >= 0 && panel.right <= innerWidth; }), true, 'More panel fits a 320px viewport');
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= 320), true, 'No horizontal page overflow at 320px with More open');
+  assert.deepEqual(await page.evaluate(() => [...document.querySelectorAll('.header-secondary-panel > .header-control')].filter(row => row.scrollWidth > row.clientWidth + 1 || [...row.querySelectorAll('*')].some(child => child.getBoundingClientRect().right > row.getBoundingClientRect().right + 1)).map(row => row.dataset.headerControl)), [], 'Every More panel row fits at 320px');
   await closeMore();
   await page.locator('input[type=file]').setInputFiles({ name: 'bad.xml', mimeType: 'application/xml', buffer: Buffer.from('<broken') });
   await page.getByRole('alert').waitFor();
@@ -698,7 +705,7 @@ try {
   assert.ok(Math.abs(await deskStaff() - 72 * 1.5) <= 2, 'The restored scale is applied before paint');
   // A transposition is restored after an immediate reload too.
   await desk.getByRole('button', { name: 'Options', exact: true }).click();
-  await desk.getByRole('button', { name: 'Transpose up one semitone', exact: true }).click();
+  await desk.locator('.pitch-panel').getByRole('button', { name: 'Transpose up a semitone', exact: true }).click();
   await desk.locator('.semitone-control output', { hasText: '+1 semitones' }).waitFor();
   await desk.reload();
   await deskReady();
@@ -706,6 +713,50 @@ try {
   assert.equal(await deskSlider().inputValue(), '1.5', 'and keeps the stave scale');
   await desk.getByRole('button', { name: 'Options', exact: true }).click();
   await desk.getByRole('button', { name: 'Reset transposition', exact: true }).click();
+  await desk.locator('button[aria-label="Close options"]').click();
+  await deskReady();
+  // Header transpose and key flip (secondary tier, inline on desktop) share the drawer's per-score settings.
+  const headerReadout = desk.locator('.topbar .header-transpose-readout');
+  const headerFlip = desk.locator('.topbar .header-key-flip-button');
+  const drawerReadout = desk.locator('.pitch-panel .pitch-key-readout');
+  const drawerFlip = desk.locator('.pitch-panel .pitch-key-flip');
+  const flipState = async target => ({ label: await target.getAttribute('aria-label'), disabled: await target.getAttribute('aria-disabled'), text: await target.evaluate(button => [...button.querySelectorAll('span')].filter(span => span.getClientRects().length).map(span => span.textContent).join(' ')) });
+  const deskChord = () => desk.evaluate(() => [...document.querySelector('.score-system svg .chord').querySelectorAll('.note')].map(note => note.getAttribute('data-pname')).sort().join(''));
+  const headerBoxes = () => desk.evaluate(() => Object.fromEntries(['.stop-button', '.play-button', '.header-open-file', '.mode-toggle', '.header-transpose', '.header-key-flip-button', '.header-bars-setting', '.header-stave-scale', '.mixer-trigger'].map(selector => { const rect = document.querySelector(selector).getBoundingClientRect(); return [selector, [rect.left, rect.top, rect.width, rect.height].map(value => Math.round(value * 10) / 10)]; })));
+  assert.equal(await headerReadout.textContent(), '0 · C', 'Header readout shows the untransposed key');
+  assert.deepEqual(await flipState(headerFlip), { label: 'No enharmonic key to flip to', disabled: 'true', text: '⇄ C' }, 'The flip is disabled for C major');
+  const boxesAtC = await headerBoxes();
+  await headerFlip.click({ force: true });
+  await desk.waitForTimeout(100);
+  assert.equal(await headerReadout.textContent(), '0 · C', 'A disabled flip does nothing');
+  await desk.locator('.topbar').getByRole('button', { name: 'Transpose up a semitone', exact: true }).click();
+  await headerReadout.filter({ hasText: '+1 · Db' }).waitFor();
+  await deskReady();
+  assert.equal(await drawerReadout.textContent(), '+1 · Db', 'The drawer readout matches the header');
+  assert.equal(await desk.locator('.semitone-control output').textContent(), '+1 semitones', 'The drawer transposition follows the header');
+  assert.equal(await deskChord(), 'adf', 'Header + engraves Db-F-Ab');
+  assert.deepEqual(await flipState(headerFlip), { label: 'Spell in C sharp major', disabled: 'false', text: '⇄ Db ↔ C#' }, 'The flip offers the enharmonic key');
+  assert.deepEqual(await headerBoxes(), boxesAtC, 'A new readout and flip label do not move the header');
+  await headerFlip.click();
+  await headerReadout.filter({ hasText: '+1 · C#' }).waitFor();
+  await deskReady();
+  assert.deepEqual(await flipState(headerFlip), { label: 'Spell in D flat major', disabled: 'false', text: '⇄ C# ↔ Db' }, 'The flip offers the way back');
+  assert.equal(await drawerReadout.textContent(), '+1 · C#', 'The drawer readout follows the flip');
+  assert.equal(await drawerFlip.getAttribute('aria-label'), 'Spell in D flat major', 'The drawer flip matches the header');
+  assert.deepEqual(await headerBoxes(), boxesAtC, 'Flipping does not move the header');
+  assert.equal(await deskChord(), 'ceg', 'The flipped key engraves C#-E#-G#');
+  // The flip is a per-score setting: it survives an immediate reload.
+  await desk.reload();
+  await deskReady();
+  assert.equal(await headerReadout.textContent(), '+1 · C#', 'An immediate reload restores the key flip');
+  assert.equal(await deskChord(), 'ceg', 'and engraves the flipped key');
+  // The drawer flips back and transposes down, synced with the header.
+  await desk.getByRole('button', { name: 'Options', exact: true }).click();
+  await drawerFlip.click();
+  await headerReadout.filter({ hasText: '+1 · Db' }).waitFor();
+  await desk.locator('.pitch-panel').getByRole('button', { name: 'Transpose down a semitone', exact: true }).click();
+  await headerReadout.filter({ hasText: '0 · C' }).waitFor();
+  assert.equal(await drawerReadout.textContent(), '0 · C');
   await desk.locator('button[aria-label="Close options"]').click();
   await deskReady();
   const phone = await deskContext.newPage();

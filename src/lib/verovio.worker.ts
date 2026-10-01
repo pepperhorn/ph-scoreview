@@ -1,6 +1,7 @@
 import createVerovioModule from 'verovio/wasm';
 import { VerovioToolkit, enableLogToBuffer } from 'verovio/esm';
 import { buildViewMei, scanBaseline, type BaselineInfo, type ViewSpec } from './notation/mei-view';
+import { spellBaseline, spellingNeeded, type SpellingSpec } from './notation/mei-spelling';
 import { indexMusicXml, measureId, planChunk, sliceMusicXml, tailFor, type ChunkIndex, type ChunkPlan } from './notation/musicxml-chunks';
 import type { VerovioReply, VerovioRequest } from './verovio-protocol';
 
@@ -44,8 +45,8 @@ let main: Toolkit | undefined;
 let probe: Toolkit | undefined;
 /** What the main toolkit holds: the loaded view and the options it was last laid out with. */
 let loaded: { loadKey: string; optionsKey: string } | undefined;
-type WholeBaseline = { kind: 'whole'; mei: string; info: BaselineInfo };
-type ChunkedBaseline = { kind: 'chunked'; index: ChunkIndex; info: BaselineInfo; meis: Map<string, string> };
+type WholeBaseline = { kind: 'whole'; mei: string; info: BaselineInfo; spelled?: { key: string; mei: string } };
+type ChunkedBaseline = { kind: 'chunked'; index: ChunkIndex; info: BaselineInfo; meis: Map<string, string>; spelled: Map<string, string> };
 type Baseline = WholeBaseline | ChunkedBaseline;
 const baselines = new Map<number, Baseline>();
 /** Log text of toolkits destroyed during a request, reported with it. */
@@ -110,6 +111,40 @@ async function chunkMei(entry: ChunkedBaseline, from: number, to: number): Promi
   mei = await convert(sliceMusicXml(entry.index, from, to));
   entry.meis.set(key, mei);
   while (entry.meis.size > CHUNK_MEI_LIMIT) entry.meis.delete(entry.meis.keys().next().value!);
+  return mei;
+}
+
+/** Verovio's transposition of a baseline, in a toolkit of its own (destroyed afterwards so its document is freed). */
+async function transposeMei(mei: string, options: { transpose: string; transposeToSoundingPitch: boolean }): Promise<string> {
+  const target = new VerovioToolkit(await moduleReady());
+  try {
+    load(target, mei, { breaks: 'none', xmlIdChecksum: true, ...options });
+    return target.getMEI();
+  } finally {
+    try { pendingLog.push(target.getLog() || ''); } catch { /* no log */ }
+    try { target.destroy(); } catch { /* already unusable */ }
+  }
+}
+const spell = (mei: string, spec: SpellingSpec | undefined, measureOffset = 0) => spellBaseline(mei, spec, transposeMei, measureOffset);
+
+/** The whole baseline spelled for `spec`, kept for the latest spec so layout changes do not transpose again. */
+async function spelledWhole(entry: WholeBaseline, spec: SpellingSpec | undefined): Promise<string> {
+  if (!spec) return entry.mei;
+  const key = JSON.stringify(spec);
+  if (entry.spelled?.key !== key) entry.spelled = { key, mei: await spell(entry.mei, spec) };
+  return entry.spelled.mei;
+}
+
+/** A chunk's MEI spelled for `spec`, in a small per-score cache like the converted chunks. */
+async function spelledChunk(entry: ChunkedBaseline, from: number, to: number, spec: SpellingSpec | undefined): Promise<string> {
+  const raw = await chunkMei(entry, from, to);
+  if (!spec || !spellingNeeded(raw, spec)) return raw;
+  const key = `${from}-${to}|${JSON.stringify(spec)}`;
+  let mei = entry.spelled.get(key);
+  if (mei !== undefined) { entry.spelled.delete(key); entry.spelled.set(key, mei); return mei; }
+  mei = await spell(raw, spec, from);
+  entry.spelled.set(key, mei);
+  while (entry.spelled.size > CHUNK_MEI_LIMIT) entry.spelled.delete(entry.spelled.keys().next().value!);
   return mei;
 }
 
@@ -185,7 +220,7 @@ async function importSource(revision: number, bytes: ArrayBuffer, force: boolean
     // The staff structure (staffDef numbers and IDs, groups) comes from Verovio's import of the first measure.
     const { staffDefs, groups } = scanBaseline(await convert(sliceMusicXml(index, 0, 1)));
     const info: BaselineInfo = { measureIds: Array.from({ length: index.measureCount }, (_, measure) => measureId(measure)), lyricDensity: index.lyricDensity, staffDefs, groups, chunked: true };
-    entry = { kind: 'chunked', index, info, meis: new Map() };
+    entry = { kind: 'chunked', index, info, meis: new Map(), spelled: new Map() };
   } else {
     const target = await toolkit('main');
     loaded = undefined;
@@ -215,17 +250,18 @@ async function handle(request: VerovioRequest): Promise<unknown> {
       const total = entry.index.measureCount;
       const core = Math.min(total, request.measures * 2);
       const limit = request.measures >= total ? total : core + tailFor(entry.index, core);
-      load(target, buildViewMei(await chunkMei(entry, 0, limit), request.view), request.options);
+      load(target, buildViewMei(await spelledChunk(entry, 0, limit, request.view.spelling), request.view), request.options);
       return { svg: target.renderToSVG(1), pageCount: target.getPageCount(), measures: limit };
     }
-    const { mei, info } = entry;
+    const { info } = entry;
+    const mei = await spelledWhole(entry, request.view.spelling);
     const limit = request.measures >= info.measureIds.length ? info.measureIds.length : probeLimit(mei, request.measures, info.measureIds.length);
     load(target, buildViewMei(mei, request.view, limit), request.options);
     const svg = target.renderToSVG(1);
     return { svg, pageCount: target.getPageCount(), measures: limit };
   }
   if (entry.kind === 'whole') {
-    const target = await ensureLayout([request.revision], request.view, request.options, async () => buildViewMei(entry.mei, request.view));
+    const target = await ensureLayout([request.revision], request.view, request.options, async () => buildViewMei(await spelledWhole(entry, request.view.spelling), request.view));
     const count = target.getPageCount();
     const pages = request.pages.filter(page => page >= 1 && page <= count).map(page => ({ page, svg: target.renderToSVG(page) }));
     return { pageCount: count, pages };
@@ -243,7 +279,7 @@ async function handle(request: VerovioRequest): Promise<unknown> {
   const pages: { page: number; svg: string }[] = [];
   for (const { plan, pages: wanted } of plans.values()) {
     const target = await ensureLayout([request.revision, plan.from, plan.to], request.view, request.options,
-      async () => buildViewMei(await chunkMei(entry, plan.from, plan.to), request.view, Infinity, plan.from));
+      async () => buildViewMei(await spelledChunk(entry, plan.from, plan.to, request.view.spelling), request.view, Infinity, plan.from));
     const count = target.getPageCount();
     for (const page of wanted) {
       const local = plan.firstPage + (page - 1 - plan.firstSystem);

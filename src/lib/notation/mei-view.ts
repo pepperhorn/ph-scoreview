@@ -8,6 +8,8 @@
  * makes the engraving view (breaks, hidden staves, chord symbols) inside the worker.
  */
 
+import type { SpellingSpec } from './mei-spelling';
+
 /** A start tag, end tag or self-closing tag; comments, processing instructions, CDATA and DOCTYPE match without a name. */
 const TAG = /<(?:!--[\s\S]*?--|\?[\s\S]*?\?|!\[CDATA\[[\s\S]*?\]\]|!DOCTYPE[^>]*|(\/?)([A-Za-z_][\w.:-]*)((?:\s+[^\s=/>]+(?:\s*=\s*(?:"[^"]*"|'[^']*'))?)*)\s*(\/?))>/g;
 
@@ -37,9 +39,9 @@ const idOf = (attributes: string) => attributeOf(attributes, 'xml:id') || '';
 const tokensOf = (value: string | null) => (value || '').split(/\s+/).filter(Boolean);
 const reference = (token: string) => token.replace(/^#/, '');
 
-type Visitor = (tag: { closing: boolean; name: string; attributes: string; selfClosing: boolean; index: number; length: number }) => boolean | void;
+export type Visitor = (tag: { closing: boolean; name: string; attributes: string; selfClosing: boolean; index: number; length: number }) => boolean | void;
 /** Visit every element tag in order; returning `true` stops the scan. */
-function scan(text: string, visit: Visitor): void {
+export function scan(text: string, visit: Visitor): void {
   TAG.lastIndex = 0;
   for (let match = TAG.exec(text); match; match = TAG.exec(text)) {
     if (!match[2]) continue;
@@ -113,6 +115,12 @@ export type ViewSpec = {
   hiddenStaves: string[];
   /** Keep `<harm>` chord symbols. */
   chordSymbols: boolean;
+  /**
+   * Transposition, key flip and spelling (mei-spelling.ts), applied to the baseline before the view is built. The
+   * worker transposes with Verovio's `transpose` / `transposeToSoundingPitch` and respells; the view itself is then
+   * loaded untransposed.
+   */
+  spelling?: SpellingSpec;
 };
 
 /** Elements the reader view never engraves: the header (React shows metadata), labels (staff controls show names) and encoded breaks. */
