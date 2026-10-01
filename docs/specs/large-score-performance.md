@@ -96,7 +96,7 @@ Option (b) needs the whole-score import, which is the cost Phase 3 must remove. 
   Verovio converts only the first measure, for the staff structure (staffDef numbers, IDs and groups). Smaller scores, MEI, ABC and MIDI keep the whole-document path. Timewise sources are already partwise text (Phase 2). A namespace-prefixed or malformed source does not index and is engraved whole.
 - **Slices** (`sliceMusicXml`). A slice of measures `[from, to)` is a complete partwise score:
   - It keeps the header and part-list. Credits are kept only in a slice that starts at bar 1.
-  - Each part's prevailing attributes before `from` are carried into its first measure: divisions, key, time, staves, part symbol, instruments, clefs, staff details, transposition and `for-part`. A key, clef, time or transposition without `number` replaces any per-staff ones.
+  - Each part's prevailing attributes before `from` are carried into its first measure: divisions, key, time, staves, part symbol, instruments, clefs, staff details, transposition and `for-part`. A clef without `number` is staff 1's (as MusicXML defines it); a key, time, staff details or transposition without `number` replaces any per-staff ones.
   - The carried time signature gets `print-object="no"`, so a chunk start does not reprint the meter (Verovio maps this to `meterSig@visible="false"`). A real meter change in the first measure still prints.
   - Every measure gets the ID `reader-m<n>`. Verovio uses a MusicXML measure `id` as its MEI `xml:id`, so the engraving maps 1:1 to Score measures in every chunk. Note IDs are the spliced Phase 2 IDs, so they are stable too.
 - **Chunks follow systems** (`planChunk`). Systems keep their global grid: a page break before every multiple of `bars`, as in the whole score. A chunk holds whole systems: about 640 staff-measures, for example 5 systems of 4 bars × 30 staves, or 32 systems of 4 bars × 5 staves.
@@ -111,7 +111,7 @@ Option (b) needs the whole-score import, which is the cost Phase 3 must remove. 
   - Auto bars per line, the 4-bar default, wrap checks, measure numbering, per-system clefs and keys, paging, follow, highlights, zoom anchors and playback are unchanged. They work on the same system grid.
 - **WASM memory.** Each chunk is converted in a toolkit of its own, destroyed afterwards, and laid out in the main toolkit, so the heap stays near the largest chunk: 128 MB for the 5 MB test score. Every worker reply reports the heap size. The runtime:
   - recycles the worker before the next import when the heap is above 384 MB;
-  - recycles it as soon as it is idle when the heap is above 1 GiB;
+  - recycles it once it is idle when the heap is above 1 GiB, but only for a chunked score (which re-imports in one index pass) and never right after an import, so a large whole-document score is not re-imported in a loop;
   - recycles it after an out-of-memory error.
   The next request re-imports the score it needs, which costs one index pass.
 - **Guardrails** (`Reader.tsx`, `large-file.ts`, `last-file.ts`).

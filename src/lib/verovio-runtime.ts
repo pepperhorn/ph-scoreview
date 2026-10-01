@@ -17,12 +17,16 @@ export const DEFAULT_CHUNK_STAFF_MEASURES = 640;
 const MIN_CHUNK_STAFF_MEASURES = 40;
 let chunkBudget = DEFAULT_CHUNK_STAFF_MEASURES;
 let forceChunks = false;
+/** A heap above this (the cap is 2 GiB) is returned when the worker is idle and the score re-imports cheaply. */
+let recycleHeapBytes = 1024 * 2 ** 20;
 // Diagnostics and tests: localStorage `scoreflow-chunking` = {"force": true, "budget": 16} engraves every MusicXML
-// score in chunks of that size (validation/chunks.mjs compares chunked and whole engravings).
+// score in chunks of that size (validation/chunks.mjs compares chunked and whole engravings); `recycleHeapBytes`
+// lowers the idle-recycle threshold.
 try {
-  const setting = JSON.parse(globalThis.localStorage?.getItem('scoreflow-chunking') || 'null') as { force?: boolean; budget?: number } | null;
+  const setting = JSON.parse(globalThis.localStorage?.getItem('scoreflow-chunking') || 'null') as { force?: boolean; budget?: number; recycleHeapBytes?: number } | null;
   if (setting?.force) forceChunks = true;
   if (Number(setting?.budget) > 0) chunkBudget = Number(setting!.budget);
+  if (Number(setting?.recycleHeapBytes) > 0) recycleHeapBytes = Number(setting!.recycleHeapBytes);
 } catch { /* no storage */ }
 export const chunkSettings = () => ({ budget: chunkBudget, force: forceChunks });
 /**
@@ -44,7 +48,7 @@ function takeSimulatedOom(): boolean {
   } catch { return false; }
 }
 
-type Pending = { resolve: (value: any) => void; reject: (reason: Error) => void };
+type Pending = { kind: VerovioRequest['kind']; resolve: (value: any) => void; reject: (reason: Error) => void };
 let worker: Worker | undefined;
 let nextId = 0;
 const pending = new Map<number, Pending>();
@@ -63,9 +67,12 @@ function getWorker(): Worker {
     }
     if (data.error !== undefined) item.reject(new VerovioError(data.error, data.code));
     else item.resolve(data.value);
-    // Out of memory leaves a heap near the 2 GiB cap that the worker cannot give back; a large heap is returned once
-    // the worker is idle. Either way the next request starts a fresh worker and re-imports the score it needs.
-    if (data.code === 'oom' || (heap > RECYCLE_HEAP_BYTES && !pending.size)) stopWorker(new VerovioError('Superseded score render.', 'superseded'));
+    // Out of memory leaves a heap near the 2 GiB cap that the worker cannot give back: start a fresh worker. A large
+    // heap is returned once the worker is idle, but only for a chunked score, which re-imports in one index pass, and
+    // never right after an import (the render that needs it follows): a whole-document score would be imported again
+    // and recycled again, over and over. Its heap is returned before the next score's import instead.
+    const idle = !pending.size && item.kind !== 'import' && importing === undefined && currentChunked;
+    if (data.code === 'oom' || (heap > recycleHeapBytes && idle)) stopWorker(new VerovioError('Superseded score render.', 'superseded'));
   };
   worker.onerror = event => {
     event.preventDefault();
@@ -88,7 +95,7 @@ type Body = VerovioRequest extends infer R ? R extends unknown ? Omit<R, 'id'> :
 function request<T>(body: Body, transfer: Transferable[] = []): Promise<T> {
   const id = ++nextId;
   return new Promise<T>((resolve, reject) => {
-    pending.set(id, { resolve, reject });
+    pending.set(id, { kind: body.kind, resolve, reject });
     getWorker().postMessage({ ...body, id }, transfer);
   });
 }
@@ -107,12 +114,12 @@ const baselines = new Map<number, Promise<BaselineInfo>>();
 const BASELINE_LIMIT = 2;
 /** The revision most recently imported successfully: the one a missing baseline is re-imported for. */
 let current = 0;
+/** Whether `current` is engraved in chunks (cheap to re-import after the worker is recycled). */
+let currentChunked = false;
 /** The worker's WASM heap after its latest reply (bytes). */
 let heap = 0;
 /** A heap above this is not reused well by a different score: the worker is recycled before the next import. */
 const RECYCLE_BEFORE_IMPORT_BYTES = 384 * 2 ** 20;
-/** A heap above this (the cap is 2 GiB) is returned as soon as the worker is idle. */
-const RECYCLE_HEAP_BYTES = 1024 * 2 ** 20;
 /** The revision whose import is in flight, if any. */
 let importing: number | undefined;
 
@@ -134,7 +141,7 @@ export function prepareVerovio(document: SourceDocument): Promise<BaselineInfo> 
   while (baselines.size > BASELINE_LIMIT) baselines.delete(baselines.keys().next().value!);
   importing = revision;
   const settled = () => { if (importing === revision) importing = undefined; };
-  cached.then(() => { current = revision; settled(); }, () => { settled(); if (baselines.get(revision) === cached) baselines.delete(revision); });
+  cached.then(info => { current = revision; currentChunked = !!info.chunked; settled(); }, () => { settled(); if (baselines.get(revision) === cached) baselines.delete(revision); });
   return cached;
 }
 
