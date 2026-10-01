@@ -44,7 +44,10 @@ function violin(m) {
   if (n === MEASURES) body += '<barline location="right"><bar-style>light-heavy</bar-style></barline>';
   return `<measure number="${n}">${body}</measure>`;
 }
-/** Piano: a hairpin, an octave shift and a pedal across the first boundary, a triplet in the chunk's last bar. */
+/**
+ * Piano: a hairpin, an octave shift and a pedal across the first boundary, a triplet in the chunk's last bar, and in
+ * bar 6 a clef change without a staff number (staff 1 only: staff 2 keeps its F clef in later chunks).
+ */
 function piano(m) {
   const n = m + 1;
   const beats = n >= 10 ? 3 : 4;
@@ -52,6 +55,7 @@ function piano(m) {
   if (n === 1) body += '<attributes><divisions>6</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>';
   if (n === 7) body += '<attributes><key><fifths>2</fifths></key></attributes>';
   if (n === 10) body += '<attributes><time><beats>3</beats><beat-type>4</beat-type></time></attributes>';
+  if (n === 6) body += '<attributes><clef><sign>C</sign><line>3</line></clef></attributes>';
   if (n === 4) body += direction('<wedge type="crescendo" number="1"/>', 1) + direction('<octave-shift type="down" size="8" number="1"/>', 2) + direction('<pedal type="start" line="yes"/>', 2);
   if (n === 6) body += direction('<wedge type="stop" number="1"/>', 1) + direction('<octave-shift type="stop" size="8" number="1"/>', 2) + direction('<pedal type="stop" line="yes"/>', 2);
   // Staff 1: a triplet in bar 4, quarters elsewhere.
@@ -86,17 +90,21 @@ const url = `http://127.0.0.1:${server.address().port}`;
 const browser = await launcher.launch({ headless: true, ...(engine === 'chromium' ? { args: ['--no-sandbox'] } : {}) });
 const started = Date.now();
 
-/** Open the fixture (whole, or forced into chunks) and read every system's measures, notes and engraved elements. */
-async function engrave(chunked) {
+/**
+ * Open the fixture and read every system's measures, notes and engraved elements. `chunking` is the diagnostics
+ * setting (`scoreflow-chunking`): forced chunks, and/or a tiny worker-recycle threshold.
+ */
+async function engrave(chunking) {
+  const chunked = !!chunking?.force;
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   await context.route(/poppins/i, route => route.abort());
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.addInitScript(({ chunked, budget }) => {
+  await page.addInitScript(chunking => {
     localStorage.setItem('scoreflow-prefs', JSON.stringify({ barsPerLine: 2 }));
-    if (chunked) localStorage.setItem('scoreflow-chunking', JSON.stringify({ force: true, budget }));
-  }, { chunked, budget: BUDGET });
+    if (chunking) localStorage.setItem('scoreflow-chunking', JSON.stringify(chunking));
+  }, chunking || null);
   await page.goto(url);
   const ready = () => page.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg') && !document.querySelector('.score-content').getAnimations().length, null, { timeout: 120000 });
   await ready();
@@ -112,18 +120,21 @@ async function engrave(chunked) {
       firstMeasure: Number(block.dataset.firstMeasure),
       measureIds: [...svg.querySelectorAll('g.measure')].map(measure => measure.id),
       notes: [...svg.querySelectorAll('.reader-note')].map(element => element.getAttribute('data-note-id')),
+      clefs: [...svg.querySelectorAll('g.clef use')].map(use => (use.getAttribute('xlink:href') || use.getAttribute('href') || '').replace(/-.*$/, '')),
       elements: { slur: count('g.slur'), tie: count('g.tie'), hairpin: count('g.hairpin'), octave: count('g.octave'), pedal: count('g.pedal'), tuplet: count('g.tuplet'),
         keySig: count('g.keySig'), meterSig: count('g.meterSig'), clef: count('g.clef'), barLine: count('g.barLine'), noteheads: count('g.note') },
     };
   }));
+  const alert = await page.evaluate(() => document.querySelector('[role=alert]')?.textContent || null);
   await context.close();
-  assert.deepEqual(errors, [], `No page errors (${chunked ? 'chunked' : 'whole'})`);
+  assert.deepEqual(errors, [], `No page errors (${JSON.stringify(chunking)})`);
+  assert.equal(alert, null, `No error shown (${JSON.stringify(chunking)})`);
   return systems;
 }
 
 try {
-  const whole = await engrave(false);
-  const chunked = await engrave(true);
+  const whole = await engrave(null);
+  const chunked = await engrave({ force: true, budget: BUDGET });
   console.log(`${engine}: whole ${whole.length} systems, chunked ${chunked.length} systems`);
   assert.equal(whole.length, MEASURES / 2, 'Two bars per line');
   assert.equal(chunked.length, whole.length, 'Chunked engraving has as many systems');
@@ -132,6 +143,7 @@ try {
     assert.equal(system.firstMeasure, reference.firstMeasure, `System ${index + 1} starts at the same bar`);
     assert.equal(system.measureIds.length, reference.measureIds.length, `System ${index + 1} holds the same number of bars`);
     assert.deepEqual(system.notes, reference.notes, `System ${index + 1} maps the same Score notes`);
+    assert.deepEqual(system.clefs, reference.clefs, `System ${index + 1} draws the same clefs (whole ${JSON.stringify(reference.clefs)}, chunked ${JSON.stringify(system.clefs)})`);
     assert.deepEqual(system.elements, reference.elements, `System ${index + 1} engraves the same elements (whole ${JSON.stringify(reference.elements)}, chunked ${JSON.stringify(system.elements)})`);
   });
   // Measure IDs of a chunked score are stable, one per Score measure, in order.
@@ -147,6 +159,12 @@ try {
   assert.ok(chunked[1].elements.tuplet > 0, 'The triplet in the last bar of a chunk is drawn');
   // The carried meter is not reprinted at a chunk start (only the real change in bar 10, system 5, prints one).
   assert.deepEqual(chunked.map(system => system.elements.meterSig > 0), whole.map(system => system.elements.meterSig > 0), 'Meters print where the whole score prints them');
+  // A worker whose heap passes the recycle threshold is recycled only when that cannot strand the score: right after a
+  // whole-document import (the render that needs it follows) it must still render, and chunked scores re-import cheaply.
+  for (const chunking of [{ recycleHeapBytes: 1 }, { force: true, budget: BUDGET, recycleHeapBytes: 1 }]) {
+    const recycled = await engrave(chunking);
+    assert.deepEqual(recycled.map(system => system.notes), whole.map(system => system.notes), `A tiny recycle threshold still renders every system (${JSON.stringify(chunking)})`);
+  }
   console.log(`${engine}: chunked engraving matches the whole engraving across chunk boundaries passed (${((Date.now() - started) / 1000).toFixed(1)} s)`);
 } finally {
   await browser.close();
