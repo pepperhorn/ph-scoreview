@@ -2,15 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { ChevronDown, ChevronLeft, ChevronRight, Ellipsis, Eye, EyeOff, FileMusic, FolderOpen, Minus, Pause, Play, Plus, RotateCcw, SlidersHorizontal, Square, Settings2, VolumeX, X } from 'lucide-react';
 import { exampleScore, gmSoundfontLabel, GM_FAMILIES, GM_SOUNDS, instrumentDetails, type GmFamily, type GmSound, type Part, type Score } from '../lib/score';
-import { importFile, parseAbc, parseMusicXml } from '../lib/import';
+import { importMusicXmlText, importScoreFile, parseAbc } from '../lib/import';
 import { portraitBarLimit, renderScore, type MeasureGeometry, type RenderResult } from '../lib/render';
 import { partControlMetrics, type PartControlMetrics } from '../lib/part-controls';
 import { HEADER_CONTROLS, MOBILE_HEADER_QUERY, type HeaderControlId } from '../lib/header-controls';
 import { clampStaveScale, deviceClass, ENDLESS_STAVE_SCALE, minimumDefaultStaveScale, STAVE_SCALE_MAX, STAVE_SCALE_MIN, STAVE_SCALE_STEP } from '../lib/stave-scale';
-import { buildFileState, clampBpm, fileSource, MAX_BPM, MIN_BPM, textSource, type FileSettings, type FileSource, type FileState, type ScoreView } from '../lib/file-state';
+import { buildFileState, clampBpm, MAX_BPM, MIN_BPM, textSource, type FileSettings, type FileSource, type FileState, type ScoreView } from '../lib/file-state';
 import { sampleSource, scoreDb } from '../lib/score-db';
 import { scoreForView } from '../lib/transpose';
-import { buildPerformanceTimeline, eventsFromSeconds, positionAtSeconds } from '../lib/playback/timeline';
+import { baseTimelineFor, deriveTimeline, playbackDuration, playbackEventsFrom, playbackMidis, playbackPositionAt, type BaseTimeline } from '../lib/playback/timeline';
 import { disposeVerovio, isSuperseded, prepareVerovio } from '../lib/verovio-runtime';
 import { withEngravingDocument } from '../lib/notation/document';
 import { SCORE_FILE_ACCEPT } from '../lib/score-files';
@@ -162,10 +162,22 @@ export default function Reader({ musicXml }: ReaderProps) {
   const hasTransposingParts = score.parts.some(part => part.transposition?.semitones || part.measures.some(measure => measure.transposition?.semitones));
   // The performance timeline is built when playback first needs it, not while a score loads: on a large score it is
   // seconds of main-thread work that would otherwise hold up the first paint (docs/specs/large-score-performance.md).
-  const timelineOf = useMemo(() => {
-    let built: ReturnType<typeof buildPerformanceTimeline> | undefined;
-    return () => built ??= buildPerformanceTimeline(visibleScore, { bpm: prefs.bpm, semitones: prefs.semitones, fullScore: score });
-  }, [visibleScore, score, prefs.bpm, prefs.semitones]);
+  // It is built once per score (by the import worker when it registered one), in beats: BPM and transposition are
+  // applied while playing, and hiding parts only filters it, so none of them rebuild it.
+  const timelineRef = useRef<{ key: object; visible: string; timeline: BaseTimeline } | null>(null);
+  const timelineKey: object = score.document || score;
+  const visibleKey = visibleScore.parts.map(part => part.id).join('\u0000');
+  const timelineOf = useCallback((): BaseTimeline | null => {
+    const cached = timelineRef.current;
+    return cached && cached.key === timelineKey && cached.visible === visibleKey ? cached.timeline : null;
+  }, [timelineKey, visibleKey]);
+  const loadTimeline = useCallback(async (): Promise<BaseTimeline> => {
+    const cached = timelineOf();
+    if (cached) return cached;
+    const timeline = deriveTimeline(await baseTimelineFor(score), { visiblePartIds: visibleScore.parts.map(part => part.id) });
+    timelineRef.current = { key: timelineKey, visible: visibleKey, timeline };
+    return timeline;
+  }, [timelineOf, score, visibleScore, timelineKey, visibleKey]);
 
   useEffect(() => {
     try {
@@ -247,11 +259,11 @@ export default function Reader({ musicXml }: ReaderProps) {
     stop(true); setPainting(true);
     void (async () => {
       try {
-        const src = textSource('musicxml', musicXml, 'MusicXML');
-        const record = readScoreRecord(src);
-        const next = parseMusicXml(musicXml);
+        // Read (and identified) in the import worker, like a file.
+        const job = importMusicXmlText(musicXml);
+        const src = await job.source;
+        const [saved, next] = await Promise.all([readScoreRecord(src), job.score]);
         if (next.document) await prepareVerovio(next.document);
-        const saved = await record;
         if (run === importRunRef.current) loadScore(next, src, saved);
       } catch (e) {
         if (run === importRunRef.current) { setPainting(false); setError(e instanceof Error ? e.message : 'Could not read the supplied MusicXML.'); }
@@ -266,11 +278,11 @@ export default function Reader({ musicXml }: ReaderProps) {
     setPainting(true);
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
     try {
-      // The file is read and hashed once; the saved record is read while the score imports, so its zoom is applied
-      // before the first paint.
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const nextSource = await fileSource(file, bytes);
-      const [saved, nextScore] = await Promise.all([readScoreRecord(nextSource), importFile(file, { bytes, sha256: nextSource.sha256 })]);
+      // The import worker reads and hashes the file once and parses it off the main thread; the saved record is read
+      // while the score imports, so its zoom is applied before the first paint.
+      const job = importScoreFile(file);
+      const nextSource = await job.source;
+      const [saved, nextScore] = await Promise.all([readScoreRecord(nextSource), job.score]);
       if (nextScore.document) await prepareVerovio(nextScore.document);
       if (run === importRunRef.current) loadScore(nextScore, nextSource, saved);
     }
@@ -583,11 +595,13 @@ export default function Reader({ musicXml }: ReaderProps) {
   const measureCursor = useMemo(() => {
     if (!playing && position <= 0) return null;
     if (active && renderRef.current?.point(active)?.element) return null;
-    const current = positionAtSeconds(timelineOf(), position);
+    const timeline = timelineOf();
+    if (!timeline) return null;
+    const current = playbackPositionAt(timeline, position, prefs.bpm);
     const length = visibleScore.parts[0]?.measures[current.measureIndex]?.beats || 0;
     const fraction = length > 0 ? Math.max(0, Math.min(1, current.measureBeat / length)) : 0;
     return { measureIndex: current.measureIndex, fraction: Math.floor(fraction * 32) / 32 };
-  }, [active, playing, position, timelineOf, visibleScore, layoutTick]);
+  }, [active, playing, position, timelineOf, visibleScore, layoutTick, prefs.bpm]);
   const measureCursorKey = measureCursor ? `${measureCursor.measureIndex}:${measureCursor.fraction}` : '';
   useEffect(() => {
     const result = renderRef.current;
@@ -636,7 +650,7 @@ export default function Reader({ musicXml }: ReaderProps) {
 
   // Returns null when the device can't produce sound (no output device, autoplay blocked, resume() never settling),
   // so playback falls back to a silent wall-clock run instead of hanging on a suspended AudioContext.
-  const ensureAudio = async () => {
+  const ensureAudio = async (timeline: BaseTimeline) => {
     if (!audioRef.current) {
       let context: AudioContext;
       try { context = new AudioContext(); } catch { return null; }
@@ -660,7 +674,7 @@ export default function Reader({ musicXml }: ReaderProps) {
     for (const sound of [...new Set(visibleScore.parts.map(audioKey))]) {
       const matching = visibleScore.parts.filter(part => audioKey(part) === sound);
       const matchingIds = new Set(matching.map(part => part.id));
-      const notes = timelineOf().events.filter(event => matchingIds.has(event.partId)).map(event => event.midi);
+      const notes = playbackMidis(timeline, matchingIds, prefs.semitones);
       let players = audio.players.get(sound);
       if (!players) {
         if (sound.startsWith('drum-kit:')) {
@@ -690,7 +704,9 @@ export default function Reader({ musicXml }: ReaderProps) {
     const run = ++playRunRef.current;
     try {
       setLoadingAudio(true);
-      const audio = await ensureAudio();
+      const timeline = await loadTimeline();
+      if (run !== playRunRef.current) return;
+      const audio = await ensureAudio(timeline);
       if (run !== playRunRef.current) return;
       setLoadingAudio(false);
       setNotice(audio ? '' : SILENT_PLAYBACK_NOTICE);
@@ -699,8 +715,9 @@ export default function Reader({ musicXml }: ReaderProps) {
       const secondsStart = position;
       const started = now() + (audio ? .09 : 0);
       const parts = new Map(visibleScore.parts.map(part => [part.id, part]));
-      const timeline = timelineOf();
-      const events = eventsFromSeconds(timeline, secondsStart);
+      const bpm = prefs.bpm;
+      const events = playbackEventsFrom(timeline, secondsStart, bpm, prefs.semitones);
+      const duration = playbackDuration(timeline, bpm);
       let nextEvent = 0;
       const schedule = audio && (() => {
         const horizon = audio.context.currentTime + .5;
@@ -720,8 +737,8 @@ export default function Reader({ musicXml }: ReaderProps) {
       const interval = schedule ? setInterval(schedule, 50) : undefined;
       const tick = () => {
         const seconds = secondsStart + Math.max(0, now() - started);
-        if (seconds >= timeline.durationSeconds) { stop(true); return; }
-        const current = positionAtSeconds(timeline, seconds);
+        if (seconds >= duration) { stop(true); return; }
+        const current = playbackPositionAt(timeline, seconds, bpm);
         setActive(current.noteId);
         setActiveNotes(previous => previous.join('|') === current.activeNoteIds.join('|') ? previous : current.activeNoteIds);
         setPosition(seconds);

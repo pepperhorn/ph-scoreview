@@ -129,7 +129,7 @@ async function handle(request: VerovioRequest): Promise<unknown> {
   if (request.kind === 'import') {
     const target = await toolkit('main');
     loaded = undefined;
-    load(target, request.text, { breaks: 'none', inputFrom: 'auto', xmlIdChecksum: true });
+    load(target, new TextDecoder().decode(request.bytes), { breaks: 'none', inputFrom: 'auto', xmlIdChecksum: true });
     const mei = target.getMEI();
     const info = scanBaseline(mei);
     baselines.delete(request.revision);

@@ -1,245 +1,32 @@
-import { strFromU8, unzipSync } from 'fflate';
-import { gmProgramForNumber, gmProgramForVirtualName, instrumentForName, instrumentForProgram, midiPitch, pitch, ucfirst, type BarlineNavigation, type Measure, type MeasureNavigation, type Part, type Score, type ScoreNote, type Transposition } from './score';
-import { identifyMusicXmlNotes, identityForScore, makeSourceDocument, normalizeTimewiseMusicXml, scoreToMei, sha256, type SourceDiagnostic } from './notation/document';
-import { abcDecorationWord, attachNavigation, endingNumbers, meiNavigation, musicXmlNavigation, navigationWord, resolveCodaSigns, type NavigationWord } from './notation/navigation';
+import { instrumentForName, instrumentForProgram, midiPitch, pitch, type BarlineNavigation, type Measure, type MeasureNavigation, type Part, type Score, type ScoreNote, type Transposition } from './score';
+import { IdentityBuilder, identityForScore, makeSourceDocument, scoreToMei, type SourceDocument } from './notation/document';
+import { abcDecorationWord, attachNavigation, endingNumbers, meiNavigation, navigationWord, resolveCodaSigns, type NavigationWord } from './notation/navigation';
+import { durationBeats, normalizedScore as normalized, readMusicXml } from './notation/musicxml-source';
 import { formatFraction, fromNumber } from './playback/fraction';
+import { fileSourceFor, type FileSource } from './file-state';
+import { extractMxlScore, formatMb, MAX_SCORE_FILE_BYTES } from './mxl';
+import type { ImportReply, ImportRequest } from './import-protocol';
+import { registerBaseTimeline, type BaseTimeline } from './playback/timeline';
 
+export { extractMxlScore, MAX_SCORE_FILE_BYTES, MXL_MAX_SCORE_BYTES } from './mxl';
+
+// DOM helpers for MEI, which is read on the main thread (MusicXML is read by the streaming reader, see below).
 const children = (node: Element, tag: string) => Array.from(node.children).filter(el => el.localName === tag);
-const child = (node: Element, tag: string) => children(node, tag)[0];
-const value = (node: Element, tag: string) => child(node, tag)?.textContent?.trim() || '';
-const number = (node: Element, tag: string, fallback = 0) => { const raw = value(node, tag); return raw !== '' && Number.isFinite(Number(raw)) ? Number(raw) : fallback; };
 const parseXml = (text: string) => {
   const doc = new DOMParser().parseFromString(text, 'application/xml');
   if (doc.querySelector('parsererror')) throw new Error('This file is not valid XML.');
   return doc;
 };
-const musicXmlTranspose = (node?: Element): Transposition | undefined => {
-  if (!node) return undefined;
-  const octaves = number(node, 'octave-change');
-  return { semitones: number(node, 'chromatic') + octaves * 12, diatonic: child(node, 'diatonic') ? number(node, 'diatonic') + octaves * 7 : undefined };
-};
 const empty = (index: number, beats: number): Measure => ({ index, beats, notes: [] });
-const durationBeats = (dur: string, dots = 0) => ({ longa: 16, breve: 8, '1': 4, '2': 2, '4': 1, '8': .5, '16': .25, '32': .125, '64': .0625, '128': .03125, whole: 4, half: 2, quarter: 1, eighth: .5, '16th': .25, '32nd': .125 }[dur] || 1) * (dots ? 2 - 1 / (2 ** dots) : 1);
-const accidental = (alter: number) => alter > 0 ? '♯'.repeat(alter) : '♭'.repeat(-alter);
-function musicXmlHarmony(element: Element): string {
-  const root = child(element, 'root');
-  const step = root && value(root, 'root-step');
-  if (!step) return '';
-  const kinds: Record<string, string> = { major: '', minor: 'm', dominant: '7', 'major-seventh': 'maj7', 'minor-seventh': 'm7', diminished: 'dim', augmented: 'aug', 'half-diminished': 'm7♭5', 'diminished-seventh': 'dim7', 'suspended-fourth': 'sus4', 'suspended-second': 'sus2', 'major-sixth': '6', 'minor-sixth': 'm6', power: '5' };
-  const kind = child(element, 'kind');
-  const suffix = kind?.getAttribute('text') ?? kinds[kind?.textContent?.trim() || ''] ?? '';
-  const bass = child(element, 'bass');
-  const bassStep = bass && value(bass, 'bass-step');
-  return `${step}${accidental(number(root!, 'root-alter'))}${suffix}${bassStep ? `/${bassStep}${accidental(number(bass!, 'bass-alter'))}` : ''}`;
-}
-/** Common five-line drum-set staff positions mapped to General MIDI percussion keys. */
-const drumPositions: Record<string, number> = { D4: 44, E4: 35, F4: 36, G4: 41, A4: 43, B4: 45, C5: 38, D5: 47, E5: 48, F5: 51, G5: 42, A5: 49, B5: 57, C6: 49 };
-const defaultDrumMidi = (step: string, octave: number) => drumPositions[`${step.toUpperCase()}${octave}`] ?? 38;
-const normalized = (score: Score): Score => {
-  const count = Math.max(...score.parts.map(p => p.measures.length), 0);
-  score.parts.forEach(part => {
-    part.name = ucfirst(part.name.trim());
-    for (let i = part.measures.length; i < count; i++) part.measures.push(empty(i, score.beats * 4 / score.beatType));
-    part.measures.forEach(m => { m.notes.sort((a, b) => a.start - b.start); m.beats = Math.max(m.beats, ...m.notes.map(n => n.start + n.duration), 0); });
-  });
-  if (!count || !score.parts.length) throw new Error('No readable notes or measures were found.');
-  return score;
-};
 
-const navigationDiagnostics = (messages: string[]): SourceDiagnostic[] => [...new Set(messages)].map(message => ({ feature: 'navigation', status: 'unsupported', location: '/', message }));
-
+/**
+ * Read MusicXML text on the calling thread (small sources: tests, the musicXml prop fallback). Files are read by the
+ * import worker instead (importScoreFile). Both use the same single-pass streaming reader.
+ */
 export function parseMusicXml(text: string): Score {
-  const engravingText = identifyMusicXmlNotes(normalizeTimewiseMusicXml(text)).text;
-  const doc = parseXml(engravingText);
-  const root = doc.documentElement;
-  if (root.localName !== 'score-partwise') throw new Error('This file is not a MusicXML score.');
-  const concertScore = Boolean(child(child(root, 'defaults') || root, 'concert-score'));
-  const list = child(root, 'part-list');
-  const identification = child(root, 'identification');
-  const credits = children(root, 'credit');
-  const credit = (type: string) => credits.find(c => children(c, 'credit-type').some(t => t.textContent?.trim().toLowerCase() === type))?.querySelector('credit-words')?.textContent?.trim() || '';
-  const creators = children(identification || root, 'creator');
-  const movementTitle = value(root, 'movement-title');
-  const title = value(child(root, 'work') || root, 'work-title') || movementTitle || credit('title');
-  const subtitle = credit('subtitle') || (movementTitle && movementTitle !== title ? movementTitle : '');
-  const composer = creators.find(e => e.getAttribute('type') === 'composer')?.textContent?.trim() || credit('composer');
-  const otherCredits = creators.filter(e => e.getAttribute('type') !== 'composer').map(e => {
-    const name = e.textContent?.trim();
-    const type = e.getAttribute('type');
-    return name ? `${type ? type[0].toUpperCase() + type.slice(1) + ': ' : ''}${name}` : '';
-  }).filter(Boolean);
-  const rights = value(identification || root, 'rights');
-  if (rights) otherCredits.push(rights);
-  const shown = new Set([title, subtitle, composer, ...otherCredits].filter(Boolean).map(s => s.trim()));
-  for (const line of credits.flatMap(c => Array.from(c.getElementsByTagName('*')).filter(e => e.localName === 'credit-words').map(e => e.textContent?.trim() || ''))) {
-    if (line && !shown.has(line)) { otherCredits.push(line); shown.add(line); }
-  }
-  const scoreParts = new Map(children(list || root, 'score-part').map(p => [p.getAttribute('id'), p]));
-  const names = new Map([...scoreParts].map(([id, p]) => [id, value(p, 'part-name')]));
-  let beats = 4, beatType = 4, key = 0, tempo = 100;
-  let openingMeter = false, openingTempo = false;
-  const parts: Part[] = [];
-  for (const [partNo, element] of children(root, 'part').entries()) {
-    const id = element.getAttribute('id') || `P${partNo + 1}`;
-    const name = names.get(id) || `Part ${partNo + 1}`;
-    const definition = scoreParts.get(id);
-    const scoreInstruments = children(definition || element, 'score-instrument');
-    const gmVirtual = scoreInstruments.map(item => child(item, 'virtual-instrument')).map(item => item && gmProgramForVirtualName(value(item, 'virtual-library'), value(item, 'virtual-name'))).find(Boolean);
-    const hasOtherVirtual = scoreInstruments.some(item => {
-      const library = value(child(item, 'virtual-instrument') || item, 'virtual-library');
-      return library && library.toLowerCase().replace(/[^a-z]/g, '') !== 'generalmidi';
-    });
-    // Drum kits are often exported as program 1 on channel 10; never map them to piano.
-    const drumKit = children(definition || element, 'midi-instrument').some(item => number(item, 'midi-channel') === 10)
-      || Array.from(element.getElementsByTagName('*')).some(el => el.localName === 'unpitched');
-    const midiProgram = !drumKit && !gmVirtual && !hasOtherVirtual ? children(definition || element, 'midi-instrument').map(item => gmProgramForNumber(number(item, 'midi-program', 0))).find(Boolean) : undefined;
-    const gm = drumKit ? undefined : gmVirtual || midiProgram;
-    const staffMap = new Map<number, Part>();
-    let divisions = 1;
-    let partKey = key;
-    let partBeats = 4, partBeatType = 4;
-    let partClef = '';
-    let partTransposition: Transposition = { semitones: 0 };
-    const staffTranspositions = new Map<number, Transposition>();
-    for (const [index, m] of children(element, 'measure').entries()) {
-      let cursor = 0;
-      let last: ScoreNote | undefined;
-      const harmonyByTime = new Map<number, string>();
-      const attrs = child(m, 'attributes');
-      const applyAttributes = (attributes: Element) => {
-        divisions = number(attributes, 'divisions', divisions);
-        const time = child(attributes, 'time');
-        if (time) {
-          partBeats = number(time, 'beats', partBeats); partBeatType = number(time, 'beat-type', partBeatType);
-          if (partNo === 0 && !openingMeter) { beats = partBeats; beatType = partBeatType; openingMeter = true; }
-        }
-        const k = child(attributes, 'key');
-        if (k) { partKey = number(k, 'fifths', partKey); if (partNo === 0 && index === 0) key = partKey; }
-        const clefElement = children(attributes, 'clef').find(c => Number(c.getAttribute('number') || 1) === 1);
-        if (clefElement) {
-          const sign = value(clefElement, 'sign');
-          partClef = sign === 'F' ? 'bass' : sign === 'C' ? number(clefElement, 'line', 3) === 4 ? 'tenor' : 'alto' : sign === 'percussion' ? 'percussion' : 'treble';
-        }
-        const forPart = children(attributes, 'for-part').map(item => musicXmlTranspose(child(item, 'part-transpose'))).find(Boolean);
-        if (concertScore && forPart) partTransposition = forPart;
-        else for (const item of children(attributes, 'transpose')) {
-          const interval = musicXmlTranspose(item)!;
-          const staffNumber = Number(item.getAttribute('number'));
-          if (staffNumber > 0) staffTranspositions.set(staffNumber, interval);
-          else partTransposition = interval;
-        }
-        staffMap.forEach((part, staff) => {
-          const measure = part.measures[index];
-          if (!measure) return;
-          const clefElement = children(attributes, 'clef').find(c => Number(c.getAttribute('number') || 1) === staff);
-          if (clefElement) { const sign = value(clefElement, 'sign'); part.clef = sign === 'F' ? 'bass' : sign === 'C' ? number(clefElement, 'line', 3) === 4 ? 'tenor' : 'alto' : sign === 'percussion' ? 'percussion' : 'treble'; }
-          measure.key = partKey; measure.clef = part.clef; measure.beatsPerBar = partBeats; measure.beatType = partBeatType;
-          measure.nominalBeats = partBeats * 4 / partBeatType;
-        });
-      };
-      if (attrs) applyAttributes(attrs);
-      const measureBeats = partBeats * 4 / partBeatType;
-      const ensure = (staff: number) => {
-        const transposition = staffTranspositions.get(staff) || partTransposition;
-        if (!staffMap.has(staff)) {
-          const clefEl = attrs && children(attrs, 'clef').find(c => Number(c.getAttribute('number') || 1) === staff);
-          const sign = clefEl ? value(clefEl, 'sign') : '';
-          const clef = sign === 'F' ? 'bass' : sign === 'C' ? number(clefEl!, 'line', 3) === 4 ? 'tenor' : 'alto' : sign === 'percussion' ? 'percussion' : partClef || (/bass/i.test(name) ? 'bass' : 'treble');
-          staffMap.set(staff, { id: `${id}-${staff}`, name: staff === 1 ? name : `${name} · ${staff}`, clef, key: partKey, instrument: drumKit ? 'drum-kit' : gm ? gm.icon as Part['instrument'] : instrumentForName(name), gmProgram: gm?.program, gmSoundfont: gm?.soundfont, pitchBasis: concertScore ? 'concert' : 'written', transposition, measures: Array.from({ length: index }, (_, i) => empty(i, measureBeats)) });
-        }
-        const p = staffMap.get(staff)!;
-        if (!p.measures[index]) p.measures[index] = { ...empty(index, measureBeats), nominalBeats: measureBeats, number: m.getAttribute('number') || String(index + 1), implicit: m.getAttribute('implicit') === 'yes', key: partKey, clef: p.clef, beatsPerBar: partBeats, beatType: partBeatType };
-        p.measures[index].transposition = transposition;
-        return p.measures[index];
-      };
-      staffMap.forEach((_, staff) => ensure(staff));
-      for (const item of Array.from(m.children)) {
-        if (item.localName === 'attributes') { if (item !== attrs) applyAttributes(item); continue; }
-        if (item.localName === 'harmony') {
-          const symbol = musicXmlHarmony(item);
-          if (symbol) harmonyByTime.set(cursor + number(item, 'offset') / divisions, symbol);
-        }
-        if (item.localName === 'direction') {
-          const sound = child(item, 'sound');
-          const metronome = child(item, 'direction-type') && child(child(item, 'direction-type'), 'metronome');
-          const metronomeUnit = metronome && value(metronome, 'beat-unit');
-          const unitLength = metronomeUnit ? durationBeats(metronomeUnit, metronome ? children(metronome, 'beat-unit-dot').length : 0) : 1;
-          const t = Number(sound?.getAttribute('tempo') || (metronome ? value(metronome, 'per-minute') : 0)) * (sound?.hasAttribute('tempo') ? 1 : unitLength);
-          if (t > 0 && partNo === 0 && !openingTempo) { tempo = t; openingTempo = true; }
-          const dynamics = children(item, 'direction-type').flatMap(type => children(type, 'dynamics')).flatMap(mark => Array.from(mark.children));
-          const measure = ensure(number(item, 'staff', 1));
-          const start = Math.max(0, cursor + number(item, 'offset') / divisions);
-          const symbols = dynamics.map(mark => (mark.localName === 'other-dynamics' ? mark.textContent || '' : mark.localName).trim().toLowerCase()).filter(Boolean);
-          const text = children(item, 'direction-type').flatMap(type => children(type, 'words')).map(word => word.textContent?.trim() || '').filter(Boolean).join(' ');
-          const wedge = children(item, 'direction-type').flatMap(type => children(type, 'wedge'))[0];
-          const soundDynamics = sound?.hasAttribute('dynamics') ? Number(sound.getAttribute('dynamics')) : undefined;
-          if (symbols.length || text || wedge || t > 0 || soundDynamics !== undefined) (measure.directions ||= []).push({ start, symbols, text, placement: item.getAttribute('placement') === 'above' ? 'above' : 'below', voice: value(item, 'voice') || undefined, wedge: wedge ? { type: wedge.getAttribute('type') || '', number: wedge.getAttribute('number') || '1' } : undefined, soundDynamics, tempo: t > 0 ? t : undefined });
-          for (const symbol of symbols) (measure.dynamics ||= []).push({ start, symbol });
-        }
-        if (item.localName === 'backup') { cursor = Math.max(0, cursor - number(item, 'duration') / divisions); last = undefined; }
-        if (item.localName === 'forward') { cursor += number(item, 'duration') / divisions; last = undefined; }
-        if (item.localName !== 'note') continue;
-        const staff = number(item, 'staff', 1);
-        const measure = ensure(staff);
-        const chord = Boolean(child(item, 'chord'));
-        const grace = Boolean(child(item, 'grace'));
-        const duration = grace ? 0 : child(item, 'duration') ? number(item, 'duration') / divisions : durationBeats(value(item, 'type'), children(item, 'dot').length);
-        const p = child(item, 'pitch');
-        const unpitched = child(item, 'unpitched');
-        const rest = Boolean(child(item, 'rest'));
-        const primaryBeam = children(item, 'beam').find(beam => Number(beam.getAttribute('number') || 1) === 1)?.textContent?.trim().toLowerCase();
-        const beamStart = primaryBeam === 'begin';
-        const beamEnd = primaryBeam === 'end';
-        const accidentalElement = child(item, 'accidental');
-        const sourceId = item.getAttribute('id') || undefined;
-        const instrumentId = child(item, 'instrument')?.getAttribute('id');
-        const midiInstrument = definition && children(definition, 'midi-instrument').find(instrument => instrument.getAttribute('id') === instrumentId) || definition && children(definition, 'midi-instrument')[0];
-        const midiUnpitched = midiInstrument ? number(midiInstrument, 'midi-unpitched', 0) : 0;
-        const displayStep = unpitched ? value(unpitched, 'display-step') || 'C' : undefined;
-        const displayOctave = unpitched ? number(unpitched, 'display-octave', 4) : undefined;
-        const basePitch = p ? pitch(value(p, 'step') || 'C', number(p, 'octave', 4), number(p, 'alter')) : unpitched ? { ...midiPitch(midiUnpitched ? midiUnpitched - 1 : defaultDrumMidi(displayStep!, displayOctave!)), unpitched: true, displayStep, displayOctave } : undefined;
-        const notePitch = basePitch && !rest ? { ...basePitch, sourceId, accidental: accidentalElement?.textContent?.trim(), cautionary: accidentalElement?.getAttribute('cautionary') === 'yes' || accidentalElement?.getAttribute('parentheses') === 'yes', tieStart: children(item, 'tie').some(t => t.getAttribute('type') === 'start'), tieStop: children(item, 'tie').some(t => t.getAttribute('type') === 'stop') } : undefined;
-        const notations = child(item, 'notations');
-        const timeModification = child(item, 'time-modification');
-        const tuplets = children(notations || item, 'tuplet');
-        const tuplet = timeModification ? { actual: number(timeModification, 'actual-notes', 3), normal: number(timeModification, 'normal-notes', 2), number: tuplets[0]?.getAttribute('number') || '1', start: tuplets.some(t => t.getAttribute('type') === 'start'), stop: tuplets.some(t => t.getAttribute('type') === 'stop') } : undefined;
-        // A MusicXML <chord> can contain notes with different durations. Only
-        // combine equal-duration pitches; keep the others as concurrent voices.
-        const onset = chord && last ? last.start : cursor;
-        if (chord && last && notePitch && last.voice === (value(item, 'voice') || '1') && Math.abs(last.duration - duration) < .001) {
-          last.pitches.push(notePitch);
-          last.beamStart ||= beamStart;
-          last.beamEnd ||= beamEnd;
-        }
-        else {
-          last = { id: `${id}-${staff}-${index}-${measure.notes.length}`, sourceId, start: onset, duration, pitches: notePitch ? [notePitch] : [], transposition: staffTranspositions.get(staff) || partTransposition, chordSymbol: harmonyByTime.get(onset), rest, dotted: Boolean(child(item, 'dot')), dots: children(item, 'dot').length, writtenType: value(item, 'type') || undefined, voice: value(item, 'voice') || '1', stem: value(item, 'stem') || undefined, grace, tuplet, slurStart: children(notations || item, 'slur').filter(s => s.getAttribute('type') === 'start').map(s => s.getAttribute('number') || '1'), slurStop: children(notations || item, 'slur').filter(s => s.getAttribute('type') === 'stop').map(s => s.getAttribute('number') || '1'), tieStart: notePitch?.tieStart, tieStop: notePitch?.tieStop };
-          measure.notes.push(last);
-        }
-        if (!chord && !grace) cursor += duration;
-      }
-      for (const part of staffMap.values()) {
-        const measure = part.measures[index];
-        if (measure?.implicit) measure.beats = Math.max(cursor, ...measure.notes.map(note => note.start + note.duration), 0);
-      }
-    }
-    parts.push(...Array.from(staffMap.values()).sort((a, b) => Number(a.id.split('-').pop()) - Number(b.id.split('-').pop())));
-  }
-  // Builder-style scores can contain many placeholder instruments with only
-  // rests. They obscure the playable staves in the continuous reader. A silent
-  // staff is kept only when its directions shape playback: a tempo, or
-  // dynamics/wedges that apply to a sounding sibling staff of the same part.
-  // Plain words (e.g. a template's "(Easy 3)" label) do not make it playable.
-  const sounding = (part: Part) => part.measures.some(measure => measure.notes.some(note => note.pitches.length > 0));
-  const sourcePart = (part: Part) => part.id.replace(/-\d+$/, '');
-  const soundingSources = new Set(parts.filter(sounding).map(sourcePart));
-  const shapesPlayback = (part: Part) => part.measures.some(measure => measure.directions?.some(direction => (direction.tempo ?? 0) > 0
-    || (soundingSources.has(sourcePart(part)) && (direction.symbols?.length || direction.wedge || direction.soundDynamics !== undefined))));
-  const playableParts = parts.filter(part => sounding(part) || shapesPlayback(part));
-  const score = normalized({ title, subtitle, composer, credits: otherCredits, source: 'MusicXML', tempo, beats, beatType, key, parts: playableParts.length ? playableParts : parts });
-  // Navigation is read once from the first source part and shared by every staff.
-  const navigationNotes: string[] = [];
-  attachNavigation(score, musicXmlNavigation(root, score.parts[0].measures.length, navigationNotes));
-  score.document = makeSourceDocument({ format: 'musicxml', engravingFormat: 'musicxml', originalText: text, engravingText, identity: identityForScore(score), diagnostics: navigationDiagnostics(navigationNotes) });
+  const read = readMusicXml(text);
+  const score = read.score;
+  score.document = makeSourceDocument({ format: 'musicxml', engravingFormat: 'musicxml', originalText: text, engravingText: read.engravingText, identity: identityForScore(score), inventory: read.inventory, diagnostics: read.diagnostics });
   return score;
 }
 
@@ -538,75 +325,129 @@ export async function parseMidi(buffer: ArrayBuffer): Promise<Score> {
   return score;
 }
 
-const MB = 1024 * 1024;
-/** Largest score file accepted (MusicXML, MXL, MEI, ABC or MIDI). Orchestral MusicXML routinely runs to tens of MB. */
-export const MAX_SCORE_FILE_BYTES = 64 * MB;
-/** Uncompressed size limit for an MXL score member; bounds decompression so a small archive cannot inflate without limit. */
-export const MXL_MAX_SCORE_BYTES = 128 * MB;
-const formatMb = (bytes: number) => `${Math.round(bytes / MB * 10) / 10} MB`;
+/** What the import worker hands back: a parsed score, or the bytes of a format the main thread reads. */
+type WorkerResult = { kind: 'score'; score: Score } | { kind: 'bytes'; bytes: Uint8Array };
+type ImportJob = { sha256: Promise<string>; size: Promise<number | undefined>; result: Promise<WorkerResult> };
+/** The import whose score is still arriving; a newer import stops it. A job past its score finishes its timeline. */
+let parsing: { worker: Worker; fail: (error: Error) => void } | undefined;
+
 /**
- * Reads the MusicXML member of an MXL archive without inflating anything else:
- * only META-INF/container.xml and the chosen score are decompressed, each with a
- * declared-size bound (fflate never writes past the declared size).
+ * Run one import in a fresh worker (docs/specs/large-score-performance.md, Phase 2). The main thread only assembles
+ * the Score from bounded chunks (each message is its own short task) and wraps the transferred bytes; it never
+ * parses or hashes the file. The playback timeline arrives after the score and is registered for its document.
  */
-export function extractMxlScore(bytes: Uint8Array): string {
-  const entries: { name: string; originalSize: number }[] = [];
-  let listing: Record<string, Uint8Array>;
-  try {
-    listing = unzipSync(bytes, { filter: file => { entries.push({ name: file.name, originalSize: file.originalSize }); return file.name === 'META-INF/container.xml' && file.originalSize <= 1_000_000; } });
-  } catch { throw new Error('This MXL archive could not be opened.'); }
-  const container = listing['META-INF/container.xml'];
-  let path: string | undefined;
-  if (container) {
-    let declared: string | null | undefined;
-    try { declared = Array.from(parseXml(strFromU8(container)).getElementsByTagName('*')).find(el => el.localName === 'rootfile')?.getAttribute('full-path'); }
-    catch { throw new Error('This MXL archive has an unreadable META-INF/container.xml.'); }
-    if (declared) {
-      try { path = decodeURIComponent(declared.trim()); } catch { path = declared.trim(); }
-      path = path.replace(/^\.\//, '');
-      if (path.startsWith('/') || path.split(/[\\/]/).includes('..')) throw new Error('This MXL archive declares an unsafe score path.');
-      // Some writers percent-encode the path, others store it raw; accept either spelling.
-      if (!entries.some(entry => entry.name === path) && entries.some(entry => entry.name === declared!.trim())) path = declared.trim();
+function runImport(request: ImportRequest, file?: File): ImportJob {
+  parsing?.fail(new Error('Superseded import.'));
+  const worker = new Worker(new URL('./import.worker.ts', import.meta.url), { type: 'module' });
+  let resolveHash!: (sha256: string) => void, resolveResult!: (result: WorkerResult) => void;
+  let rejectHash!: (error: Error) => void, rejectResult!: (error: Error) => void;
+  const sha256 = new Promise<string>((resolve, reject) => { resolveHash = resolve; rejectHash = reject; });
+  const result = new Promise<WorkerResult>((resolve, reject) => { resolveResult = resolve; rejectResult = reject; });
+  let timeline: { resolve: (timeline: BaseTimeline) => void; reject: (error: Error) => void; value?: BaseTimeline } | undefined;
+  let score: Score | undefined;
+  let hash: string | undefined, size: number | undefined;
+  const identity = new IdentityBuilder();
+  const stop = () => { worker.terminate(); if (parsing?.worker === worker) parsing = undefined; };
+  const fail = (error: Error) => { stop(); rejectHash(error); rejectResult(error); timeline?.reject(error); };
+  parsing = { worker, fail };
+  worker.onerror = event => { event.preventDefault(); fail(new Error(event.message || 'The score could not be read.')); };
+  worker.onmessage = ({ data }: MessageEvent<ImportReply>) => {
+    switch (data.kind) {
+      case 'source': hash = data.sha256; size = data.size; resolveHash(data.sha256); break;
+      case 'bytes': stop(); resolveResult({ kind: 'bytes', bytes: new Uint8Array(data.bytes) }); break;
+      case 'head': score = data.score; score.parts.forEach(part => identity.part(part)); break;
+      case 'measures': {
+        const measures = score!.parts[data.part].measures;
+        for (const measure of data.measures) measures.push(measure);
+        identity.notes(data.measures);
+        break;
+      }
+      case 'done': {
+        if (parsing?.worker === worker) parsing = undefined;
+        const original = data.original ? new Uint8Array(data.original) : undefined;
+        const engraving = data.engraving ? new Uint8Array(data.engraving) : undefined;
+        const text = request.kind === 'text' ? request.text : undefined;
+        const document: SourceDocument = makeSourceDocument({
+          format: data.format, engravingFormat: 'musicxml', originalBytes: original,
+          // Files keep bytes only; their texts are decoded on demand (the MXL member is extracted again).
+          originalText: text ?? (data.format === 'mxl' ? { bytes: original!, decode: () => extractMxlScore(original!) } : { bytes: original! }),
+          engravingText: engraving ? { bytes: engraving } : text ?? { bytes: original! },
+          filename: file?.name, sha256: hash, identity: identity.identity, inventory: data.inventory, diagnostics: data.diagnostics,
+        });
+        score!.document = document;
+        const built = new Promise<BaseTimeline>((resolve, reject) => { timeline = { resolve, reject }; });
+        // A timeline that never arrives is built on demand instead (baseTimelineFor).
+        built.catch(() => {});
+        registerBaseTimeline(document, built);
+        resolveResult({ kind: 'score', score: score! });
+        break;
+      }
+      case 'timeline': timeline!.value = data.timeline; break;
+      case 'timeline-events': {
+        const value = timeline!.value!;
+        for (const event of data.events) value.events.push(event);
+        for (const source of data.eventSources) value.eventSources.push(source);
+        break;
+      }
+      case 'timeline-end': stop(); timeline!.resolve(timeline!.value!); break;
+      case 'error': fail(new Error(data.message)); break;
     }
+  };
+  worker.postMessage(request);
+  // Callers may use only one of the two promises.
+  sha256.catch(() => {}); result.catch(() => {});
+  return { sha256, size: sha256.then(() => size), result };
+}
+
+/** An import of a score file: its source identity (available once hashed) and the score. */
+export type ScoreImport = { source: Promise<FileSource>; score: Promise<Score> };
+
+/**
+ * Open a score file. The import worker reads and hashes it once and reads MusicXML/MXL off the main thread; MEI,
+ * ABC and MIDI are small and are read here from the bytes the worker hands back.
+ */
+export function importScoreFile(file: File): ScoreImport {
+  if (file.size > MAX_SCORE_FILE_BYTES) {
+    const error = Promise.reject(new Error(`This file is ${formatMb(file.size)}; scores up to ${formatMb(MAX_SCORE_FILE_BYTES)} can be opened.`));
+    error.catch(() => {});
+    return { source: error as Promise<never>, score: error as Promise<never> };
   }
-  const target = path ? entries.find(entry => entry.name === path) : entries.find(entry => /\.(xml|musicxml)$/i.test(entry.name) && !entry.name.startsWith('META-INF/'));
-  if (!target) throw new Error(path ? `This MXL archive does not contain its declared score "${path}".` : 'This MXL archive has no MusicXML score.');
-  if (!(target.originalSize <= MXL_MAX_SCORE_BYTES)) throw new Error(`The score inside this MXL archive is ${formatMb(target.originalSize)} uncompressed; the limit is ${formatMb(MXL_MAX_SCORE_BYTES)}.`);
-  let files: Record<string, Uint8Array>;
-  try { files = unzipSync(bytes, { filter: file => file.name === target.name && file.originalSize <= MXL_MAX_SCORE_BYTES }); }
-  catch { throw new Error('The score inside this MXL archive could not be decompressed.'); }
-  const entry = files[target.name];
-  if (!entry || !entry.length) throw new Error('The score inside this MXL archive is empty.');
-  return strFromU8(entry);
+  const job = runImport({ kind: 'file', file }, file);
+  const score = job.result.then(async result => {
+    if (result.kind === 'score') return result.score;
+    return readOnMainThread(file, result.bytes, await job.sha256);
+  });
+  return { source: job.sha256.then(sha256 => fileSourceFor(file.name, file.size, sha256)), score };
+}
+
+/** Open a score file (see importScoreFile). */
+export function importFile(file: File): Promise<Score> {
+  return importScoreFile(file).score;
 }
 
 /**
- * Open a score file. `prepared` passes bytes and a SHA-256 the caller already has (the reader hashes once for the
- * per-score record), so the file is neither read nor hashed twice.
+ * Read MusicXML text the page already holds (the Reader's musicXml prop) in the import worker, which also takes its
+ * source identity (the same as file-state.ts textSource, without hashing on the main thread).
  */
-export async function importFile(file: File, prepared?: { bytes: Uint8Array; sha256: string }): Promise<Score> {
-  if (file.size > MAX_SCORE_FILE_BYTES) throw new Error(`This file is ${formatMb(file.size)}; scores up to ${formatMb(MAX_SCORE_FILE_BYTES)} can be opened.`);
+export function importMusicXmlText(text: string, name = 'MusicXML'): ScoreImport {
+  const job = runImport({ kind: 'text', text });
+  return {
+    source: job.sha256.then(async sha256 => ({ name, size: (await job.size) ?? 0, sha256, format: 'musicxml' })),
+    score: job.result.then(result => { if (result.kind !== 'score') throw new Error('This file is not a MusicXML score.'); return result.score; }),
+  };
+}
+
+async function readOnMainThread(file: File, bytes: Uint8Array, hash: string): Promise<Score> {
   const name = file.name.toLowerCase();
-  const bytes = prepared?.bytes || new Uint8Array(await file.arrayBuffer());
-  const hash = prepared?.sha256 || await sha256(bytes);
-  let score: Score;
   // The document is re-wrapped with the file's identity; its inventory and identity carry over (no second parse).
-  const rewrap = (score: Score, binary?: Uint8Array, originalText = score.document!.originalText, format = score.document!.format) => {
+  const rewrap = (score: Score, binary?: Uint8Array) => {
     const document = score.document!;
-    score.document = makeSourceDocument({ format, engravingFormat: document.engravingFormat, originalBytes: binary, originalText, engravingText: document.engravingText, filename: file.name, sha256: hash, identity: document.identity, inventory: { featureCounts: document.featureCounts, diagnostics: document.diagnostics } });
+    score.document = makeSourceDocument({ format: document.format, engravingFormat: document.engravingFormat, originalBytes: binary, originalText: document.originalText, engravingText: document.engravingText, filename: file.name, sha256: hash, identity: document.identity, inventory: { featureCounts: document.featureCounts, diagnostics: document.diagnostics } });
     return score;
   };
-  if (/\.(mid|midi)$/.test(name)) score = await parseMidi(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
-  else if (/\.mxl$/.test(name)) {
-    const text = extractMxlScore(bytes);
-    return rewrap(parseMusicXml(text), bytes, text, 'mxl');
-  } else {
-    const text = new TextDecoder().decode(bytes);
-    if (/\.(abc|txt)$/.test(name)) score = await parseAbc(text);
-    else if (/\.mei$/.test(name)) score = parseMei(text);
-    else if (/\.(xml|musicxml)$/.test(name)) score = parseMusicXml(text);
-    else throw new Error('Choose a MusicXML, MIDI, MEI, or ABC file.');
-    return rewrap(score);
-  }
-  return rewrap(score, bytes);
+  if (/\.(mid|midi)$/.test(name)) return rewrap(await parseMidi(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer), bytes);
+  const text = new TextDecoder().decode(bytes);
+  if (/\.(abc|txt)$/.test(name)) return rewrap(await parseAbc(text));
+  if (/\.mei$/.test(name)) return rewrap(parseMei(text));
+  throw new Error('Choose a MusicXML, MIDI, MEI, or ABC file.');
 }

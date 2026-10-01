@@ -39,11 +39,11 @@ function stopWorker(reason: Error): void {
 }
 
 type Body = VerovioRequest extends infer R ? R extends unknown ? Omit<R, 'id'> : never : never;
-function request<T>(body: Body): Promise<T> {
+function request<T>(body: Body, transfer: Transferable[] = []): Promise<T> {
   const id = ++nextId;
   return new Promise<T>((resolve, reject) => {
     pending.set(id, { resolve, reject });
-    getWorker().postMessage({ ...body, id });
+    getWorker().postMessage({ ...body, id }, transfer);
   });
 }
 
@@ -61,8 +61,8 @@ const baselines = new Map<number, Promise<BaselineInfo>>();
 const BASELINE_LIMIT = 2;
 /** The revision most recently imported successfully: the one a missing baseline is re-imported for. */
 let current = 0;
-/** Sources above this many characters leave a large WASM heap behind; the worker is recycled before the next import. */
-const RECYCLE_AFTER_CHARS = 4_000_000;
+/** Sources above this many bytes leave a large WASM heap behind; the worker is recycled before the next import. */
+const RECYCLE_AFTER_BYTES = 4_000_000;
 let heavy = false;
 /** The revision whose import is in flight, if any. */
 let importing: number | undefined;
@@ -77,8 +77,11 @@ export function prepareVerovio(document: SourceDocument): Promise<BaselineInfo> 
   if (cached) { baselines.delete(revision); baselines.set(revision, cached); return cached; }
   // The previous score's heap is not reused well by a different one; start from a fresh module instead.
   if (heavy && worker) stopWorker(new VerovioError('Superseded score render.', 'superseded'));
-  heavy = document.engravingText.length > RECYCLE_AFTER_CHARS;
-  cached = request<BaselineInfo>({ kind: 'import', revision, text: document.engravingText });
+  // The engraving goes as a copy of its UTF-8 bytes (transferred), never as a string decoded on the main thread; the
+  // document keeps its own bytes for a re-import after the worker is recycled.
+  const bytes = document.engravingBytes().slice();
+  heavy = bytes.length > RECYCLE_AFTER_BYTES;
+  cached = request<BaselineInfo>({ kind: 'import', revision, bytes: bytes.buffer }, [bytes.buffer]);
   baselines.set(revision, cached);
   while (baselines.size > BASELINE_LIMIT) baselines.delete(baselines.keys().next().value!);
   importing = revision;
