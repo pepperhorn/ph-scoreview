@@ -243,3 +243,7 @@ html,body,#root{height:100%;overflow:hidden}
   .mode-toggle button{min-width:34px;padding:0 4px}
 }
 .portrait .score-content{padding-bottom:calc(70px + var(--page-tail,0px))}
+/* Large scores draw systems on demand: a placeholder keeps the system's laid-out size until it is drawn. */
+.score-system.is-pending{background:repeating-linear-gradient(180deg,transparent 0 22px,#f3f4ef 22px 23px);border-radius:6px;opacity:.7}
+/* Placeholder sizes are corrected as systems draw; render.ts keeps the reader's place itself, so browser scroll anchoring must not adjust it too. */
+.score-viewport{overflow-anchor:none}

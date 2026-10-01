@@ -11,7 +11,7 @@ import { buildFileState, clampBpm, fileSource, MAX_BPM, MIN_BPM, textSource, typ
 import { sampleSource, scoreDb } from '../lib/score-db';
 import { scoreForView } from '../lib/transpose';
 import { buildPerformanceTimeline, eventsFromSeconds, positionAtSeconds } from '../lib/playback/timeline';
-import { disposeVerovio, importVerovio } from '../lib/verovio-runtime';
+import { disposeVerovio, isSuperseded, prepareVerovio } from '../lib/verovio-runtime';
 import { withEngravingDocument } from '../lib/notation/document';
 import { SCORE_FILE_ACCEPT } from '../lib/score-files';
 import { PAGE_PAD_PX, pageOfSystem, systemPages, turnTarget, type ReadingPage, type SystemSpan } from '../lib/paging';
@@ -88,6 +88,8 @@ export default function Reader({ musicXml }: ReaderProps) {
   const [painted, setPainted] = useState(false);
   const [painting, setPainting] = useState(true);
   const [resizeTick, setResizeTick] = useState(0);
+  /** Bumped when systems are drawn, released or resized after the first paint (large scores draw on demand). */
+  const [layoutTick, setLayoutTick] = useState(0);
   const [active, setActive] = useState<string | null>(null);
   const [activeNotes, setActiveNotes] = useState<string[]>([]);
   const [position, setPosition] = useState(0);
@@ -158,7 +160,12 @@ export default function Reader({ musicXml }: ReaderProps) {
   const scorePitch = concertBasis ? 'concert' : prefs.scorePitch;
   const displayScore = useMemo(() => scoreForView(score, scorePitch, prefs.semitones), [score, scorePitch, prefs.semitones]);
   const hasTransposingParts = score.parts.some(part => part.transposition?.semitones || part.measures.some(measure => measure.transposition?.semitones));
-  const timeline = useMemo(() => buildPerformanceTimeline(visibleScore, { bpm: prefs.bpm, semitones: prefs.semitones, fullScore: score }), [visibleScore, score, prefs.bpm, prefs.semitones]);
+  // The performance timeline is built when playback first needs it, not while a score loads: on a large score it is
+  // seconds of main-thread work that would otherwise hold up the first paint (docs/specs/large-score-performance.md).
+  const timelineOf = useMemo(() => {
+    let built: ReturnType<typeof buildPerformanceTimeline> | undefined;
+    return () => built ??= buildPerformanceTimeline(visibleScore, { bpm: prefs.bpm, semitones: prefs.semitones, fullScore: score });
+  }, [visibleScore, score, prefs.bpm, prefs.semitones]);
 
   useEffect(() => {
     try {
@@ -243,7 +250,7 @@ export default function Reader({ musicXml }: ReaderProps) {
         const src = textSource('musicxml', musicXml, 'MusicXML');
         const record = readScoreRecord(src);
         const next = parseMusicXml(musicXml);
-        if (next.document) await importVerovio(next.document.engravingText);
+        if (next.document) await prepareVerovio(next.document);
         const saved = await record;
         if (run === importRunRef.current) loadScore(next, src, saved);
       } catch (e) {
@@ -259,10 +266,12 @@ export default function Reader({ musicXml }: ReaderProps) {
     setPainting(true);
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
     try {
-      // The saved record is read while the score imports, so its zoom is applied before the first paint.
-      const hashed = fileSource(file);
-      const [nextSource, saved, nextScore] = await Promise.all([hashed, hashed.then(readScoreRecord), importFile(file)]);
-      if (nextScore.document) await importVerovio(nextScore.document.engravingText);
+      // The file is read and hashed once; the saved record is read while the score imports, so its zoom is applied
+      // before the first paint.
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const nextSource = await fileSource(file, bytes);
+      const [saved, nextScore] = await Promise.all([readScoreRecord(nextSource), importFile(file, { bytes, sha256: nextSource.sha256 })]);
+      if (nextScore.document) await prepareVerovio(nextScore.document);
       if (run === importRunRef.current) loadScore(nextScore, nextSource, saved);
     }
     catch (e) { if (run === importRunRef.current) { setPainting(false); setError(e instanceof Error ? e.message : 'Could not open this file.'); } }
@@ -337,7 +346,17 @@ export default function Reader({ musicXml }: ReaderProps) {
   };
   const restoreZoomAnchor = (anchor: ZoomAnchor, result: RenderResult, mode: Prefs['mode']) => {
     const viewport = viewportRef.current, centre = viewportCentre();
-    const rect = result.measures.find(measure => measure.index === anchor.index)?.element?.getBoundingClientRect();
+    // An undrawn anchor (a large score draws systems on demand) falls back to its system block from layout data, with
+    // the measure's share of it: exact for a drawn measure, approximate (equal-width measures) otherwise.
+    let rect = result.measure(anchor.index)?.element?.getBoundingClientRect();
+    if (!rect) {
+      const system = result.systems[result.systemOfMeasure(anchor.index)];
+      const block = system && canvasRef.current?.querySelector<HTMLElement>(`:scope > .score-system[data-system="${system.index}"]`)?.getBoundingClientRect();
+      if (block && system.measureCount > 0) {
+        const share = block.width / system.measureCount;
+        rect = new DOMRect(block.left + share * Math.max(0, anchor.index - system.firstMeasure), block.top, share, block.height);
+      }
+    }
     if (!viewport || !centre || !rect) return;
     const dx = rect.left + anchor.fx * rect.width - centre.x, dy = rect.top + anchor.fy * rect.height - centre.y;
     // Endless keeps its vertical centring; Vertical scrolls the anchor's system back to the centre.
@@ -433,9 +452,15 @@ export default function Reader({ musicXml }: ReaderProps) {
         const availableHeight = Math.max(120, (viewportRef.current?.clientHeight || 600) - metaHeight - 70);
         // Without a user zoom the default ('fit': four bars in Vertical) is re-resolved for the viewport, so rotation re-fits.
         const requested = prefs.zoom ?? 'fit';
-        const result = await renderScore(canvas, displayScore, prefs.mode, prefs.names, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.chordSymbols, prefs.inferChordSymbols, availableHeight, requested, 0, { gutterFor: (stavePx, staffPitchPx) => metricsFor(stavePx, staffPitchPx).gutter, fitCap: ENDLESS_STAVE_SCALE[deviceClass()], fitFloor: minimumDefaultStaveScale(deviceClass()), font: prefs.notationFont, textFont: prefs.annotationFont, transpose: prefs.semitones, scorePitch, hiddenPartIds: hiddenIds, generation });
-        if (disposed || generation !== renderRunRef.current) return;
+        const result = await renderScore(canvas, displayScore, prefs.mode, prefs.names, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.chordSymbols, prefs.inferChordSymbols, availableHeight, requested, 0, { gutterFor: (stavePx, staffPitchPx) => metricsFor(stavePx, staffPitchPx).gutter, fitCap: ENDLESS_STAVE_SCALE[deviceClass()], fitFloor: minimumDefaultStaveScale(deviceClass()), font: prefs.notationFont, textFont: prefs.annotationFont, transpose: prefs.semitones, scorePitch, hiddenPartIds: hiddenIds, generation, focusMeasure: anchor?.index });
+        if (disposed || generation !== renderRunRef.current) { result.dispose(); return; }
         renderRef.current = result;
+        // Systems drawn later (scrolling, playback) change block sizes: re-page, and let the playhead find new notes.
+        result.onChange(() => {
+          refreshPagesRef.current();
+          canvas.closest<HTMLElement>('.score-content')?.style.setProperty('--landscape-content-width', `${canvas.scrollWidth + 88}px`);
+          setLayoutTick(value => value + 1);
+        });
         renderedZoomRef.current = result.zoom;
         const metrics = metricsFor(result.stavePx, result.staffPitchPx);
         // Commit the controls with the new SVG so no frame shows them against the other layout.
@@ -456,7 +481,7 @@ export default function Reader({ musicXml }: ReaderProps) {
         refreshPages();
         if (anchor) restoreZoomAnchor(anchor, result, prefs.mode);
         setError('');
-      } catch (e) { if (!disposed) setError(e instanceof Error ? e.message : 'Could not draw this score.'); }
+      } catch (e) { if (!disposed && !isSuperseded(e)) setError(e instanceof Error ? e.message : 'Could not draw this score.'); }
       finally {
         if (!disposed) frame = requestAnimationFrame(() => {
           hasPaintedRef.current = true;
@@ -557,38 +582,44 @@ export default function Reader({ musicXml }: ReaderProps) {
   // the measure and its fraction, quantized to a 32nd of the bar so the effect below re-runs only as the line moves.
   const measureCursor = useMemo(() => {
     if (!playing && position <= 0) return null;
-    if (active && renderRef.current?.points.some(point => point.id === active && point.element)) return null;
-    const current = positionAtSeconds(timeline, position);
+    if (active && renderRef.current?.point(active)?.element) return null;
+    const current = positionAtSeconds(timelineOf(), position);
     const length = visibleScore.parts[0]?.measures[current.measureIndex]?.beats || 0;
     const fraction = length > 0 ? Math.max(0, Math.min(1, current.measureBeat / length)) : 0;
     return { measureIndex: current.measureIndex, fraction: Math.floor(fraction * 32) / 32 };
-  }, [active, playing, position, timeline, visibleScore]);
+  }, [active, playing, position, timelineOf, visibleScore, layoutTick]);
   const measureCursorKey = measureCursor ? `${measureCursor.measureIndex}:${measureCursor.fraction}` : '';
   useEffect(() => {
-    const note = active ? renderRef.current?.points.find(p => p.id === active) : undefined;
+    const result = renderRef.current;
+    const note = active ? result?.point(active) : undefined;
     canvasRef.current?.querySelectorAll('.reader-note.is-playing').forEach(n => n.classList.remove('is-playing'));
     canvasRef.current?.querySelectorAll('.playback-line').forEach(n => n.remove());
-    const sounding = new Set(activeNotes);
-    renderRef.current?.points.forEach(point => {
-      if (!point.rest && sounding.has(point.id)) point.element?.classList.add('is-playing');
-    });
+    for (const id of activeNotes) {
+      const point = result?.point(id);
+      if (point && !point.rest) point.element?.classList.add('is-playing');
+    }
     // A note marks the playhead; otherwise it moves through the current measure's engraved bounds.
-    const measure = !note?.element && measureCursor ? renderRef.current?.measures.find(item => item.index === measureCursor.measureIndex) : undefined;
+    const measure = !note?.element && measureCursor ? result?.measure(measureCursor.measureIndex) : undefined;
     const anchor = note?.element || measure?.element;
-    if (!anchor) return;
-    const block = anchor.closest<HTMLElement>('.score-system');
+    // The playhead's system may not be drawn yet (large scores draw systems on demand): draw it, and this effect runs
+    // again when it lands (layoutTick). Follow still scrolls to its placeholder block meanwhile.
+    const pendingSystem = !anchor && measureCursor && result ? result.systemOfMeasure(measureCursor.measureIndex) : -1;
+    if (pendingSystem >= 0) void result!.ensureSystem(pendingSystem);
+    const block = anchor ? anchor.closest<HTMLElement>('.score-system') : pendingSystem >= 0 ? canvasRef.current?.querySelector<HTMLElement>(`:scope > .score-system[data-system="${pendingSystem}"]`) : null;
     if (!block) return;
-    const line = document.createElement('div');
-    line.className = 'playback-line';
-    line.style.left = `${note?.element ? note.x : measure!.x + measure!.width * measureCursor!.fraction}px`;
-    block.appendChild(line);
+    const line = anchor ? document.createElement('div') : null;
+    if (line) {
+      line.className = 'playback-line';
+      line.style.left = `${note?.element ? note.x : measure!.x + measure!.width * measureCursor!.fraction}px`;
+      block.appendChild(line);
+    }
     // Follow playback in page jumps: nothing moves while the active system is in view, a smooth scroll in flight
     // is left to land, and a reader who just scrolled keeps their view for a moment.
     const viewport = viewportRef.current;
     if (!viewport || !playRef.current || performance.now() - userScrollAtRef.current < FOLLOW_SUSPEND_MS || pendingScroll()) return;
     if (prefs.mode === 'landscape') {
       const view = viewport.getBoundingClientRect();
-      const x = line.getBoundingClientRect().left;
+      const x = (line || block).getBoundingClientRect().left;
       if (x > view.left + view.width * .78 || x < view.left + view.width * .18) scrollViewport({ left: viewport.scrollLeft + x - view.left - view.width * .35 });
       return;
     }
@@ -601,7 +632,7 @@ export default function Reader({ musicXml }: ReaderProps) {
     const inView = page.tall ? span.top < bottom && span.bottom > top : span.top >= top - 1 && span.bottom <= bottom + 1;
     if (!inView && Math.abs(page.start - top) > 1) scrollViewport({ top: page.start });
   // measureCursor is read through its key, so the effect re-runs when the line moves rather than on every frame.
-  }, [active, activeNotes, prefs.mode, painting, measureCursorKey]);
+  }, [active, activeNotes, prefs.mode, painting, measureCursorKey, layoutTick]);
 
   // Returns null when the device can't produce sound (no output device, autoplay blocked, resume() never settling),
   // so playback falls back to a silent wall-clock run instead of hanging on a suspended AudioContext.
@@ -629,7 +660,7 @@ export default function Reader({ musicXml }: ReaderProps) {
     for (const sound of [...new Set(visibleScore.parts.map(audioKey))]) {
       const matching = visibleScore.parts.filter(part => audioKey(part) === sound);
       const matchingIds = new Set(matching.map(part => part.id));
-      const notes = timeline.events.filter(event => matchingIds.has(event.partId)).map(event => event.midi);
+      const notes = timelineOf().events.filter(event => matchingIds.has(event.partId)).map(event => event.midi);
       let players = audio.players.get(sound);
       if (!players) {
         if (sound.startsWith('drum-kit:')) {
@@ -668,6 +699,7 @@ export default function Reader({ musicXml }: ReaderProps) {
       const secondsStart = position;
       const started = now() + (audio ? .09 : 0);
       const parts = new Map(visibleScore.parts.map(part => [part.id, part]));
+      const timeline = timelineOf();
       const events = eventsFromSeconds(timeline, secondsStart);
       let nextEvent = 0;
       const schedule = audio && (() => {
@@ -699,7 +731,7 @@ export default function Reader({ musicXml }: ReaderProps) {
       setPlaying(true);
     } catch (e) { if (run === playRunRef.current) { setLoadingAudio(false); setError(e instanceof Error ? e.message : 'Audio could not start.'); } }
   };
-  useEffect(() => () => { importRunRef.current++; playRunRef.current++; disposeVerovio(); if (playRef.current) { cancelAnimationFrame(playRef.current.frame); clearInterval(playRef.current.interval); } scheduledStopsRef.current.splice(0).forEach(item => item.stop()); audioRef.current?.players.forEach(players => players.forEach(p => p.dispose())); audioRef.current?.context.close(); }, []);
+  useEffect(() => () => { importRunRef.current++; playRunRef.current++; renderRef.current?.dispose(); disposeVerovio(); if (playRef.current) { cancelAnimationFrame(playRef.current.frame); clearInterval(playRef.current.interval); } scheduledStopsRef.current.splice(0).forEach(item => item.stop()); audioRef.current?.players.forEach(players => players.forEach(p => p.dispose())); audioRef.current?.context.close(); }, []);
   const openInstrumentPicker = (part: Part) => {
     const currentSound = playbackSound(part);
     const selected = GM_SOUNDS.find(sound => (sound.soundfont || 'drum-kit') === currentSound);

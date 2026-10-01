@@ -172,6 +172,95 @@ try {
   ], 'Events and chord pitches carry the injected source IDs');
   assert.equal(idless.identity['P1-1-3-1'], 'mx_p1_m4_n2', 'Identity maps a chord to its first source note');
   assert.equal(idless.expressiveKept, true, 'Sources with note IDs keep them unchanged');
+  // The worker's string MEI view transform (no DOMParser in workers) matches the reader's former DOM transform.
+  const meiView = await page.evaluate(async () => {
+    const { buildViewMei, scanBaseline } = await import('/src/lib/notation/mei-view.ts');
+    const { scoreToMei } = await import('/src/lib/notation/document.ts');
+    const { exampleScore } = await import('/src/lib/score.ts');
+    const MEI = 'http://www.music-encoding.org/ns/mei';
+    const XML = 'http://www.w3.org/XML/1998/namespace';
+    const parse = text => new DOMParser().parseFromString(text, 'application/xml');
+    const nodes = (root, name) => Array.from(root.getElementsByTagNameNS(MEI, name));
+    const xmlIdOf = element => element.getAttributeNS(XML, 'id') || element.getAttribute('xml:id') || '';
+    // Reference: the DOM transform render.ts used before Phase 1 (viewMei + hideStaves).
+    const reference = (baseline, breakEvery, hidden, chords) => {
+      const doc = parse(baseline);
+      const measures = nodes(doc, 'measure');
+      for (const head of nodes(doc, 'meiHead')) head.remove();
+      if (!chords) for (const harmony of nodes(doc, 'harm')) harmony.remove();
+      for (const label of [...nodes(doc, 'label'), ...nodes(doc, 'labelAbbr')]) label.remove();
+      for (const definition of [...nodes(doc, 'staffDef'), ...nodes(doc, 'staffGrp')]) { definition.removeAttribute('label'); definition.removeAttribute('label.abbr'); }
+      for (const item of [...nodes(doc, 'sb'), ...nodes(doc, 'pb'), ...nodes(doc, 'pgHead'), ...nodes(doc, 'pgFoot')]) item.remove();
+      if (breakEvery > 0) for (let index = breakEvery; index < measures.length; index += breakEvery) measures[index].parentNode.insertBefore(doc.createElementNS(MEI, 'pb'), measures[index]);
+      if (hidden.size) {
+        const removed = new Set();
+        const drop = element => { for (const item of [element, ...element.getElementsByTagName('*')]) { const id = xmlIdOf(item); if (id) removed.add(id); } element.remove(); };
+        for (const element of [...nodes(doc, 'staffDef'), ...nodes(doc, 'staff')]) if (hidden.has(element.getAttribute('n') || '') && doc.contains(element)) drop(element);
+        const all = Array.from(doc.getElementsByTagNameNS(MEI, '*'));
+        for (const element of all) {
+          if (!doc.contains(element) || !element.hasAttribute('staff')) continue;
+          const tokens = (element.getAttribute('staff') || '').split(/\s+/).filter(Boolean);
+          const kept = tokens.filter(token => !hidden.has(token));
+          if (!kept.length && tokens.length) drop(element); else if (kept.length !== tokens.length) element.setAttribute('staff', kept.join(' '));
+        }
+        const refersToRemoved = value => !!value && value.split(/\s+/).some(token => removed.has(token.replace(/^#/, '')));
+        for (const element of all) {
+          if (!doc.contains(element)) continue;
+          if (refersToRemoved(element.getAttribute('startid')) || refersToRemoved(element.getAttribute('endid'))) { drop(element); continue; }
+          const plist = element.getAttribute('plist');
+          if (plist && refersToRemoved(plist)) { const kept = plist.split(/\s+/).filter(token => !removed.has(token.replace(/^#/, ''))); if (kept.length) element.setAttribute('plist', kept.join(' ')); else drop(element); }
+        }
+        for (const group of nodes(doc, 'staffGrp').reverse()) if (doc.contains(group) && !nodes(group, 'staffDef').length) group.remove();
+      }
+      return doc;
+    };
+    // Structural equality: element names, attribute sets and trimmed text, in order.
+    const shape = node => node.nodeType === 1
+      ? [node.localName, [...node.attributes].map(a => `${a.name}=${a.value}`).sort().join(' '), [...node.childNodes].filter(child => child.nodeType === 1 || (child.nodeType === 3 && child.textContent.trim())).map(shape)]
+      : node.textContent.trim();
+    const same = (a, b) => JSON.stringify(shape(a.documentElement)) === JSON.stringify(shape(b.documentElement));
+    const crafted = `<?xml version="1.0" encoding="UTF-8"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.0"><meiHead><fileDesc><titleStmt><title>T</title></titleStmt></fileDesc></meiHead>
+<music><body><mdiv><score><scoreDef xml:id="sd"><pgHead><rend>Title</rend></pgHead><staffGrp xml:id="all">
+  <staffGrp xml:id="P1" label="Piano" symbol="brace"><staffDef xml:id="s1" n="1" lines="5"><label>RH</label></staffDef><staffDef xml:id="s2" n="2" lines="5" label.abbr="LH"/></staffGrp>
+  <staffDef xml:id="P2" n="3" lines="5" label="Flute"><labelAbbr>Fl.</labelAbbr></staffDef>
+</staffGrp></scoreDef>
+<section><pb/><measure xml:id="m1" n="1"><staff n="1"><layer n="1"><note xml:id="a1" pname="c" oct="4" dur="4"><verse n="1"><syl>la</syl></verse></note><note xml:id="a2" pname="d" oct="4" dur="4"><verse n="1"><syl>la</syl></verse><verse n="2"><syl>lo</syl></verse></note></layer></staff>
+<staff n="2"><layer n="1"><note xml:id="b1" pname="c" oct="3" dur="2"/></layer></staff><staff n="3"><layer n="1"><note xml:id="c1" pname="g" oct="5" dur="2"/></layer></staff>
+<slur xml:id="sl1" startid="#b1" endid="#b2"/><slur xml:id="sl2" startid="#a1" endid="#a2"/><hairpin xml:id="h1" staff="1 3" form="cres" tstamp="1" tstamp2="0m+3"/><dynam xml:id="d1" staff="2" tstamp="1">p</dynam>
+<arpeg xml:id="ar1" plist="#a1 #b1"/><arpeg xml:id="ar2" plist="#b1"/><harm xml:id="hm1" staff="1" tstamp="1">C7</harm><fermata xml:id="f1" startid="#sl1"/></measure>
+<sb/><ending xml:id="e1" n="1"><measure xml:id="m2" n="2"><staff n="1"><layer n="1"><note xml:id="a3" pname="e" oct="4" dur="1"/></layer></staff><staff n="2"><layer n="1"><note xml:id="b2" pname="c" oct="3" dur="1"/></layer></staff><staff n="3"><layer n="1"><mRest xml:id="c2"/></layer></staff></measure></ending>
+<scoreDef xml:id="sd2"><staffGrp><staffDef n="2" xml:id="s2b" clef.shape="F" clef.line="4"/></staffGrp></scoreDef>
+<measure xml:id="m3" n="3"><staff n="1"><layer n="1"><note xml:id="a4" pname="f" oct="4" dur="1"/></layer></staff><staff n="2"><layer n="1"><note xml:id="b3" pname="c" oct="3" dur="1"/></layer></staff><staff n="3"><layer n="1"><note xml:id="c3" pname="g" oct="5" dur="1"/></layer></staff><harm staff="3" tstamp="1">G</harm></measure>
+<measure xml:id="m4" n="4"><staff n="1"><layer n="1"><note xml:id="a5" pname="g" oct="4" dur="1"/></layer></staff><staff n="2"><layer n="1"><note xml:id="b4" pname="c" oct="3" dur="1"/></layer></staff><staff n="3"><layer n="1"><note xml:id="c4" pname="g" oct="5" dur="1"/></layer></staff></measure>
+</section></score></mdiv></body></music></mei>`;
+    const sample = scoreToMei(exampleScore());
+    const failures = [];
+    let cases = 0;
+    for (const [name, baseline] of [['crafted', crafted], ['sample', sample]]) {
+      for (const breakEvery of [0, 2]) for (const hidden of [[], ['2'], ['1', '2'], ['3']]) for (const chords of [true, false]) {
+        cases++;
+        const expected = reference(baseline, breakEvery, new Set(hidden), chords);
+        const actual = parse(buildViewMei(baseline, { breakEvery, hiddenStaves: hidden, chordSymbols: chords }));
+        if (actual.querySelector('parsererror') || !same(expected, actual)) failures.push(`${name} break=${breakEvery} hidden=${hidden} chords=${chords}`);
+      }
+      // A first-measures document keeps the first measures and closes every open element.
+      const limited = parse(buildViewMei(baseline, { breakEvery: 2, hiddenStaves: [], chordSymbols: true }, 2));
+      if (limited.querySelector('parsererror') || nodes(limited, 'measure').length !== 2) failures.push(`${name} limit`);
+    }
+    const doc = parse(crafted);
+    const info = scanBaseline(crafted);
+    const expectedInfo = {
+      measureIds: nodes(doc, 'measure').map(xmlIdOf),
+      staffDefs: nodes(nodes(doc, 'scoreDef')[0], 'staffDef').map(def => ({ n: def.getAttribute('n'), id: xmlIdOf(def) })),
+      groups: nodes(nodes(doc, 'scoreDef')[0], 'staffGrp').map(group => ({ id: xmlIdOf(group), staves: [...group.children].filter(child => child.localName === 'staffDef').map(def => ({ n: def.getAttribute('n'), id: xmlIdOf(def) })) })),
+    };
+    return { cases, failures, info: JSON.stringify({ measureIds: info.measureIds, staffDefs: info.staffDefs, groups: info.groups }), expectedInfo: JSON.stringify(expectedInfo), lyricDensity: info.lyricDensity };
+  });
+  assert.deepEqual(meiView.failures, [], `MEI view transform differs from the DOM reference in ${meiView.failures.length}/${meiView.cases} cases`);
+  assert.equal(meiView.info, meiView.expectedInfo, 'Baseline scan reads measures, staff definitions and groups like the DOM');
+  assert.equal(meiView.lyricDensity, 2, 'Lyric density counts syllables per staff-measure and verse line');
+  console.log(`Document import: worker MEI view transform matches the DOM reference in ${meiView.cases} cases passed`);
   console.log('Document import: ID-less MusicXML identity and multi-measure rest expansion passed');
   console.log('Document import: timewise, MXL source bytes and hash, percussion, voices, ABC adapter and MEI identity passed');
   console.log('Document review regressions: drum kit program, MEI accidentals/key/meter changes, saved BPM clamp, MXL encoded path and size bound, ABC/MEI navigation engraving passed');
