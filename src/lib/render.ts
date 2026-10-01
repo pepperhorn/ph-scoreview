@@ -55,6 +55,12 @@ const liveResults = new WeakMap<HTMLElement, RenderResult>();
 /** Endless view keeps one unbroken system up to this many bars, then uses bounded chunks. */
 const ENDLESS_SINGLE_SYSTEM_LIMIT = 160;
 const ENDLESS_CHUNK = 120;
+/**
+ * A score engraved in chunks (Phase 3) keeps Endless blocks to about this many staff-measures, so each block is a
+ * small document (16 to 120 bars).
+ */
+const ENDLESS_CHUNK_STAFF_MEASURES = 480;
+const endlessChunkBars = (staves: number) => Math.max(16, Math.min(ENDLESS_CHUNK, Math.round(ENDLESS_CHUNK_STAFF_MEASURES / Math.max(1, staves) / 8) * 8));
 const LANE_GAP = 6;
 const LANE_ROW = 17;
 /**
@@ -121,13 +127,16 @@ function parseXml(text: string): XMLDocument {
   return doc;
 }
 
-/** Bounding box of an element in the outer SVG's user (viewBox) coordinates. */
-function box(element: Element, svg: SVGSVGElement): DOMRect {
+/**
+ * Bounding box of an element in the outer SVG's user (viewBox) coordinates. `rootInverse` is the outer SVG's inverted
+ * screen matrix, when the caller measures many elements of one SVG without layout changes in between.
+ */
+function box(element: Element, svg: SVGSVGElement, rootInverse?: DOMMatrix | null): DOMRect {
   try {
     const graphics = element as SVGGraphicsElement;
     const rect = graphics.getBBox();
-    const root = svg.getScreenCTM(); const own = graphics.getScreenCTM();
-    const transform = root && own ? root.inverse().multiply(own) : new DOMMatrix();
+    const root = rootInverse !== undefined ? rootInverse : svg.getScreenCTM()?.inverse() ?? null; const own = graphics.getScreenCTM();
+    const transform = root && own ? root.multiply(own) : new DOMMatrix();
     const points = [[rect.x, rect.y], [rect.x + rect.width, rect.y], [rect.x, rect.y + rect.height], [rect.x + rect.width, rect.y + rect.height]]
       .map(([x, y]) => new DOMPoint(x, y).matrixTransform(transform));
     const left = Math.min(...points.map(p => p.x)); const top = Math.min(...points.map(p => p.y));
@@ -263,7 +272,8 @@ export async function renderScore(
   const viewportWidth = Math.max(240, container.clientWidth);
   const count = Math.max(1, score.parts[0]?.measures.length || 1);
   const measureTotal = info.measureIds.length || count;
-  const endlessSingle = mode === 'landscape' && count <= ENDLESS_SINGLE_SYSTEM_LIMIT;
+  // A chunked score is long or wide: Endless keeps one system only when that is still a small document.
+  const endlessSingle = mode === 'landscape' && count <= ENDLESS_SINGLE_SYSTEM_LIMIT && !(info.chunked && score.parts.length * count > EAGER_STAFF_MEASURES);
   const minimumBar = Math.max(portraitMinimumBarWidth(score), lyricBarWidth(info.lyricDensity));
   const barFloor = Math.max(190, minimumBar);
   const hiddenIds = new Set(options.hiddenPartIds || []);
@@ -307,7 +317,7 @@ export async function renderScore(
     const usableUnits = Math.max(180, viewportWidth - layoutGutter(scale)) / scale;
     const restUnits = viewportWidth / scale;
     const explicit = mode === 'portrait' && barsPerLine !== 'auto';
-    const bars = mode === 'landscape' ? (endlessSingle ? count : ENDLESS_CHUNK) : barsPerLine === 'auto' ? Math.min(maxBars, autoBarsPerLine(usableUnits, score, minimumBar)) : Math.min(4, Math.max(1, barsPerLine));
+    const bars = mode === 'landscape' ? (endlessSingle ? count : info.chunked ? endlessChunkBars(visibleParts.length) : ENDLESS_CHUNK) : barsPerLine === 'auto' ? Math.min(maxBars, autoBarsPerLine(usableUnits, score, minimumBar)) : Math.min(4, Math.max(1, barsPerLine));
     // A score shorter than a full Auto line is not stretched to fill it: one system at Verovio's natural width, centred.
     const fullLine = Math.max(1, Math.min(AUTO_BAR_CAP, Math.floor((Math.max(240, usableUnits) - 56) / minimumBar)));
     const short = mode === 'portrait' && !explicit && count < fullLine;
@@ -416,18 +426,8 @@ export async function renderScore(
   const systemOfMeasure = (index: number) => systemFor(layout, index);
   if (!isCurrent()) throw superseded();
   if (!fetched.size) throw new Error('Verovio did not produce a score page.');
-  liveResults.get(container)?.dispose();
 
-  // Build every block; drawn systems get their SVG, the rest stay placeholders until they scroll near.
   const textFont = options.textFont || 'Sans';
-  const slots: Slot[] = Array.from({ length: systemCount }, (_, index) => {
-    const block = document.createElement('div');
-    block.className = 'score-system is-pending';
-    block.dataset.system = String(index);
-    const firstMeasure = single || endlessSingle ? 0 : index * layout.bars;
-    block.dataset.firstMeasure = String(firstMeasure + 1);
-    return { index, block, naturalWidth: 0, naturalHeight: 0, estimated: true, scale: 1, firstMeasure, measureCount: single || endlessSingle ? count : Math.min(layout.bars, measureTotal - firstMeasure), bands: new Map(), points: [], measures: [] };
-  });
   const parseSvg = (text: string): SVGSVGElement => {
     const svg = sanitizeSvg(parseXml(text));
     const viewBox = (svg.getAttribute('viewBox') || '0 0 1000 200').split(/\s+/).map(Number);
@@ -439,8 +439,38 @@ export async function renderScore(
     svg.dataset.musicFont = options.font || 'Bravura';
     return svg;
   };
-  const attach = (slot: Slot, text: string) => {
-    const svg = parseSvg(text);
+  /**
+   * A large score's first paint draws the first system (and a zoom anchor's); other systems fetched with it are kept as
+   * text and drawn by the pump one per task, so no main-thread task parses and measures several large systems at once.
+   */
+  const focusSystem = options.focusMeasure !== undefined ? systemFor(layout, options.focusMeasure) : -1;
+  const stash = new Map<number, string>();
+  if (!eager) for (const [index, text] of fetched) if (index !== 0 && index !== focusSystem) { stash.set(index, text); fetched.delete(index); }
+  // Parse (and sanitize) the systems drawn now, then yield before inserting and measuring them.
+  const parsed = new Map([...fetched].map(([index, text]) => [index, parseSvg(text)]));
+  fetched.clear();
+  if (!eager) {
+    await yieldTask();
+    if (!isCurrent()) throw superseded();
+  }
+  liveResults.get(container)?.dispose();
+
+  // Build every block; drawn systems get their SVG, the rest stay placeholders until they scroll near.
+  const slots: Slot[] = Array.from({ length: systemCount }, (_, index) => {
+    const block = document.createElement('div');
+    block.className = 'score-system is-pending';
+    block.dataset.system = String(index);
+    const firstMeasure = single || endlessSingle ? 0 : index * layout.bars;
+    block.dataset.firstMeasure = String(firstMeasure + 1);
+    const slot: Slot = { index, block, naturalWidth: 0, naturalHeight: 0, estimated: true, scale: 1, firstMeasure, measureCount: single || endlessSingle ? count : Math.min(layout.bars, measureTotal - firstMeasure), bands: new Map(), points: [], measures: [] };
+    // A fetched system not drawn yet is sized from its laid-out SVG rather than estimated.
+    const text = stash.get(index);
+    const width = text ? naturalWidthOf(text) : Infinity;
+    if (text && Number.isFinite(width)) { slot.naturalWidth = width; slot.naturalHeight = naturalHeightOf(text); slot.estimated = false; }
+    return slot;
+  });
+  const attach = (slot: Slot, source: string | SVGSVGElement) => {
+    const svg = typeof source === 'string' ? parseSvg(source) : source;
     const viewBox = (svg.getAttribute('viewBox') || '0 0 1000 200').split(/\s+/).map(Number);
     slot.svg = svg; slot.naturalWidth = viewBox[2] || 1000; slot.naturalHeight = viewBox[3] || 200; slot.estimated = false;
     slot.block.classList.remove('is-pending');
@@ -448,11 +478,11 @@ export async function renderScore(
   };
   const fragment = document.createDocumentFragment();
   for (const slot of slots) {
-    const text = fetched.get(slot.index);
-    if (text) attach(slot, text);
+    const svg = parsed.get(slot.index);
+    if (svg) attach(slot, svg);
     fragment.appendChild(slot.block);
   }
-  fetched.clear();
+  parsed.clear();
   container.replaceChildren(fragment);
 
   const measureIndexById = new Map(info.measureIds.map((id, index) => [id, index]));
@@ -462,12 +492,16 @@ export async function renderScore(
   const measureGeometry = (slot: Slot) => {
     const svg = slot.svg!;
     slot.bands = new Map();
+    // Nothing below changes layout until the annotation layer is appended, so the root matrix is read once.
+    let inverse: DOMMatrix | null = null;
+    try { inverse = svg.getScreenCTM()?.inverse() ?? null; } catch { /* not rendered */ }
+    const boxOf = (element: Element) => box(element, svg, inverse);
     // Staff bands from the first measure of the system, keyed by staff number.
     const measureElements = Array.from(svg.querySelectorAll('g.measure'));
     for (const staff of Array.from(measureElements[0]?.querySelectorAll(':scope > g.staff') || [])) {
       const n = staff.getAttribute('data-n'); if (!n) continue;
-      const lines = Array.from(staff.querySelectorAll(':scope > path')).slice(0, 5).map(line => box(line, svg));
-      const rect = lines.length ? null : box(staff, svg);
+      const lines = Array.from(staff.querySelectorAll(':scope > path')).slice(0, 5).map(line => boxOf(line));
+      const rect = lines.length ? null : boxOf(staff);
       const top = lines.length ? Math.min(...lines.map(line => line.y)) : rect!.y;
       const bottom = lines.length ? Math.max(...lines.map(line => line.y + line.height)) : rect!.y + rect!.height;
       slot.bands.set(n, { top, bottom, center: (top + bottom) / 2, laneTop: bottom, lines: lines.length > 1 });
@@ -475,12 +509,12 @@ export async function renderScore(
     // The lane goes below the staff and anything hanging under it: low notes, lyrics and below-staff directions.
     if (laneRows) {
       const ordered = [...slot.bands.entries()].sort((a, b) => a[1].top - b[1].top);
-      const controls = Array.from(svg.querySelectorAll('g.measure > g.dynam, g.measure > g.hairpin, g.measure > g.dir, g.measure > g.pedal')).map(control => box(control, svg));
+      const controls = Array.from(svg.querySelectorAll('g.measure > g.dynam, g.measure > g.hairpin, g.measure > g.dir, g.measure > g.pedal')).map(control => boxOf(control));
       ordered.forEach(([n, band], index) => {
         const nextTop = ordered[index + 1]?.[1].top ?? Infinity;
         let lowest = band.bottom;
         // Staff content includes ledger-line notes, stems, articulations and lyrics.
-        for (const staff of Array.from(svg.querySelectorAll(`g.staff[data-n="${CSS.escape(n)}"]`))) lowest = Math.max(lowest, box(staff, svg).bottom);
+        for (const staff of Array.from(svg.querySelectorAll(`g.staff[data-n="${CSS.escape(n)}"]`))) lowest = Math.max(lowest, boxOf(staff).bottom);
         for (const rect of controls) if (rect.height && rect.top >= band.bottom - 2 && rect.top < band.bottom + (nextTop - band.bottom) / 2) lowest = Math.max(lowest, rect.bottom);
         band.laneTop = lowest + LANE_GAP;
       });
@@ -493,7 +527,7 @@ export async function renderScore(
       const index = measureIndexById.get(element.getAttribute('id') || '') ?? -1;
       if (index < 0) return;
       svgMeasureByIndex.set(index, element);
-      measureRects.push({ index, element, rect: box(element, svg) });
+      measureRects.push({ index, element, rect: boxOf(element) });
       if (!local) slot.firstMeasure = index;
     });
     slot.measureCount = svgMeasureByIndex.size || slot.measureCount;
@@ -512,7 +546,7 @@ export async function renderScore(
           const element = findNote(byId, score, event);
           if (!element || !svgMeasure.contains(element)) continue;
           const anchor = element.querySelector('.notehead') || element;
-          const rect = box(anchor, svg); const x = rect.x + rect.width / 2; const y = rect.y + rect.height / 2;
+          const rect = boxOf(anchor); const x = rect.x + rect.width / 2; const y = rect.y + rect.height / 2;
           element.classList.add('reader-note'); element.setAttribute('data-note-id', event.id);
           notes.push({ element, event, partIndex, measure: measure.index, x, y });
           if (!band) continue;
@@ -634,7 +668,11 @@ export async function renderScore(
   const draw = async (wanted: Slot[]) => {
     // A Vertical first system is laid out beside the staff controls, so it comes from the first-measures probe again.
     const reprobe = mode === 'portrait' && wanted.some(slot => slot.index === 0);
-    const pages = await fetchPages(layout, wanted.filter(slot => !(reprobe && slot.index === 0)).map(slot => pageOf(slot.index)));
+    // Systems fetched for the first paint but not drawn then are drawn from their kept SVG.
+    const kept = new Map<number, string>();
+    for (const slot of wanted) { const text = stash.get(slot.index); if (text) { kept.set(pageOf(slot.index), text); stash.delete(slot.index); } }
+    const pages = await fetchPages(layout, wanted.filter(slot => !(reprobe && slot.index === 0) && !kept.has(pageOf(slot.index))).map(slot => pageOf(slot.index)));
+    for (const [page, text] of kept) pages.set(page, text);
     if (reprobe) pages.set(pageOf(0), await probe(layout, single));
     for (const slot of wanted) {
       const text = pages.get(pageOf(slot.index));
@@ -686,6 +724,7 @@ export async function renderScore(
     } finally { pumping = false; }
   };
   const observers: IntersectionObserver[] = [];
+  let observeTimer = 0;
   if (!eager && systemCount > 1 && typeof IntersectionObserver !== 'undefined') {
     const margin = (screens: number) => mode === 'landscape' ? `0px ${screens * 100}%` : `${screens * 100}% 0px`;
     const nearObserver = new IntersectionObserver(entries => {
@@ -704,8 +743,17 @@ export async function renderScore(
       }
       if (released) notify();
     }, { root: scroller, rootMargin: margin(KEEP_SCREENS) });
-    for (const slot of slots) { nearObserver.observe(slot.block); keepObserver.observe(slot.block); }
     observers.push(nearObserver, keepObserver);
+    // Observing thousands of blocks (and their first callbacks) is real work: it starts after the first paint's task,
+    // a batch per task, nearest the start first.
+    const OBSERVE_BATCH = 1500;
+    const observeFrom = (start: number) => {
+      observeTimer = 0;
+      if (disposed) return;
+      for (const slot of slots.slice(start, start + OBSERVE_BATCH)) { nearObserver.observe(slot.block); keepObserver.observe(slot.block); }
+      if (start + OBSERVE_BATCH < slots.length) observeTimer = window.setTimeout(() => observeFrom(start + OBSERVE_BATCH), 0);
+    };
+    observeTimer = window.setTimeout(() => observeFrom(0), 0);
   }
 
   const firstSystem = (): SystemGeometry => geometryOf(first);
@@ -734,6 +782,7 @@ export async function renderScore(
       if (disposed) return;
       disposed = true;
       window.clearTimeout(retryTimer);
+      window.clearTimeout(observeTimer);
       for (const observer of observers) observer.disconnect();
       listeners.clear();
       if (liveResults.get(container) === result) liveResults.delete(container);

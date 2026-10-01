@@ -247,3 +247,29 @@ html,body,#root{height:100%;overflow:hidden}
 .score-system.is-pending{background:repeating-linear-gradient(180deg,transparent 0 22px,#f3f4ef 22px 23px);border-radius:6px;opacity:.7}
 /* Placeholder sizes are corrected as systems draw; render.ts keeps the reader's place itself, so browser scroll anchoring must not adjust it too. */
 .score-viewport{overflow-anchor:none}
+/* Guardrail notices (large score, reopen last file, silent playback) stack above the drawer handle, matching the playback notice. */
+.reader-notices{position:fixed;z-index:50;left:50%;bottom:65px;transform:translateX(-50%);width:max-content;max-width:calc(100vw - 32px);display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
+.reader-notices>*{pointer-events:auto}
+.reader-notices .playback-notice{position:static;transform:none;max-width:100%}
+.large-file-notice,.reopen-banner{display:flex;gap:10px;align-items:center;max-width:100%;color:#46604d;background:#f2f6f0;border:1px solid #cddbcc;border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.4;box-shadow:0 6px 20px #34564218}
+.large-file-notice-icon,.reopen-banner-icon{flex:none}
+.large-file-notice-dismiss{border:0;background:transparent;color:inherit;display:grid;place-items:center;flex:none}
+.reopen-banner{flex-wrap:wrap;row-gap:8px}
+.reopen-banner-body{display:flex;flex-direction:column;min-width:0;flex:1 1 180px}
+.reopen-banner-text{overflow-wrap:anywhere}
+.reopen-banner-name{font-weight:600}
+.reopen-banner-privacy{font-size:11px;color:#7d8f80}
+.reopen-banner-actions{display:flex;gap:6px;align-items:center;flex:none}
+.reopen-banner-actions button{height:30px;padding:0 11px;border-radius:7px;font-size:11px;font-weight:700;border:1px solid #cddbcc;background:#fff;color:#46604d}
+.reopen-banner-actions .reopen-banner-reopen{background:#365c42;border-color:#365c42;color:#fff}
+.reopen-banner-actions .reopen-banner-reopen:hover{background:#284c34}
+.reopen-banner-actions .reopen-banner-later:hover,.reopen-banner-actions .reopen-banner-forget:hover{background:#eef3ec}
+/* Out-of-memory errors carry a retry with smaller engraving sections. */
+.toast.is-out-of-memory{max-width:min(460px,calc(100vw - 40px));flex-wrap:wrap;row-gap:8px}
+.toast-text,.error-text{flex:1 1 220px;line-height:1.45}
+.oom-retry-button{height:30px;padding:0 11px;border-radius:7px;font-size:11px;font-weight:700;border:1px solid #9a482d;background:#9a482d;color:#fff}
+.toast .oom-retry-button{display:inline-flex;align-items:center;background:#9a482d;color:#fff;border:1px solid #9a482d}
+.oom-retry-button:hover,.toast .oom-retry-button:hover{background:#7f3920}
+.error .oom-retry-button{margin-top:8px}
+.error{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.forget-last-file{color:#8a6a5e}

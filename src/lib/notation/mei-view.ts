@@ -58,6 +58,11 @@ export type BaselineInfo = {
   /** Every `staffDef` of the first score definition, in document order. */
   staffDefs: StaffDefInfo[];
   groups: StaffGroupInfo[];
+  /**
+   * The score is engraved in chunks (a long MusicXML score, Phase 3): measure IDs are `musicxml-chunks` `measureId`s
+   * and lyric density is read from the MusicXML. Absent for a whole-document baseline.
+   */
+  chunked?: boolean;
 };
 
 /** Structure the reader needs from an imported MEI baseline, in one pass. */
@@ -151,9 +156,10 @@ function hiddenContent(mei: string, hidden: Set<string>): { removed: Set<string>
  * The reader's engraving view of a baseline: no header, labels or encoded breaks; a page break every `breakEvery`
  * measures; chord symbols only when shown; hidden staves pruned with everything that would dangle. With
  * `measureLimit`, the output stops after that many measures and closes the open elements, a small document for the
- * first system (spans into later measures are left dangling, as Verovio tolerates).
+ * first system (spans into later measures are left dangling, as Verovio tolerates). `breakOffset` is the Score index
+ * of the document's first measure (a chunk of a long score): breaks fall where they fall in the whole score.
  */
-export function buildViewMei(mei: string, spec: ViewSpec, measureLimit = Infinity): string {
+export function buildViewMei(mei: string, spec: ViewSpec, measureLimit = Infinity, breakOffset = 0): string {
   const hidden = new Set(spec.hiddenStaves);
   const { removed, emptyGroups } = hidden.size ? hiddenContent(mei, hidden) : { removed: new Set<string>(), emptyGroups: new Set<number>() };
   const refersToRemoved = (value: string | null) => removed.size > 0 && tokensOf(value).some(token => removed.has(reference(token)));
@@ -201,7 +207,7 @@ export function buildViewMei(mei: string, spec: ViewSpec, measureLimit = Infinit
     }
     if (name === 'staffDef' || name === 'staffGrp') rewritten = withoutAttribute(withoutAttribute(rewritten, 'label'), 'label.abbr');
     if (name === 'measure') {
-      if (spec.breakEvery > 0 && measureIndex > 0 && measureIndex % spec.breakEvery === 0) out.push('<pb/>');
+      if (spec.breakEvery > 0 && measureIndex > 0 && (measureIndex + breakOffset) % spec.breakEvery === 0) out.push('<pb/>');
       measureIndex++;
     }
     out.push(rewritten);
