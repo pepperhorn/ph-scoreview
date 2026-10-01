@@ -17,7 +17,9 @@
     "test:reader:firefox": "BROWSER=firefox node validation/reader.mjs",
     "test:reader:webkit": "BROWSER=webkit node validation/reader.mjs",
     "test:large": "node validation/large-score.mjs",
-    "test:validation": "npm run test:document && npm run test:parser-diff && npm run test:score-db && npm run test:performance && npm run test:reader && npm run test:large",
+    "test:guardrails": "node validation/guardrails.mjs",
+    "test:guardrails:firefox": "BROWSER=firefox node validation/guardrails.mjs",
+    "test:validation": "npm run test:document && npm run test:parser-diff && npm run test:score-db && npm run test:performance && npm run test:reader && npm run test:large && npm run test:guardrails",
     "test:browsers": "playwright-core install chromium firefox webkit"
   },
   "dependencies": {
