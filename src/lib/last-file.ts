@@ -3,7 +3,8 @@
  * (docs/specs/large-score-performance.md, Phase 3 "Guardrails"). It is never opened automatically.
  *
  * Database `scoreflow-last-file`, object store `last-file` with two out-of-line keys: `info` (name, type, size,
- * lastModified, savedAt) and `bytes` (the original file bytes as an ArrayBuffer), written in one transaction, so the
+ * lastModified, savedAt) and `bytes` (the original file bytes, stored as the Blob itself so a large file is not read
+ * and cloned on the main thread; an ArrayBuffer is also accepted), written in one transaction, so the
  * offer can be shown without loading the bytes. Only files up to MAX_SCORE_FILE_BYTES are kept. Every access is
  * wrapped in try/catch: without IndexedDB (private mode, blocked) nothing is remembered and nothing throws.
  */
@@ -15,7 +16,7 @@ const INFO_KEY = 'info';
 const BYTES_KEY = 'bytes';
 
 export type LastFileInfo = { name: string; type: string; size: number; lastModified: number; savedAt: number };
-export type LastFileRecord = LastFileInfo & { bytes: ArrayBuffer };
+export type LastFileRecord = LastFileInfo & { bytes: Blob | ArrayBuffer };
 
 const settle = <T>(request: IDBRequest<T>) => new Promise<T>((resolve, reject) => { request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
 const done = (transaction: IDBTransaction) => new Promise<void>((resolve, reject) => { transaction.oncomplete = () => resolve(); transaction.onerror = transaction.onabort = () => reject(transaction.error || new Error('IndexedDB transaction failed.')); });
@@ -65,7 +66,7 @@ export async function readLastFile(): Promise<LastFileRecord | null> {
     if (!db) return null;
     const store = db.transaction(LAST_FILE_STORE, 'readonly').objectStore(LAST_FILE_STORE);
     const [info, bytes] = await Promise.all([settle(store.get(INFO_KEY)), settle(store.get(BYTES_KEY))]);
-    if (!isInfo(info) || !(bytes instanceof ArrayBuffer)) return null;
+    if (!isInfo(info) || !(bytes instanceof Blob || bytes instanceof ArrayBuffer)) return null;
     return { ...infoOf(info), bytes };
   } catch { return null; }
 }
@@ -82,7 +83,8 @@ export async function rememberLastFile(file: File): Promise<LastFileInfo | null>
     if (file.size > MAX_SCORE_FILE_BYTES) return null;
     const db = await open();
     if (!db) return null;
-    const bytes = await file.arrayBuffer();
+    // The File itself is stored: IndexedDB keeps a Blob without the page reading or cloning its bytes.
+    const bytes: Blob = file;
     const info: LastFileInfo = { name: file.name, type: file.type, size: file.size, lastModified: file.lastModified, savedAt: Date.now() };
     const transaction = db.transaction(LAST_FILE_STORE, 'readwrite');
     const store = transaction.objectStore(LAST_FILE_STORE);

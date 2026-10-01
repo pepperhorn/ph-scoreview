@@ -15,14 +15,17 @@ export const LARGE_SCORE_STAFF_MEASURES = 2400;
  * LARGE_FILE_BYTES, so validation can trigger the notice with a small fixture.
  */
 export const LARGE_FILE_BYTES_OVERRIDE_KEY = 'scoreflow-large-file-bytes';
-/** Desktop open time per MB of score file, in seconds: [optimistic, pessimistic]. */
-export const DESKTOP_SECONDS_PER_MB: readonly [number, number] = [0.15, 0.3];
+/**
+ * Desktop open time per MB of score file, in seconds: [optimistic, pessimistic]. Calibrated on the Phase 3 e2e probe
+ * (12-core desktop): 12.5 MB orchestral 3.3 s, 31.6 MB orchestral 4.1 s, 31.9 MB ensemble 3.6 s to first paint.
+ */
+export const DESKTOP_SECONDS_PER_MB: readonly [number, number] = [0.08, 0.2];
 /** Fixed desktop overhead (worker start, WASM load, first layout), in seconds. */
-export const OPEN_BASE_SECONDS = 1;
+export const OPEN_BASE_SECONDS = 1.5;
 /** Phones and tablets take this many times as long as a desktop. */
 export const PHONE_SLOWDOWN = 2.5;
-/** File bytes a staff-measure is treated as, when the score's size is what makes it large (e.g. a compressed .mxl). */
-export const BYTES_PER_STAFF_MEASURE = 4 * 1024;
+/** File bytes a staff-measure is treated as (orchestral MusicXML runs about 1.6 KB), when the score is what makes it large (a compressed .mxl). */
+export const BYTES_PER_STAFF_MEASURE = 1.5 * 1024;
 
 /** The byte threshold in effect (LARGE_FILE_BYTES unless overridden in localStorage). */
 export function largeFileBytes(): number {
