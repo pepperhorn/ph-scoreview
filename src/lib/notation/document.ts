@@ -83,7 +83,20 @@ export function makeSourceDocument(args: {
   });
 }
 
+/** The root element's name, read past the XML declaration, comments and DOCTYPE without parsing the document. */
+function rootElementName(text: string): string | undefined {
+  const prolog = /\s*(?:<\?[\s\S]*?\?>|<!--[\s\S]*?-->|<!DOCTYPE(?:[^[>]|\[[\s\S]*?\])*>)/y;
+  let index = 0;
+  for (prolog.lastIndex = 0; prolog.exec(text); prolog.lastIndex = index) index = prolog.lastIndex;
+  const root = /\s*<([A-Za-z_][\w.:-]*)/y;
+  root.lastIndex = index;
+  return root.exec(text)?.[1];
+}
+
 export function normalizeTimewiseMusicXml(text: string): string {
+  // Most files are partwise: skip a whole-document parse unless the root says timewise (parsing then validates it).
+  const rootName = rootElementName(text);
+  if (rootName && rootName.slice(rootName.indexOf(':') + 1) !== 'score-timewise') return text;
   const document = new DOMParser().parseFromString(text, 'application/xml');
   if (document.querySelector('parsererror')) throw new Error('This file is not valid XML.');
   const source = document.documentElement;
