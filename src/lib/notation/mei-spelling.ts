@@ -18,14 +18,14 @@
  */
 import { spellChordSymbol, type KeyMode, type SpellingKey, type SpellingProfile } from '../spelling';
 import { attributeOf, scan } from './mei-view';
-import { accidentalDisplay, fifthsOf, intervalFifths, parseInterval, respellLine, sigOf, viewKey, type LineNote, type SpelledPitch, type StaffSpelling } from './respell';
+import { accidentalDisplay, fifthsOf, intervalFifths, moveChordSymbol, parseInterval, transposeSpelled, respellLine, sigOf, viewKey, type LineNote, type SpelledPitch, type StaffSpelling } from './respell';
 
 export type SpellingSpec = {
   /** The Verovio `transpose` interval the baseline was moved by ('' for none). */
   interval: string;
   /** Semitones of the global transposition (the interval's size, signed). */
   semitones: number;
-  /** Written parts are shown at sounding pitch (Verovio `transposeToSoundingPitch`). */
+  /** Written parts are shown at sounding pitch (the staves' `shift`). */
   concert: boolean;
   /** Spell in the enharmonic equivalent key. */
   flip: boolean;
@@ -40,6 +40,12 @@ export type StaffSpec = StaffSpelling & {
    * (it writes a mid-score key change of the first part for every staff, so a transposing part loses its own key).
    */
   keys?: [number, number, KeyMode][];
+  /**
+   * Concert view of a transposing part: the interval [letter steps, semitones] from written to sounding pitch. The
+   * pass moves the staff's notes and chord symbols itself (Verovio's transposeToSoundingPitch picks its own key and
+   * spellings, e.g. a B♭ trumpet in Ab sounding in F# with C double sharps), the way the Score view does.
+   */
+  shift?: [number, number];
 };
 
 const LETTERS = 'CDEFGAB';
@@ -113,10 +119,8 @@ export type Transposer = (mei: string, options: { transpose: string; transposeTo
  */
 export async function spellBaseline(mei: string, spec: SpellingSpec | undefined, transpose: Transposer, measureOffset = 0): Promise<string> {
   if (!spec || !spellingNeeded(mei, spec)) return mei;
-  // Two steps when both apply: with transposeToSoundingPitch, Verovio 6.3 reduces the interval to its semitones
-  // (`-A1` acts as `-m2`, `+d2` does nothing), losing the quality that sets the spelling.
-  let moved = spec.concert ? await transpose(mei, { transpose: '', transposeToSoundingPitch: true }) : mei;
-  if (spec.interval) moved = await transpose(moved, { transpose: spec.interval, transposeToSoundingPitch: false });
+  // Verovio moves every staff by the interval; the concert view's written-to-sounding shift is the pass's own.
+  const moved = spec.interval ? await transpose(mei, { transpose: spec.interval, transposeToSoundingPitch: false }) : mei;
   return respellMei(moved, spec, measureOffset);
 }
 
@@ -140,7 +144,8 @@ export function respellMei(mei: string, spec: SpellingSpec, measureOffset = 0): 
   const layerKeySigs: (Range & { staff: string; measure: number; key: Key | null })[] = [];
   const percussion = new Set(Object.entries(spec.staves).filter(([, staff]) => staff.percussion).map(([n]) => n));
   const staffSpec = (n: string): StaffSpec => spec.staves[n] ?? { profile: 'neutral' as SpellingProfile, moved: spec.semitones !== 0 };
-  const respelled = (n: string) => !percussion.has(n) && (staffSpec(n).moved || spec.semitones !== 0 || spec.flip);
+  // Any staff Verovio moved (an interval moves every staff) is respelled, as is every staff of a flipped view.
+  const respelled = (n: string) => !percussion.has(n) && (staffSpec(n).moved || spec.semitones !== 0 || spec.flip || !!spec.interval);
   const staves: string[] = [];
 
   const stack: string[] = [];
@@ -297,7 +302,12 @@ export function respellMei(mei: string, spec: SpellingSpec, measureOffset = 0): 
     if (!shown) { shown = viewKey(key.fifths, spec.semitones, key.mode, staffSpec(n), spec.flip); shownCache.set(cacheKey, shown); }
     return shown;
   };
-  const sourceFifths = (n: string, local: number) => (timeline.get(n)?.[Math.max(0, Math.min(local, measureCount - 1))]?.fifths ?? 0) + shift;
+  const viewShift = (n: string) => { const value = staffSpec(n).shift; return value ? { diatonic: value[0], chromatic: value[1] } : undefined; };
+  // The MEI's key: the view key moved by the interval, less the staff's own sounding shift (its notes are written).
+  const sourceFifths = (n: string, local: number) => {
+    const own = viewShift(n);
+    return (timeline.get(n)?.[Math.max(0, Math.min(local, measureCount - 1))]?.fifths ?? 0) + shift - (own ? intervalFifths(own) : 0);
+  };
 
   // Source alterations (written > gestural > earlier accidental in the measure > key signature), per staff-measure.
   const groups = new Map<string, NoteRecord[]>();
@@ -320,7 +330,9 @@ export function respellMei(mei: string, spec: SpellingSpec, measureOffset = 0): 
   for (const line of lines.values()) {
     const indexById = new Map(line.map((item, index) => [item.id, index]));
     const input: LineNote[] = line.map(item => {
-      const source = { step: item.pname, octave: item.oct, alter: sourceAlter.get(item) ?? 0 };
+      const own = viewShift(item.staff);
+      const read = { step: item.pname, octave: item.oct, alter: sourceAlter.get(item) ?? 0 };
+      const source = own ? transposeSpelled(read, own) : read;
       const from = tiedFrom.get(item.id);
       return { midi: midiOf(source), source, key: shownKey(item.staff, item.measure), chord: item.chord, tiedFrom: from !== undefined ? indexById.get(from) : undefined };
     });
@@ -361,7 +373,8 @@ export function respellMei(mei: string, spec: SpellingSpec, measureOffset = 0): 
     if (!respelled(record.staff) || record.nested || record.textEnd <= record.textStart) continue;
     const text = mei.slice(record.textStart, record.textEnd);
     const [, lead, body, trail] = /^(\s*)([\s\S]*?)(\s*)$/.exec(text)!;
-    const next = spellChordSymbol(body, shownKey(record.staff, Math.max(0, record.measure)));
+    const own = viewShift(record.staff);
+    const next = spellChordSymbol(own ? moveChordSymbol(body, [own]) : body, shownKey(record.staff, Math.max(0, record.measure)));
     if (next !== body) edits.push({ start: record.textStart, end: record.textEnd, text: lead + next + trail });
   }
   // Keys: every encoded key signature is removed (a definition holding nothing else goes entirely) and each pitched

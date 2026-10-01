@@ -68,14 +68,14 @@ export type StaffSpelling = {
 
 /**
  * The key a staff shows. `fifths` is the staff's key in this view before the global transposition and flip (the
- * source key, or its sounding key for a transposing part in the concert view). A moved staff takes the key table's
- * choice for its pitch class (with the part's profile and the flip); an unmoved one keeps its own key, or its
- * enharmonic equivalent when flipped.
+ * source key, or its sounding key for a transposing part in the concert view). Transposed, a staff takes the key
+ * table's choice for its pitch class (with the part's profile and the flip). Untransposed, it keeps that key (a
+ * sounding key past 7 accidentals folded to its enharmonic, Fb -> E), or its enharmonic equivalent when flipped, so
+ * a concert view shows a B♭ trumpet in the same key as the concert-pitch parts beside it.
  */
 export function viewKey(fifths: number, semitones: number, mode: KeyMode, staff: StaffSpelling, flip: boolean): SpellingKey {
-  const moved = staff.moved || semitones !== 0;
-  if (!moved && Math.abs(fifths) <= 7) {
-    const source = keyFromFifths(fifths, mode);
+  if (semitones === 0) {
+    const source = keyFromFifths(foldFifths(fifths), mode);
     return flip ? enharmonicFlip(source) ?? source : source;
   }
   const majorPc = mod(7 * (fifths + 7 * semitones), 12);
@@ -138,6 +138,20 @@ export function accidentalDisplay(notes: DisplayNote[]): boolean[] {
     start = end;
   }
   return shown;
+}
+
+const NAME = /^([A-G])([#♯b♭x𝄪𝄫]*)/;
+const alterOfText = (text: string) => [...text].reduce((sum, char) => sum + (char === '#' || char === '♯' ? 1 : char === 'x' || char === '𝄪' ? 2 : char === '𝄫' ? -2 : -1), 0);
+/** A chord symbol's root and slash bass moved by intervals (their spelling is then set by `spellChordSymbol`). */
+export function moveChordSymbol(symbol: string, intervals: Interval[]): string {
+  const move = (step: string, accidentals: string) => {
+    const moved = intervals.reduce((current, interval) => transposeSpelled(current, interval), { step, alter: alterOfText(accidentals), octave: 4 });
+    return moved.step + (moved.alter > 0 ? '#'.repeat(moved.alter) : 'b'.repeat(-moved.alter));
+  };
+  const root = NAME.exec(symbol);
+  if (!root) return symbol;
+  const rest = symbol.slice(root[0].length).replace(/\/([A-G])([#♯b♭x𝄪𝄫]*)/g, (_, step: string, accidentals: string) => `/${move(step, accidentals)}`);
+  return move(root[1], root[2]) + rest;
 }
 
 export type { Spelled, SpelledPitch, SpellingKey };

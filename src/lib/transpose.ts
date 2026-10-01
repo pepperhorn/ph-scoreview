@@ -1,7 +1,7 @@
 import { GM_SOUNDS, pitch, type KeyMode, type Measure, type Part, type Pitch, type Score, type Transposition } from './score';
 import { enharmonicFlip, keyFromFifths, spellChordSymbol, transposeInterval, spellingProfileFor, type SpellingKey, type SpellingProfile } from './spelling';
 import type { SpellingSpec } from './notation/mei-spelling';
-import { foldFifths, intervalFifths, parseInterval, respellLine, transposeSpelled, viewKey, type Interval, type LineNote } from './notation/respell';
+import { foldFifths, intervalFifths, moveChordSymbol, parseInterval, respellLine, transposeSpelled, viewKey, type Interval, type LineNote } from './notation/respell';
 
 export type ScorePitchView = 'written' | 'concert';
 
@@ -51,20 +51,6 @@ export function viewProfile(part: Part, view: ScorePitchView): SpellingProfile {
 }
 
 const sameMidi = (a: Pitch, midi: number) => a.midi === midi;
-const NAME = /^([A-G])([#♯b♭x𝄪𝄫]*)/;
-const alterOfText = (text: string) => [...text].reduce((sum, char) => sum + (char === '#' || char === '♯' ? 1 : char === 'x' || char === '𝄪' ? 2 : char === '𝄫' ? -2 : -1), 0);
-/** A chord symbol's root and slash bass moved by intervals (their spelling is then set by `spellChordSymbol`). */
-function moveChordSymbol(symbol: string, intervals: Interval[]): string {
-  const move = (step: string, accidentals: string) => {
-    const moved = intervals.reduce((current, interval) => transposeSpelled(current, interval), { step, alter: alterOfText(accidentals), octave: 4 });
-    return moved.step + (moved.alter > 0 ? '#'.repeat(moved.alter) : 'b'.repeat(-moved.alter));
-  };
-  const root = NAME.exec(symbol);
-  if (!root) return symbol;
-  const rest = symbol.slice(root[0].length).replace(/\/([A-G])([#♯b♭x𝄪𝄫]*)/g, (_, step: string, accidentals: string) => `/${move(step, accidentals)}`);
-  return move(root[1], root[2]) + rest;
-}
-
 /**
  * A Score as a view shows it: written or concert pitch, transposed by `semitones` and optionally spelled in the
  * enharmonic key. Spelling follows docs/specs/transpose-and-spelling.md through the same plan the Verovio worker uses
@@ -82,7 +68,7 @@ export function scoreForView(score: Score, view: ScorePitchView, semitones: numb
   const pitchView: PitchView = { view, semitones, flip, interval, viewMoved, source: score };
   return { ...score, pitchView, parts: score.parts.map(part => {
     const moved = viewMoved.includes(part.id);
-    if (part.clef === 'percussion' || (!moved && !semitones && !flip)) return part;
+    if (part.clef === 'percussion' || (!moved && !semitones && !flip && !interval)) return part;
     const staff = { profile: viewProfile(part, view), moved };
     // Keys per measure, then every voice respelled as one line across measures.
     const measureKeys = part.measures.map(measure => {
@@ -153,7 +139,9 @@ export function spellingSpecFor(score: Score, staffOf: Map<string, string>): Spe
       const last = keys.at(-1);
       if (!last || last[1] !== fifths || last[2] !== mode) keys.push([index, fifths, mode]);
     });
-    staves[n] = { profile: viewProfile(part, view), moved: !!pitchView?.viewMoved.includes(part.id), ...(keys.length ? { keys } : {}) };
+    const moved = !!pitchView?.viewMoved.includes(part.id);
+    const shift = moved ? viewInterval(source, source.measures[0], view) : undefined;
+    staves[n] = { profile: viewProfile(part, view), moved, ...(keys.length ? { keys } : {}), ...(shift?.chromatic ? { shift: [shift.diatonic, shift.chromatic] as [number, number] } : {}) };
   }
   return { interval: pitchView?.interval ?? '', semitones: pitchView?.semitones ?? 0, concert: !!pitchView?.viewMoved.length, flip: !!pitchView?.flip, staves };
 }

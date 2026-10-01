@@ -39,8 +39,10 @@ const TABLE: Record<string, string[]> = {
 const FLIP: Record<string, string> = { 'C#': 'Db', Db: 'C#', 'F#': 'Gb', Gb: 'F#', B: 'Cb', Cb: 'B' };
 /** Expected key signature (fifths, of the relative major for a minor key) of a staff. */
 function expectedFifths(sourceFifths: number, semitones: number, moved: boolean, flip: boolean, profile: string): number {
-  if (!moved && !semitones && Math.abs(sourceFifths) <= 7) {
-    const name = MAJOR_BY_FIFTHS[sourceFifths];
+  if (!semitones) {
+    // Untransposed: the staff's own (sounding) key, past 7 accidentals as its enharmonic.
+    const folded = sourceFifths > 7 ? sourceFifths - 12 : sourceFifths < -7 ? sourceFifths + 12 : sourceFifths;
+    const name = MAJOR_BY_FIFTHS[folded];
     return FIFTHS_OF[flip ? FLIP[name] ?? name : name];
   }
   const name = TABLE[profile][mod(7 * sourceFifths + semitones, 12)];
@@ -213,7 +215,7 @@ export async function checkView(xml: Source, test: ViewCase) {
   const sourceNotes = new Map(source.notes.map(note => [note.id, note]));
   const staffInfo = (n: string) => spec.staves[n] ?? { profile: 'neutral', moved: false };
   const shiftOf = (n: string) => staffInfo(n).moved ? source.trans.get(n) ?? { semi: 0, diat: 0 } : { semi: 0, diat: 0 };
-  const respelled = (n: string) => !source.percussion.has(n) && (staffInfo(n).moved || test.semitones !== 0 || !!view.pitchView?.flip);
+  const respelled = (n: string) => !source.percussion.has(n) && (staffInfo(n).moved || test.semitones !== 0 || !!view.pitchView?.flip || !!spec.interval);
   let keyChecks = 0; let noteChecks = 0; let labelChecks = 0; let harmChecks = 0;
 
   // Key signatures: every staff's keys follow the table; percussion staves have none.
@@ -229,8 +231,10 @@ export async function checkView(xml: Source, test: ViewCase) {
     }
     // The staff's keys from the Score (Verovio's MusicXML import gives every staff the first part's key changes).
     const keys = spec.staves[n]?.keys ?? [[0, 0, 'major']];
-    const expected = keys.map(([measure, fifths]) => ({ measure, fifths: expectedFifths(fifths, test.semitones, staffInfo(n).moved, view.pitchView?.flip ?? false, staffInfo(n).profile) }))
-      .filter((key, index, list) => index === 0 || key.fifths !== list[index - 1].fifths);
+    // A change of mode alone (A minor to C major) is a new key signature too.
+    const expected = keys.map(([measure, fifths, mode]) => ({ measure, fifths: expectedFifths(fifths, test.semitones, staffInfo(n).moved, view.pitchView?.flip ?? false, staffInfo(n).profile), mode }))
+      .filter((key, index, list) => index === 0 || key.fifths !== list[index - 1].fifths || key.mode !== list[index - 1].mode)
+      .map(({ measure, fifths }) => ({ measure, fifths }));
     const got = outKeys.map(key => ({ measure: key.measure, fifths: key.fifths }));
     keyChecks += expected.length;
     if (JSON.stringify(got) !== JSON.stringify(expected)) fail(`staff ${n} keys ${JSON.stringify(got)} expected ${JSON.stringify(expected)}`);
@@ -277,6 +281,20 @@ export async function checkView(xml: Source, test: ViewCase) {
     }
   }
 
+  // Every pitched note reads as its pitch: one without a written accidental has the alteration in force (the key
+  // signature, or an earlier accidental in the measure on its line).
+  const all = new Map<string, MeiNote[]>();
+  for (const note of out.notes) if (note.step && !source.percussion.has(note.staff)) (all.get(`${note.staff}|${note.measure}`) ?? all.set(`${note.staff}|${note.measure}`, []).get(`${note.staff}|${note.measure}`)!).push(note);
+  for (const group of all.values()) {
+    const state = new Map<string, number>();
+    for (const note of [...group].sort((a, b) => a.onset - b.onset)) {
+      const line = `${note.step}${note.octave}`;
+      if (note.written !== null) { state.set(line, note.written); continue; }
+      const inForce = state.get(line) ?? signatureAlter(note.fifths, note.step);
+      if (!note.tieEnd && note.alter !== inForce) fail(`note ${note.id} ${nameOf(note)}${note.octave} (staff ${note.staff}, bar ${note.measure + 1}) reads as alteration ${inForce} in ${note.fifths} fifths`);
+    }
+  }
+
   // Note-name labels (the Score view's pitches) match the engraved spelling.
   const byId = new Map(out.notes.map(note => [note.id, note]));
   for (const part of view.parts) {
@@ -318,7 +336,8 @@ export async function checkView(xml: Source, test: ViewCase) {
       if (part.clef !== 'percussion' && pitch.midi !== was.midi + moved + test.semitones) fail(`view pitch ${pitch.midi} for ${was.midi} (+${moved}+${test.semitones})`);
     })));
   }
-  return { failures, keyChecks, noteChecks, labelChecks, harmChecks, playback };
+  const modes = Object.fromEntries([...out.keys].map(([n, list]) => [n, list.map(key => key.mode)]));
+  return { failures, keyChecks, noteChecks, labelChecks, harmChecks, playback, modes };
 }
 
 /**

@@ -99,6 +99,40 @@ function chromaticScore() {
   return `<?xml version="1.0" encoding="UTF-8"?><score-partwise version="4.0"><work><work-title>Chromatic Keys</work-title></work><part-list>${list}</part-list>${parts.map(part => `<part id="${part.id}">${partXml(part)}</part>`).join('')}</score-partwise>`;
 }
 
+/** One-part-per-staff score from bars of note names (quarter notes) with per-bar keys: [fifths, mode?] or null. */
+function simpleScore(title, parts) {
+  let id = 0;
+  const list = parts.map((part, index) => `<score-part id="P${index + 1}"><part-name>${part.name}</part-name><midi-instrument id="P${index + 1}-I1"><midi-program>${part.program}</midi-program></midi-instrument></score-part>`).join('');
+  const body = parts.map((part, index) => `<part id="P${index + 1}">${part.bars.map(([key, line], m) => {
+    let attributes = '';
+    if (m === 0 || key) attributes = `<attributes>${m === 0 ? '<divisions>1</divisions>' : ''}${key ? `<key><fifths>${key[0]}</fifths>${key[1] ? `<mode>${key[1]}</mode>` : ''}</key>` : ''}${m === 0 ? `<time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef>${part.transpose ? `<transpose><diatonic>${part.transpose[0]}</diatonic><chromatic>${part.transpose[1]}</chromatic></transpose>` : ''}` : ''}</attributes>`;
+    const fifths = part.bars.slice(0, m + 1).reverse().find(([k]) => k)[0][0];
+    const state = new Map();
+    const notes = line.split(' ').map(name => {
+      const pitch = parse(name);
+      const lineKey = `${pitch.step}${pitch.octave}`;
+      const inForce = state.get(lineKey) ?? sigAlter(fifths, pitch.step);
+      const accidental = pitch.alter !== inForce ? ({ 1: 'sharp', 0: 'natural', [-1]: 'flat' })[pitch.alter] : null;
+      if (accidental) state.set(lineKey, pitch.alter);
+      return `<note id="${title.replace(/\W/g, '')}${++id}"><pitch><step>${pitch.step}</step>${pitch.alter ? `<alter>${pitch.alter}</alter>` : ''}<octave>${pitch.octave}</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type>${accidental ? `<accidental>${accidental}</accidental>` : ''}</note>`;
+    }).join('');
+    return `<measure number="${m + 1}">${attributes}${notes}</measure>`;
+  }).join('')}</part>`).join('');
+  return `<?xml version="1.0" encoding="UTF-8"?><score-partwise version="4.0"><work><work-title>${title}</work-title></work><part-list>${list}</part-list>${body}</score-partwise>`;
+}
+/** A B♭ trumpet written in Ab (sounding Gb) beside a piano in Gb: the concert view keeps one key for both. */
+const trumpetAndPiano = () => simpleScore('Trumpet and Piano', [
+  { name: 'Trumpet in Bb', program: 57, transpose: [-1, -2], bars: [[[-4], 'Ab4 Bb4 C5 Db5'], [null, 'Eb5 F5 G5 Ab5'], [null, 'G5 F5 E5 F5']] },
+  { name: 'Piano', program: 1, bars: [[[-6], 'Gb4 Ab4 Bb4 Cb5'], [null, 'Db5 Eb5 F5 Gb5'], [null, 'F5 Eb5 D5 Eb5']] },
+]);
+/** A minor, then C major written without <mode> (a key change back to major). */
+const minorToMajor = () => simpleScore('Minor to Major', [
+  { name: 'Piano', program: 1, bars: [[[0, 'minor'], 'A4 B4 G#4 A4'], [[0], 'C5 Ab4 G4 C5'], [null, 'E4 F4 G#4 A4']] },
+]);
+const minorToMajorMei = `<?xml version="1.0" encoding="UTF-8"?><mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.0"><meiHead><fileDesc><titleStmt><title>Modes</title></titleStmt><pubStmt/></fileDesc></meiHead><music><body><mdiv><score><scoreDef key.sig="0" key.mode="minor" meter.count="4" meter.unit="4"><staffGrp><staffDef n="1" lines="5" clef.shape="G" clef.line="2"/></staffGrp></scoreDef><section>`
+  + `<measure n="1"><staff n="1"><layer n="1"><note xml:id="m1" dur="4" pname="a" oct="4"/><note xml:id="m2" dur="4" pname="b" oct="4"/><note xml:id="m3" dur="4" pname="g" oct="4" accid="s" accid.ges="s"/><note xml:id="m4" dur="4" pname="a" oct="4"/></layer></staff></measure>`
+  + `<scoreDef key.sig="1s"/><measure n="2"><staff n="1"><layer n="1"><note xml:id="m5" dur="4" pname="g" oct="4"/><note xml:id="m6" dur="4" pname="e" oct="4" accid="f" accid.ges="f"/><note xml:id="m7" dur="4" pname="d" oct="4"/><note xml:id="m8" dur="4" pname="g" oct="4"/></layer></staff></measure></section></score></mdiv></body></music></mei>`;
+
 // --- Run in a page served by a private Vite server (as validation/document.mjs) -------------------------------
 const port = 43991;
 const server = spawn('node', ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { cwd: new URL('..', import.meta.url), stdio: 'ignore' });
@@ -123,7 +157,7 @@ try {
   const started = Date.now();
   const cases = [];
   for (let semitones = -12; semitones <= 12; semitones++) for (const flip of [false, true]) for (const view of ['written', 'concert']) cases.push({ semitones, flip, view });
-  const fixtures = [['generated chromatic score', chromaticScore()], ...readdirSync(new URL('./fixtures/', import.meta.url)).filter(name => name.endsWith('.musicxml')).map(name => [name, readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8')])];
+  const fixtures = [['generated chromatic score', chromaticScore()], ['B♭ trumpet in Ab beside a piano in Gb', trumpetAndPiano()], ['A minor to C major', minorToMajor()], ...readdirSync(new URL('./fixtures/', import.meta.url)).filter(name => name.endsWith('.musicxml')).map(name => [name, readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8')])];
   for (const [name, xml] of fixtures) {
     const result = await page.evaluate(async ({ xml, cases }) => {
       const { checkView } = await import('/validation/transpose-harness.ts');
@@ -148,6 +182,29 @@ try {
     }
     console.log(`Transpose: ${name}: ${cases.length} views, ${result.totals.keyChecks} keys, ${result.totals.noteChecks} notes, ${result.totals.labelChecks} labels, ${result.totals.harmChecks} chord symbols follow the spelling policy passed`);
   }
+  // A key change back to major is major (MusicXML without <mode>, MEI without a mode on the new key).
+  const modes = await page.evaluate(async sources => {
+    const { checkView } = await import('/validation/transpose-harness.ts');
+    const out = [];
+    for (const source of sources) for (const semitones of [0, 2]) { const result = await checkView(source, { semitones, flip: false, view: 'written' }); out.push({ modes: result.modes['1'], failures: result.failures }); }
+    return out;
+  }, [minorToMajor(), { mei: minorToMajorMei }]);
+  for (const { modes: list, failures } of modes) {
+    assert.deepEqual(failures, [], 'Minor to major: views follow the policy');
+    assert.deepEqual(list, ['minor', 'major'], `A minor key change back to major is engraved major (${JSON.stringify(list)})`);
+  }
+  // Concert view, untransposed: the trumpet's sounding key is the piano's key (Gb, not the table's F#), and the piano is
+  // engraved exactly as written.
+  const concert = await page.evaluate(async xml => {
+    const { checkView, engrave } = await import('/validation/transpose-harness.ts');
+    const result = await checkView(xml, { semitones: 0, flip: false, view: 'concert' });
+    const engraved = await engrave(xml, { semitones: 0, flip: false, view: 'concert' });
+    return { failures: result.failures, interval: engraved.spec.interval, keys: [...engraved.final.matchAll(/<keySig\b[^>]*\ssig="([^"]+)"/g)].map(match => match[1]) };
+  }, trumpetAndPiano());
+  assert.deepEqual(concert.failures, [], 'Concert view of a transposing part beside a concert-pitch part follows the policy');
+  assert.equal(concert.interval, '', 'An untransposed concert view moves nothing but the transposing parts');
+  assert.deepEqual([...new Set(concert.keys)], ['6f'], `Both staves are in Gb at concert pitch (${concert.keys})`);
+  console.log('Transpose: key changes back to major, and an untransposed concert view keeps one key for transposing and concert parts passed');
   // Every format: ABC and MIDI drum parts (unpitched in the generated MEI) and an MEI score whose key changes are
   // scoreDef-wide never show a key signature on the percussion staff, and their notes never move.
   const midi = new toneMidi.Midi();

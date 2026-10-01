@@ -93,9 +93,13 @@ Date: 2026-10-01 · Status: approved plan (decisions recorded 2026-10-01)
 ## Implementation (option A)
 - **Plan:** `scoreForView` (src/lib/transpose.ts) takes the reference key (the first pitched part's opening key in the view, with its mode) and plans the target key and Verovio interval. The Score view and the worker's spelling spec (`spellingSpecFor`) carry the same plan, so note names and noteheads agree.
 - **Worker:** the baseline (or each chunk, cached per view) is transposed by Verovio in a toolkit of its own and then spelled by `notation/mei-spelling.ts`; the view MEI built from it is loaded untransposed.
-  - For the concert view Verovio first transposes to sounding pitch and then applies the interval in a second load: with `transposeToSoundingPitch`, Verovio 6.3 reduces the interval to its semitones (`-A1` acts as `-m2`, `+d2` does nothing).
+  - The concert view's written-to-sounding shift is applied by the spelling pass itself, per staff, like the Score view, and not by Verovio's `transposeToSoundingPitch`. With that option, Verovio 6.3 reduces the interval to its semitones (`-A1` acts as `-m2`, `+d2` does nothing). It also picks its own sounding key and spellings (a B♭ trumpet in Ab sounds in F# with C double sharps).
+  - An untransposed view keeps each staff's own key (a sounding key past 7 accidentals is folded to its enharmonic), or its enharmonic equivalent when flipped. So in the concert view a B♭ trumpet written in Ab sounds in Gb, beside a piano in Gb, and not in the table's F#. The table applies once there is a transposition.
+  - Any staff Verovio moved is respelled.
   - Keys come from the Score per staff, not from the MEI: Verovio's MusicXML import writes a mid-score key change of the first part for every staff, so a transposing part lost its own key. Every encoded key signature is removed and each pitched staff's keys are written where they start or change. Percussion staves get none.
   - A chunk slice no longer carries a key its first measure sets (two keys made Verovio misspell the part).
 - **Flip:** at 0 semitones the flip applies only while the reference key has an enharmonic equivalent (the button is disabled otherwise), so a C major score is never respelled by a stale flip.
 - **Upward resolutions:** a chromatic note resolving upward keeps the source spelling, except E#/B# (Decision 6) and Fb/Cb, which follow Decision 2.
+- **Key modes:** a key change without a mode is major (MusicXML without `<mode>`, MEI per key area).
+- **MIDI:** imports now show written accidentals (MIDI has none, so a sharp was played but not drawn).
 - **Validation:** `npm run test:transpose` (validation/transpose.mjs).
