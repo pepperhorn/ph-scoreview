@@ -76,8 +76,9 @@ export function sha256Hex(bytes: Uint8Array): string {
   return Array.from(hash, value => value.toString(16).padStart(8, '0')).join('');
 }
 
-export async function fileSource(file: File): Promise<FileSource> {
-  const sha256 = sha256Hex(new Uint8Array(await file.arrayBuffer()));
+/** Source identity of a file; pass `bytes` when they are already read (importFile reuses them and this hash). */
+export async function fileSource(file: File, bytes?: Uint8Array): Promise<FileSource> {
+  const sha256 = sha256Hex(bytes || new Uint8Array(await file.arrayBuffer()));
   return { name: file.name, size: file.size, sha256, format: file.name.split('.').pop()?.toLowerCase() || '' };
 }
 /** Source identity for text without a file (the sample, pasted ABC, the musicXml prop): a hash of the text with a format prefix. */

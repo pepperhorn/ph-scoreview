@@ -580,25 +580,33 @@ export function extractMxlScore(bytes: Uint8Array): string {
   return strFromU8(entry);
 }
 
-export async function importFile(file: File): Promise<Score> {
+/**
+ * Open a score file. `prepared` passes bytes and a SHA-256 the caller already has (the reader hashes once for the
+ * per-score record), so the file is neither read nor hashed twice.
+ */
+export async function importFile(file: File, prepared?: { bytes: Uint8Array; sha256: string }): Promise<Score> {
   if (file.size > MAX_SCORE_FILE_BYTES) throw new Error(`This file is ${formatMb(file.size)}; scores up to ${formatMb(MAX_SCORE_FILE_BYTES)} can be opened.`);
   const name = file.name.toLowerCase();
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const hash = await sha256(bytes);
+  const bytes = prepared?.bytes || new Uint8Array(await file.arrayBuffer());
+  const hash = prepared?.sha256 || await sha256(bytes);
   let score: Score;
-  if (/\.(mid|midi)$/.test(name)) score = await parseMidi(bytes.buffer);
+  // The document is re-wrapped with the file's identity; its inventory and identity carry over (no second parse).
+  const rewrap = (score: Score, binary?: Uint8Array, originalText = score.document!.originalText, format = score.document!.format) => {
+    const document = score.document!;
+    score.document = makeSourceDocument({ format, engravingFormat: document.engravingFormat, originalBytes: binary, originalText, engravingText: document.engravingText, filename: file.name, sha256: hash, identity: document.identity, inventory: { featureCounts: document.featureCounts, diagnostics: document.diagnostics } });
+    return score;
+  };
+  if (/\.(mid|midi)$/.test(name)) score = await parseMidi(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
   else if (/\.mxl$/.test(name)) {
     const text = extractMxlScore(bytes);
-    score = parseMusicXml(text);
-    score.document = makeSourceDocument({ format: 'mxl', engravingFormat: 'musicxml', originalBytes: bytes, originalText: text, engravingText: score.document!.engravingText, filename: file.name, sha256: hash, identity: score.document!.identity });
-    return score;
+    return rewrap(parseMusicXml(text), bytes, text, 'mxl');
   } else {
     const text = new TextDecoder().decode(bytes);
     if (/\.(abc|txt)$/.test(name)) score = await parseAbc(text);
     else if (/\.mei$/.test(name)) score = parseMei(text);
     else if (/\.(xml|musicxml)$/.test(name)) score = parseMusicXml(text);
     else throw new Error('Choose a MusicXML, MIDI, MEI, or ABC file.');
+    return rewrap(score);
   }
-  score.document = makeSourceDocument({ format: score.document!.format, engravingFormat: score.document!.engravingFormat, originalBytes: bytes, originalText: score.document!.originalText, engravingText: score.document!.engravingText, filename: file.name, sha256: hash, identity: score.document!.identity });
-  return score;
+  return rewrap(score, bytes);
 }

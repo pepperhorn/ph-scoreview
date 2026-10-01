@@ -66,15 +66,20 @@ export function makeSourceDocument(args: {
   format: SourceFormat; engravingFormat: EngravingFormat; originalBytes?: Uint8Array; originalText?: string;
   engravingText: string; filename?: string; sha256?: string; identity?: SourceIdentity;
   diagnostics?: SourceDiagnostic[];
+  /** A feature inventory already taken of the same source (re-wrapping a parsed document), so it is not parsed again. */
+  inventory?: { featureCounts: Readonly<Record<string, number>>; diagnostics: readonly SourceDiagnostic[] };
 }): SourceDocument {
-  const bytes = args.originalBytes?.slice() || encoder.encode(args.originalText || '');
-  const inventory = sourceFeatureInventory(args.originalText || args.engravingText, args.format);
+  // Binary sources (MXL archives, MIDI) keep their bytes, owned by the document; a text source's bytes are its text,
+  // encoded on demand rather than held as a second copy.
+  const bytes = args.originalBytes;
+  const text = args.originalText || '';
+  const inventory = args.inventory || sourceFeatureInventory(args.originalText || args.engravingText, args.format);
   return Object.freeze({
     format: args.format, engravingFormat: args.engravingFormat, originalText: args.originalText,
     engravingText: args.engravingText, filename: args.filename, sha256: args.sha256,
-    featureCounts: Object.freeze(inventory.featureCounts), diagnostics: Object.freeze([...inventory.diagnostics, ...(args.diagnostics || [])]),
+    featureCounts: Object.freeze({ ...inventory.featureCounts }), diagnostics: Object.freeze([...inventory.diagnostics, ...(args.diagnostics || [])]),
     identity: args.identity || { staffIdToSource: {}, sourceIdToNoteId: {}, noteIdToSourceId: {} },
-    readOriginalBytes: () => bytes.slice(),
+    readOriginalBytes: () => bytes ? bytes.slice() : encoder.encode(text),
   });
 }
 
