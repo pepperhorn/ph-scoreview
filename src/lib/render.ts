@@ -59,7 +59,7 @@ const ENDLESS_CHUNK = 120;
  * A score engraved in chunks (Phase 3) keeps Endless blocks to about this many staff-measures, so each block is a
  * small document (16 to 120 bars).
  */
-const ENDLESS_CHUNK_STAFF_MEASURES = 960;
+const ENDLESS_CHUNK_STAFF_MEASURES = 480;
 const endlessChunkBars = (staves: number) => Math.max(16, Math.min(ENDLESS_CHUNK, Math.round(ENDLESS_CHUNK_STAFF_MEASURES / Math.max(1, staves) / 8) * 8));
 const LANE_GAP = 6;
 const LANE_ROW = 17;
@@ -423,18 +423,8 @@ export async function renderScore(
   const systemOfMeasure = (index: number) => systemFor(layout, index);
   if (!isCurrent()) throw superseded();
   if (!fetched.size) throw new Error('Verovio did not produce a score page.');
-  liveResults.get(container)?.dispose();
 
-  // Build every block; drawn systems get their SVG, the rest stay placeholders until they scroll near.
   const textFont = options.textFont || 'Sans';
-  const slots: Slot[] = Array.from({ length: systemCount }, (_, index) => {
-    const block = document.createElement('div');
-    block.className = 'score-system is-pending';
-    block.dataset.system = String(index);
-    const firstMeasure = single || endlessSingle ? 0 : index * layout.bars;
-    block.dataset.firstMeasure = String(firstMeasure + 1);
-    return { index, block, naturalWidth: 0, naturalHeight: 0, estimated: true, scale: 1, firstMeasure, measureCount: single || endlessSingle ? count : Math.min(layout.bars, measureTotal - firstMeasure), bands: new Map(), points: [], measures: [] };
-  });
   const parseSvg = (text: string): SVGSVGElement => {
     const svg = sanitizeSvg(parseXml(text));
     const viewBox = (svg.getAttribute('viewBox') || '0 0 1000 200').split(/\s+/).map(Number);
@@ -446,8 +436,38 @@ export async function renderScore(
     svg.dataset.musicFont = options.font || 'Bravura';
     return svg;
   };
-  const attach = (slot: Slot, text: string) => {
-    const svg = parseSvg(text);
+  /**
+   * A large score's first paint draws the first system (and a zoom anchor's); other systems fetched with it are kept as
+   * text and drawn by the pump one per task, so no main-thread task parses and measures several large systems at once.
+   */
+  const focusSystem = options.focusMeasure !== undefined ? systemFor(layout, options.focusMeasure) : -1;
+  const stash = new Map<number, string>();
+  if (!eager) for (const [index, text] of fetched) if (index !== 0 && index !== focusSystem) { stash.set(index, text); fetched.delete(index); }
+  // Parse (and sanitize) the systems drawn now, then yield before inserting and measuring them.
+  const parsed = new Map([...fetched].map(([index, text]) => [index, parseSvg(text)]));
+  fetched.clear();
+  if (!eager) {
+    await yieldTask();
+    if (!isCurrent()) throw superseded();
+  }
+  liveResults.get(container)?.dispose();
+
+  // Build every block; drawn systems get their SVG, the rest stay placeholders until they scroll near.
+  const slots: Slot[] = Array.from({ length: systemCount }, (_, index) => {
+    const block = document.createElement('div');
+    block.className = 'score-system is-pending';
+    block.dataset.system = String(index);
+    const firstMeasure = single || endlessSingle ? 0 : index * layout.bars;
+    block.dataset.firstMeasure = String(firstMeasure + 1);
+    const slot: Slot = { index, block, naturalWidth: 0, naturalHeight: 0, estimated: true, scale: 1, firstMeasure, measureCount: single || endlessSingle ? count : Math.min(layout.bars, measureTotal - firstMeasure), bands: new Map(), points: [], measures: [] };
+    // A fetched system not drawn yet is sized from its laid-out SVG rather than estimated.
+    const text = stash.get(index);
+    const width = text ? naturalWidthOf(text) : Infinity;
+    if (text && Number.isFinite(width)) { slot.naturalWidth = width; slot.naturalHeight = naturalHeightOf(text); slot.estimated = false; }
+    return slot;
+  });
+  const attach = (slot: Slot, source: string | SVGSVGElement) => {
+    const svg = typeof source === 'string' ? parseSvg(source) : source;
     const viewBox = (svg.getAttribute('viewBox') || '0 0 1000 200').split(/\s+/).map(Number);
     slot.svg = svg; slot.naturalWidth = viewBox[2] || 1000; slot.naturalHeight = viewBox[3] || 200; slot.estimated = false;
     slot.block.classList.remove('is-pending');
@@ -455,11 +475,11 @@ export async function renderScore(
   };
   const fragment = document.createDocumentFragment();
   for (const slot of slots) {
-    const text = fetched.get(slot.index);
-    if (text) attach(slot, text);
+    const svg = parsed.get(slot.index);
+    if (svg) attach(slot, svg);
     fragment.appendChild(slot.block);
   }
-  fetched.clear();
+  parsed.clear();
   container.replaceChildren(fragment);
 
   const measureIndexById = new Map(info.measureIds.map((id, index) => [id, index]));
@@ -641,7 +661,11 @@ export async function renderScore(
   const draw = async (wanted: Slot[]) => {
     // A Vertical first system is laid out beside the staff controls, so it comes from the first-measures probe again.
     const reprobe = mode === 'portrait' && wanted.some(slot => slot.index === 0);
-    const pages = await fetchPages(layout, wanted.filter(slot => !(reprobe && slot.index === 0)).map(slot => pageOf(slot.index)));
+    // Systems fetched for the first paint but not drawn then are drawn from their kept SVG.
+    const kept = new Map<number, string>();
+    for (const slot of wanted) { const text = stash.get(slot.index); if (text) { kept.set(pageOf(slot.index), text); stash.delete(slot.index); } }
+    const pages = await fetchPages(layout, wanted.filter(slot => !(reprobe && slot.index === 0) && !kept.has(pageOf(slot.index))).map(slot => pageOf(slot.index)));
+    for (const [page, text] of kept) pages.set(page, text);
     if (reprobe) pages.set(pageOf(0), await probe(layout, single));
     for (const slot of wanted) {
       const text = pages.get(pageOf(slot.index));
