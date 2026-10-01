@@ -165,8 +165,9 @@ function carriedAttributes(part: PartIndex, measure: number): string {
         element = block.slice(match.index, close + name.length + 3);
         CHILD.lastIndex = close + name.length + 3;
       }
-      const number = attribute(attributes, 'number');
-      // An element without a staff number applies to every staff: it replaces any per-staff ones.
+      // A clef without a staff number is staff 1's (MusicXML); key, time, staff details and transposition without one
+      // apply to every staff and replace any per-staff ones.
+      const number = attribute(attributes, 'number') ?? (name === 'clef' ? '1' : undefined);
       if (number === undefined) for (const key of [...state.keys()]) if (key.startsWith(`${name}#`)) state.delete(key);
       state.set(`${name}#${number ?? ''}`, element);
     }
