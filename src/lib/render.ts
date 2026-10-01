@@ -55,6 +55,12 @@ const liveResults = new WeakMap<HTMLElement, RenderResult>();
 /** Endless view keeps one unbroken system up to this many bars, then uses bounded chunks. */
 const ENDLESS_SINGLE_SYSTEM_LIMIT = 160;
 const ENDLESS_CHUNK = 120;
+/**
+ * A score engraved in chunks (Phase 3) keeps Endless blocks to about this many staff-measures, so each block is a
+ * small document (16 to 120 bars).
+ */
+const ENDLESS_CHUNK_STAFF_MEASURES = 960;
+const endlessChunkBars = (staves: number) => Math.max(16, Math.min(ENDLESS_CHUNK, Math.round(ENDLESS_CHUNK_STAFF_MEASURES / Math.max(1, staves) / 8) * 8));
 const LANE_GAP = 6;
 const LANE_ROW = 17;
 /**
@@ -263,7 +269,8 @@ export async function renderScore(
   const viewportWidth = Math.max(240, container.clientWidth);
   const count = Math.max(1, score.parts[0]?.measures.length || 1);
   const measureTotal = info.measureIds.length || count;
-  const endlessSingle = mode === 'landscape' && count <= ENDLESS_SINGLE_SYSTEM_LIMIT;
+  // A chunked score is long or wide: Endless keeps one system only when that is still a small document.
+  const endlessSingle = mode === 'landscape' && count <= ENDLESS_SINGLE_SYSTEM_LIMIT && !(info.chunked && score.parts.length * count > EAGER_STAFF_MEASURES);
   const minimumBar = Math.max(portraitMinimumBarWidth(score), lyricBarWidth(info.lyricDensity));
   const barFloor = Math.max(190, minimumBar);
   const hiddenIds = new Set(options.hiddenPartIds || []);
@@ -307,7 +314,7 @@ export async function renderScore(
     const usableUnits = Math.max(180, viewportWidth - layoutGutter(scale)) / scale;
     const restUnits = viewportWidth / scale;
     const explicit = mode === 'portrait' && barsPerLine !== 'auto';
-    const bars = mode === 'landscape' ? (endlessSingle ? count : ENDLESS_CHUNK) : barsPerLine === 'auto' ? Math.min(maxBars, autoBarsPerLine(usableUnits, score, minimumBar)) : Math.min(4, Math.max(1, barsPerLine));
+    const bars = mode === 'landscape' ? (endlessSingle ? count : info.chunked ? endlessChunkBars(visibleParts.length) : ENDLESS_CHUNK) : barsPerLine === 'auto' ? Math.min(maxBars, autoBarsPerLine(usableUnits, score, minimumBar)) : Math.min(4, Math.max(1, barsPerLine));
     // A score shorter than a full Auto line is not stretched to fill it: one system at Verovio's natural width, centred.
     const fullLine = Math.max(1, Math.min(AUTO_BAR_CAP, Math.floor((Math.max(240, usableUnits) - 56) / minimumBar)));
     const short = mode === 'portrait' && !explicit && count < fullLine;

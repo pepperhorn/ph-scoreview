@@ -61,3 +61,8 @@ jobs:
         timeout-minutes: 8
         env:
           BROWSER: ${{ matrix.browser }}
+      - name: Chunked engraving
+        run: npm run test:chunks
+        timeout-minutes: 4
+        env:
+          BROWSER: ${{ matrix.browser }}
