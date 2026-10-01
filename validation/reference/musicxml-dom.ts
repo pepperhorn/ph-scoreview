@@ -275,7 +275,7 @@ export function referenceParseMusicXml(text: string) {
   const scoreParts = new Map(children(list || root, 'score-part').map(p => [p.getAttribute('id'), p]));
   const names = new Map([...scoreParts].map(([id, p]) => [id, value(p, 'part-name')]));
   let beats = 4, beatType = 4, key = 0, tempo = 100;
-  let keyMode: 'minor' | undefined;
+  let keyMode: 'major' | 'minor' | undefined;
   let openingMeter = false, openingTempo = false;
   const parts: Part[] = [];
   for (const [partNo, element] of children(root, 'part').entries()) {
@@ -296,7 +296,7 @@ export function referenceParseMusicXml(text: string) {
     const staffMap = new Map<number, Part>();
     let divisions = 1;
     let partKey = key;
-    let partKeyMode: 'minor' | undefined;
+    let partKeyMode: 'major' | 'minor' | undefined;
     let partBeats = 4, partBeatType = 4;
     let partClef = '';
     let partTransposition: Transposition = { semitones: 0 };
@@ -314,7 +314,7 @@ export function referenceParseMusicXml(text: string) {
           if (partNo === 0 && !openingMeter) { beats = partBeats; beatType = partBeatType; openingMeter = true; }
         }
         const k = child(attributes, 'key');
-        if (k) { partKey = number(k, 'fifths', partKey); partKeyMode = value(k, 'mode') === 'minor' ? 'minor' : undefined; if (partNo === 0 && index === 0) { key = partKey; keyMode = partKeyMode; } }
+        if (k) { partKey = number(k, 'fifths', partKey); partKeyMode = value(k, 'mode') === 'minor' ? 'minor' : 'major'; if (partNo === 0 && index === 0) { key = partKey; keyMode = partKeyMode; } }
         const clefElement = children(attributes, 'clef').find(c => Number(c.getAttribute('number') || 1) === 1);
         if (clefElement) {
           const sign = value(clefElement, 'sign');

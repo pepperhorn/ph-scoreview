@@ -318,12 +318,12 @@ function readPartwise(text: string, timewiseInventory: FeatureInventory | undefi
   let scoreParts = new Map<string | null, XmlElement>();
   let partNames = new Map<string | null, string>();
   let beats = 4, beatType = 4, key = 0, tempo = 100;
-  let keyMode: 'minor' | undefined;
+  let keyMode: 'major' | 'minor' | undefined;
   let openingMeter = false, openingTempo = false;
   const parts: Part[] = [];
   type PartState = {
     element: XmlElement; id: string; name: string; definition?: XmlElement; channel10: boolean; unpitched: boolean;
-    staffMap: Map<number, Part>; divisions: number; partKey: number; partKeyMode?: 'minor'; partBeats: number; partBeatType: number; partClef: string;
+    staffMap: Map<number, Part>; divisions: number; partKey: number; partKeyMode?: 'major' | 'minor'; partBeats: number; partBeatType: number; partClef: string;
     partTransposition: Transposition; staffTranspositions: Map<number, Transposition>;
   };
   let part: PartState | undefined;
@@ -380,7 +380,7 @@ function readPartwise(text: string, timewiseInventory: FeatureInventory | undefi
         if (partNo === 0 && !openingMeter) { beats = state.partBeats; beatType = state.partBeatType; openingMeter = true; }
       }
       const k = child(attributes, 'key');
-      if (k) { state.partKey = number(k, 'fifths', state.partKey); state.partKeyMode = value(k, 'mode') === 'minor' ? 'minor' : undefined; if (partNo === 0 && index === 0) { key = state.partKey; keyMode = state.partKeyMode; } }
+      if (k) { state.partKey = number(k, 'fifths', state.partKey); state.partKeyMode = value(k, 'mode') === 'minor' ? 'minor' : 'major'; if (partNo === 0 && index === 0) { key = state.partKey; keyMode = state.partKeyMode; } }
       const clefElement = children(attributes, 'clef').find(c => Number(c.getAttribute('number') || 1) === 1);
       if (clefElement) state.partClef = clefName(clefElement);
       const forPart = children(attributes, 'for-part').map(item => musicXmlTranspose(child(item, 'part-transpose'))).find(Boolean);
