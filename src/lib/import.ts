@@ -396,7 +396,9 @@ function runImport(request: ImportRequest, file?: File): ImportJob {
   worker.postMessage(request);
   // Callers may use only one of the two promises.
   sha256.catch(() => {}); result.catch(() => {});
-  return { sha256, size: sha256.then(() => size), result };
+  const sizeKnown = sha256.then(() => size);
+  sizeKnown.catch(() => {});
+  return { sha256, size: sizeKnown, result };
 }
 
 /** An import of a score file: its source identity (available once hashed) and the score. */
@@ -417,7 +419,17 @@ export function importScoreFile(file: File): ScoreImport {
     if (result.kind === 'score') return result.score;
     return readOnMainThread(file, result.bytes, await job.sha256);
   });
-  return { source: job.sha256.then(sha256 => fileSourceFor(file.name, file.size, sha256)), score };
+  return handled({ source: job.sha256.then(sha256 => fileSourceFor(file.name, file.size, sha256)), score });
+}
+
+/**
+ * Callers may stop at either promise (the Reader stops at the source when the import fails or is superseded), so
+ * neither may surface as an unhandled rejection; awaiting one still rejects as usual.
+ */
+function handled(job: ScoreImport): ScoreImport {
+  job.source.catch(() => {});
+  job.score.catch(() => {});
+  return job;
 }
 
 /** Open a score file (see importScoreFile). */
@@ -431,10 +443,10 @@ export function importFile(file: File): Promise<Score> {
  */
 export function importMusicXmlText(text: string, name = 'MusicXML'): ScoreImport {
   const job = runImport({ kind: 'text', text });
-  return {
+  return handled({
     source: job.sha256.then(async sha256 => ({ name, size: (await job.size) ?? 0, sha256, format: 'musicxml' })),
     score: job.result.then(result => { if (result.kind !== 'score') throw new Error('This file is not a MusicXML score.'); return result.score; }),
-  };
+  });
 }
 
 async function readOnMainThread(file: File, bytes: Uint8Array, hash: string): Promise<Score> {
