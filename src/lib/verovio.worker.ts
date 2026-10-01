@@ -138,6 +138,8 @@ async function handle(request: VerovioRequest): Promise<unknown> {
     return info;
   }
   if (request.kind === 'release') { baselines.delete(request.revision); return null; }
+  // Test hook (see verovio-runtime takeSimulatedOom): fail the way emscripten reports a heap that cannot grow.
+  if (request.simulateOom) throw new RangeError('Cannot enlarge memory arrays (simulated).');
   if (request.kind === 'probe') {
     const { mei, info } = baseline(request.revision);
     const limit = request.measures >= info.measureIds.length ? info.measureIds.length : probeLimit(mei, request.measures, info.measureIds.length);

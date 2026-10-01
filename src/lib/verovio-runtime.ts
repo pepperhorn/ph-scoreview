@@ -6,6 +6,36 @@ export class VerovioError extends Error {
   constructor(message: string, readonly code?: VerovioReply['code']) { super(message); }
 }
 export const isSuperseded = (error: unknown) => error instanceof VerovioError && error.code === 'superseded';
+/** Verovio ran out of WASM memory (its heap is capped at 2 GiB); `reduceChunkSize` then a retry may succeed. */
+export const isOutOfMemory = (error: unknown) => error instanceof VerovioError && error.code === 'oom';
+
+/**
+ * Engraving chunk budget, in staff-measures per chunk (see docs/specs/large-score-performance.md, Phase 3). Long
+ * scores are engraved chunk by chunk; an out-of-memory retry halves the budget and engraves every score in chunks.
+ */
+export const DEFAULT_CHUNK_STAFF_MEASURES = 640;
+const MIN_CHUNK_STAFF_MEASURES = 40;
+let chunkBudget = DEFAULT_CHUNK_STAFF_MEASURES;
+let forceChunks = false;
+export const chunkSettings = () => ({ budget: chunkBudget, force: forceChunks });
+/**
+ * After an out-of-memory failure: engrave in chunks half the size (every score, even one below the chunking
+ * threshold) on a fresh worker. The caller then opens or draws the score again. Returns the new budget.
+ */
+export function reduceChunkSize(): number {
+  chunkBudget = Math.max(MIN_CHUNK_STAFF_MEASURES, Math.floor(chunkBudget / 2));
+  forceChunks = true;
+  stopWorker(new VerovioError('Superseded score render.', 'superseded'));
+  return chunkBudget;
+}
+/** Test hook: `localStorage['scoreflow-simulate-oom']` makes the next probe or render fail as out of memory, once. */
+function takeSimulatedOom(): boolean {
+  try {
+    if (!globalThis.localStorage?.getItem('scoreflow-simulate-oom')) return false;
+    globalThis.localStorage.removeItem('scoreflow-simulate-oom');
+    return true;
+  } catch { return false; }
+}
 
 type Pending = { resolve: (value: any) => void; reject: (reason: Error) => void };
 let worker: Worker | undefined;
@@ -119,12 +149,12 @@ async function withBaseline<T>(document: SourceDocument, run: (revision: number)
 
 /** Lay out the first `measures` measures as a small document and return page 1 (the first system). */
 export function probeVerovio(document: SourceDocument, renderTicket: number, view: ViewSpec, options: Record<string, unknown>, measures: number): Promise<ProbeResult> {
-  return withBaseline(document, revision => request<ProbeResult>({ kind: 'probe', ticket: renderTicket, revision, view, options, measures }));
+  return withBaseline(document, revision => request<ProbeResult>({ kind: 'probe', ticket: renderTicket, revision, view, options, measures, simulateOom: takeSimulatedOom() || undefined }));
 }
 
 /** Serialize one-based pages of the whole view laid out with `options`; the worker reuses its loaded document when it can. */
 export function renderVerovioPages(document: SourceDocument, renderTicket: number, view: ViewSpec, options: Record<string, unknown>, pages: number[]): Promise<PagesResult> {
-  return withBaseline(document, revision => request<PagesResult>({ kind: 'render', ticket: renderTicket, revision, view, options, pages }));
+  return withBaseline(document, revision => request<PagesResult>({ kind: 'render', ticket: renderTicket, revision, view, options, pages, simulateOom: takeSimulatedOom() || undefined }));
 }
 
 export function disposeVerovio(): void {

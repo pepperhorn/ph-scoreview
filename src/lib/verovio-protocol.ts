@@ -7,9 +7,9 @@ export type VerovioRequest = { id: number } & (
   /** Forget a revision's baseline. */
   | { kind: 'release'; revision: number }
   /** Lay out the first `measures` measures (plus spans that end soon after) as their own small document and serialize page 1. */
-  | { kind: 'probe'; ticket: number; revision: number; view: ViewSpec; options: Record<string, unknown>; measures: number }
+  | { kind: 'probe'; ticket: number; revision: number; view: ViewSpec; options: Record<string, unknown>; measures: number; simulateOom?: boolean }
   /** Lay out the whole view (loading or re-laying out only as needed) and serialize the requested one-based pages. */
-  | { kind: 'render'; ticket: number; revision: number; view: ViewSpec; options: Record<string, unknown>; pages: number[] }
+  | { kind: 'render'; ticket: number; revision: number; view: ViewSpec; options: Record<string, unknown>; pages: number[]; simulateOom?: boolean }
 );
 
 export type VerovioReply = {
