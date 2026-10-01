@@ -11,7 +11,7 @@ import { buildFileState, clampBpm, fileSource, MAX_BPM, MIN_BPM, textSource, typ
 import { sampleSource, scoreDb } from '../lib/score-db';
 import { scoreForView } from '../lib/transpose';
 import { buildPerformanceTimeline, eventsFromSeconds, positionAtSeconds } from '../lib/playback/timeline';
-import { disposeVerovio, prepareVerovio } from '../lib/verovio-runtime';
+import { disposeVerovio, isSuperseded, prepareVerovio } from '../lib/verovio-runtime';
 import { withEngravingDocument } from '../lib/notation/document';
 import { SCORE_FILE_ACCEPT } from '../lib/score-files';
 import { PAGE_PAD_PX, pageOfSystem, systemPages, turnTarget, type ReadingPage, type SystemSpan } from '../lib/paging';
@@ -471,7 +471,7 @@ export default function Reader({ musicXml }: ReaderProps) {
         refreshPages();
         if (anchor) restoreZoomAnchor(anchor, result, prefs.mode);
         setError('');
-      } catch (e) { if (!disposed) setError(e instanceof Error ? e.message : 'Could not draw this score.'); }
+      } catch (e) { if (!disposed && !isSuperseded(e)) setError(e instanceof Error ? e.message : 'Could not draw this score.'); }
       finally {
         if (!disposed) frame = requestAnimationFrame(() => {
           hasPaintedRef.current = true;

@@ -1,6 +1,6 @@
 import type { Part, Score, ScoreNote } from './score';
 import { inferChordSymbol } from './chords';
-import { isSuperseded, nextRenderTicket, prepareVerovio, probeVerovio, renderVerovioPages } from './verovio-runtime';
+import { isSuperseded, nextRenderTicket, probeVerovio, renderVerovioPages, VerovioError, verovioBaseline } from './verovio-runtime';
 import { staffDefXmlId, type SourceDocument } from './notation/document';
 import type { BaselineInfo, ViewSpec } from './notation/mei-view';
 import { musicFontOptions } from './music-fonts';
@@ -233,6 +233,8 @@ type Slot = {
   bands: Map<string, StaffBand>;
   points: NotePoint[]; measures: MeasureGeometry[];
   loading?: Promise<void>;
+  /** Drawing failed; scrolling does not retry it (playback and zoom anchors ask again through ensureSystem). */
+  failed?: boolean;
 };
 
 /**
@@ -251,11 +253,11 @@ export async function renderScore(
   const generation = options.generation ?? (latestGeneration.get(container) || 0) + 1;
   latestGeneration.set(container, generation);
   const isCurrent = () => latestGeneration.get(container) === generation;
-  const superseded = () => new Error('Superseded score render.');
+  const superseded = () => new VerovioError('Superseded score render.', 'superseded');
   const document_ = score.document;
   if (!document_?.engravingText) throw new Error('This score has no engraving document.');
   const source: SourceDocument = document_;
-  const info = await prepareVerovio(source);
+  const info = await verovioBaseline(source);
   if (!isCurrent()) throw superseded();
   const ticket = nextRenderTicket();
   const viewportWidth = Math.max(240, container.clientWidth);
@@ -646,7 +648,11 @@ export async function renderScore(
     }
   };
   const load = (wanted: Slot[]) => {
-    const promise = draw(wanted).catch(error => { if (!isSuperseded(error) && alive()) console.warn('Could not draw a score system:', error); });
+    const promise = draw(wanted).catch(error => {
+      if (isSuperseded(error) || !alive()) return;
+      for (const slot of wanted) if (!slot.svg) slot.failed = true;
+      console.warn('Could not draw a score system:', error);
+    });
     for (const slot of wanted) slot.loading = promise.finally(() => { slot.loading = undefined; });
     return promise;
   };
@@ -655,7 +661,7 @@ export async function renderScore(
     pumping = true;
     try {
       while (alive()) {
-        const pendingSlots = [...near].map(index => slots[index]).filter(slot => !slot.svg && !slot.loading);
+        const pendingSlots = [...near].map(index => slots[index]).filter(slot => !slot.svg && !slot.loading && !slot.failed);
         if (!pendingSlots.length) break;
         pendingSlots.sort((a, b) => distance(a) - distance(b));
         await load(pendingSlots.slice(0, PAGE_BATCH));
@@ -703,6 +709,7 @@ export async function renderScore(
     ensureSystem: async index => {
       const slot = slots[index];
       if (!slot || slot.svg || !alive()) return;
+      slot.failed = false;
       await (slot.loading || load([slot]));
     },
     onChange: listener => { listeners.add(listener); return () => listeners.delete(listener); },

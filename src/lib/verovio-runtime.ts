@@ -64,6 +64,8 @@ let current = 0;
 /** Sources above this many characters leave a large WASM heap behind; the worker is recycled before the next import. */
 const RECYCLE_AFTER_CHARS = 4_000_000;
 let heavy = false;
+/** The revision whose import is in flight, if any. */
+let importing: number | undefined;
 
 /**
  * Import a source once per revision and return its structure. The worker keeps Verovio's MEI baseline; the main
@@ -79,8 +81,20 @@ export function prepareVerovio(document: SourceDocument): Promise<BaselineInfo> 
   cached = request<BaselineInfo>({ kind: 'import', revision, text: document.engravingText });
   baselines.set(revision, cached);
   while (baselines.size > BASELINE_LIMIT) baselines.delete(baselines.keys().next().value!);
-  cached.then(() => { current = revision; }, () => { if (baselines.get(revision) === cached) baselines.delete(revision); });
+  importing = revision;
+  const settled = () => { if (importing === revision) importing = undefined; };
+  cached.then(() => { current = revision; settled(); }, () => { settled(); if (baselines.get(revision) === cached) baselines.delete(revision); });
   return cached;
+}
+
+/**
+ * The baseline for a render. A render never starts importing while another score imports: that render belongs to
+ * the score being replaced (and importing it again could recycle the worker under the new import).
+ */
+export function verovioBaseline(document: SourceDocument): Promise<BaselineInfo> {
+  const revision = verovioRevision(document);
+  if (!baselines.has(revision) && importing !== undefined && importing !== revision) return Promise.reject(new VerovioError('Superseded score render.', 'superseded'));
+  return prepareVerovio(document);
 }
 
 let ticket = 0;
@@ -89,13 +103,13 @@ export const nextRenderTicket = () => ++ticket;
 
 async function withBaseline<T>(document: SourceDocument, run: (revision: number) => Promise<T>): Promise<T> {
   const revision = verovioRevision(document);
-  await prepareVerovio(document);
+  await verovioBaseline(document);
   try { return await run(revision); }
   catch (error) {
     // The worker restarted or dropped this revision: import it again, once, if it is still the current score.
     if (!(error instanceof VerovioError) || error.code !== 'missing' || revision !== current) throw error;
     baselines.delete(revision);
-    await prepareVerovio(document);
+    await verovioBaseline(document);
     return run(revision);
   }
 }
