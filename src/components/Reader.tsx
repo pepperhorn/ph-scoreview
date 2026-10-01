@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { ChevronDown, ChevronLeft, ChevronRight, Ellipsis, Eye, EyeOff, FileMusic, FolderOpen, Minus, Pause, Play, Plus, RotateCcw, SlidersHorizontal, Square, Settings2, VolumeX, X } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Ellipsis, Eye, EyeOff, FileMusic, FolderOpen, History, Hourglass, Minus, Pause, Play, Plus, RotateCcw, SlidersHorizontal, Square, Settings2, Trash2, VolumeX, X } from 'lucide-react';
 import { exampleScore, gmSoundfontLabel, GM_FAMILIES, GM_SOUNDS, instrumentDetails, type GmFamily, type GmSound, type Part, type Score } from '../lib/score';
 import { importMusicXmlText, importScoreFile, parseAbc } from '../lib/import';
 import { portraitBarLimit, renderScore, type MeasureGeometry, type RenderResult } from '../lib/render';
@@ -11,7 +11,9 @@ import { buildFileState, clampBpm, MAX_BPM, MIN_BPM, textSource, type FileSettin
 import { sampleSource, scoreDb } from '../lib/score-db';
 import { scoreForView } from '../lib/transpose';
 import { baseTimelineFor, deriveTimeline, playbackDuration, playbackEventsFrom, playbackMidis, playbackPositionAt, type BaseTimeline } from '../lib/playback/timeline';
-import { disposeVerovio, isSuperseded, prepareVerovio } from '../lib/verovio-runtime';
+import { disposeVerovio, isOutOfMemory, isSuperseded, prepareVerovio, reduceChunkSize } from '../lib/verovio-runtime';
+import { isLargeFile, isLargeScore, largeScoreMessage, staffMeasures } from '../lib/large-file';
+import { forgetLastFile, isSameFile, lastFileToFile, readLastFile, readLastFileInfo, rememberLastFile, type LastFileInfo } from '../lib/last-file';
 import { withEngravingDocument } from '../lib/notation/document';
 import { SCORE_FILE_ACCEPT } from '../lib/score-files';
 import { PAGE_PAD_PX, pageOfSystem, systemPages, turnTarget, type ReadingPage, type SystemSpan } from '../lib/paging';
@@ -62,6 +64,12 @@ const readScoreRecord = (source: FileSource) => Promise.race([
 const FOLLOW_SUSPEND_MS = 2500;
 /** A programmatic smooth scroll counts as in flight until it lands, or for at most this long. */
 const SCROLL_SETTLE_MS = 900;
+/** Guidance added to the renderer's out-of-memory message. */
+const OOM_GUIDANCE = 'Close other tabs, or try again with smaller sections.';
+/** "Not now" on the reopen offer lasts for this tab's session. */
+const REOPEN_DISMISSED_KEY = 'scoreflow-reopen-dismissed';
+const reopenDismissed = () => { try { return sessionStorage.getItem(REOPEN_DISMISSED_KEY) === '1'; } catch { return false; } };
+const LAST_FILE_PRIVACY = 'The last opened file is kept only on this device (in this browser), so it can be reopened after a reload. It is never uploaded.';
 const scrollBehavior = (): ScrollBehavior => window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
 /** Where the viewport centre sits in a measure, so a re-layout can put that point back at the centre. */
 type ZoomAnchor = { index: number; fx: number; fy: number };
@@ -82,6 +90,17 @@ export default function Reader({ musicXml }: ReaderProps) {
   const [abc, setAbc] = useState(sampleAbc);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  /** Non-blocking "large score, this may take a while" notice for the file being opened. */
+  const [largeNotice, setLargeNotice] = useState('');
+  /** The large-score notice clears when the score it was shown for paints (armed once that score is loaded). */
+  const largeNoticeArmedRef = useRef(false);
+  /** An out-of-memory error and what to re-run after shrinking the engraving chunks; shown while `error` is its message. */
+  const [oomRetry, setOomRetry] = useState<{ message: string; kind: 'open' | 'draw' } | null>(null);
+  /** The file most recently passed to readFile, for an out-of-memory retry. */
+  const lastFileRef = useRef<File | null>(null);
+  /** The remembered last opened file (stored on this device), and whether to offer reopening it. */
+  const [lastFileInfo, setLastFileInfo] = useState<LastFileInfo | null>(null);
+  const [reopenOffer, setReopenOffer] = useState<LastFileInfo | null>(null);
   const [playing, setPlaying] = useState(false);
   const [loadingAudio, setLoadingAudio] = useState(false);
   const [loadingFont, setLoadingFont] = useState(false);
@@ -192,8 +211,15 @@ export default function Reader({ musicXml }: ReaderProps) {
       setPrefs(next);
     }
     catch { /* keep defaults */ }
+    // The last opened file is offered (never opened) on start, unless a score was supplied or one is already opening.
+    let offerCancelled = false;
+    void readLastFileInfo().then(info => {
+      if (offerCancelled) return;
+      setLastFileInfo(info);
+      if (info && !musicXml && importRunRef.current === 0 && !reopenDismissed()) setReopenOffer(info);
+    });
     // The sample's record (saved zoom and settings) is read before the first paint; the musicXml prop loads its own.
-    if (musicXml) { setReady(true); return; }
+    if (musicXml) { setReady(true); return () => { offerCancelled = true; }; }
     let cancelled = false;
     const sample = score;
     const src = sampleSource(sample);
@@ -202,7 +228,7 @@ export default function Reader({ musicXml }: ReaderProps) {
       if (importRunRef.current === 0) loadScore(sample, src, saved);
       setReady(true);
     });
-    return () => { cancelled = true; };
+    return () => { cancelled = true; offerCancelled = true; };
   }, []);
   useEffect(() => { if (ready) { const { zoom: _zoom, ...global } = prefs; localStorage.setItem('scoreflow-prefs', JSON.stringify(global)); } }, [prefs, ready]);
   useEffect(() => {
@@ -271,9 +297,26 @@ export default function Reader({ musicXml }: ReaderProps) {
     })();
     return () => { importRunRef.current++; };
   }, [musicXml]);
+  /** Show an error; an out-of-memory one gets guidance and a retry with smaller engraving chunks. */
+  const showError = (e: unknown, fallback: string, retry?: 'open' | 'draw') => {
+    if (retry && isOutOfMemory(e)) {
+      const message = `${(e as Error).message} ${OOM_GUIDANCE}`;
+      setOomRetry({ message, kind: retry });
+      setError(message);
+      return;
+    }
+    setError(e instanceof Error ? e.message : fallback);
+  };
+  /** Opening any score retires the large-score notice and the reopen offer. */
+  const startOpening = () => { largeNoticeArmedRef.current = false; setLargeNotice(''); setReopenOffer(null); };
   const readFile = async (file?: File) => {
     if (!file) return;
     const run = ++importRunRef.current;
+    lastFileRef.current = file;
+    startOpening();
+    const phone = deviceClass() === 'compact';
+    const largeBytes = isLargeFile(file.size);
+    if (largeBytes) setLargeNotice(largeScoreMessage(file.size, { phone }));
     stop(true);
     setPainting(true);
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
@@ -283,13 +326,43 @@ export default function Reader({ musicXml }: ReaderProps) {
       const job = importScoreFile(file);
       const nextSource = await job.source;
       const [saved, nextScore] = await Promise.all([readScoreRecord(nextSource), job.score]);
+      // A compact file (an .mxl, a dense MIDI) can still be a large score: warn before engraving starts.
+      if (!largeBytes && run === importRunRef.current && isLargeScore(nextScore)) setLargeNotice(largeScoreMessage(file.size, { phone, staffMeasures: staffMeasures(nextScore) }));
       if (nextScore.document) await prepareVerovio(nextScore.document);
-      if (run === importRunRef.current) loadScore(nextScore, nextSource, saved);
+      if (run === importRunRef.current) {
+        largeNoticeArmedRef.current = true;
+        loadScore(nextScore, nextSource, saved);
+        // Remembered after the import succeeds, off the open path; an unchanged file is not written again.
+        if (!isSameFile(lastFileInfo, file)) void rememberLastFile(file).then(info => { if (info) setLastFileInfo(info); });
+      }
     }
-    catch (e) { if (run === importRunRef.current) { setPainting(false); setError(e instanceof Error ? e.message : 'Could not open this file.'); } }
+    catch (e) { if (run === importRunRef.current) { setPainting(false); setLargeNotice(''); showError(e, 'Could not open this file.', 'open'); } }
   };
+  /** After an out-of-memory failure: engrave in smaller chunks and open or draw the score again. */
+  const retryOutOfMemory = () => {
+    const retry = oomRetry;
+    if (!retry) return;
+    reduceChunkSize();
+    setOomRetry(null);
+    setError('');
+    if (retry.kind === 'open' && lastFileRef.current) { void readFile(lastFileRef.current); return; }
+    setPainting(true);
+    setResizeTick(value => value + 1);
+  };
+  const reopenLastFile = async () => {
+    setReopenOffer(null);
+    const record = await readLastFile();
+    if (!record) { setLastFileInfo(null); setError('The last opened file is no longer stored on this device.'); return; }
+    void readFile(lastFileToFile(record));
+  };
+  const dismissReopen = () => {
+    setReopenOffer(null);
+    try { sessionStorage.setItem(REOPEN_DISMISSED_KEY, '1'); } catch { /* hidden for this page only */ }
+  };
+  const forgetLast = () => { setReopenOffer(null); setLastFileInfo(null); void forgetLastFile(); };
   const readAbc = async (text: string) => {
     const run = ++importRunRef.current;
+    startOpening();
     setPainting(true);
     try {
       const src = textSource('abc', text, 'Pasted ABC');
@@ -299,6 +372,7 @@ export default function Reader({ musicXml }: ReaderProps) {
   };
   const loadSample = async () => {
     const run = ++importRunRef.current;
+    startOpening();
     setPainting(true);
     const sample = sampleScore();
     const src = sampleSource(sample);
@@ -493,7 +567,13 @@ export default function Reader({ musicXml }: ReaderProps) {
         refreshPages();
         if (anchor) restoreZoomAnchor(anchor, result, prefs.mode);
         setError('');
-      } catch (e) { if (!disposed && !isSuperseded(e)) setError(e instanceof Error ? e.message : 'Could not draw this score.'); }
+        if (largeNoticeArmedRef.current) { largeNoticeArmedRef.current = false; setLargeNotice(''); }
+      } catch (e) {
+        if (!disposed && !isSuperseded(e)) {
+          if (largeNoticeArmedRef.current) { largeNoticeArmedRef.current = false; setLargeNotice(''); }
+          showError(e, 'Could not draw this score.', 'draw');
+        }
+      }
       finally {
         if (!disposed) frame = requestAnimationFrame(() => {
           hasPaintedRef.current = true;
@@ -780,6 +860,7 @@ export default function Reader({ musicXml }: ReaderProps) {
   const barsDisabled = prefs.mode !== 'portrait';
   const barsSetting = <label className={`header-bars-setting ${barsDisabled ? 'is-disabled' : ''}`} title={barsDisabled ? 'Bars per line applies to Vertical view' : undefined}><span>Bars</span><select aria-label="Bars per line" title={barsDisabled ? 'Bars per line applies to Vertical view' : `Auto fits up to ${barsLimit} bars`} disabled={barsDisabled} aria-disabled={barsDisabled} value={prefs.barsPerLine} onChange={event => update({ barsPerLine: event.target.value === 'auto' ? 'auto' : Number(event.target.value) })}><option value="auto">Auto</option>{[1, 2, 3, 4].map(count => <option value={count} key={count}>{count}</option>)}</select></label>;
 
+  const oomButton = oomRetry && oomRetry.message === error ? <button className="oom-retry-button" onClick={retryOutOfMemory}>Try again with smaller sections</button> : null;
   const staveScale = zoomDraft ?? prefs.zoom ?? renderedZoom;
   const staveScaleMin = Math.min(STAVE_SCALE_MIN, renderedZoom);
   staveScaleMinRef.current = staveScaleMin;
@@ -894,13 +975,25 @@ export default function Reader({ musicXml }: ReaderProps) {
       <div className="drawer-grid">
 
         <div className="drawer-panel"><h3><Settings2 size={17}/> Reading</h3><div className="font-choice"><span>Notation font</span><div className="font-toggle" role="group" aria-label="Notation font"><button className={prefs.notationFont === 'Bravura' ? 'selected' : ''} aria-pressed={prefs.notationFont === 'Bravura'} onClick={() => update({ notationFont: 'Bravura' })}>Bravura</button><button className={prefs.notationFont === 'Petaluma' ? 'selected' : ''} aria-pressed={prefs.notationFont === 'Petaluma'} onClick={() => update({ notationFont: 'Petaluma' })}>Petaluma</button></div></div><div className="font-choice"><span>Stave text font</span><div className="font-toggle" role="group" aria-label="Stave text font">{(['Sans', 'Serif', 'Mono'] as const).map(font => <button key={font} className={prefs.annotationFont === font ? 'selected' : ''} aria-pressed={prefs.annotationFont === font} onClick={() => update({ annotationFont: font })}>{font}</button>)}</div></div><label className="field-label" htmlFor="overhang">Overhang <span>{prefs.overlap === 0 ? 'Off' : `${prefs.overlap} ${prefs.mode === 'portrait' ? (prefs.overlap === 1 ? 'system' : 'systems') : (prefs.overlap === 1 ? 'bar' : 'bars')}`}</span></label><input id="overhang" className="range" type="range" min="0" max="3" step="1" value={prefs.overlap} onChange={e => update({ overlap: Number(e.target.value) })}/><div className="switch-row"><span>Note names</span><button className={`switch ${prefs.names ? 'on' : ''}`} role="switch" aria-label="Note names" aria-checked={prefs.names} onClick={() => update({ names: !prefs.names })}/></div><div className="switch-row"><span>Chord symbols</span><button className={`switch ${prefs.chordSymbols ? 'on' : ''}`} role="switch" aria-label="Chord symbols" aria-checked={prefs.chordSymbols} onClick={() => update({ chordSymbols: !prefs.chordSymbols })}/></div><label className="switch-row inference-row"><span>Infer chord symbols</span><input type="checkbox" checked={prefs.inferChordSymbols} onChange={e => update({ inferChordSymbols: e.target.checked })}/></label><div className="switch-row"><span>Beat counts</span><button className={`switch ${prefs.counts ? 'on' : ''}`} role="switch" aria-label="Beat counts" aria-checked={prefs.counts} onClick={() => update({ counts: !prefs.counts })}/></div><div className="switch-row"><span>Count subdivisions</span><button className={`switch ${prefs.subdivisions ? 'on' : ''}`} role="switch" aria-label="Count subdivisions" aria-checked={prefs.subdivisions} onClick={() => update({ subdivisions: !prefs.subdivisions, counts: true })}/></div>{score.parts.length > 4 && <button className="text-action reset-staves" onClick={resetStaves}><RotateCcw size={15}/> Reset score staves</button>}</div>
-        <div className="drawer-panel abc-panel"><h3><FileMusic size={17}/> ABC notation</h3><p>Paste ABC text here, or use the open button in the header for files and folders.</p><textarea value={abc} onChange={e => setAbc(e.target.value)} spellCheck={false} aria-label="ABC notation"/><button className="primary-action" onClick={() => void readAbc(abc)}>View notation <ChevronRight size={17}/></button><button className="text-action" onClick={loadSample}><FileMusic size={16}/> Open sample score</button></div>
+        <div className="drawer-panel abc-panel"><h3><FileMusic size={17}/> ABC notation</h3><p>Paste ABC text here, or use the open button in the header for files and folders.</p><textarea value={abc} onChange={e => setAbc(e.target.value)} spellCheck={false} aria-label="ABC notation"/><button className="primary-action" onClick={() => void readAbc(abc)}>View notation <ChevronRight size={17}/></button><button className="text-action" onClick={loadSample}><FileMusic size={16}/> Open sample score</button>{lastFileInfo && <button className="text-action forget-last-file" title={LAST_FILE_PRIVACY} onClick={forgetLast}><Trash2 size={15}/> Forget last opened file</button>}</div>
         <div className="drawer-panel pitch-panel"><h3><Settings2 size={17}/> Pitch</h3><div className="pitch-options"><div><span className="pitch-label">Transpose score</span><div className="semitone-control"><button aria-label="Transpose down one semitone" disabled={prefs.semitones <= -12} onClick={() => changePitch({ semitones: prefs.semitones - 1 })}><Minus size={16}/></button><output aria-live="polite">{prefs.semitones > 0 ? '+' : ''}{prefs.semitones} semitones</output><button aria-label="Transpose up one semitone" disabled={prefs.semitones >= 12} onClick={() => changePitch({ semitones: prefs.semitones + 1 })}><Plus size={16}/></button><button className="pitch-reset" aria-label="Reset transposition" title="Reset transposition" disabled={prefs.semitones === 0} onClick={() => changePitch({ semitones: 0 })}><RotateCcw size={15}/></button></div></div>{!concertBasis && <div><span className="pitch-label">Score view</span><div className="font-toggle pitch-view" role="group" aria-label="Score pitch view"><button className={prefs.scorePitch === 'written' ? 'selected' : ''} aria-pressed={prefs.scorePitch === 'written'} onClick={() => changePitch({ scorePitch: 'written' })}>Transposing</button><button className={prefs.scorePitch === 'concert' ? 'selected' : ''} aria-pressed={prefs.scorePitch === 'concert'} onClick={() => changePitch({ scorePitch: 'concert' })}>Concert</button></div></div>}</div><p className="pitch-hint">{concertBasis ? 'This score is written at concert pitch, so it is shown at concert pitch. Playback stays at concert pitch.' : hasTransposingParts ? 'Transposing shows written parts; Concert shows sounding pitches. Playback stays at concert pitch.' : 'This score has no instrument transposition data, so both views match.'}</p></div>
       </div>
-      {error && <div className="error" role="alert">{error}</div>}
+      {error && <div className="error" role="alert"><span className="error-text">{error}</span>{oomButton}</div>}
       <div className="drawer-foot">SPACE / PAGE DOWN · next view &nbsp;&nbsp; PAGE UP · previous view <span>FluidR3 GM · CC BY 3.0; TimGM drums · GPL-2</span></div>
     </aside>
-    {notice && !drawer && <div className="playback-notice" role="status"><VolumeX className="playback-notice-icon" size={16}/><span className="playback-notice-text">{notice}</span><button className="playback-notice-dismiss" onClick={() => setNotice('')} aria-label="Dismiss playback notice"><X size={16}/></button></div>}
-    {error && !drawer && <div className="toast" role="alert"><span>{error}</span><button onClick={() => setError('')} aria-label="Dismiss"><X size={16}/></button></div>}
+    {!drawer && (notice || largeNotice || reopenOffer) && <div className="reader-notices">
+      {largeNotice && <div className="large-file-notice" role="status"><Hourglass className="large-file-notice-icon" size={16}/><span className="large-file-notice-text">{largeNotice}</span><button className="large-file-notice-dismiss" onClick={() => setLargeNotice('')} aria-label="Dismiss large score notice"><X size={16}/></button></div>}
+      {reopenOffer && <div className="reopen-banner" role="status" aria-label="Reopen last file">
+        <History className="reopen-banner-icon" size={16}/>
+        <span className="reopen-banner-body"><span className="reopen-banner-text">Reopen <strong className="reopen-banner-name">{reopenOffer.name}</strong>?</span><span className="reopen-banner-privacy" title={LAST_FILE_PRIVACY}>Kept only on this device.</span></span>
+        <span className="reopen-banner-actions">
+          <button className="reopen-banner-reopen" onClick={() => void reopenLastFile()} aria-label={`Reopen ${reopenOffer.name}`}>Reopen</button>
+          <button className="reopen-banner-later" onClick={dismissReopen}>Not now</button>
+          <button className="reopen-banner-forget" onClick={forgetLast} aria-label={`Forget ${reopenOffer.name}`} title="Delete the copy kept on this device">Forget</button>
+        </span>
+      </div>}
+      {notice && <div className="playback-notice" role="status"><VolumeX className="playback-notice-icon" size={16}/><span className="playback-notice-text">{notice}</span><button className="playback-notice-dismiss" onClick={() => setNotice('')} aria-label="Dismiss playback notice"><X size={16}/></button></div>}
+    </div>}
+    {error && !drawer && <div className={`toast ${oomButton ? 'is-out-of-memory' : ''}`} role="alert"><span className="toast-text">{error}</span>{oomButton}<button className="toast-dismiss" onClick={() => setError('')} aria-label="Dismiss"><X size={16}/></button></div>}
   </main>;
 }
