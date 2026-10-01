@@ -41,17 +41,42 @@ const roundConstants = [
 ];
 const rotate = (value: number, shift: number) => (value >>> shift) | (value << (32 - shift));
 
-// Works on plain HTTP LAN origins, where Web Crypto's subtle API is absent.
-export function sha256Hex(bytes: Uint8Array): string {
-  const padded = new Uint8Array(Math.ceil((bytes.length + 9) / 64) * 64);
-  padded.set(bytes);
-  padded[bytes.length] = 0x80;
-  const data = new DataView(padded.buffer);
-  data.setBigUint64(padded.length - 8, BigInt(bytes.length) * 8n);
-  const hash = new Uint32Array([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]);
-  const words = new Uint32Array(64);
-  for (let offset = 0; offset < padded.length; offset += 64) {
-    for (let i = 0; i < 16; i++) words[i] = data.getUint32(offset + i * 4);
+/**
+ * Incremental SHA-256 in plain JavaScript: it works on plain HTTP LAN origins, where Web Crypto's subtle API is
+ * absent. Bytes are hashed as they are given (no padded copy of the whole input).
+ */
+export class Sha256 {
+  private readonly hash = new Uint32Array([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]);
+  private readonly words = new Uint32Array(64);
+  private readonly block = new Uint8Array(64);
+  private buffered = 0;
+  private length = 0;
+  update(bytes: Uint8Array): this {
+    let offset = 0;
+    this.length += bytes.length;
+    if (this.buffered) {
+      const take = Math.min(64 - this.buffered, bytes.length);
+      this.block.set(bytes.subarray(0, take), this.buffered);
+      this.buffered += take; offset = take;
+      if (this.buffered < 64) return this;
+      this.compress(this.block, 0);
+      this.buffered = 0;
+    }
+    for (; offset + 64 <= bytes.length; offset += 64) this.compress(bytes, offset);
+    if (offset < bytes.length) { this.block.set(bytes.subarray(offset)); this.buffered = bytes.length - offset; }
+    return this;
+  }
+  hex(): string {
+    const tail = new Uint8Array(this.buffered < 56 ? 64 : 128);
+    tail.set(this.block.subarray(0, this.buffered));
+    tail[this.buffered] = 0x80;
+    new DataView(tail.buffer).setBigUint64(tail.length - 8, BigInt(this.length) * 8n);
+    for (let offset = 0; offset < tail.length; offset += 64) this.compress(tail, offset);
+    return Array.from(this.hash, value => value.toString(16).padStart(8, '0')).join('');
+  }
+  private compress(bytes: Uint8Array, offset: number): void {
+    const { words, hash } = this;
+    for (let i = 0; i < 16; i++) { const at = offset + i * 4; words[i] = ((bytes[at] << 24) | (bytes[at + 1] << 16) | (bytes[at + 2] << 8) | bytes[at + 3]) >>> 0; }
     for (let i = 16; i < 64; i++) {
       const x = words[i - 15], y = words[i - 2];
       const sigma0 = rotate(x, 7) ^ rotate(x, 18) ^ (x >>> 3);
@@ -73,14 +98,29 @@ export function sha256Hex(bytes: Uint8Array): string {
     hash[4] = (hash[4] + e) >>> 0; hash[5] = (hash[5] + f) >>> 0;
     hash[6] = (hash[6] + g) >>> 0; hash[7] = (hash[7] + h) >>> 0;
   }
-  return Array.from(hash, value => value.toString(16).padStart(8, '0')).join('');
 }
 
-/** Source identity of a file; pass `bytes` when they are already read (importFile reuses them and this hash). */
-export async function fileSource(file: File, bytes?: Uint8Array): Promise<FileSource> {
-  const sha256 = sha256Hex(bytes || new Uint8Array(await file.arrayBuffer()));
-  return { name: file.name, size: file.size, sha256, format: file.name.split('.').pop()?.toLowerCase() || '' };
+export function sha256Hex(bytes: Uint8Array): string {
+  return new Sha256().update(bytes).hex();
 }
+
+/** SHA-256 of `bytes`: Web Crypto when the context has it (secure origins; it runs off the calling thread), else JavaScript. */
+export async function sha256Digest(bytes: Uint8Array): Promise<string> {
+  const subtle = globalThis.crypto?.subtle;
+  if (subtle) {
+    try {
+      const digest = await subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>);
+      return Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, '0')).join('');
+    } catch { /* fall back to JavaScript */ }
+  }
+  return sha256Hex(bytes);
+}
+
+/** Source identity of a file's bytes (the import worker hashes files once, in the worker). */
+export async function fileSource(file: Pick<File, 'name' | 'size'>, bytes: Uint8Array): Promise<FileSource> {
+  return fileSourceFor(file.name, file.size, await sha256Digest(bytes));
+}
+export const fileSourceFor = (name: string, size: number, sha256: string): FileSource => ({ name, size, sha256, format: name.split('.').pop()?.toLowerCase() || '' });
 /** Source identity for text without a file (the sample, pasted ABC, the musicXml prop): a hash of the text with a format prefix. */
 export function textSource(format: string, text: string, name: string): FileSource {
   const bytes = new TextEncoder().encode(`${format}:${text}`);
