@@ -291,6 +291,60 @@ try {
   assert.equal(meiView.info, meiView.expectedInfo, 'Baseline scan reads measures, staff definitions and groups like the DOM');
   assert.equal(meiView.lyricDensity, 2, 'Lyric density counts syllables per staff-measure and verse line');
   console.log(`Document import: worker MEI view transform matches the DOM reference in ${meiView.cases} cases passed`);
+
+  // Phase 3 chunk slices: prevailing attributes are carried (per staff, the meter unprinted), credits only in the first
+  // slice, stable measure IDs, span-aware overlaps, page-aligned plans; non-partwise or prefixed sources do not index.
+  const chunks = await page.evaluate(async () => {
+    const { indexMusicXml, sliceMusicXml, planChunk, leadFor, tailFor, measureId } = await import('/src/lib/notation/musicxml-chunks.ts');
+    const { parseMusicXml } = await import('/src/lib/import.ts');
+    const measure = (n, extra = '', id = '') => `<measure number="${n}"${id ? ` id="${id}"` : ''}>${extra}<note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><type>whole</type><staff>1</staff></note><backup><duration>4</duration></backup><note><pitch><step>C</step><octave>3</octave></pitch><duration>4</duration><voice>5</voice><type>whole</type><staff>2</staff></note></measure>`;
+    const measures = Array.from({ length: 12 }, (_, index) => {
+      const n = index + 1;
+      const extra = n === 1 ? '<attributes><divisions>1</divisions><key><fifths>-3</fifths></key><time print-object="yes"><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes><direction><direction-type><wedge type="crescendo"/></direction-type></direction>'
+        : n === 3 ? '<attributes><key number="2"><fifths>2</fifths></key><clef number="2"><sign>G</sign><line>2</line></clef></attributes>'
+        : n === 5 ? '<attributes><key><fifths>1</fifths></key></attributes><direction><direction-type><wedge type="stop"/></direction-type></direction>'
+        : n === 6 ? '<notations><slur type="start"/></notations>' : '';
+      return measure(n, extra, n === 2 ? 'source-id' : '');
+    });
+    const xml = `<?xml version="1.0"?><!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd"><score-partwise version="4.0"><work><work-title>Slices</work-title></work><credit page="1"><credit-words>Title credit</credit-words></credit><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list><part id="P1"><!-- <measure number="x"> in a comment --><![CDATA[ <measure> ]]>${measures.join('')}</part></score-partwise>`;
+    const index = indexMusicXml(xml);
+    const slice = sliceMusicXml(index, 6, 9);
+    const first = sliceMusicXml(index, 0, 2);
+    const carried = /<measure number="7" id="reader-m7">(<attributes>.*?<\/attributes>)/.exec(slice)?.[1];
+    const read = parseMusicXml(slice);
+    return {
+      measureCount: index.measureCount, spans: index.spans, carried,
+      credits: [first.includes('<credit '), slice.includes('<credit ')],
+      ids: [...slice.matchAll(/<measure\b[^>]*\bid="([^"]*)"/g)].map(match => match[1]),
+      firstIds: [...first.matchAll(/<measure\b[^>]*\bid="([^"]*)"/g)].map(match => match[1]),
+      sliceMeasures: read.parts[0].measures.length, sliceKey: read.key,
+      lead: [leadFor(index, 0), leadFor(index, 2), leadFor(index, 4), leadFor(index, 8)],
+      tail: [tailFor(index, 2), tailFor(index, 4), tailFor(index, 8), tailFor(index, 11)],
+      plans: [planChunk(index, 0, 2, 2, 8), planChunk(index, 3, 2, 2, 8), planChunk(index, 5, 2, 2, 8), planChunk(index, 0, 0, 2, 8)],
+      measureId: measureId(0),
+      rejected: [indexMusicXml('<score-timewise><part-list/></score-timewise>'), indexMusicXml('<mx:score-partwise xmlns:mx="x"><mx:part-list/></mx:score-partwise>'), indexMusicXml('<score-partwise><part-list></part-list><part id="P1"><measure number="1"></part></score-partwise>')],
+    };
+  });
+  assert.equal(chunks.measureCount, 12, 'Index counts measures, skipping comments and CDATA');
+  assert.deepEqual(chunks.spans, [{ start: 0, end: 4 }], 'A hairpin over five bars is a span; an unterminated slur is not');
+  assert.equal(chunks.carried, '<attributes><divisions>1</divisions><key>' + '<fifths>1</fifths></key><time print-object="no"><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>G</sign><line>2</line></clef></attributes>',
+    'Carried attributes: latest divisions, a key for all staves replaces a per-staff key, the meter unprinted, staves and per-staff clefs');
+  assert.deepEqual(chunks.credits, [true, false], 'Credits only in the first slice');
+  assert.deepEqual(chunks.ids, ['reader-m7', 'reader-m8', 'reader-m9'], 'Slice measures get stable IDs');
+  assert.deepEqual(chunks.firstIds, ['reader-m1', 'reader-m2'], 'A source measure ID is replaced by the stable one');
+  assert.equal(chunks.sliceMeasures, 3);
+  assert.equal(chunks.sliceKey, 1, 'The slice reads with the carried key');
+  assert.deepEqual(chunks.lead, [0, 2, 4, 1], 'Lead overlap reaches back to the start of spans crossing the boundary (at least one bar)');
+  assert.deepEqual(chunks.tail, [3, 1, 1, 1], 'Tail overlap reaches the end of spans crossing the boundary (at least one bar)');
+  assert.deepEqual(chunks.plans, [
+    { from: 0, to: 5, firstSystem: 0, endSystem: 2, firstPage: 1 },
+    { from: 0, to: 9, firstSystem: 2, endSystem: 4, firstPage: 3 },
+    { from: 7, to: 12, firstSystem: 4, endSystem: 6, firstPage: 2 },
+    { from: 0, to: 12, firstSystem: 0, endSystem: 1, firstPage: 1 },
+  ], 'Chunk plans: whole systems plus overlap pages, page-aligned');
+  assert.equal(chunks.measureId, 'reader-m1');
+  assert.deepEqual(chunks.rejected, [null, null, null].map(() => undefined), 'Timewise, prefixed and malformed sources are not indexed');
+  console.log('Document import: MusicXML chunk slices, carried attributes, overlaps and plans passed');
   console.log('Document import: ID-less MusicXML identity and multi-measure rest expansion passed');
   console.log('Document import: timewise, MXL source bytes and hash, percussion, voices, ABC adapter and MEI identity passed');
   console.log('Document review regressions: drum kit program, MEI accidentals/key/meter changes, saved BPM clamp, MXL encoded path and size bound, ABC/MEI navigation engraving passed');
