@@ -127,13 +127,16 @@ function parseXml(text: string): XMLDocument {
   return doc;
 }
 
-/** Bounding box of an element in the outer SVG's user (viewBox) coordinates. */
-function box(element: Element, svg: SVGSVGElement): DOMRect {
+/**
+ * Bounding box of an element in the outer SVG's user (viewBox) coordinates. `rootInverse` is the outer SVG's inverted
+ * screen matrix, when the caller measures many elements of one SVG without layout changes in between.
+ */
+function box(element: Element, svg: SVGSVGElement, rootInverse?: DOMMatrix | null): DOMRect {
   try {
     const graphics = element as SVGGraphicsElement;
     const rect = graphics.getBBox();
-    const root = svg.getScreenCTM(); const own = graphics.getScreenCTM();
-    const transform = root && own ? root.inverse().multiply(own) : new DOMMatrix();
+    const root = rootInverse !== undefined ? rootInverse : svg.getScreenCTM()?.inverse() ?? null; const own = graphics.getScreenCTM();
+    const transform = root && own ? root.multiply(own) : new DOMMatrix();
     const points = [[rect.x, rect.y], [rect.x + rect.width, rect.y], [rect.x, rect.y + rect.height], [rect.x + rect.width, rect.y + rect.height]]
       .map(([x, y]) => new DOMPoint(x, y).matrixTransform(transform));
     const left = Math.min(...points.map(p => p.x)); const top = Math.min(...points.map(p => p.y));
@@ -489,12 +492,16 @@ export async function renderScore(
   const measureGeometry = (slot: Slot) => {
     const svg = slot.svg!;
     slot.bands = new Map();
+    // Nothing below changes layout until the annotation layer is appended, so the root matrix is read once.
+    let inverse: DOMMatrix | null = null;
+    try { inverse = svg.getScreenCTM()?.inverse() ?? null; } catch { /* not rendered */ }
+    const boxOf = (element: Element) => box(element, svg, inverse);
     // Staff bands from the first measure of the system, keyed by staff number.
     const measureElements = Array.from(svg.querySelectorAll('g.measure'));
     for (const staff of Array.from(measureElements[0]?.querySelectorAll(':scope > g.staff') || [])) {
       const n = staff.getAttribute('data-n'); if (!n) continue;
-      const lines = Array.from(staff.querySelectorAll(':scope > path')).slice(0, 5).map(line => box(line, svg));
-      const rect = lines.length ? null : box(staff, svg);
+      const lines = Array.from(staff.querySelectorAll(':scope > path')).slice(0, 5).map(line => boxOf(line));
+      const rect = lines.length ? null : boxOf(staff);
       const top = lines.length ? Math.min(...lines.map(line => line.y)) : rect!.y;
       const bottom = lines.length ? Math.max(...lines.map(line => line.y + line.height)) : rect!.y + rect!.height;
       slot.bands.set(n, { top, bottom, center: (top + bottom) / 2, laneTop: bottom, lines: lines.length > 1 });
@@ -502,12 +509,12 @@ export async function renderScore(
     // The lane goes below the staff and anything hanging under it: low notes, lyrics and below-staff directions.
     if (laneRows) {
       const ordered = [...slot.bands.entries()].sort((a, b) => a[1].top - b[1].top);
-      const controls = Array.from(svg.querySelectorAll('g.measure > g.dynam, g.measure > g.hairpin, g.measure > g.dir, g.measure > g.pedal')).map(control => box(control, svg));
+      const controls = Array.from(svg.querySelectorAll('g.measure > g.dynam, g.measure > g.hairpin, g.measure > g.dir, g.measure > g.pedal')).map(control => boxOf(control));
       ordered.forEach(([n, band], index) => {
         const nextTop = ordered[index + 1]?.[1].top ?? Infinity;
         let lowest = band.bottom;
         // Staff content includes ledger-line notes, stems, articulations and lyrics.
-        for (const staff of Array.from(svg.querySelectorAll(`g.staff[data-n="${CSS.escape(n)}"]`))) lowest = Math.max(lowest, box(staff, svg).bottom);
+        for (const staff of Array.from(svg.querySelectorAll(`g.staff[data-n="${CSS.escape(n)}"]`))) lowest = Math.max(lowest, boxOf(staff).bottom);
         for (const rect of controls) if (rect.height && rect.top >= band.bottom - 2 && rect.top < band.bottom + (nextTop - band.bottom) / 2) lowest = Math.max(lowest, rect.bottom);
         band.laneTop = lowest + LANE_GAP;
       });
@@ -520,7 +527,7 @@ export async function renderScore(
       const index = measureIndexById.get(element.getAttribute('id') || '') ?? -1;
       if (index < 0) return;
       svgMeasureByIndex.set(index, element);
-      measureRects.push({ index, element, rect: box(element, svg) });
+      measureRects.push({ index, element, rect: boxOf(element) });
       if (!local) slot.firstMeasure = index;
     });
     slot.measureCount = svgMeasureByIndex.size || slot.measureCount;
@@ -539,7 +546,7 @@ export async function renderScore(
           const element = findNote(byId, score, event);
           if (!element || !svgMeasure.contains(element)) continue;
           const anchor = element.querySelector('.notehead') || element;
-          const rect = box(anchor, svg); const x = rect.x + rect.width / 2; const y = rect.y + rect.height / 2;
+          const rect = boxOf(anchor); const x = rect.x + rect.width / 2; const y = rect.y + rect.height / 2;
           element.classList.add('reader-note'); element.setAttribute('data-note-id', event.id);
           notes.push({ element, event, partIndex, measure: measure.index, x, y });
           if (!band) continue;
@@ -717,6 +724,7 @@ export async function renderScore(
     } finally { pumping = false; }
   };
   const observers: IntersectionObserver[] = [];
+  let observeTimer = 0;
   if (!eager && systemCount > 1 && typeof IntersectionObserver !== 'undefined') {
     const margin = (screens: number) => mode === 'landscape' ? `0px ${screens * 100}%` : `${screens * 100}% 0px`;
     const nearObserver = new IntersectionObserver(entries => {
@@ -735,8 +743,17 @@ export async function renderScore(
       }
       if (released) notify();
     }, { root: scroller, rootMargin: margin(KEEP_SCREENS) });
-    for (const slot of slots) { nearObserver.observe(slot.block); keepObserver.observe(slot.block); }
     observers.push(nearObserver, keepObserver);
+    // Observing thousands of blocks (and their first callbacks) is real work: it starts after the first paint's task,
+    // a batch per task, nearest the start first.
+    const OBSERVE_BATCH = 1500;
+    const observeFrom = (start: number) => {
+      observeTimer = 0;
+      if (disposed) return;
+      for (const slot of slots.slice(start, start + OBSERVE_BATCH)) { nearObserver.observe(slot.block); keepObserver.observe(slot.block); }
+      if (start + OBSERVE_BATCH < slots.length) observeTimer = window.setTimeout(() => observeFrom(start + OBSERVE_BATCH), 0);
+    };
+    observeTimer = window.setTimeout(() => observeFrom(0), 0);
   }
 
   const firstSystem = (): SystemGeometry => geometryOf(first);
@@ -765,6 +782,7 @@ export async function renderScore(
       if (disposed) return;
       disposed = true;
       window.clearTimeout(retryTimer);
+      window.clearTimeout(observeTimer);
       for (const observer of observers) observer.disconnect();
       listeners.clear();
       if (liveResults.get(container) === result) liveResults.delete(container);

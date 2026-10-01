@@ -598,9 +598,14 @@ export default function Reader({ musicXml }: ReaderProps) {
       const origin = viewport.getBoundingClientRect().top + viewport.clientTop - viewport.scrollTop;
       return blocks.map(block => { const rect = block.getBoundingClientRect(); return { top: rect.top - origin, bottom: rect.bottom - origin }; });
     }
+    // Blocks share an offset parent: its offset is summed once (a long score has thousands of blocks).
+    const shared = blocks[0]?.offsetParent as HTMLElement | null | undefined;
+    let base = 0;
+    for (let element = shared ?? null; element && element !== viewport; element = element.offsetParent as HTMLElement | null) base += element.offsetTop;
     return blocks.map(block => {
       let top = 0;
-      for (let element: HTMLElement | null = block; element && element !== viewport; element = element.offsetParent as HTMLElement | null) top += element.offsetTop;
+      if (block.offsetParent === shared) top = base + block.offsetTop;
+      else for (let element: HTMLElement | null = block; element && element !== viewport; element = element.offsetParent as HTMLElement | null) top += element.offsetTop;
       return { top, bottom: top + block.offsetHeight };
     });
   };
