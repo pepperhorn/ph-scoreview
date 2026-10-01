@@ -376,7 +376,9 @@ export async function renderScore(
   if (mode === 'landscape') {
     layout = layoutAt(zoom === 'fit' ? fitCap : zoom);
     // Endless: the first pages fix the zoom ('fit' fits the tallest drawn stack), then the rest follow the same scale.
-    const wanted = eager ? Array.from({ length: layout.pageCount }, (_, index) => index) : [0, 1].filter(index => index < layout.pageCount);
+    // A zoom anchor's chunk is drawn too, so the reader's place can be restored from its measure.
+    const focus = options.focusMeasure !== undefined ? systemFor(layout, options.focusMeasure) : -1;
+    const wanted = eager ? Array.from({ length: layout.pageCount }, (_, index) => index) : [...new Set([0, 1, focus])].filter(index => index >= 0 && index < layout.pageCount);
     const pages = await fetchPages(layout, wanted.map(pageOf));
     if (!isCurrent()) throw superseded();
     fetched = new Map([...pages].map(([page, svg]) => [page - 1, svg]));
@@ -647,9 +649,19 @@ export async function renderScore(
       await yieldTask();
     }
   };
+  /**
+   * A superseded draw means another render or another score's import owns the worker now. Drawing pauses rather than
+   * retrying at once (the rejection can come back in the same microtask turn, which would starve the event loop) and
+   * tries again later a bounded number of times, in case this score stays on screen (for example a failed import).
+   */
+  let supersededDraws = 0;
+  let stalled = false;
+  let retryTimer = 0;
+  const SUPERSEDED_RETRIES = 4;
   const load = (wanted: Slot[]) => {
-    const promise = draw(wanted).catch(error => {
-      if (isSuperseded(error) || !alive()) return;
+    const promise = draw(wanted).then(() => { supersededDraws = 0; }, error => {
+      if (isSuperseded(error)) { stalled = true; return; }
+      if (!alive()) return;
       for (const slot of wanted) if (!slot.svg) slot.failed = true;
       console.warn('Could not draw a score system:', error);
     });
@@ -665,6 +677,11 @@ export async function renderScore(
         if (!pendingSlots.length) break;
         pendingSlots.sort((a, b) => distance(a) - distance(b));
         await load(pendingSlots.slice(0, PAGE_BATCH));
+        if (stalled) {
+          stalled = false;
+          if (++supersededDraws <= SUPERSEDED_RETRIES) retryTimer = window.setTimeout(() => void pump(), 1000 * supersededDraws);
+          break;
+        }
       }
     } finally { pumping = false; }
   };
@@ -716,6 +733,7 @@ export async function renderScore(
     dispose: () => {
       if (disposed) return;
       disposed = true;
+      window.clearTimeout(retryTimer);
       for (const observer of observers) observer.disconnect();
       listeners.clear();
       if (liveResults.get(container) === result) liveResults.delete(container);

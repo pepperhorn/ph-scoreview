@@ -346,7 +346,17 @@ export default function Reader({ musicXml }: ReaderProps) {
   };
   const restoreZoomAnchor = (anchor: ZoomAnchor, result: RenderResult, mode: Prefs['mode']) => {
     const viewport = viewportRef.current, centre = viewportCentre();
-    const rect = result.measure(anchor.index)?.element?.getBoundingClientRect();
+    // An undrawn anchor (a large score draws systems on demand) falls back to its system block from layout data, with
+    // the measure's share of it: exact for a drawn measure, approximate (equal-width measures) otherwise.
+    let rect = result.measure(anchor.index)?.element?.getBoundingClientRect();
+    if (!rect) {
+      const system = result.systems[result.systemOfMeasure(anchor.index)];
+      const block = system && canvasRef.current?.querySelector<HTMLElement>(`:scope > .score-system[data-system="${system.index}"]`)?.getBoundingClientRect();
+      if (block && system.measureCount > 0) {
+        const share = block.width / system.measureCount;
+        rect = new DOMRect(block.left + share * Math.max(0, anchor.index - system.firstMeasure), block.top, share, block.height);
+      }
+    }
     if (!viewport || !centre || !rect) return;
     const dx = rect.left + anchor.fx * rect.width - centre.x, dy = rect.top + anchor.fy * rect.height - centre.y;
     // Endless keeps its vertical centring; Vertical scrolls the anchor's system back to the centre.
