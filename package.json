@@ -15,7 +15,8 @@
     "test:reader": "node validation/reader.mjs",
     "test:reader:firefox": "BROWSER=firefox node validation/reader.mjs",
     "test:reader:webkit": "BROWSER=webkit node validation/reader.mjs",
-    "test:validation": "npm run test:document && npm run test:score-db && npm run test:performance && npm run test:reader",
+    "test:large": "node validation/large-score.mjs",
+    "test:validation": "npm run test:document && npm run test:score-db && npm run test:performance && npm run test:reader && npm run test:large",
     "test:browsers": "playwright-core install chromium firefox webkit"
   },
   "dependencies": {
