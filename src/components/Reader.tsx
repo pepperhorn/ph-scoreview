@@ -507,7 +507,8 @@ export default function Reader({ musicXml }: ReaderProps) {
     if (!viewport) return;
     const top = Math.max(0, Math.min(viewport.scrollHeight - viewport.clientHeight, to.top ?? viewport.scrollTop));
     const left = Math.max(0, Math.min(viewport.scrollWidth - viewport.clientWidth, to.left ?? viewport.scrollLeft));
-    scrollTargetRef.current = { top, left, at: performance.now() };
+    // Already there: nothing will be in flight (and no scroll event will mark it landed).
+    scrollTargetRef.current = Math.abs(viewport.scrollTop - top) <= 1 && Math.abs(viewport.scrollLeft - left) <= 1 ? null : { top, left, at: performance.now() };
     viewport.scrollTo({ top, left, behavior: scrollBehavior() });
   };
   /** The destination of a programmatic scroll that has not landed yet. */
@@ -537,9 +538,16 @@ export default function Reader({ musicXml }: ReaderProps) {
     if (!viewport) return;
     const manual = () => { userScrollAtRef.current = performance.now(); scrollTargetRef.current = null; };
     const scrollbar = (event: PointerEvent) => { if (event.target === viewport) manual(); };
+    // A programmatic scroll that has landed is no longer in flight: a touch or other scroll away from it within
+    // SCROLL_SETTLE_MS must not make the next turn or follow build on that stale destination.
+    const landed = () => {
+      const target = scrollTargetRef.current;
+      if (target && Math.abs(viewport.scrollTop - target.top) <= 1 && Math.abs(viewport.scrollLeft - target.left) <= 1) scrollTargetRef.current = null;
+    };
     viewport.addEventListener('wheel', manual, { passive: true });
     viewport.addEventListener('pointerdown', scrollbar);
-    return () => { viewport.removeEventListener('wheel', manual); viewport.removeEventListener('pointerdown', scrollbar); };
+    viewport.addEventListener('scroll', landed, { passive: true });
+    return () => { viewport.removeEventListener('wheel', manual); viewport.removeEventListener('pointerdown', scrollbar); viewport.removeEventListener('scroll', landed); };
   }, []);
   useEffect(() => {
     const key = (event: KeyboardEvent) => {

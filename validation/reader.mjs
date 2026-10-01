@@ -936,6 +936,14 @@ try {
   await settle();
   await pager.keyboard.press('PageUp');
   assert.ok(Math.abs(await settle() - ensemblePages[1].scrollTop) <= 1.5, 'From between pages, previous goes to the page start above');
+  // A turn that has landed is no longer in flight: scrolling away straight after it (here within the 900 ms a smooth
+  // scroll may take) and turning again starts from where the reader is, not from where the earlier turn went.
+  await pager.keyboard.press('PageUp');
+  assert.ok(Math.abs(await settle() - ensemblePages[0].scrollTop) <= 1.5, 'Page up from the second page returns to the first');
+  await pager.locator('.score-viewport').evaluate((view, top) => view.scrollTo({ top }), (ensemblePages[1].scrollTop + ensemblePages[2].scrollTop) / 2);
+  await pager.keyboard.press('PageDown');
+  const afterLanded = await settle();
+  assert.ok(Math.abs(afterLanded - ensemblePages[2].scrollTop) <= 1.5, `Right after a landed turn, next still goes to the page start below the reader (${afterLanded} vs ${ensemblePages[2].scrollTop}; starts ${ensemblePages.map(page => page.scrollTop)})`);
   // Playback follow: sample every frame; the view only moves forward between page starts, and the line stays in view.
   const followPlayback = async (label, starts, seconds) => {
     await pager.locator('.score-viewport').evaluate(view => view.scrollTo({ top: 0 }));
@@ -1227,10 +1235,13 @@ try {
   assert.match(await opener.locator('.open-dialog-message').textContent(), /“photo\.png” isn’t a supported score/);
   assert.equal(await dialog().count(), 1, 'Dialog stays open for an unsupported file');
   // Drag-over styling while files hover the dialog.
+  // React renders dragenter/dragleave updates at continuous priority, in a scheduler task after the event returns
+  // (only drop is flushed synchronously), so wait for the class to change instead of reading it straight away.
+  const dragOverIs = count => opener.waitForFunction(count => document.querySelectorAll('.open-dialog-dropzone.is-drag-over').length === count, count, { timeout: 5000 }).then(() => true, () => false);
   await dropIntoDialog([{ name: 'a.abc', text: 'K:C' }], ['dragenter', 'dragover']);
-  assert.equal(await opener.locator('.open-dialog-dropzone.is-drag-over').count(), 1, 'Drop zone highlights on drag-over');
+  assert.ok(await dragOverIs(1), 'Drop zone highlights on drag-over');
   await dropIntoDialog([{ name: 'a.abc', text: 'K:C' }], ['dragleave']);
-  assert.equal(await opener.locator('.open-dialog-dropzone.is-drag-over').count(), 0, 'Drag-over clears on leave');
+  assert.ok(await dragOverIs(0), 'Drag-over clears on leave');
   // A dropped folder with two scores (plus files to skip) offers a picker; choosing one opens it.
   const ensembleXml = await readFile(resolve(root, 'validation/fixtures/ensemble.musicxml'), 'utf8');
   await dropIntoDialog([{ name: 'Set list', children: [
