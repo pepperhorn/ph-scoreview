@@ -172,6 +172,15 @@ function carriedAttributes(part: PartIndex, measure: number): string {
       state.set(`${name}#${number ?? ''}`, element);
     }
   }
+  // A key the slice's first measure sets itself is not carried: two keys before its first note make Verovio's import
+  // write two key signatures into the staff definition, and its transposition then misspells the part.
+  for (const { measure: at, block } of part.attributes) {
+    if (at !== measure) continue;
+    for (const [, attributes] of block.matchAll(/<key(?=[\s/>])((?:[^>"']|"[^"]*"|'[^']*')*)>/g)) {
+      const number = attribute(attributes, 'number');
+      for (const key of [...state.keys()]) if (key.startsWith('key#') && (number === undefined || key === `key#${number}` || key === 'key#')) state.delete(key);
+    }
+  }
   if (!state.size) return '';
   const children: string[] = [];
   for (const name of CARRIED) for (const [key, element] of state) {
