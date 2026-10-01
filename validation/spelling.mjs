@@ -127,8 +127,19 @@ eq(spell(61, key('F'), { source: { step: 'D', alter: -1 }, next: 62 }), 'Db4', '
 // E#/B# become F/C everywhere outside the key signature (including the exemptions above).
 eq(spell(65, key('D'), { source: { step: 'E', alter: 1 }, next: 66 }), 'F4', 'D major: E# resolving to F# becomes F');
 eq(spell(72, key('E'), { source: { step: 'B', alter: 1 }, next: 73 }), 'C5', 'E major: B# resolving to C# becomes C');
-eq(spell(72, key('C#', 'minor')), 'C5', 'C# minor raised 7th B# becomes C');
-eq(spell(65, key('F#', 'minor')), 'F4', 'F# minor raised 7th E# becomes F');
+// Decision 5: minor raised 6th/7th are exempt from E#->F and B#->C.
+eq(spell(72, key('C#', 'minor')), 'B#4', 'C# minor raised 7th is B#');
+eq(spell(65, key('F#', 'minor')), 'E#4', 'F# minor raised 7th is E#');
+eq(spell(65, key('G#', 'minor')), 'E#4', 'G# minor raised 6th is E#');
+eq(spell(65, key('F#', 'minor'), { source: { step: 'E', alter: 1 }, next: 66, transposed: true }), 'E#4', 'F# minor E# resolving up stays E#');
+eq(spell(65, key('D'), { source: { step: 'E', alter: 1 }, next: 66 }), 'F4', 'outside a minor raised degree E# still becomes F');
+// Decision 6: double accidentals are avoided even as raised degrees.
+eq(spell(62, key('D#', 'minor')), 'D4', 'D# minor raised 7th C## is D');
+eq(spell(67, key('A#', 'minor')), 'G4', 'A# minor raised 6th F## is G');
+eq(spell(69, key('A#', 'minor')), 'A4', 'A# minor raised 7th G## is A');
+eq([67, 69].map(m => spell(m, key('Bb', 'minor'))), ['G4', 'A4'], 'Bb minor raised 6th and 7th');
+eq(spell(62, key('C'), { source: { step: 'E', alter: -2 }, transposed: true }), 'D4', 'a transposed Ebb is D');
+eq(spell(61, key('E'), { source: { step: 'B', alter: 2 }, transposed: true }), 'C#4', 'a transposed Bx is C#');
 // Notes in the key signature keep the signature's spelling.
 eq([65, 71].map(m => spell(m, key('F#'))), ['E#4', 'B4'], 'F# major: E# is diatonic');
 eq([60, 65].map(m => spell(m, key('C#'))), ['B#3', 'E#4'], 'C# major: B# and E# are diatonic');
@@ -165,8 +176,8 @@ for (let pc = 0; pc < 12; pc++) for (const mode of ['major', 'minor']) for (cons
     const signature = keyFromFifths(k.fifths, 'major').scale.find(s => s.step === p.step);
     if (p.alter === signature.alter) continue;
     assert.ok(Math.abs(p.alter) <= 1, `${k.tonic} ${mode} ${midi}: ${name(p)} has no double accidental`);
-    assert.ok(!['E#', 'B#', 'Fb', 'Cb'].includes(name(p)), `${k.tonic} ${mode} ${midi}: ${name(p)} is not E#/B#/Fb/Cb`);
     const raised = mode === 'minor' && [(pc + 9) % 12, (pc + 11) % 12].includes(midi % 12);
+    assert.ok(!['Fb', 'Cb'].includes(name(p)) && (raised || !['E#', 'B#'].includes(name(p))), `${k.tonic} ${mode} ${midi}: ${name(p)} is not Fb/Cb, nor E#/B# outside a raised degree`);
     if (k.fifths < 0 && !raised) assert.ok(p.alter <= 0, `${k.tonic} ${mode} ${midi}: ${name(p)} is flat or natural`);
     if (k.fifths > 0) assert.ok(p.alter >= 0, `${k.tonic} ${mode} ${midi}: ${name(p)} is sharp or natural`);
     checks += 2;

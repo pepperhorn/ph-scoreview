@@ -83,6 +83,8 @@ Date: 2026-10-01 · Status: approved plan (decisions recorded 2026-10-01)
 2. **Fb and Cb:** allowed only in keys with 6 or more flats, as a stepwise passing note between neighbours. Elsewhere they become E and B.
 3. **Instruments:** see Instrument preferences above. Pitch class 8 is always Ab.
 4. **Header:** transpose ± and the key flip are secondary-tier controls (inline on desktop, inside More on mobile).
+5. **Key signature spelling wins:** notes in the key signature keep the signature's spelling (E# in F# major, Cb in Gb major). The E#/B#/Fb/Cb rules and the flats-only/sharps-only rules apply only to notes outside the key signature.
+6. **Minor raised degrees and double accidentals:** the raised 6th and 7th of minor keys are also exempt from E#→F and B#→C (B# in C# minor, E# in F# minor). Double sharps and double flats are always avoided, even as raised degrees: they are respelled to the simplest single-accidental or natural form (G# minor's leading tone F## becomes G), as they are increasingly rare in contemporary scores. Only an untransposed source's own double accidentals are kept.
 
 ## Sequencing
 - **Can start now:** the speller module (`src/lib/spelling.ts`, pure and table-tested) and the percussion fixes.

@@ -156,8 +156,9 @@ function letterStep(from: string, neighbour: Spelled): number {
  * Key-relative spelling of a MIDI pitch.
  *  1. A double accidental the source wrote is kept when nothing was transposed; otherwise doubles are respelled.
  *  2. Notes in the key signature keep its spelling.
- *  3. A minor key's raised 6th and 7th, and chromatic notes resolving upward a step (source spelling given), keep that
- *     spelling; but E# becomes F and B# becomes C.
+ *  3. A minor key's raised 6th and 7th take the signature's letter raised (B# in C# minor, E# in F# minor), unless
+ *     that would be a double sharp (F## in G# minor is G). Chromatic notes resolving upward a step keep the source
+ *     spelling, except E# and B#, which become F and C.
  *  4. Otherwise flat keys use flats and naturals, sharp keys sharps and naturals, and C major / A minor the key table
  *     (Db Eb F# Ab Bb). E and B are never Fb/Cb, except a stepwise passing note in a key with 6 or more flats.
  */
@@ -174,7 +175,8 @@ export function spellPitch(midi: number, key: SpellingKey, context: SpellContext
     for (const degree of [5, 6]) {
       const letter = key.scale[(tonic + degree) % 7];
       const raised = { step: letter.step, alter: letter.alter + 1 };
-      if (spells(pc, raised) && allowed(raised)) return withOctave(midi, raised);
+      // Exempt from E#->F and B#->C (B# in C# minor), but never a double sharp (F## in G# minor falls through to G).
+      if (spells(pc, raised) && Math.abs(raised.alter) <= 1) return withOctave(midi, raised);
     }
   }
   if (source && allowed(source) && context.next !== undefined && context.next - midi >= 1 && context.next - midi <= 2) return withOctave(midi, source);
