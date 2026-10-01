@@ -26,7 +26,9 @@ type PartIndex = {
   /** Start and end offsets of each measure (end exclusive), two numbers per measure. */
   measures: number[];
   /** Raw `<attributes>` blocks by measure index, in order. */
-  attributes: { measure: number; block: string }[];
+  attributes: { measure: number; block: string;
+    /** The block comes before the measure's first note (it applies from the measure's start). */
+    leading: boolean }[];
 };
 export type ChunkIndex = {
   text: string;
@@ -118,7 +120,7 @@ export function indexMusicXml(text: string): ChunkIndex | undefined {
       const end = text.indexOf('</attributes>', match.index);
       if (end < 0) return undefined;
       const blockEnd = end + '</attributes>'.length;
-      part.attributes.push({ measure, block: text.slice(match.index, blockEnd) });
+      part.attributes.push({ measure, block: text.slice(match.index, blockEnd), leading: !/<note(?=[\s/>])/.test(text.slice(measureStart, match.index)) });
       TOKEN.lastIndex = blockEnd;
       continue;
     }
@@ -172,10 +174,11 @@ function carriedAttributes(part: PartIndex, measure: number): string {
       state.set(`${name}#${number ?? ''}`, element);
     }
   }
-  // A key the slice's first measure sets itself is not carried: two keys before its first note make Verovio's import
-  // write two key signatures into the staff definition, and its transposition then misspells the part.
-  for (const { measure: at, block } of part.attributes) {
-    if (at !== measure) continue;
+  // A key the slice's first measure sets before its first note is not carried: two keys there make Verovio's import
+  // write two key signatures into the staff definition, and its transposition then misspells the part. (A key change
+  // later in the measure keeps the carried key for the notes before it.)
+  for (const { measure: at, block, leading } of part.attributes) {
+    if (at !== measure || !leading) continue;
     for (const [, attributes] of block.matchAll(/<key(?=[\s/>])((?:[^>"']|"[^"]*"|'[^']*')*)>/g)) {
       const number = attribute(attributes, 'number');
       for (const key of [...state.keys()]) if (key.startsWith('key#') && (number === undefined || key === `key#${number}` || key === 'key#')) state.delete(key);

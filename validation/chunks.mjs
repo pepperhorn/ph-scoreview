@@ -12,6 +12,7 @@ import { extname, join, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { chromium, firefox, webkit } from 'playwright-core';
+import { indexMusicXml, sliceMusicXml } from '../src/lib/notation/musicxml-chunks.ts';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const dist = resolve(root, 'dist');
@@ -19,6 +20,23 @@ const engine = process.env.BROWSER || 'chromium';
 const launcher = { chromium, firefox, webkit }[engine];
 if (!launcher) throw new Error(`BROWSER must be chromium, firefox or webkit (got "${engine}")`);
 if (!existsSync(resolve(dist, 'index.html'))) throw new Error('dist/index.html is missing: run `npm run build` before validation/chunks.mjs');
+
+// A slice's first measure: a key it sets before its first note replaces the carried key (two keys there make Verovio
+// write two key signatures); a key change later in the measure keeps the carried key for the notes before it.
+{
+  const bar = (n, body) => `<measure number="${n}">${body}</measure>`;
+  const quarter = step => `<note><pitch><step>${step}</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note>`;
+  const keyBlock = fifths => `<attributes><key><fifths>${fifths}</fifths></key></attributes>`;
+  const score = measures => indexMusicXml(`<?xml version="1.0"?><score-partwise version="4.0"><part-list><score-part id="P1"><part-name>P</part-name></score-part></part-list><part id="P1">${measures.join('')}</part></score-partwise>`);
+  const first = `<measure number="1"><attributes><divisions>1</divisions><key><fifths>-3</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>${quarter('E').repeat(4)}</measure>`;
+  const keysBeforeFirstNote = slice => { const measure = slice.slice(slice.indexOf('<measure number="2"')); return [...measure.slice(0, measure.indexOf('<note')).matchAll(/<fifths>(-?\d+)<\/fifths>/g)].map(match => Number(match[1])); };
+  const leading = sliceMusicXml(score([first, bar(2, keyBlock(2) + quarter('F').repeat(4)), bar(3, quarter('G').repeat(4))]), 1, 3);
+  assert.deepEqual(keysBeforeFirstNote(leading), [2], 'A key set before the first note replaces the carried key');
+  const later = sliceMusicXml(score([first, bar(2, quarter('A').repeat(2) + keyBlock(2) + quarter('F').repeat(2)), bar(3, quarter('G').repeat(4))]), 1, 3);
+  assert.deepEqual(keysBeforeFirstNote(later), [-3], 'A key change after notes keeps the carried key for the notes before it');
+  assert.match(later, /<fifths>2<\/fifths>/, 'The mid-measure key change is still there');
+  console.log('Slice keys: a leading key replaces the carried key; a mid-measure change keeps it passed');
+}
 
 const MEASURES = 16;
 /** Two bars per line, three staves: a 12 staff-measure budget puts two systems in each chunk (boundaries before bars 5, 9, 13). */
