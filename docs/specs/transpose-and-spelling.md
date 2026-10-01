@@ -89,3 +89,13 @@ Date: 2026-10-01 · Status: approved plan (decisions recorded 2026-10-01)
 ## Sequencing
 - **Can start now:** the speller module (`src/lib/spelling.ts`, pure and table-tested) and the percussion fixes.
 - **After the large-score Phase 3 PR merges:** wiring into the worker's view MEI and the header, because both change the worker's transpose and load options.
+
+## Implementation (option A)
+- **Plan:** `scoreForView` (src/lib/transpose.ts) takes the reference key (the first pitched part's opening key in the view, with its mode) and plans the target key and Verovio interval. The Score view and the worker's spelling spec (`spellingSpecFor`) carry the same plan, so note names and noteheads agree.
+- **Worker:** the baseline (or each chunk, cached per view) is transposed by Verovio in a toolkit of its own and then spelled by `notation/mei-spelling.ts`; the view MEI built from it is loaded untransposed.
+  - For the concert view Verovio first transposes to sounding pitch and then applies the interval in a second load: with `transposeToSoundingPitch`, Verovio 6.3 reduces the interval to its semitones (`-A1` acts as `-m2`, `+d2` does nothing).
+  - Keys come from the Score per staff, not from the MEI: Verovio's MusicXML import writes a mid-score key change of the first part for every staff, so a transposing part lost its own key. Every encoded key signature is removed and each pitched staff's keys are written where they start or change. Percussion staves get none.
+  - A chunk slice no longer carries a key its first measure sets (two keys made Verovio misspell the part).
+- **Flip:** at 0 semitones the flip applies only while the reference key has an enharmonic equivalent (the button is disabled otherwise), so a C major score is never respelled by a stale flip.
+- **Upward resolutions:** a chromatic note resolving upward keeps the source spelling, except E#/B# (Decision 6) and Fb/Cb, which follow Decision 2.
+- **Validation:** `npm run test:transpose` (validation/transpose.mjs).

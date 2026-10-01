@@ -94,7 +94,7 @@ const started = Date.now();
  * Open the fixture and read every system's measures, notes and engraved elements. `chunking` is the diagnostics
  * setting (`scoreflow-chunking`): forced chunks, and/or a tiny worker-recycle threshold.
  */
-async function engrave(chunking) {
+async function engrave(chunking, semitones = 0) {
   const chunked = !!chunking?.force;
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   await context.route(/poppins/i, route => route.abort());
@@ -111,6 +111,12 @@ async function engrave(chunking) {
   await page.locator('input[type=file]').first().setInputFiles(xmlPath);
   await page.waitForFunction(() => document.querySelector('.score-meta h1')?.textContent === 'Chunk Boundaries', null, { timeout: 120000 });
   await ready();
+  // Transposed view: the header's transpose control, then the re-engraving.
+  for (let step = 0; step < semitones; step++) {
+    await page.getByRole('button', { name: 'Transpose up a semitone' }).first().click();
+    await page.waitForFunction(count => [...document.querySelectorAll('.header-transpose-readout')].some(output => output.textContent.trim().startsWith(`+${count}`)), step + 1, { timeout: 60000 });
+  }
+  if (semitones) { await page.waitForTimeout(300); await ready(); }
   // A small score draws every system before the first paint; wait until none is pending.
   await page.waitForFunction(() => document.querySelectorAll('.score-staves > .score-system').length > 0 && !document.querySelector('.score-staves > .score-system.is-pending'), null, { timeout: 60000 });
   const systems = await page.evaluate(() => [...document.querySelectorAll('.score-staves > .score-system')].map(block => {
@@ -121,6 +127,8 @@ async function engrave(chunking) {
       measureIds: [...svg.querySelectorAll('g.measure')].map(measure => measure.id),
       notes: [...svg.querySelectorAll('.reader-note')].map(element => element.getAttribute('data-note-id')),
       clefs: [...svg.querySelectorAll('g.clef use')].map(use => (use.getAttribute('xlink:href') || use.getAttribute('href') || '').replace(/-.*$/, '')),
+      pitches: [...svg.querySelectorAll('g.note')].map(note => `${note.getAttribute('data-pname') || note.querySelector('[data-pname]')?.getAttribute('data-pname') || ''}${note.getAttribute('data-oct') || ''}${note.querySelector('g.accid') ? '!' : ''}`),
+      keyAccids: [...svg.querySelectorAll('g.keySig')].map(sig => sig.querySelectorAll('.keyAccid').length),
       elements: { slur: count('g.slur'), tie: count('g.tie'), hairpin: count('g.hairpin'), octave: count('g.octave'), pedal: count('g.pedal'), tuplet: count('g.tuplet'),
         keySig: count('g.keySig'), meterSig: count('g.meterSig'), clef: count('g.clef'), barLine: count('g.barLine'), noteheads: count('g.note') },
     };
@@ -165,6 +173,17 @@ try {
     const recycled = await engrave(chunking);
     assert.deepEqual(recycled.map(system => system.notes), whole.map(system => system.notes), `A tiny recycle threshold still renders every system (${JSON.stringify(chunking)})`);
   }
+  // Transposed (+6: C major to F#, the D major change in bar 7 to Ab): every chunk shows the keys and spellings the
+  // whole engraving shows, across chunk boundaries.
+  const wholeUp = await engrave(null, 6);
+  const chunkedUp = await engrave({ force: true, budget: BUDGET }, 6);
+  assert.notDeepEqual(wholeUp.map(system => system.pitches), whole.map(system => system.pitches), 'The transposition changes the engraved pitches');
+  assert.equal(chunkedUp.length, wholeUp.length, 'Transposed: as many systems');
+  chunkedUp.forEach((system, index) => {
+    assert.deepEqual(system.pitches, wholeUp[index].pitches, `Transposed system ${index + 1}: same spellings and accidentals`);
+    assert.deepEqual(system.keyAccids, wholeUp[index].keyAccids, `Transposed system ${index + 1}: same key signatures (${JSON.stringify(wholeUp[index].keyAccids)} vs ${JSON.stringify(system.keyAccids)})`);
+  });
+  assert.ok(wholeUp[0].keyAccids.some(count => count === 6), `Bar 1 is in F# (6 sharps): ${JSON.stringify(wholeUp[0].keyAccids)}`);
   console.log(`${engine}: chunked engraving matches the whole engraving across chunk boundaries passed (${((Date.now() - started) / 1000).toFixed(1)} s)`);
 } finally {
   await browser.close();
