@@ -187,7 +187,7 @@ function layerXml(segments: Segment[], beats: number, percussion = false): strin
 export function scoreToMei(score: Score): string {
   const count = Math.max(0, ...score.parts.map(part => part.measures.length));
   const meter = `meter.count="${score.beats}" meter.unit="${score.beatType}"`;
-  const key = score.key ? ` key.sig="${Math.abs(score.key)}${score.key > 0 ? 's' : 'f'}"` : ' key.sig="0"';
+  const key = (score.key ? ` key.sig="${Math.abs(score.key)}${score.key > 0 ? 's' : 'f'}"` : ' key.sig="0"') + (score.keyMode === 'minor' ? ' key.mode="minor"' : '');
   const staffDefs = score.parts.map((part, index) => `<staffDef xml:id="${escape(staffDefXmlId(part.id))}" n="${index + 1}" lines="5" label="${escape(part.name)}" clef.shape="${part.clef === 'bass' ? 'F' : part.clef === 'alto' ? 'C' : part.clef === 'percussion' ? 'perc' : 'G'}" clef.line="${part.clef === 'bass' ? 4 : part.clef === 'alto' || part.clef === 'percussion' ? 3 : 2}"/>`).join('');
   const navigation = Array.from({ length: count }, (_, index) => score.parts[0]?.measures[index]?.navigation);
   const jumpTarget = navigation.some(nav => nav?.toCoda) ? ' al Coda' : navigation.some(nav => nav?.fine) ? ' al Fine' : '';

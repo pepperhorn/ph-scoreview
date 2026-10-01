@@ -160,7 +160,10 @@ export function parseMei(text: string): Score {
   const title = (titles.find(e => ['main', 'uniform'].includes(e.getAttribute('type') || '')) || titles[0])?.textContent?.trim() || '';
   const subtitle = titles.find(e => ['subordinate', 'subtitle'].includes(e.getAttribute('type') || ''))?.textContent?.trim() || '';
   const composer = all('composer')[0]?.textContent?.trim() || all('persName').find(e => e.getAttribute('role') === 'composer')?.textContent?.trim() || '';
-  const score = normalized({ title, subtitle, composer, source: 'MEI', tempo: 100, beats, beatType, key, parts });
+  // Key mode of the opening key (absent means major), for spelling minor keys' raised degrees.
+  const openingDef = all('scoreDef')[0];
+  const openingMode = openingDef?.getAttribute('key.mode') || openingDef?.getElementsByTagName('keySig')[0]?.getAttribute('mode');
+  const score = normalized({ title, subtitle, composer, source: 'MEI', tempo: 100, beats, beatType, key, ...(openingMode === 'minor' ? { keyMode: 'minor' as const } : {}), parts });
   attachNavigation(score, meiNavigation(measures, innerBarlines));
   score.document = makeSourceDocument({ format: 'mei', engravingFormat: 'mei', originalText: text, engravingText: text, identity: identityForScore(score) });
   return score;
@@ -285,7 +288,8 @@ export async function parseAbc(text: string): Promise<Score> {
     delete navigation[after].toCoda;
     navigation[before].toCoda = true;
   });
-  const score = normalized({ title: tune.metaText?.title || '', subtitle: tune.lines.find((line: any) => line.subtitle)?.subtitle?.text || '', composer: tune.metaText?.composer || '', source: 'ABC', tempo: Number(tune.metaText?.tempo?.bpm) || 100, beats, beatType, key, parts });
+  const minor = /^m(?:in)?$/i.test(String(tune.getKeySignature?.()?.mode || ''));
+  const score = normalized({ ...(minor ? { keyMode: 'minor' as const } : {}), title: tune.metaText?.title || '', subtitle: tune.lines.find((line: any) => line.subtitle)?.subtitle?.text || '', composer: tune.metaText?.composer || '', source: 'ABC', tempo: Number(tune.metaText?.tempo?.bpm) || 100, beats, beatType, key, parts });
   attachNavigation(score, navigation);
   score.document = makeSourceDocument({ format: 'abc', engravingFormat: 'mei', originalText: text, engravingText: scoreToMei(score), identity: identityForScore(score) });
   return score;

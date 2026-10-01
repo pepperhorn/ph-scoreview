@@ -3,6 +3,8 @@ import type { SourceDocument } from './notation/document';
 const iconUrls = import.meta.glob('../icons/*.svg', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
 
 export type Pitch = { step: string; octave: number; alter: number; midi: number; sourceId?: string; unpitched?: boolean; displayStep?: string; displayOctave?: number; accidental?: string; cautionary?: boolean; tieStart?: boolean; tieStop?: boolean };
+/** Key mode from the source (MusicXML <mode>, MEI @mode); absent means major. */
+export type KeyMode = 'major' | 'minor';
 export type Transposition = { semitones: number; diatonic?: number };
 export type ScoreNote = { id: string; sourceId?: string; start: number; duration: number; pitches: Pitch[]; transposition?: Transposition; chordSymbol?: string; lyric?: string; beamStart?: boolean; beamEnd?: boolean; rest?: boolean; dotted?: boolean; dots?: number; writtenType?: string; voice?: string; stem?: string; grace?: boolean; tuplet?: { actual: number; normal: number; number: string; start?: boolean; stop?: boolean }; slurStart?: string[]; slurStop?: string[]; tieStart?: boolean; tieStop?: boolean };
 export type ScoreDirection = { start: number; symbols?: string[]; text?: string; placement?: 'above' | 'below'; voice?: string; wedge?: { type: string; number: string }; soundDynamics?: number; tempo?: number };
@@ -23,9 +25,11 @@ export type MeasureNavigation = {
   segno?: boolean; coda?: boolean; toCoda?: boolean; daCapo?: boolean; dalSegno?: boolean; fine?: boolean;
   barlines?: BarlineNavigation[];
 };
-export type Measure = { index: number; beats: number; notes: ScoreNote[]; dynamics?: { start: number; symbol: string }[]; directions?: ScoreDirection[]; nominalBeats?: number; number?: string; implicit?: boolean; key?: number; clef?: string; beatsPerBar?: number; beatType?: number; transposition?: Transposition; navigation?: MeasureNavigation };
-export type Part = { id: string; name: string; clef: string; key?: number; instrument: InstrumentId; gmProgram?: number; gmSoundfont?: string; pitchBasis?: 'written' | 'concert'; transposition?: Transposition; measures: Measure[] };
-export type Score = { title: string; subtitle?: string; composer?: string; credits?: string[]; source: string; tempo: number; beats: number; beatType: number; key: number; parts: Part[]; document?: SourceDocument };
+export type Measure = { index: number; beats: number; notes: ScoreNote[]; dynamics?: { start: number; symbol: string }[]; directions?: ScoreDirection[]; nominalBeats?: number; number?: string; implicit?: boolean; key?: number; keyMode?: KeyMode; clef?: string; beatsPerBar?: number; beatType?: number; transposition?: Transposition; navigation?: MeasureNavigation };
+export type Part = { id: string; name: string; clef: string; key?: number; keyMode?: KeyMode; instrument: InstrumentId; gmProgram?: number; gmSoundfont?: string; pitchBasis?: 'written' | 'concert'; transposition?: Transposition; measures: Measure[] };
+export type Score = { title: string; subtitle?: string; composer?: string; credits?: string[]; source: string; tempo: number; beats: number; beatType: number; key: number; keyMode?: KeyMode; parts: Part[];
+  /** Set on a transposed or flipped view of a score (transpose.ts `scoreForView`). */
+  pitchView?: import('./transpose').PitchView; document?: SourceDocument };
 export type InstrumentId = 'piano' | 'guitar' | 'bassguitar' | 'double-bass' | 'drum-kit' | 'alto-saxophone' | 'tenor-saxophone' | 'bari-saxophone' | 'flute' | 'clarinet' | 'trumpet' | 'trombone' | 'violin' | 'viola' | 'cello' | 'microphone';
 export const GM_FAMILIES = ['Keyboard', 'Guitar', 'Voice', 'Percussion', 'Drums', 'Woodwinds', 'Brass', 'Strings', 'FX / Other'] as const;
 export type GmFamily = typeof GM_FAMILIES[number];
