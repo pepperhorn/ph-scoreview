@@ -121,6 +121,10 @@ html,body,#root{height:100%;overflow:hidden}
 .mixer-heading,.mixer-heading>div{display:flex;align-items:center;gap:9px}.mixer-heading{justify-content:space-between;color:#345642}.mixer-heading h2{margin:0;font-size:17px;font-weight:650}.mixer-panel>p{margin:3px 0 14px;color:#78867a;font-size:12px}
 .mixer-tracks{overflow-y:auto;min-height:0;scrollbar-width:thin}.mixer-track{display:grid;grid-template-columns:28px minmax(0,1fr) 142px;align-items:center;gap:9px;min-height:49px;padding:7px 2px;border-top:1px solid #edf0eb}.mixer-track img{width:24px;height:24px}.mixer-track-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#344439}.mixer-track-name small{display:block;font-size:10px;color:#88948a}.mixer-track select{width:100%;height:32px;padding:0 6px;border:1px solid #dfe6dc;border-radius:7px;background:#fff;color:#345642;font-size:11px}
 .pitch-panel{grid-column:1/-1;min-height:0}.pitch-panel .pitch-options{display:flex;align-items:end;gap:30px;flex-wrap:wrap}.pitch-panel .pitch-label{display:block;margin-bottom:7px;color:#536055;font-size:11px;font-weight:700}.semitone-control{display:flex;align-items:center;gap:4px}.semitone-control button{width:30px;height:30px;display:grid;place-items:center;border:1px solid #dfe6dc;border-radius:7px;background:#fff;color:#3e6047}.semitone-control button:disabled{opacity:.4;cursor:default}.semitone-control output{min-width:95px;text-align:center;color:#345642;font-size:12px;font-weight:700}.semitone-control .pitch-reset{margin-left:5px}.pitch-view{width:max-content}.pitch-view button{min-width:85px}.pitch-panel .pitch-hint{margin:11px 0 0;font-size:11px}
+.pitch-key-control{display:flex;align-items:center;gap:6px}
+.pitch-key-readout{min-width:72px;text-align:center;color:#345642;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pitch-key-flip{height:30px;min-width:96px;display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:0 8px;border:1px solid #dfe6dc;border-radius:7px;background:#fff;color:#3e6047;font-size:12px;font-weight:700;white-space:nowrap}
+.pitch-key-flip:not(.is-disabled):hover{background:#f2f7f1}
 @media(max-width:580px){.pitch-panel .pitch-options{gap:18px}.pitch-view button{min-width:75px}}
 /* Instrument picker and compact file loading */
 .score-system svg text{font-family:var(--score-text-font,Poppins,Arial,sans-serif);font-size-adjust:.45}
@@ -174,17 +178,35 @@ html,body,#root{height:100%;overflow:hidden}
 /* Header arrangement is pure CSS so the server-rendered first paint already matches the viewport (no hydration reflow).
    The secondary controls render once inside .header-more > .header-secondary-panel: above the breakpoint both wrappers are
    layout-transparent (controls sit inline, the More toggle is display:none); at or below it they become the More dropdown.
-   HEADER BREAKPOINT: 580px must equal MOBILE_HEADER_BREAKPOINT in src/lib/header-controls.ts (asserted by validation/reader.mjs). */
+   HEADER BREAKPOINT: 760px must equal MOBILE_HEADER_BREAKPOINT in src/lib/header-controls.ts (asserted by validation/reader.mjs). */
 .header-more,.header-secondary-panel,.header-secondary-panel>.header-control{display:contents}
 .header-more-toggle{display:none;color:#486b51}
 .header-more-toggle.open{background:#edf3ec}
 .mixer-trigger-label{display:none}
 /* Below ~900px every control is still inline, so drop the secondary controls' text labels (Play/Open keep theirs). */
-@media(max-width:900px){.header-stave-scale-label,.bpm-control span,.header-bars-setting>span{display:none}.bpm-control{margin-left:0}}
-@media(max-width:760px){.header-stave-scale-input{width:56px}}
+/* Inline header steps (desktop): captions and the flip's key names drop first (<=1140px), then the Vertical/Endless
+   toggle condenses to V/E and controls tighten (<=900px); at or below the HEADER BREAKPOINT the secondary tier moves into More. */
+@media(max-width:1140px){.header-stave-scale-label,.bpm-control span,.header-bars-setting>span{display:none}.bpm-control{margin-left:0}.header-stave-scale-input{width:64px}}
+@media(max-width:900px){.header-stave-scale-input{width:56px}}
 @media(max-width:640px){.header-stave-scale-input{width:44px}.topbar .header-bars-setting select{min-width:58px}}
+/* Transpose (- / readout / +) and key flip: fixed-width readout and flip label (tabular digits) so a saved or changed
+   transposition never resizes the header after hydration. Captions only show inside the More panel. */
+.header-transpose{display:flex;align-items:center;gap:6px;color:#879289;font-size:10px;font-weight:700;letter-spacing:.08em}
+.header-transpose-controls{display:flex;align-items:center;gap:3px}
+.header-transpose-controls button,.header-key-flip-button{height:30px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #dfe6dc;border-radius:7px;background:#fff;color:#3e6047;padding:0}
+.header-transpose-controls button{width:30px;flex:none}
+.header-transpose-controls button:disabled{opacity:.4;cursor:default}
+.header-transpose-readout{width:66px;flex:none;overflow:hidden;text-align:center;white-space:nowrap;color:#345642;font-size:11px;font-weight:700;letter-spacing:0;font-variant-numeric:tabular-nums}
+.header-transpose-label,.header-key-flip-caption{display:none}
+.header-key-flip{display:flex;align-items:center;gap:6px;color:#879289;font-size:10px;font-weight:700;letter-spacing:.08em}
+.header-key-flip-button{width:84px;flex:none;gap:4px;overflow:hidden;white-space:nowrap;color:#345642;font-size:11px;font-weight:700;letter-spacing:0;font-variant-numeric:tabular-nums}
+.header-key-flip-icon,.pitch-key-flip-icon{font-size:14px;line-height:1}
+.header-key-flip-button.is-disabled,.pitch-key-flip.is-disabled{opacity:.45;cursor:default}
+.header-transpose-controls button:not(:disabled):hover,.header-key-flip-button:not(.is-disabled):hover{background:#f2f7f1}
+@media(max-width:1140px){.header-key-flip-label{display:none}.header-key-flip-button{width:30px}}
+@media(max-width:900px){.header-transpose-readout{width:58px;font-size:10px}.header-transpose-controls button{width:28px}}
 /* HEADER BREAKPOINT (mobile): the More dropdown. Closed = display:none, so its controls are neither visible nor focusable. */
-@media(max-width:580px){
+@media(max-width:760px){
   .header-more{display:flex}
   .topbar .header-more-toggle{display:grid}
   .header-secondary-panel{position:absolute;top:calc(100% + 6px);left:50%;transform:translateX(-50%);z-index:40;width:min(340px,calc(100vw - 16px));display:none;flex-direction:column;gap:4px;padding:10px 12px;border:1px solid #e2e9e0;border-radius:12px;background:#fff;box-shadow:0 12px 36px #15251a2e;font-family:Poppins,Arial,sans-serif}
@@ -199,6 +221,12 @@ html,body,#root{height:100%;overflow:hidden}
   .header-secondary-panel .mixer-trigger{width:auto;height:34px;padding:0 8px;display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700}
   .header-secondary-panel .mixer-trigger-label{display:inline}
   .header-secondary-panel .header-control-mixer{justify-content:flex-start}
+  .header-secondary-panel .header-transpose,.header-secondary-panel .header-key-flip{width:100%;justify-content:space-between}
+  .header-secondary-panel .header-transpose-label,.header-secondary-panel .header-key-flip-caption{display:inline}
+  .header-secondary-panel .header-transpose-readout{width:66px;font-size:11px}
+  .header-secondary-panel .header-transpose-controls button{width:34px;height:34px}
+  .header-secondary-panel .header-key-flip-button{width:96px;height:34px}
+  .header-secondary-panel .header-key-flip-label{display:inline}
 }
 @media(max-width:580px){.mixer-panel{padding:15px}.mixer-track{grid-template-columns:24px minmax(0,1fr) 120px;gap:6px}}
 /* Short landscape Endless centres the stage on the viewport. A stack taller than the viewport is top-aligned instead,
@@ -218,7 +246,8 @@ html,body,#root{height:100%;overflow:hidden}
 .mode-toggle button{display:inline-flex;align-items:center;justify-content:center;padding:0 12px;font-size:12px}
 .mode-toggle-label-short{display:none}
 .topbar .transport{gap:10px}
-@media(max-width:760px){
+@media(max-width:1140px){.topbar .transport{gap:8px}}
+@media(max-width:900px){
   .topbar .transport{gap:5px}
   .topbar .play-button{padding:0 12px}
   .topbar .header-open-file{padding:0 10px}

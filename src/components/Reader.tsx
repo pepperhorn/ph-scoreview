@@ -9,7 +9,8 @@ import { HEADER_CONTROLS, MOBILE_HEADER_QUERY, type HeaderControlId } from '../l
 import { clampStaveScale, deviceClass, ENDLESS_STAVE_SCALE, minimumDefaultStaveScale, STAVE_SCALE_MAX, STAVE_SCALE_MIN, STAVE_SCALE_STEP } from '../lib/stave-scale';
 import { buildFileState, clampBpm, MAX_BPM, MIN_BPM, textSource, type FileSettings, type FileSource, type FileState, type ScoreView } from '../lib/file-state';
 import { sampleSource, scoreDb } from '../lib/score-db';
-import { scoreForView } from '../lib/transpose';
+import { scoreForView, spokenKey, transposeReadout } from '../lib/transpose';
+import type { SpellingKey } from '../lib/spelling';
 import { baseTimelineFor, deriveTimeline, playbackDuration, playbackEventsFrom, playbackMidis, playbackPositionAt, type BaseTimeline } from '../lib/playback/timeline';
 import { disposeVerovio, isOutOfMemory, isSuperseded, prepareVerovio, reduceChunkSize } from '../lib/verovio-runtime';
 import { isLargeFile, isLargeScore, largeScoreMessage, staffMeasures } from '../lib/large-file';
@@ -25,7 +26,10 @@ import '@fontsource/poppins/700.css';
 
 /** Reader settings; `zoom` is the score's explicit stave scale, or null for the device default (see stave-scale.ts). */
 type Prefs = FileSettings & { zoom: number | null };
-const defaults: Prefs = { mode: 'portrait', notationFont: 'Bravura', barsPerLine: 'auto', overlap: 1, names: false, chordSymbols: false, inferChordSymbols: false, counts: false, subdivisions: false, annotationFont: 'Sans', bpm: 96, zoom: null, semitones: 0, scorePitch: 'written' };
+const defaults: Prefs = { mode: 'portrait', notationFont: 'Bravura', barsPerLine: 'auto', overlap: 1, names: false, chordSymbols: false, inferChordSymbols: false, counts: false, subdivisions: false, annotationFont: 'Sans', bpm: 96, zoom: null, semitones: 0, scorePitch: 'written', keyFlip: false };
+/** Short key name for readouts: 'Gb', 'C#m'. */
+const keyName = (key: SpellingKey) => `${key.tonic}${key.mode === 'minor' ? 'm' : ''}`;
+const clampSemitones = (semitones: number) => Math.max(-12, Math.min(12, semitones));
 const sampleScore = () => withEngravingDocument(exampleScore());
 const textFonts = { Sans: 'Poppins, Arial, sans-serif', Serif: 'Georgia, serif', Mono: 'ui-monospace, monospace' } as const;
 const sampleAbc = `X:1\nT:A little room to play\nM:4/4\nL:1/4\nQ:1/4=96\nK:C\nC E G c | B A G E | C E G c | d2 c2 | G E D C | E G A G | F E D B, | C4 |`;
@@ -177,7 +181,9 @@ export default function Reader({ musicXml }: ReaderProps) {
   // Verovio can only transpose written pitch to sounding pitch, so concert-basis scores always show concert pitch.
   const concertBasis = score.parts.some(part => part.pitchBasis === 'concert');
   const scorePitch = concertBasis ? 'concert' : prefs.scorePitch;
-  const displayScore = useMemo(() => scoreForView(score, scorePitch, prefs.semitones), [score, scorePitch, prefs.semitones]);
+  const displayScore = useMemo(() => scoreForView(score, scorePitch, prefs.semitones, prefs.keyFlip), [score, scorePitch, prefs.semitones, prefs.keyFlip]);
+  // The key readout ("+2 · D") and the enharmonic key the flip offers, for the score as it is shown (header and drawer).
+  const readout = useMemo(() => transposeReadout(score, scorePitch, prefs.semitones, prefs.keyFlip), [score, scorePitch, prefs.semitones, prefs.keyFlip]);
   const hasTransposingParts = score.parts.some(part => part.transposition?.semitones || part.measures.some(measure => measure.transposition?.semitones));
   // The performance timeline is built when playback first needs it, not while a score loads: on a large score it is
   // seconds of main-thread work that would otherwise hold up the first paint (docs/specs/large-score-performance.md).
@@ -207,6 +213,7 @@ export default function Reader({ musicXml }: ReaderProps) {
       if (!Number.isInteger(next.semitones)) next.semitones = 0;
       next.semitones = Math.max(-12, Math.min(12, next.semitones));
       if (!['written', 'concert'].includes(next.scorePitch)) next.scorePitch = 'written';
+      if (typeof next.keyFlip !== 'boolean') next.keyFlip = false;
       if (!['Sans', 'Serif', 'Mono'].includes(next.annotationFont)) next.annotationFont = 'Sans';
       setPrefs(next);
     }
@@ -246,7 +253,7 @@ export default function Reader({ musicXml }: ReaderProps) {
     return () => { window.removeEventListener('pagehide', persist); document.removeEventListener('visibilitychange', hidden); void scoreDb.flush(); };
   }, []);
   const update = (patch: Partial<Prefs>) => {
-    if (['mode', 'notationFont', 'annotationFont', 'barsPerLine', 'names', 'chordSymbols', 'inferChordSymbols', 'counts', 'subdivisions', 'semitones', 'scorePitch'].some(key => key in patch && patch[key as keyof Prefs] !== prefs[key as keyof Prefs])) setPainting(true);
+    if (['mode', 'notationFont', 'annotationFont', 'barsPerLine', 'names', 'chordSymbols', 'inferChordSymbols', 'counts', 'subdivisions', 'semitones', 'scorePitch', 'keyFlip'].some(key => key in patch && patch[key as keyof Prefs] !== prefs[key as keyof Prefs])) setPainting(true);
     if (patch.mode && patch.mode !== prefs.mode) viewportRef.current?.scrollTo({ left: 0, top: 0 });
     setPrefs(prev => ({ ...prev, ...patch }));
   };
@@ -261,6 +268,7 @@ export default function Reader({ musicXml }: ReaderProps) {
     if (reset) { setPosition(0); setActive(null); setActiveNotes([]); }
   }, []);
   const changePitch = (patch: Partial<Prefs>) => { stop(true); update(patch); };
+  const transposeBy = (delta: number) => changePitch({ semitones: clampSemitones(prefs.semitones + delta) });
   /** Show a score with its saved record (if any). The saved zoom applies only on the device class it was chosen on. */
   const loadScore = (next: Score, nextSource: FileSource, saved: FileState | null) => {
     const device = deviceClass();
@@ -275,7 +283,7 @@ export default function Reader({ musicXml }: ReaderProps) {
     setHiddenIds(saved ? next.parts.filter(part => saved.parts[part.id]?.visible === false).map(part => part.id) : []);
     setTrackVolumes(saved ? Object.fromEntries(next.parts.map(part => [part.id, saved.parts[part.id]?.volume ?? 100])) : {});
     setError('');
-    setPrefs(prev => saved ? { ...prev, ...saved.settings, zoom } : { ...prev, bpm: clampBpm(Math.round(next.tempo)), zoom: null, semitones: 0, scorePitch: next.parts.some(part => part.pitchBasis === 'concert') ? 'concert' : 'written' });
+    setPrefs(prev => saved ? { ...prev, ...saved.settings, zoom } : { ...prev, bpm: clampBpm(Math.round(next.tempo)), zoom: null, semitones: 0, keyFlip: false, scorePitch: next.parts.some(part => part.pitchBasis === 'concert') ? 'concert' : 'written' });
     viewportRef.current?.scrollTo({ left: 0, top: 0 });
     setDrawer(false);
   };
@@ -538,7 +546,7 @@ export default function Reader({ musicXml }: ReaderProps) {
         const availableHeight = Math.max(120, (viewportRef.current?.clientHeight || 600) - metaHeight - 70);
         // Without a user zoom the default ('fit': four bars in Vertical) is re-resolved for the viewport, so rotation re-fits.
         const requested = prefs.zoom ?? 'fit';
-        const result = await renderScore(canvas, displayScore, prefs.mode, prefs.names, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.chordSymbols, prefs.inferChordSymbols, availableHeight, requested, 0, { gutterFor: (stavePx, staffPitchPx) => metricsFor(stavePx, staffPitchPx).gutter, fitCap: ENDLESS_STAVE_SCALE[deviceClass()], fitFloor: minimumDefaultStaveScale(deviceClass()), font: prefs.notationFont, textFont: prefs.annotationFont, transpose: prefs.semitones, scorePitch, hiddenPartIds: hiddenIds, generation, focusMeasure: anchor?.index });
+        const result = await renderScore(canvas, displayScore, prefs.mode, prefs.names, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.chordSymbols, prefs.inferChordSymbols, availableHeight, requested, 0, { gutterFor: (stavePx, staffPitchPx) => metricsFor(stavePx, staffPitchPx).gutter, fitCap: ENDLESS_STAVE_SCALE[deviceClass()], fitFloor: minimumDefaultStaveScale(deviceClass()), font: prefs.notationFont, textFont: prefs.annotationFont, transpose: prefs.semitones, flip: prefs.keyFlip, scorePitch, hiddenPartIds: hiddenIds, generation, focusMeasure: anchor?.index });
         if (disposed || generation !== renderRunRef.current) { result.dispose(); return; }
         renderRef.current = result;
         // Systems drawn later (scrolling, playback) change block sizes: re-page, and let the playhead find new notes.
@@ -586,7 +594,7 @@ export default function Reader({ musicXml }: ReaderProps) {
     const delay = !quiet && hasPaintedRef.current && !window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 260 : 0;
     timer = window.setTimeout(() => void draw(), delay);
     return () => { disposed = true; window.clearTimeout(timer); cancelAnimationFrame(frame); };
-  }, [ready, resizeTick, scoreRevision, hiddenIds, prefs.mode, prefs.notationFont, prefs.annotationFont, prefs.names, prefs.chordSymbols, prefs.inferChordSymbols, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.zoom, prefs.semitones, scorePitch]);
+  }, [ready, resizeTick, scoreRevision, hiddenIds, prefs.mode, prefs.notationFont, prefs.annotationFont, prefs.names, prefs.chordSymbols, prefs.inferChordSymbols, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.zoom, prefs.semitones, prefs.keyFlip, scorePitch]);
 
   /** Each rendered system's top and bottom in the viewport's scroll coordinates (score title included). */
   const systemSpans = (): SystemSpan[] => {
@@ -870,6 +878,13 @@ export default function Reader({ musicXml }: ReaderProps) {
   const staveScaleMin = Math.min(STAVE_SCALE_MIN, renderedZoom);
   staveScaleMinRef.current = staveScaleMin;
   const staveScalePercent = Math.round(staveScale * 100);
+  // Header and drawer readouts share state; only the visible one (drawer open or not) is a live region, so changes are announced once.
+  // Key flip: aria-disabled (not disabled) so the button stays focusable and its label says why there is nothing to flip.
+  const flipTo = readout.flipTo;
+  const flipLabel = flipTo ? `Spell in ${spokenKey(flipTo)}` : 'No enharmonic key to flip to';
+  const flipText = flipTo ? `${keyName(readout.key)} ↔ ${keyName(flipTo)}` : keyName(readout.key);
+  const flipKey = () => { if (flipTo) changePitch({ keyFlip: !prefs.keyFlip }); };
+  const transposeTitle = `Transposition ${prefs.semitones > 0 ? '+' : ''}${prefs.semitones} semitone${Math.abs(prefs.semitones) === 1 ? '' : 's'}, key ${spokenKey(readout.key)}`;
   const headerElements: Record<HeaderControlId, React.ReactNode> = {
     stop: <button className="icon-button stop-button" aria-label="Stop playback" title="Stop playback" onClick={() => { stop(true); viewportRef.current?.scrollTo({ top: 0, left: 0, behavior: 'smooth' }); }}><Square size={17} fill="currentColor"/></button>,
     play: <button className={`play-button ${loadingAudio ? 'is-loading' : ''}`} aria-label={playing || loadingAudio ? 'Pause playback' : 'Play score'} onClick={play}>{playing || loadingAudio ? <Pause size={17} fill="currentColor"/> : <Play size={17} fill="currentColor"/>}<span className="play-button-label">{loadingAudio ? 'Loading' : playing ? 'Pause' : 'Play'}</span></button>,
@@ -878,6 +893,18 @@ export default function Reader({ musicXml }: ReaderProps) {
     mode: <div className="mode-toggle" role="group" aria-label="Reading mode">
       <button aria-label="Vertical view" title="Vertical view" className={`mode-toggle-vertical ${prefs.mode === 'portrait' ? 'selected' : ''}`} onClick={() => update({ mode: 'portrait' })}><span className="mode-toggle-label-full">Vertical</span><span className="mode-toggle-label-short" aria-hidden="true">V</span></button>
       <button aria-label="Endless view" title="Endless view" className={`mode-toggle-endless ${prefs.mode === 'landscape' ? 'selected' : ''}`} onClick={() => update({ mode: 'landscape' })}><span className="mode-toggle-label-full">Endless</span><span className="mode-toggle-label-short" aria-hidden="true">E</span></button>
+    </div>,
+    transpose: <div className="header-transpose" role="group" aria-label="Transpose">
+      <span className="header-transpose-label" aria-hidden="true">Transpose</span>
+      <span className="header-transpose-controls">
+        <button className="header-transpose-down" aria-label="Transpose down a semitone" title="Transpose down a semitone" disabled={prefs.semitones <= -12} onClick={() => transposeBy(-1)}><Minus size={15}/></button>
+        <output className="header-transpose-readout" aria-live={drawer ? 'off' : 'polite'} title={transposeTitle}>{readout.text}</output>
+        <button className="header-transpose-up" aria-label="Transpose up a semitone" title="Transpose up a semitone" disabled={prefs.semitones >= 12} onClick={() => transposeBy(1)}><Plus size={15}/></button>
+      </span>
+    </div>,
+    keyFlip: <div className="header-key-flip">
+      <span className="header-key-flip-caption" aria-hidden="true">Key spelling</span>
+      <button className={`header-key-flip-button ${flipTo ? '' : 'is-disabled'}`} aria-label={flipLabel} title={flipLabel} aria-disabled={!flipTo} onClick={flipKey}><span className="header-key-flip-icon" aria-hidden="true">⇄</span><span className="header-key-flip-label">{flipText}</span></button>
     </div>,
     bars: barsSetting,
     staveScale: <label className="header-stave-scale" title="Stave scale">
@@ -981,7 +1008,7 @@ export default function Reader({ musicXml }: ReaderProps) {
 
         <div className="drawer-panel"><h3><Settings2 size={17}/> Reading</h3><div className="font-choice"><span>Notation font</span><div className="font-toggle" role="group" aria-label="Notation font"><button className={prefs.notationFont === 'Bravura' ? 'selected' : ''} aria-pressed={prefs.notationFont === 'Bravura'} onClick={() => update({ notationFont: 'Bravura' })}>Bravura</button><button className={prefs.notationFont === 'Petaluma' ? 'selected' : ''} aria-pressed={prefs.notationFont === 'Petaluma'} onClick={() => update({ notationFont: 'Petaluma' })}>Petaluma</button></div></div><div className="font-choice"><span>Stave text font</span><div className="font-toggle" role="group" aria-label="Stave text font">{(['Sans', 'Serif', 'Mono'] as const).map(font => <button key={font} className={prefs.annotationFont === font ? 'selected' : ''} aria-pressed={prefs.annotationFont === font} onClick={() => update({ annotationFont: font })}>{font}</button>)}</div></div><label className="field-label" htmlFor="overhang">Overhang <span>{prefs.overlap === 0 ? 'Off' : `${prefs.overlap} ${prefs.mode === 'portrait' ? (prefs.overlap === 1 ? 'system' : 'systems') : (prefs.overlap === 1 ? 'bar' : 'bars')}`}</span></label><input id="overhang" className="range" type="range" min="0" max="3" step="1" value={prefs.overlap} onChange={e => update({ overlap: Number(e.target.value) })}/><div className="switch-row"><span>Note names</span><button className={`switch ${prefs.names ? 'on' : ''}`} role="switch" aria-label="Note names" aria-checked={prefs.names} onClick={() => update({ names: !prefs.names })}/></div><div className="switch-row"><span>Chord symbols</span><button className={`switch ${prefs.chordSymbols ? 'on' : ''}`} role="switch" aria-label="Chord symbols" aria-checked={prefs.chordSymbols} onClick={() => update({ chordSymbols: !prefs.chordSymbols })}/></div><label className="switch-row inference-row"><span>Infer chord symbols</span><input type="checkbox" checked={prefs.inferChordSymbols} onChange={e => update({ inferChordSymbols: e.target.checked })}/></label><div className="switch-row"><span>Beat counts</span><button className={`switch ${prefs.counts ? 'on' : ''}`} role="switch" aria-label="Beat counts" aria-checked={prefs.counts} onClick={() => update({ counts: !prefs.counts })}/></div><div className="switch-row"><span>Count subdivisions</span><button className={`switch ${prefs.subdivisions ? 'on' : ''}`} role="switch" aria-label="Count subdivisions" aria-checked={prefs.subdivisions} onClick={() => update({ subdivisions: !prefs.subdivisions, counts: true })}/></div>{score.parts.length > 4 && <button className="text-action reset-staves" onClick={resetStaves}><RotateCcw size={15}/> Reset score staves</button>}</div>
         <div className="drawer-panel abc-panel"><h3><FileMusic size={17}/> ABC notation</h3><p>Paste ABC text here, or use the open button in the header for files and folders.</p><textarea value={abc} onChange={e => setAbc(e.target.value)} spellCheck={false} aria-label="ABC notation"/><button className="primary-action" onClick={() => void readAbc(abc)}>View notation <ChevronRight size={17}/></button><button className="text-action" onClick={loadSample}><FileMusic size={16}/> Open sample score</button>{lastFileInfo && <button className="text-action forget-last-file" title={LAST_FILE_PRIVACY} onClick={forgetLast}><Trash2 size={15}/> Forget last opened file</button>}</div>
-        <div className="drawer-panel pitch-panel"><h3><Settings2 size={17}/> Pitch</h3><div className="pitch-options"><div><span className="pitch-label">Transpose score</span><div className="semitone-control"><button aria-label="Transpose down one semitone" disabled={prefs.semitones <= -12} onClick={() => changePitch({ semitones: prefs.semitones - 1 })}><Minus size={16}/></button><output aria-live="polite">{prefs.semitones > 0 ? '+' : ''}{prefs.semitones} semitones</output><button aria-label="Transpose up one semitone" disabled={prefs.semitones >= 12} onClick={() => changePitch({ semitones: prefs.semitones + 1 })}><Plus size={16}/></button><button className="pitch-reset" aria-label="Reset transposition" title="Reset transposition" disabled={prefs.semitones === 0} onClick={() => changePitch({ semitones: 0 })}><RotateCcw size={15}/></button></div></div>{!concertBasis && <div><span className="pitch-label">Score view</span><div className="font-toggle pitch-view" role="group" aria-label="Score pitch view"><button className={prefs.scorePitch === 'written' ? 'selected' : ''} aria-pressed={prefs.scorePitch === 'written'} onClick={() => changePitch({ scorePitch: 'written' })}>Transposing</button><button className={prefs.scorePitch === 'concert' ? 'selected' : ''} aria-pressed={prefs.scorePitch === 'concert'} onClick={() => changePitch({ scorePitch: 'concert' })}>Concert</button></div></div>}</div><p className="pitch-hint">{concertBasis ? 'This score is written at concert pitch, so it is shown at concert pitch. Playback stays at concert pitch.' : hasTransposingParts ? 'Transposing shows written parts; Concert shows sounding pitches. Playback stays at concert pitch.' : 'This score has no instrument transposition data, so both views match.'}</p></div>
+        <div className="drawer-panel pitch-panel"><h3><Settings2 size={17}/> Pitch</h3><div className="pitch-options"><div><span className="pitch-label">Transpose score</span><div className="semitone-control"><button aria-label="Transpose down a semitone" disabled={prefs.semitones <= -12} onClick={() => transposeBy(-1)}><Minus size={16}/></button><output aria-live={drawer ? 'polite' : 'off'}>{prefs.semitones > 0 ? '+' : ''}{prefs.semitones} semitones</output><button aria-label="Transpose up a semitone" disabled={prefs.semitones >= 12} onClick={() => transposeBy(1)}><Plus size={16}/></button><button className="pitch-reset" aria-label="Reset transposition" title="Reset transposition" disabled={prefs.semitones === 0 && !prefs.keyFlip} onClick={() => changePitch({ semitones: 0, keyFlip: false })}><RotateCcw size={15}/></button></div></div><div className="pitch-key"><span className="pitch-label">Key</span><div className="pitch-key-control"><output className="pitch-key-readout" aria-live={drawer ? 'polite' : 'off'}>{readout.text}</output><button className={`pitch-key-flip ${flipTo ? '' : 'is-disabled'}`} aria-label={flipLabel} title={flipLabel} aria-disabled={!flipTo} onClick={flipKey}><span className="pitch-key-flip-icon" aria-hidden="true">⇄</span><span className="pitch-key-flip-label">{flipText}</span></button></div></div>{!concertBasis && <div><span className="pitch-label">Score view</span><div className="font-toggle pitch-view" role="group" aria-label="Score pitch view"><button className={prefs.scorePitch === 'written' ? 'selected' : ''} aria-pressed={prefs.scorePitch === 'written'} onClick={() => changePitch({ scorePitch: 'written' })}>Transposing</button><button className={prefs.scorePitch === 'concert' ? 'selected' : ''} aria-pressed={prefs.scorePitch === 'concert'} onClick={() => changePitch({ scorePitch: 'concert' })}>Concert</button></div></div>}</div><p className="pitch-hint">{concertBasis ? 'This score is written at concert pitch, so it is shown at concert pitch. Playback stays at concert pitch.' : hasTransposingParts ? 'Transposing shows written parts; Concert shows sounding pitches. Playback stays at concert pitch.' : 'This score has no instrument transposition data, so both views match.'}</p></div>
       </div>
       {error && <div className="error" role="alert"><span className="error-text">{error}</span>{oomButton}</div>}
       <div className="drawer-foot">SPACE / PAGE DOWN · next view &nbsp;&nbsp; PAGE UP · previous view <span>FluidR3 GM · CC BY 3.0; TimGM drums · GPL-2</span></div>

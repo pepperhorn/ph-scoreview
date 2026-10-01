@@ -130,6 +130,10 @@
             "written",
             "concert"
           ]
+        },
+        "keyFlip": {
+          "type": "boolean",
+          "description": "Spell the transposed view in the enharmonic key (e.g. Gb major instead of F# major). Optional; readers default it to false."
         }
       }
     },
