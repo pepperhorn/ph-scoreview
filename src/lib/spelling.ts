@@ -158,7 +158,7 @@ function letterStep(from: string, neighbour: Spelled): number {
  *  2. Notes in the key signature keep its spelling.
  *  3. A minor key's raised 6th and 7th take the signature's letter raised (B# in C# minor, E# in F# minor), unless
  *     that would be a double sharp (F## in G# minor is G). Chromatic notes resolving upward a step keep the source
- *     spelling, except E# and B#, which become F and C.
+ *     spelling, except E#/B# (F and C) and Fb/Cb (rule 4).
  *  4. Otherwise flat keys use flats and naturals, sharp keys sharps and naturals, and C major / A minor the key table
  *     (Db Eb F# Ab Bb). E and B are never Fb/Cb, except a stepwise passing note in a key with 6 or more flats.
  */
@@ -168,7 +168,8 @@ export function spellPitch(midi: number, key: SpellingKey, context: SpellContext
   if (source && Math.abs(source.alter) === 2 && !context.transposed) return withOctave(midi, source);
   const diatonic = key.scale.find(note => spells(pc, note));
   if (diatonic) return withOctave(midi, diatonic);
-  const allowed = (spelled: Spelled) => Math.abs(spelled.alter) <= 1 && !['E1', 'B1'].includes(spelled.step + spelled.alter);
+  // A source spelling kept for an upward resolution is never a double accidental, E#/B# or Fb/Cb (those follow rule 4).
+  const allowed = (spelled: Spelled) => Math.abs(spelled.alter) <= 1 && !['E1', 'B1', 'F-1', 'C-1'].includes(spelled.step + spelled.alter);
   // Minor raised 6th and 7th: the signature's letter, one semitone higher.
   if (key.mode === 'minor') {
     const tonic = letterIndex(key.tonic.charAt(0));
