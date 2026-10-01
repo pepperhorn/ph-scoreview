@@ -3,6 +3,9 @@ import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright-core';
 import { strToU8, zipSync } from 'fflate';
+import createVerovioModule from 'verovio/wasm';
+import { VerovioToolkit } from 'verovio/esm';
+import toneMidi from '@tonejs/midi';
 
 // A private Vite server (like validation/performance.mjs): Astro 7 keeps one
 // background dev server per project, which survives this script and can serve
@@ -291,6 +294,76 @@ try {
   assert.equal(meiView.info, meiView.expectedInfo, 'Baseline scan reads measures, staff definitions and groups like the DOM');
   assert.equal(meiView.lyricDensity, 2, 'Lyric density counts syllables per staff-measure and verse line');
   console.log(`Document import: worker MEI view transform matches the DOM reference in ${meiView.cases} cases passed`);
+  // Percussion in the ABC/MIDI adapter: drum parts are unpitched MEI notes placed by staff position (@loc, GM drum map
+  // for MIDI, written position for ABC), so Verovio's transpose never moves them; the Score model keeps its MIDI pitches.
+  const midi = new toneMidi.Midi();
+  midi.header.setTempo(120);
+  const kit = midi.addTrack();
+  kit.channel = 9;
+  kit.name = 'Kit';
+  // Kick + closed hi-hat together, snare + hi-hat, then crash, ride bell, pedal hi-hat and an unmapped sound (Vibraslap).
+  for (const [time, note] of [[0, 36], [0, 42], [0.5, 38], [0.5, 42], [1, 49], [1.5, 53], [2, 44], [2.5, 58]]) kit.addNote({ midi: note, time, duration: 0.25 });
+  const lead = midi.addTrack();
+  lead.name = 'Lead';
+  lead.addNote({ midi: 60, time: 0, duration: 0.5 });
+  const drums = await page.evaluate(async midiBytes => {
+    const { parseMidi, parseAbc } = await import('/src/lib/import.ts');
+    const fromMidi = await parseMidi(new Uint8Array(midiBytes).buffer);
+    const fromAbc = await parseAbc('X:1\nT:Kit\nM:4/4\nL:1/8\nV:1 clef=perc name="Drums"\nV:2 clef=treble name="Tune"\nK:D\n[V:1] F2 c2 [Fg]2 ^c2|\n[V:2] D E F G A B c d|\n');
+    const summary = score => {
+      const mei = score.document.engravingText;
+      const doc = new DOMParser().parseFromString(mei, 'application/xml');
+      const ids = new Set([...doc.getElementsByTagName('*')].map(element => element.getAttribute('xml:id')).filter(Boolean));
+      const staves = score.parts.map((part, index) => {
+        const notes = [...doc.getElementsByTagName('staff')].filter(staff => staff.getAttribute('n') === String(index + 1)).flatMap(staff => [...staff.getElementsByTagName('note')]);
+        return {
+          clef: part.clef, instrument: part.instrument,
+          staffDef: [...doc.getElementsByTagName('staffDef')][index].getAttribute('clef.shape'),
+          notes: notes.map(note => [note.getAttribute('loc'), note.getAttribute('pname'), note.getAttribute('oct'), note.getAttribute('head.shape'), note.getAttribute('accid'), note.getAttribute('accid.ges')]),
+          midi: part.measures.flatMap(measure => measure.notes.flatMap(note => note.pitches.map(pitch => pitch.midi))),
+        };
+      });
+      const missing = Object.values(score.document.identity.noteIdToSourceId).filter(id => !ids.has(id));
+      return { mei, staves, missing, mapped: Object.keys(score.document.identity.noteIdToSourceId).length };
+    };
+    return { midi: summary(fromMidi), abc: summary(fromAbc) };
+  }, Array.from(midi.toArray()));
+  const [kitStaff, leadStaff] = drums.midi.staves;
+  assert.equal(kitStaff.clef, 'percussion');
+  assert.equal(kitStaff.staffDef, 'perc');
+  assert.deepEqual(kitStaff.notes.map(([loc, , , head]) => [loc, head]), [['1', null], ['9', 'x'], ['5', null], ['9', 'x'], ['10', 'x'], ['8', 'diamond'], ['-1', 'x'], ['7', 'diamond']], 'MIDI drums: kick F4, hi-hat G5 x, snare C5, crash A5 x, ride bell F5 diamond, pedal hi-hat D4 x, others E5 diamond');
+  assert.ok(kitStaff.notes.every(([, pname, oct, , accid, ges]) => !pname && !oct && !accid && !ges), 'MIDI drum notes are unpitched (no pname/oct/accidentals)');
+  assert.deepEqual(kitStaff.midi, [36, 42, 38, 42, 49, 53, 44, 58], 'MIDI drum playback pitches are unchanged');
+  assert.ok(leadStaff.notes.every(([loc, pname]) => !loc && pname), 'Pitched MIDI parts stay pitched');
+  assert.deepEqual(drums.midi.missing, [], 'Every MIDI note ID is an MEI element ID');
+  const [abcKit, abcTune] = drums.abc.staves;
+  assert.equal(abcKit.clef, 'percussion', 'ABC clef=perc is a percussion part');
+  assert.equal(abcKit.instrument, 'drum-kit');
+  assert.equal(abcKit.staffDef, 'perc');
+  assert.deepEqual(abcKit.notes.map(([loc, pname, , head, accid]) => [loc, pname, head, accid]), [['1', null, null, null], ['5', null, null, null], ['1', null, null, null], ['9', null, null, null], ['5', null, null, null]], 'ABC percussion is placed by written staff position');
+  assert.deepEqual(abcKit.midi, [66, 73, 66, 79, 73], 'ABC percussion playback pitches are unchanged');
+  assert.equal(abcTune.clef, 'treble');
+  assert.ok(abcTune.notes.every(([loc, pname]) => !loc && pname), 'ABC pitched voices stay pitched');
+  assert.deepEqual(drums.abc.missing, [], 'Every ABC note ID is an MEI element ID');
+  // Verovio's transpose moves the pitched staves and leaves the unpitched ones where they are.
+  const toolkit = new VerovioToolkit(await createVerovioModule());
+  const transposed = (mei, interval) => {
+    toolkit.setOptions({ transpose: interval, xmlIdChecksum: false });
+    toolkit.loadData(mei);
+    const doc = toolkit.getMEI();
+    return [...doc.matchAll(/<staff [^>]*n="(\d+)"[^>]*>(.*?)<\/staff>/gs)].reduce((staves, [, n, body]) => {
+      (staves[n] ||= []).push(...[...body.matchAll(/<note [^>]*>/g)].map(([tag]) => ['xml:id', 'loc', 'pname', 'oct', 'head.shape'].map(name => (new RegExp(`\\s${name.replace('.', '\\.')}="([^"]*)"`).exec(tag) || [])[1] ?? 'null').join(' ')));
+      return staves;
+    }, {});
+  };
+  for (const [label, summary] of [['MIDI', drums.midi], ['ABC', drums.abc]]) {
+    const plain = transposed(summary.mei, '');
+    const up = transposed(summary.mei, '+M2');
+    assert.deepEqual(up['1'], plain['1'], `${label}: transposing +M2 leaves percussion notes unchanged`);
+    assert.ok(plain['1'].every(note => note.split(' ')[1] !== 'null' && note.split(' ')[2] === 'null'), `${label}: Verovio reads percussion notes as unpitched`);
+    assert.notDeepEqual(up['2'], plain['2'], `${label}: transposing +M2 moves the pitched staff`);
+  }
+  console.log('Document import: MIDI and ABC percussion engrave as unpitched notes that transposition leaves in place passed');
   console.log('Document import: ID-less MusicXML identity and multi-measure rest expansion passed');
   console.log('Document import: timewise, MXL source bytes and hash, percussion, voices, ABC adapter and MEI identity passed');
   console.log('Document review regressions: drum kit program, MEI accidentals/key/meter changes, saved BPM clamp, MXL encoded path and size bound, ABC/MEI navigation engraving passed');

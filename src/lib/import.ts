@@ -179,8 +179,9 @@ export async function parseAbc(text: string): Promise<Score> {
   const map = new Map<string, Part>();
   for (const [staffIndex, staff] of firstStaff.entries()) for (const [voiceIndex] of (staff as any).voices.entries()) {
     const name = staff.title?.[voiceIndex] || staff.title?.[0] || (voiceIndex ? `Voice ${voiceIndex + 1}` : 'Melody');
-    const clef = /bass|cello|trombone/i.test(name) ? 'bass' : staff.voices.length === 1 && staff.clef?.type === 'bass' ? 'bass' : 'treble';
-    const part: Part = { id: `abc-${staffIndex}-${voiceIndex}`, name, clef, instrument: instrumentForName(name), measures: [] };
+    const percussion = staff.clef?.type === 'perc';
+    const clef = percussion ? 'percussion' : /bass|cello|trombone/i.test(name) ? 'bass' : staff.voices.length === 1 && staff.clef?.type === 'bass' ? 'bass' : 'treble';
+    const part: Part = { id: `abc-${staffIndex}-${voiceIndex}`, name, clef, instrument: percussion ? 'drum-kit' : instrumentForName(name), measures: [] };
     parts.push(part); map.set(`${staffIndex}-${voiceIndex}`, part);
   }
   // Navigation is read from the first voice: abcjs puts repeat/ending marks on bars
@@ -240,7 +241,10 @@ export async function parseAbc(text: string): Promise<Score> {
         if (explicit !== undefined) accidentalMap.set(`${step}${octave}`, explicit);
         const fromKey = keyAccidentals.find((a: any) => a.note.toUpperCase() === step);
         const alter = accidentalMap.get(`${step}${octave}`) ?? (fromKey?.acc === 'sharp' ? 1 : fromKey?.acc === 'flat' ? -1 : 0);
-        return { ...pitch(step, octave, alter), tieStart: Boolean(p.startTie), tieStop: Boolean(p.endTie) };
+        // Percussion (clef=perc) is written by staff position: it keeps its written pitch for playback and is engraved
+        // unpitched at that position.
+        const position = part.clef === 'percussion' ? { unpitched: true, displayStep: step, displayOctave: octave } : {};
+        return { ...pitch(step, octave, alter), ...position, tieStart: Boolean(p.startTie), tieStop: Boolean(p.endTie) };
       });
       if (leading) {
         if (!current.notes.length) {
