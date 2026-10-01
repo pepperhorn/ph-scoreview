@@ -35,6 +35,8 @@ export type XmlHandler = {
   endElement(name: string, start: number, end: number): void;
   /** Character data inside the root element (text and CDATA), decoded. Optional: skipped when absent. */
   text?(value: string): void;
+  /** The general entities the DOCTYPE's internal subset declares (name → replacement text), once it is read. */
+  doctype?(entities: Readonly<Record<string, string>>): void;
 };
 
 const PREDEFINED: Record<string, string> = { lt: '<', gt: '>', amp: '&', apos: "'", quot: '"' };
@@ -184,6 +186,7 @@ export function scanXml(text: string, handler: XmlHandler): string {
       skipWhite();
     }
     expect('>');
+    handler.doctype?.(entities);
   };
   function comment() {
     const close = text.indexOf('--', i + 4);

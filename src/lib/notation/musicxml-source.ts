@@ -111,6 +111,16 @@ export function rootElementName(text: string): string | undefined {
 
 const escapeAttribute = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/\t/g, '&#9;').replace(/\n/g, '&#10;').replace(/\r/g, '&#13;');
 const rawAttributes = (text: string, attributes: XmlAttribute[]) => attributes.map(attribute => ` ${text.slice(attribute.start, attribute.end)}`).join('');
+const escapeMarkup = (text: string) => escapeAttribute(text).replace(/'/g, '&apos;');
+/**
+ * Replace references to internal-subset entities with their (escaped) replacement text, outside comments, CDATA
+ * sections and PIs: copied markup must not depend on a DOCTYPE the new document does not carry.
+ */
+function expandEntities(markup: string, entities: Readonly<Record<string, string>>): string {
+  if (markup.indexOf('&') < 0) return markup;
+  return markup.split(/(<!\[CDATA\[[\s\S]*?\]\]>|<!--[\s\S]*?-->|<\?[\s\S]*?\?>)/).map((piece, index) => index % 2 ? piece
+    : piece.replace(/&([^\s&;#]+);/g, (reference, name: string) => Object.prototype.hasOwnProperty.call(entities, name) ? escapeMarkup(entities[name]) : reference)).join('');
+}
 
 /**
  * Timewise → partwise, as text: the root's other children, then one <part> per part ID (part-list order, then any
@@ -126,13 +136,16 @@ export function timewiseToPartwise(text: string): { text: string; inventory: Fea
   const listedIds: string[] = [];
   let partListSeen = false, inFirstPartList = false;
   const stack: { local: string; start: number }[] = [];
+  let entities: Readonly<Record<string, string>> = {};
+  const copy = (markup: string) => expandEntities(markup, entities);
   const root = scanXml(text, {
+    doctype: declared => { entities = declared; },
     startElement(name, attributes, start, end, selfClosing) {
       const local = localNameOf(name);
       names.set(local, (names.get(local) || 0) + 1);
       const depth = stack.length;
-      if (depth === 0) rootAttributes = rawAttributes(text, attributes);
-      else if (depth === 1 && local === 'measure') measures.push({ attributes: rawAttributes(text, attributes) + (attributes.some(a => a.name === 'number') ? '' : ` number="${measures.length + 1}"`), parts: [] });
+      if (depth === 0) rootAttributes = copy(rawAttributes(text, attributes));
+      else if (depth === 1 && local === 'measure') measures.push({ attributes: copy(rawAttributes(text, attributes)) + (attributes.some(a => a.name === 'number') ? '' : ` number="${measures.length + 1}"`), parts: [] });
       else if (depth === 1 && local === 'part-list' && !partListSeen) { partListSeen = true; inFirstPartList = true; }
       else if (depth === 2 && inFirstPartList && local === 'score-part') { const id = attributes.find(a => a.name === 'id')?.value; if (id) listedIds.push(id); }
       else if (depth === 2 && stack[1].local === 'measure' && local === 'part') measures.at(-1)!.parts.push({ id: attributes.find(a => a.name === 'id')?.value ?? null, content: [] });
@@ -142,8 +155,8 @@ export function timewiseToPartwise(text: string): { text: string; inventory: Fea
     endElement(_name, _start, end) {
       const frame = stack.pop()!;
       const depth = stack.length;
-      if (depth === 1 && frame.local !== 'measure') { header.push(text.slice(frame.start, end)); if (frame.local === 'part-list') inFirstPartList = false; }
-      else if (depth === 3 && stack[1].local === 'measure' && stack[2].local === 'part') measures.at(-1)!.parts.at(-1)!.content.push(text.slice(frame.start, end));
+      if (depth === 1 && frame.local !== 'measure') { header.push(copy(text.slice(frame.start, end))); if (frame.local === 'part-list') inFirstPartList = false; }
+      else if (depth === 3 && stack[1].local === 'measure' && stack[2].local === 'part') measures.at(-1)!.parts.at(-1)!.content.push(copy(text.slice(frame.start, end)));
     },
   });
   const rootLocal = localNameOf(root);
