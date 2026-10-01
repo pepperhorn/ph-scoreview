@@ -152,6 +152,102 @@ try {
   assert.deepEqual(errors, []);
   await context.close();
   console.log(`${engine}: large score virtualized systems, on-demand drawing, release and playback highlight passed (${((Date.now() - started) / 1000).toFixed(1)} s)`);
+
+  // Opening other scores while a large one draws systems on demand: the old score's renders are superseded (its
+  // baseline is gone once the worker is recycled for the next import) and must stop, not retry in a tight loop that
+  // starves the event loop. The page stays responsive and the last-opened score renders.
+  {
+    const switching = await browser.newContext({ viewport: { width: 1280, height: 640 } });
+    await switching.route(/poppins/i, route => route.abort());
+    const tab = await switching.newPage();
+    const switchErrors = [];
+    tab.on('pageerror', error => switchErrors.push(error.message));
+    await tab.addInitScript(() => localStorage.setItem('scoreflow-prefs', JSON.stringify({ barsPerLine: 1 })));
+    await tab.goto(url);
+    await tab.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg'), null, { timeout: 120000 });
+    const input = tab.locator('input[type=file]').first();
+    await input.setInputFiles({ name: 'first.musicxml', mimeType: 'application/xml', buffer: Buffer.from(xml) });
+    await tab.waitForFunction(() => document.querySelector('.score-meta h1')?.textContent === 'Synthetic Symphony' && !document.querySelector('.score-loading') && document.querySelector('.score-system svg'), null, { timeout: 120000 });
+    // Keep the first score drawing nearby systems while the next ones import.
+    const scrollAlong = () => tab.evaluate(() => { const view = document.querySelector('.score-viewport'); view.scrollTop += view.clientHeight * 3; });
+    await scrollAlong();
+    await input.setInputFiles({ name: 'second.musicxml', mimeType: 'application/xml', buffer: Buffer.from(xml.replace('Synthetic Symphony', 'Second Symphony')) });
+    await scrollAlong();
+    await new Promise(done => setTimeout(done, 400));
+    await scrollAlong();
+    await input.setInputFiles(resolve(root, 'validation/fixtures/ensemble.musicxml'));
+    // A timer must fire promptly the whole time (a microtask retry loop would block it, and page.evaluate with it).
+    const deadline = Date.now() + 120000;
+    let worstLag = 0;
+    for (;;) {
+      const lag = await Promise.race([
+        tab.evaluate(() => new Promise(done => { const at = performance.now(); setTimeout(() => done(performance.now() - at), 0); })),
+        new Promise(done => setTimeout(() => done(Infinity), 5000)),
+      ]);
+      worstLag = Math.max(worstLag, lag);
+      assert.ok(lag < 1000, `The page stays responsive while scores switch (a timer waited ${lag} ms)`);
+      const shown = await tab.evaluate(() => document.querySelector('.score-meta h1')?.textContent === 'Migration ensemble' && !document.querySelector('.score-loading') && !!document.querySelector('.score-system svg'));
+      if (shown) break;
+      assert.ok(Date.now() < deadline, 'The last-opened score renders');
+      await new Promise(done => setTimeout(done, 250));
+    }
+    assert.deepEqual(switchErrors, []);
+    await switching.close();
+    console.log(`${engine}: opening scores while a large one draws stays responsive (worst timer lag ${Math.round(worstLag)} ms) passed`);
+  }
+
+  // Endless zoom on a long score keeps the reading position: the zoom anchor's chunk is drawn before the re-layout
+  // resolves (and an undrawn anchor falls back to layout geometry).
+  {
+    const long = (() => {
+      const parts = Array.from({ length: 5 }, (_, index) => `P${index + 1}`);
+      const measure = number => `<measure number="${number}">${number === 1 ? '<attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>' : ''}${['C', 'E', 'G', 'B'].map(step => `<note><pitch><step>${step}</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note>`).join('')}</measure>`;
+      return `<?xml version="1.0"?><score-partwise version="4.0"><work><work-title>Long Endless</work-title></work><part-list>${parts.map(id => `<score-part id="${id}"><part-name>Staff ${id.slice(1)}</part-name></score-part>`).join('')}</part-list>${parts.map(id => `<part id="${id}">${Array.from({ length: 400 }, (_, index) => measure(index + 1)).join('')}</part>`).join('')}</score-partwise>`;
+    })();
+    const endless = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await endless.route(/poppins/i, route => route.abort());
+    const tab = await endless.newPage();
+    const endlessErrors = [];
+    tab.on('pageerror', error => endlessErrors.push(error.message));
+    await tab.addInitScript(() => localStorage.setItem('scoreflow-prefs', JSON.stringify({ mode: 'landscape' })));
+    await tab.goto(url);
+    const ready = () => tab.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg') && !document.querySelector('.score-content').getAnimations().length, null, { timeout: 120000 });
+    await ready();
+    await tab.locator('input[type=file]').first().setInputFiles({ name: 'long.musicxml', mimeType: 'application/xml', buffer: Buffer.from(long) });
+    await tab.waitForFunction(() => document.querySelector('.score-meta h1')?.textContent === 'Long Endless', null, { timeout: 120000 });
+    await ready();
+    // Measure 300 (index 299) is in the third 120-bar chunk: bring that chunk in, then centre the measure.
+    const target = '.reader-note[data-note-id^="P1-1-299-"]';
+    const centre = () => tab.evaluate(selector => {
+      const view = document.querySelector('.score-viewport');
+      const note = document.querySelector(selector);
+      if (!note) { const block = document.querySelector('.score-system[data-system="2"]'); view.scrollLeft += block.getBoundingClientRect().left - view.getBoundingClientRect().left + block.getBoundingClientRect().width / 2 - view.clientWidth / 2; return false; }
+      const rect = note.getBoundingClientRect(), box = view.getBoundingClientRect();
+      view.scrollLeft += rect.left + rect.width / 2 - (box.left + box.width / 2);
+      return true;
+    }, target);
+    for (let attempt = 0; attempt < 40 && !(await centre()); attempt++) await new Promise(done => setTimeout(done, 250));
+    await tab.waitForFunction(selector => document.querySelector(selector), target, { timeout: 60000 });
+    await centre();
+    const inView = () => tab.evaluate(selector => {
+      const note = document.querySelector(selector), view = document.querySelector('.score-viewport').getBoundingClientRect();
+      const rect = note?.getBoundingClientRect();
+      return { found: !!note, x: rect ? rect.left + rect.width / 2 : null, left: view.left, right: view.right, scrollLeft: document.querySelector('.score-viewport').scrollLeft };
+    }, target);
+    const before = await inView();
+    assert.ok(before.found && before.x >= before.left && before.x <= before.right, `Measure 300 is in view before zooming (${JSON.stringify(before)})`);
+    const committed = await tab.evaluate(() => document.querySelector('.score-content').dataset.staveScale);
+    await tab.getByRole('slider', { name: 'Stave scale', exact: true }).fill('1.2');
+    await tab.waitForFunction(previous => document.querySelector('.score-content').dataset.staveScale !== previous, committed, { timeout: 60000 });
+    await ready();
+    // Nearby chunks draw on demand; a lost reading position leaves measure 300 far away and undrawn.
+    await tab.waitForFunction(selector => document.querySelector(selector), target, { timeout: 20000 }).catch(() => {});
+    const after = await inView();
+    assert.ok(after.found && after.x >= after.left && after.x <= after.right, `Measure 300 stays in view after an Endless zoom (${JSON.stringify(after)})`);
+    assert.deepEqual(endlessErrors, []);
+    await endless.close();
+    console.log(`${engine}: Endless zoom on a long virtualized score keeps the reading position passed`);
+  }
 } finally {
   await browser.close();
   server.close();
