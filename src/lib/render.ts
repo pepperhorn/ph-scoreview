@@ -255,7 +255,7 @@ export async function renderScore(
   const isCurrent = () => latestGeneration.get(container) === generation;
   const superseded = () => new VerovioError('Superseded score render.', 'superseded');
   const document_ = score.document;
-  if (!document_?.engravingText) throw new Error('This score has no engraving document.');
+  if (!document_?.engravingBytes().length) throw new Error('This score has no engraving document.');
   const source: SourceDocument = document_;
   const info = await verovioBaseline(source);
   if (!isCurrent()) throw superseded();

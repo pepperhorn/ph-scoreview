@@ -1,5 +1,6 @@
 import type { BarlineNavigation, MeasureNavigation, Score } from '../score';
 import { formatFraction, fraction, fromNumber } from '../playback/fraction';
+import { parseXmlTree } from './xml-stream';
 
 /**
  * Source-format readers for written navigation (repeats, endings, segno/coda,
@@ -8,8 +9,6 @@ import { formatFraction, fraction, fromNumber } from '../playback/fraction';
  */
 export type NavigationWord = 'daCapo' | 'dalSegno' | 'toCoda' | 'fine' | 'coda' | 'segno';
 
-const xmlChildren = (el: Element, name: string) => Array.from(el.children).filter(item => item.localName === name);
-const first = (el: Element, name: string) => xmlChildren(el, name)[0];
 
 /** Volta numbers: "1", "1, 2", "1,3", "1-2", "1." */
 export function endingNumbers(value: string | null | undefined): number[] {
@@ -59,34 +58,44 @@ export function resolveCodaSigns(navigation: MeasureNavigation[]) {
   navigation.forEach((nav, i) => { if (i < jump && nav.coda) { delete nav.coda; nav.toCoda = true; } });
 }
 
+/** The parts of a DOM Element the MusicXML readers use; the streaming light tree (xml-stream.ts) has the same shape. */
+export type ElementLike = {
+  readonly localName: string;
+  readonly children: ArrayLike<ElementLike> & Iterable<ElementLike>;
+  getAttribute(name: string): string | null;
+  hasAttribute(name: string): boolean;
+  readonly textContent: string | null;
+};
+const likeChildren = (el: ElementLike, name: string) => Array.from(el.children).filter(item => item.localName === name);
+const likeFirst = (el: ElementLike, name: string) => likeChildren(el, name)[0] as ElementLike | undefined;
+
 /**
  * MusicXML navigation is read from the source, never inferred from SVG.
  * Explicit <sound> attributes are authoritative; when a measure has none,
  * <segno/>/<coda/> glyphs and anchored words ("D.S. al Coda", "To Coda", "Fine")
  * are used. Repeat barlines with location="middle" keep their exact offset.
+ *
+ * The reader is fed the first part's measures in order (for a timewise score, each measure's first <part>); it
+ * carries the open ending and divisions from one measure to the next.
  */
-export function musicXmlNavigation(root: Element, measureCount: number, diagnostics: string[]): MeasureNavigation[] {
-  const navigation = Array.from({ length: measureCount }, () => ({} as MeasureNavigation));
-  const sourceMeasures = root.localName === 'score-timewise'
-    ? xmlChildren(root, 'measure').map(measure => first(measure, 'part') || measure)
-    : xmlChildren(first(root, 'part') || root, 'measure');
+export function musicXmlNavigationReader(): (measure: ElementLike, diagnostics: string[]) => MeasureNavigation {
   const SOUND = ['dacapo', 'dalsegno', 'tocoda', 'fine', 'segno', 'coda'];
   let ending: number[] = [];
   let divisions = 1;
-  sourceMeasures.slice(0, measureCount).forEach((measure, i) => {
-    const nav = navigation[i];
+  return (measure, diagnostics) => {
+    const nav: MeasureNavigation = {};
     // Offsets of middle barlines, in divisions; exact as long as durations are integers.
     let cursor = 0;
     const barlines: BarlineNavigation[] = [];
     for (const item of Array.from(measure.children)) {
       const name = item.localName;
-      const duration = Number(first(item, 'duration')?.textContent) || 0;
-      if (name === 'attributes') { const d = Number(first(item, 'divisions')?.textContent); if (d > 0) divisions = d; }
-      else if (name === 'note') { if (first(item, 'chord')) continue; if (!first(item, 'grace')) cursor += duration; }
+      const duration = Number(likeFirst(item, 'duration')?.textContent) || 0;
+      if (name === 'attributes') { const d = Number(likeFirst(item, 'divisions')?.textContent); if (d > 0) divisions = d; }
+      else if (name === 'note') { if (likeFirst(item, 'chord')) continue; if (!likeFirst(item, 'grace')) cursor += duration; }
       else if (name === 'backup') cursor = Math.max(0, cursor - duration);
       else if (name === 'forward') cursor += duration;
       else if (name === 'barline' && item.getAttribute('location') === 'middle') {
-        const repeat = first(item, 'repeat');
+        const repeat = likeFirst(item, 'repeat');
         if (!repeat) continue;
         const at = Number.isInteger(cursor) ? fraction(cursor, divisions) : fromNumber(cursor / divisions);
         const beat = formatFraction(at);
@@ -94,16 +103,16 @@ export function musicXmlNavigation(root: Element, measureCount: number, diagnost
         if (!barlines.includes(barline)) barlines.push(barline);
         if (repeat.getAttribute('direction') === 'forward') barline.repeatStart = true;
         else if (repeat.getAttribute('direction') === 'backward') { barline.repeatEnd = true; const times = Number(repeat.getAttribute('times')); if (times > 0) barline.repeatTimes = Math.max(2, Math.min(16, times)); }
-        if (first(item, 'ending')) diagnostics.push('An ending on a middle barline is not supported; it was ignored.');
+        if (likeFirst(item, 'ending')) diagnostics.push('An ending on a middle barline is not supported; it was ignored.');
       }
     }
     if (barlines.length) nav.barlines = barlines;
-    for (const barline of xmlChildren(measure, 'barline')) {
+    for (const barline of likeChildren(measure, 'barline')) {
       if (barline.getAttribute('location') === 'middle') continue;
-      const end = first(barline, 'ending');
+      const end = likeFirst(barline, 'ending');
       if (end?.getAttribute('type') === 'start') ending = endingNumbers(end.getAttribute('number'));
       if (end?.getAttribute('type') === 'stop' && barline.getAttribute('location') === 'left') ending = [];
-      const repeat = first(barline, 'repeat');
+      const repeat = likeFirst(barline, 'repeat');
       if (repeat?.getAttribute('direction') === 'forward') nav.repeatStart = true;
       if (repeat?.getAttribute('direction') === 'backward') {
         nav.repeatEnd = true;
@@ -112,8 +121,8 @@ export function musicXmlNavigation(root: Element, measureCount: number, diagnost
       }
     }
     if (ending.length) nav.endings = [...ending];
-    const directions = xmlChildren(measure, 'direction');
-    const sounds = [...xmlChildren(measure, 'sound'), ...directions.flatMap(direction => xmlChildren(direction, 'sound'))];
+    const directions = likeChildren(measure, 'direction');
+    const sounds = [...likeChildren(measure, 'sound'), ...directions.flatMap(direction => likeChildren(direction, 'sound'))];
     const explicit = sounds.some(sound => SOUND.some(name => sound.hasAttribute(name)));
     for (const sound of sounds) {
       if (sound.getAttribute('dacapo') === 'yes') nav.daCapo = true;
@@ -125,10 +134,10 @@ export function musicXmlNavigation(root: Element, measureCount: number, diagnost
     }
     let codaGlyph = false;
     if (!explicit) for (const direction of directions) {
-      const types = xmlChildren(direction, 'direction-type');
-      const words = types.flatMap(type => xmlChildren(type, 'words')).map(item => (item.textContent || '').trim()).filter(Boolean).join(' ').trim();
-      const segnoGlyph = types.some(type => first(type, 'segno'));
-      const hasCodaGlyph = types.some(type => first(type, 'coda'));
+      const types = likeChildren(direction, 'direction-type');
+      const words = types.flatMap(type => likeChildren(type, 'words')).map(item => (item.textContent || '').trim()).filter(Boolean).join(' ').trim();
+      const segnoGlyph = types.some(type => likeFirst(type, 'segno'));
+      const hasCodaGlyph = types.some(type => likeFirst(type, 'coda'));
       const word = navigationWord(words);
       if (word === 'daCapo') nav.daCapo = true;
       else if (word === 'dalSegno') nav.dalSegno = true;
@@ -139,20 +148,31 @@ export function musicXmlNavigation(root: Element, measureCount: number, diagnost
     }
     // A coda glyph printed beside "To Coda" marks the jump, not its target.
     if (codaGlyph && !nav.toCoda) nav.coda = true;
-    for (const barline of xmlChildren(measure, 'barline')) {
-      const end = first(barline, 'ending');
+    for (const barline of likeChildren(measure, 'barline')) {
+      const end = likeFirst(barline, 'ending');
       if (end && ['stop', 'discontinue'].includes(end.getAttribute('type') || '') && barline.getAttribute('location') !== 'left') ending = [];
     }
-  });
+    return nav;
+  };
+}
+
+/** Navigation of a MusicXML document (partwise: the first part's measures; timewise: each measure's first part). */
+export function musicXmlNavigation(root: ElementLike, measureCount: number, diagnostics: string[]): MeasureNavigation[] {
+  const navigation = Array.from({ length: measureCount }, () => ({} as MeasureNavigation));
+  const sourceMeasures = root.localName === 'score-timewise'
+    ? likeChildren(root, 'measure').map(measure => likeFirst(measure, 'part') || measure)
+    : likeChildren(likeFirst(root, 'part') || root, 'measure');
+  const read = musicXmlNavigationReader();
+  sourceMeasures.slice(0, measureCount).forEach((measure, i) => { navigation[i] = read(measure, diagnostics); });
   return navigation;
 }
 
-/** Parses MusicXML text for navigation (used when a caller supplies XML instead of a Score). */
+/** Parses MusicXML text for navigation (used when a caller supplies XML instead of a Score). Works without a DOM. */
 export function musicXmlTextNavigation(xml: string, measureCount: number, diagnostics: string[]): MeasureNavigation[] {
-  if (typeof DOMParser === 'undefined') return Array.from({ length: measureCount }, () => ({}));
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
-  if (doc.getElementsByTagName('parsererror').length) { diagnostics.push('MusicXML navigation could not be parsed.'); return Array.from({ length: measureCount }, () => ({})); }
-  return musicXmlNavigation(doc.documentElement, measureCount, diagnostics);
+  let root: ElementLike;
+  try { root = parseXmlTree(xml); }
+  catch { diagnostics.push('MusicXML navigation could not be parsed.'); return Array.from({ length: measureCount }, () => ({})); }
+  return musicXmlNavigation(root, measureCount, diagnostics);
 }
 
 /**

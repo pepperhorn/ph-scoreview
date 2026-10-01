@@ -172,6 +172,36 @@ try {
   ], 'Events and chord pitches carry the injected source IDs');
   assert.equal(idless.identity['P1-1-3-1'], 'mx_p1_m4_n2', 'Identity maps a chord to its first source note');
   assert.equal(idless.expressiveKept, true, 'Sources with note IDs keep them unchanged');
+  // Imports that fail or are superseded never leave a rejected promise unhandled, even when the caller (like the
+  // Reader) stops at the source and never awaits the score.
+  const pageErrors = [];
+  page.on('pageerror', error => pageErrors.push(error.message));
+  const unhandled = await page.evaluate(async () => {
+    const { importScoreFile, importMusicXmlText } = await import('/src/lib/import.ts');
+    const rejections = [];
+    const listen = event => rejections.push(String(event.reason?.message || event.reason));
+    window.addEventListener('unhandledrejection', listen);
+    const fixture = await (await fetch('/validation/fixtures/expressive.musicxml')).text();
+    const large = fixture.replace('<part-list>', `<!--${'x'.repeat(8 * 1024 * 1024)}--><part-list>`);
+    // A large import superseded before its hash arrives, then one superseded after it; the caller awaits only sources.
+    const first = importScoreFile(new File([large], 'first.musicxml'));
+    const second = importScoreFile(new File([large], 'second.musicxml'));
+    await first.source.catch(() => {});
+    await second.source.catch(() => {});
+    const third = importScoreFile(new File([fixture], 'third.musicxml'));
+    await third.score;
+    // An unreadable file: the source arrives, the score fails, and nobody awaits it.
+    const broken = importScoreFile(new File(['<score-partwise><part-list></part></score-partwise>'], 'broken.musicxml'));
+    await broken.source;
+    const text = importMusicXmlText('<not-xml');
+    await text.source.catch(() => {});
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    window.removeEventListener('unhandledrejection', listen);
+    return rejections;
+  });
+  assert.deepEqual(unhandled, [], 'Failed or superseded imports leave no unhandled rejection');
+  assert.deepEqual(pageErrors, [], 'Failed or superseded imports raise no page error');
+  console.log('Document import: superseded and failed imports leave no unhandled rejection passed');
   // The worker's string MEI view transform (no DOMParser in workers) matches the reader's former DOM transform.
   const meiView = await page.evaluate(async () => {
     const { buildViewMei, scanBaseline } = await import('/src/lib/notation/mei-view.ts');

@@ -3,12 +3,14 @@
 // system and releases the first when scrolled to the end, and highlights playback in a system drawn on demand.
 // Runs against the built dist (npm run build). BROWSER=chromium|firefox|webkit (memory is checked on Chromium).
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
-import { extname, resolve, sep } from 'node:path';
+import { extname, join, resolve, sep } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { chromium, firefox, webkit } from 'playwright-core';
+import { orchestral } from './synthetic.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const dist = resolve(root, 'dist');
@@ -24,61 +26,14 @@ const budgetScale = Number(process.env.LARGE_SCORE_BUDGET_SCALE || (process.env.
 const FIRST_PAINT_MS = 15000 * budgetScale;
 const MAX_DRAWN_SYSTEMS = 8;
 const MAX_HEAP_MB = 400;
-
-/** An orchestral-shaped score like Finale/Sibelius exports: 30 parts, varied rhythms, chords, rests, dynamics, slurs. */
-function orchestral(partCount, measureCount) {
-  let seed = 12345; const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
-  const names = ['Piccolo', 'Flute 1', 'Flute 2', 'Oboe 1', 'Oboe 2', 'English Horn', 'Clarinet in Bb 1', 'Clarinet in Bb 2', 'Bass Clarinet', 'Bassoon 1', 'Bassoon 2', 'Contrabassoon', 'Horn in F 1', 'Horn in F 2', 'Horn in F 3', 'Horn in F 4', 'Trumpet in Bb 1', 'Trumpet in Bb 2', 'Trombone 1', 'Trombone 2', 'Bass Trombone', 'Tuba', 'Timpani', 'Harp', 'Violin I', 'Violin II', 'Viola', 'Violoncello', 'Contrabass', 'Percussion'];
-  const bass = new Set(['Bassoon 1', 'Bassoon 2', 'Contrabassoon', 'Trombone 1', 'Trombone 2', 'Bass Trombone', 'Tuba', 'Timpani', 'Violoncello', 'Contrabass']);
-  const steps = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
-  const L = ['<?xml version="1.0" encoding="UTF-8" standalone="no"?>', '<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">', '<score-partwise version="4.0">', '  <work>', '    <work-title>Synthetic Symphony</work-title>', '    </work>', '  <part-list>'];
-  for (let p = 0; p < partCount; p++) {
-    const name = names[p % names.length];
-    L.push(`    <score-part id="P${p + 1}">`, `      <part-name>${name}</part-name>`, `      <score-instrument id="P${p + 1}-I1">`, `        <instrument-name>${name}</instrument-name>`, '        </score-instrument>', `      <midi-instrument id="P${p + 1}-I1">`, `        <midi-channel>${(p % 15) + 1}</midi-channel>`, `        <midi-program>${(p * 3) % 128 + 1}</midi-program>`, '        </midi-instrument>', '      </score-part>');
-  }
-  L.push('    </part-list>');
-  const durations = [[24, 'quarter'], [12, 'eighth'], [6, '16th'], [48, 'half']];
-  for (let p = 0; p < partCount; p++) {
-    const name = names[p % names.length];
-    const low = bass.has(name);
-    L.push(`  <part id="P${p + 1}">`);
-    for (let m = 0; m < measureCount; m++) {
-      L.push(`    <measure number="${m + 1}" width="${(180 + rnd() * 120).toFixed(2)}">`);
-      if (m === 0) L.push('      <attributes>', '        <divisions>24</divisions>', '        <key><fifths>-1</fifths></key>', '        <time><beats>4</beats><beat-type>4</beat-type></time>', `        <clef><sign>${low ? 'F' : 'G'}</sign><line>${low ? 4 : 2}</line></clef>`, '        </attributes>');
-      if (m === 0 && p === 0) L.push('      <direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>96</per-minute></metronome></direction-type><sound tempo="96"/></direction>');
-      if (m % 16 === 0) L.push(`      <direction placement="below"><direction-type><dynamics><${['p', 'mf', 'f', 'pp', 'ff'][Math.floor(rnd() * 5)]}/></dynamics></direction-type></direction>`);
-      let beat = 0;
-      if (rnd() < 0.18) L.push('      <note>', '        <rest measure="yes"/>', '        <duration>96</duration>', '        <voice>1</voice>', '        </note>');
-      else while (beat < 96) {
-        let [duration, type] = durations[Math.floor(rnd() * (p >= 24 ? 3 : 4))];
-        if (beat + duration > 96) { duration = 96 - beat; type = duration === 48 ? 'half' : duration === 24 ? 'quarter' : duration === 12 ? 'eighth' : '16th'; }
-        const rest = rnd() < 0.08;
-        const chord = !rest && rnd() < (name === 'Harp' || p >= 24 ? 0.25 : 0.05) ? 2 : 1;
-        for (let c = 0; c < chord; c++) {
-          const s = Math.floor(rnd() * 7); const octave = (low ? 3 : 4 + (p < 3 ? 1 : 0)) + (rnd() < 0.2 ? 1 : 0); const alter = rnd() < 0.1 ? (rnd() < .5 ? 1 : -1) : 0;
-          L.push('      <note>');
-          if (c) L.push('        <chord/>');
-          if (rest) L.push('        <rest/>');
-          else L.push(`        <pitch><step>${steps[s]}</step>${alter ? `<alter>${alter}</alter>` : ''}<octave>${octave}</octave></pitch>`);
-          L.push(`        <duration>${duration}</duration>`, '        <voice>1</voice>', `        <type>${type}</type>`);
-          if (alter && !rest) L.push(`        <accidental>${alter > 0 ? 'sharp' : 'flat'}</accidental>`);
-          if (!rest) L.push(`        <stem>${s > 3 ? 'down' : 'up'}</stem>`);
-          if (!rest && c === 0 && rnd() < 0.15) L.push(`        <notations><articulations><${rnd() < .5 ? 'staccato' : 'accent'}/></articulations></notations>`);
-          L.push('        </note>');
-        }
-        beat += duration;
-      }
-      if (m === measureCount - 1) L.push('      <barline location="right"><bar-style>light-heavy</bar-style></barline>');
-      L.push('      </measure>');
-    }
-    L.push('    </part>');
-  }
-  L.push('  </score-partwise>');
-  return L.join('\n');
-}
-
+/** Phase 2: reading the file (hash, parse, Score transfer) must not block the main thread; Chromium reports long tasks. */
+const IMPORT_LONG_TASK_MS = 200 * budgetScale;
 const MEASURES = 150;
 const xml = orchestral(30, MEASURES);
+// Chosen from disk: Playwright sets a path through the browser, while a buffer is decoded by a script in the page,
+// which would be a main-thread long task of the harness's own.
+const xmlPath = join(mkdtempSync(join(tmpdir(), 'large-score-')), 'synthetic-symphony.musicxml');
+writeFileSync(xmlPath, xml);
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.wasm': 'application/wasm', '.json': 'application/json' };
 const server = createServer(async (request, response) => {
   const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
@@ -108,8 +63,17 @@ try {
   await page.goto(url);
   await settled();
 
+  // Long tasks from choosing the file until the score is shown (its title renders): the import, done in a worker.
+  await page.evaluate(() => {
+    const w = window;
+    w.__longTasks = [];
+    w.__importStart = performance.now();
+    if (PerformanceObserver.supportedEntryTypes?.includes('longtask')) new PerformanceObserver(list => { for (const entry of list.getEntries()) w.__longTasks.push({ start: Math.round(entry.startTime), duration: Math.round(entry.duration) }); }).observe({ type: 'longtask' });
+    else w.__longTasks = null;
+    new MutationObserver((_, observer) => { if (document.querySelector('.score-meta h1')?.textContent === 'Synthetic Symphony') { w.__shownAt = performance.now(); observer.disconnect(); } }).observe(document.body, { subtree: true, childList: true, characterData: true });
+  });
   const t0 = Date.now();
-  await page.locator('input[type=file]').first().setInputFiles({ name: 'synthetic-symphony.musicxml', mimeType: 'application/xml', buffer: Buffer.from(xml) });
+  await page.locator('input[type=file]').first().setInputFiles(xmlPath);
   await page.waitForFunction(() => document.querySelector('.score-meta h1')?.textContent === 'Synthetic Symphony' && !document.querySelector('.score-loading') && document.querySelector('.score-system svg'), null, { timeout: 120000 });
   const firstPaint = Date.now() - t0;
   await settled();
@@ -119,8 +83,14 @@ try {
     return { systems: systems.length, drawn: systems.flatMap((system, index) => system.querySelector(':scope > svg') ? [index] : []), scrollTop: view.scrollTop, scrollHeight: view.scrollHeight, clientHeight: view.clientHeight,
       heapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1e6) : null };
   });
+  const imported = await page.evaluate(() => ({ tasks: window.__longTasks, start: window.__importStart, shown: window.__shownAt }));
+  const importTasks = imported.tasks?.filter(task => task.start >= imported.start && task.start < imported.shown) ?? null;
   const initial = await state();
   console.log(`${engine}: ${(xml.length / 1e6).toFixed(1)} MB, ${MEASURES} measures x 30 parts: first paint ${firstPaint} ms, ${initial.systems} systems, drawn ${JSON.stringify(initial.drawn)}, heap ${initial.heapMB} MB`);
+  if (importTasks) {
+    console.log(`${engine}: import shown after ${Math.round(imported.shown - imported.start)} ms; main-thread long tasks during import: ${JSON.stringify(importTasks.map(task => task.duration))}`);
+    assert.ok(importTasks.every(task => task.duration <= IMPORT_LONG_TASK_MS), `No main-thread task over ${IMPORT_LONG_TASK_MS} ms while the score imports (${JSON.stringify(importTasks)})`);
+  }
   assert.ok(firstPaint <= FIRST_PAINT_MS, `First system paints within ${FIRST_PAINT_MS} ms (took ${firstPaint} ms)`);
   assert.equal(initial.systems, MEASURES, 'One placeholder or system block per line (one bar per line)');
   assert.ok(initial.drawn.includes(0), 'The first system is drawn');

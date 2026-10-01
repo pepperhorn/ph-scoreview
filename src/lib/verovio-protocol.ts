@@ -2,8 +2,8 @@ import type { BaselineInfo, ViewSpec } from './notation/mei-view';
 
 /** Messages between verovio-runtime.ts (main thread) and verovio.worker.ts. */
 export type VerovioRequest = { id: number } & (
-  /** Convert a source (MusicXML or MEI) once; the worker keeps the MEI baseline for `revision`. */
-  | { kind: 'import'; revision: number; text: string }
+  /** Convert a source (MusicXML or MEI, as UTF-8 bytes, transferred) once; the worker keeps the MEI baseline for `revision`. */
+  | { kind: 'import'; revision: number; bytes: ArrayBuffer }
   /** Forget a revision's baseline. */
   | { kind: 'release'; revision: number }
   /** Lay out the first `measures` measures (plus spans that end soon after) as their own small document and serialize page 1. */

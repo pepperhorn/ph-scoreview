@@ -353,7 +353,56 @@ try {
     check(thriceAfter === '0,0,1,2,1,2,1,2,3', 'F4 orphan :| times=3 after a completed repeat', thriceAfter);
     const abcSectionsDc = await abcOrder('|:A4:|B4|c4:|d4 !D.C.!|e4|]');
     check(abcSectionsDc === '0,0,1,2,1,2,3,0,1,2,3,4', 'F4 repeats are not taken after a D.C.', abcSectionsDc);
-    return { failures, checks: 88 };
+
+    // T: the base timeline is built once, in beats at the opening tempo; BPM and transposition are applied while
+    // playing and hidden parts only filter it, so none of them rebuild it.
+    const { buildBaseTimeline, deriveTimeline, materializeTimeline, playbackEventsFrom, playbackPositionAt, playbackDuration, playbackMidis } = await import('/src/lib/playback/timeline.ts');
+    const close = (a, b) => Math.abs(a - b) < 1e-9;
+    const sameSegments = (a, b) => a.length === b.length && a.every((s, i) => s.noteId === b[i].noteId && close(s.startSeconds, b[i].startSeconds) && close(s.endSeconds, b[i].endSeconds));
+    const sameEvents = (a, b) => a.length === b.length && a.every((e, i) => { const o = b[i]; return e.id === o.id && e.partId === o.partId && e.midi === o.midi && e.velocity === o.velocity && close(e.startSeconds, o.startSeconds) && close(e.endSeconds, o.endSeconds) && close(e.soundEndSeconds, o.soundEndSeconds) && sameSegments(e.visualSegments, o.visualSegments); });
+    const sameTimeline = (a, b) => sameEvents(a.events, b.events) && a.positions.length === b.positions.length
+      && a.positions.every((p, i) => close(p.seconds, b.positions[i].seconds) && p.measureIndex === b.positions[i].measureIndex && p.occurrence === b.positions[i].occurrence && close(p.scoreBeat, b.positions[i].scoreBeat))
+      && close(a.durationSeconds, b.durationSeconds) && json(a.diagnostics) === json(b.diagnostics);
+    const scaled = (t, factor) => ({ ...t, durationSeconds: t.durationSeconds * factor, positions: t.positions.map(p => ({ ...p, seconds: p.seconds * factor })),
+      events: t.events.map(e => ({ ...e, startSeconds: e.startSeconds * factor, endSeconds: e.endSeconds * factor, soundEndSeconds: e.soundEndSeconds * factor, visualSegments: e.visualSegments.map(s => ({ ...s, startSeconds: s.startSeconds * factor, endSeconds: s.endSeconds * factor })) })) });
+    const tempoChange = parseMusicXml(single(['<direction><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>80</per-minute></metronome></direction-type><sound tempo="80"/></direction>' + pedal('start') + q('C') + q('D') + '<direction><sound tempo="160"/></direction>' + q('E') + q('F') + '<barline location="right"><repeat direction="backward"/></barline>', pedal('stop') + whole('G') + '<note><grace/><pitch><step>A</step><octave>4</octave></pitch><voice>1</voice><type>16th</type></note>' + rest(16, 'whole')]));
+    const expressiveFixture = parseMusicXml(await (await fetch('/validation/fixtures/expressive.musicxml')).text());
+    const timelineFixtures = { pedalRepeat: parseMusicXml(single([
+      '<barline location="left"><repeat direction="forward"/></barline>' + pedal('start') + one('C', 4, 4) + rest(12, 'half'),
+      one('D', 4, 4) + rest() + pedal('stop') + rest(8, 'half') + '<barline location="right"><repeat direction="backward"/></barline>'])), piano: parseMusicXml(pianoPedal), tempoChange, expressive: expressiveFixture };
+    for (const [name, fixture] of Object.entries(timelineFixtures)) {
+      const base = buildBaseTimeline(fixture);
+      // (a) A BPM is a pure scale of the base: the timeline at X equals the one at Y scaled by Y / X.
+      const at = bpm => buildPerformanceTimeline(fixture, { bpm });
+      check(sameTimeline(at(173), scaled(at(base.initialBpm), base.initialBpm / 173)) && sameTimeline(at(41), scaled(materializeTimeline(base, 60), 60 / 41)), `T1 ${name}: BPM scales the base timeline`, [at(173).durationSeconds, at(41).durationSeconds]);
+      const lazy = playbackPositionAt(base, 2.25, 173), eager = positionAtSeconds(at(173), 2.25);
+      check(close(playbackDuration(base, 173), at(173).durationSeconds) && close(lazy.seconds, eager.seconds) && close(lazy.scoreBeat, eager.scoreBeat) && close(lazy.measureBeat, eager.measureBeat) && lazy.measureIndex === eager.measureIndex && lazy.noteId === eager.noteId && json(lazy.activeNoteIds) === json(eager.activeNoteIds), `T1 ${name}: playback helpers match the materialized timeline`, [lazy, eager]);
+      check(sameEvents(playbackEventsFrom(base, 1.3, 173, 2), eventsFromSeconds(buildPerformanceTimeline(fixture, { bpm: 173, semitones: 2 }), 1.3)), `T1 ${name}: playback events from a seek point`, null);
+      // (d) The base survives a worker hop.
+      check(sameTimeline(materializeTimeline(structuredClone(base), 97, -3), buildPerformanceTimeline(fixture, { bpm: 97, semitones: -3 })), `T4 ${name}: structured clone of the base timeline`, null);
+    }
+    // (b) Hiding a part filters the base (with the pedal re-applied) exactly as building the visible view does.
+    const pianoTimelineScore = timelineFixtures.piano;
+    for (const hidden of [['P1-2'], ['P1-1'], ['P2-1'], ['P1-1', 'P2-1']]) {
+      const visible = pianoTimelineScore.parts.filter(part => !hidden.includes(part.id));
+      const derived = deriveTimeline(buildBaseTimeline(pianoTimelineScore), { visiblePartIds: visible.map(part => part.id) });
+      check(sameTimeline(materializeTimeline(derived, 60), buildPerformanceTimeline({ ...pianoTimelineScore, parts: visible }, { bpm: 60, fullScore: pianoTimelineScore })), `T2 hiding ${hidden} derives the visible timeline`, ends(materializeTimeline(derived, 60)));
+    }
+    // Staff 2 re-strikes staff 1's pedalled C5: shown, it damps the C5 at its attack; hidden, the C5 rings to the lift.
+    const restrike = parseMusicXml(pianoPedal.replace('<note><pitch><step>C</step><octave>3</octave></pitch><duration>4</duration><voice>5</voice><type>quarter</type><staff>2</staff></note><note><rest/><duration>12</duration><voice>5</voice><type>half</type><dot/><staff>2</staff></note>',
+      '<note><rest/><duration>4</duration><voice>5</voice><type>quarter</type><staff>2</staff></note><note><pitch><step>C</step><octave>5</octave></pitch><duration>4</duration><voice>5</voice><type>quarter</type><staff>2</staff></note><note><rest/><duration>8</duration><voice>5</voice><type>half</type><staff>2</staff></note>'));
+    const restrikeVisible = restrike.parts.filter(part => part.id !== 'P1-2');
+    const c5End = t => t.events.find(e => e.partId === 'P1-1' && e.midi === 72)?.soundEndSeconds;
+    check(c5End(buildPerformanceTimeline(restrike, { bpm: 60 })) === 1 && c5End(materializeTimeline(deriveTimeline(buildBaseTimeline(restrike), { visiblePartIds: restrikeVisible.map(part => part.id) }), 60)) === 3, 'T2 re-strike damping follows the visible staves', ends(buildPerformanceTimeline(restrike, { bpm: 60 })));
+    check(sameTimeline(materializeTimeline(deriveTimeline(buildBaseTimeline(restrike), { visiblePartIds: restrikeVisible.map(part => part.id) }), 60), buildPerformanceTimeline({ ...restrike, parts: restrikeVisible }, { bpm: 60, fullScore: restrike })), 'T2 a hidden staff no longer damps a re-struck pitch', null);
+    // (c) Transposition at playback: every event shifts except percussion.
+    const mixed = { title: '', source: 'test', tempo: 120, beats: 4, beatType: 4, key: 0, parts: [
+      { id: 'keys', name: 'Keys', clef: 'treble', instrument: 'piano', measures: [{ index: 0, beats: 4, notes: [{ id: 'k0', start: 0, duration: 1, voice: '1', pitches: [{ midi: 60, step: 'C', octave: 4, alter: 0 }] }] }] },
+      { id: 'kit', name: 'Kit', clef: 'percussion', instrument: 'drum-kit', measures: [{ index: 0, beats: 4, notes: [{ id: 'd0', start: 0, duration: 1, voice: '1', pitches: [{ midi: 36, step: 'C', octave: 2, alter: 0 }] }] }] }] };
+    const mixedBase = buildBaseTimeline(mixed);
+    const transposed = buildPerformanceTimeline(mixed, { bpm: 120, semitones: 5 });
+    check(transposed.events.map(e => `${e.partId}:${e.midi}`).join() === 'keys:65,kit:36' && sameEvents(playbackEventsFrom(mixedBase, 0, 120, 5), transposed.events) && playbackMidis(mixedBase, new Set(['keys', 'kit']), 5).join() === '65,36', 'T3 playback transposition skips percussion', transposed.events.map(e => `${e.partId}:${e.midi}`));
+    return { failures, checks: 88 + Object.keys(timelineFixtures).length * 4 + 7 };
   }, { midiBytes });
   assert.deepEqual(review.failures, []);
   console.log(`Playback timeline: ${result.cases} browser fixtures and ${review.checks} review regressions passed; event counts ${result.eventCounts.join(', ')}.`);

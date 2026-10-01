@@ -67,12 +67,14 @@ These targets cover all three phases. Phase 1 alone cannot reach them, because t
   - A text source's original bytes are encoded on demand. A file is read and hashed once, and its feature inventory is reused rather than parsed again.
 - **Timeline** is built when playback first needs it, not while the score loads. This is a stop-gap until Phase 2.
 
-### Phase 2: single-pass streaming parse off the main thread
+### Phase 2: single-pass streaming parse off the main thread (implemented)
 
-- A SAX-style parser in a worker produces, in one pass: the Score model, the ID-tagged engraving text, the feature inventory and the navigation marks. This replaces the 5 DOM parses and the timewise normalisation of partwise files.
-- One hash: `crypto.subtle.digest` when available (secure contexts); otherwise incremental SHA-256 in the worker while the file streams.
-- The timeline is built in the worker in beats, from the parse's marks, and BPM is applied at playback, so a BPM change no longer rebuilds it. The main thread receives typed arrays.
-- Exit criteria: no main-thread task over 200 ms after the file is read (phone profile), and one copy of the source text on the main thread.
+- **Import worker** (`import.worker.ts`, `import-protocol.ts`, `import.ts`). A short-lived worker per import, separate from Verovio's: the Verovio worker keeps a WASM heap that never shrinks and is recycled between large scores, while the import worker is terminated when it is done, which frees everything the parse allocated. The main thread posts the `File` (a handle, not its bytes); the worker reads it, hashes it, reads MusicXML/MXL, and transfers the bytes back. MEI, ABC and MIDI are small and are still read on the main thread from those bytes. The Reader's `musicXml` prop uses the same worker.
+- **One streaming pass** (`notation/xml-stream.ts`, `notation/musicxml-source.ts`). A small, strict SAX-style tokenizer (no dependency; it rejects what DOMParser rejects for these documents) feeds a reader that produces, in one pass: the Score model, the engraving text, the feature inventory, the navigation marks and the playback marks (articulations, fermatas, cue notes, pedals). Only one measure subtree is held as a light tree at a time. The engraving text is the source spliced with note IDs and expanded multi-measure rests, instead of a re-serialized DOM; it parses to the same document. Timewise sources are converted to partwise text first. The DOM MusicXML path is gone; a frozen copy (`validation/reference/musicxml-dom.ts`) is the oracle for `validation/parser-diff.mjs`.
+- **One hash** (`file-state.ts`): `crypto.subtle.digest` when available, otherwise an incremental JavaScript SHA-256, both in the worker.
+- **Timeline in the worker, in beats** (`playback/timeline.ts`). It is built once per score for every part, in beats at the opening tempo and at 0 semitones, and registered for the score's document. BPM is a scale and transposition a MIDI offset, both applied while scheduling. Hiding parts filters events and re-applies the sustain pedal. None of these rebuild it. One deliberate change: the 30 ms grace-note floor applies at the opening tempo, so it scales with BPM.
+- **Transfer.** Bytes are transferred ArrayBuffers. The document keeps bytes, not strings: `originalText`/`engravingText` are decoded on demand, and an unedited engraving reuses the source bytes. Verovio gets a transferred copy of the engraving bytes and decodes them itself. The Score and the timeline are plain objects posted in chunks (4000 notes, 8000 events), because one structured clone of orch32's Score costs about 0.5 s and its events about 0.4 s to deserialize. In chunks each message costs a few milliseconds, so a compact typed-array form was not needed.
+- Exit criteria: no main-thread task over 200 ms while the file is read and imported (phone profile), and one copy of the source on the main thread (as bytes).
 
 ### Phase 3: chunked import and guardrails for very long scores
 
@@ -131,3 +133,34 @@ What remains on the critical path is now Phase 2 and Phase 3 work:
 - **Verovio's MusicXML import** takes 35–47 s on orch32 in the worker.
 - **Memory.** Peak memory is now the import's WASM heap plus the main-thread parse, above the 1 GB target on orch32.
 - **Background layout.** The rest of the score is laid out in the background after the first paint. Systems below the first show as placeholders until that layout finishes, which takes about 30 s on orch32.
+
+## Results (Phase 2)
+
+The same machine, fixtures and probe as Phase 1. The probe chooses the file by path, so Playwright does not decode a buffer in the page, and it also records when the score is first *shown* (its title renders, which ends the import). Before is `main` at `74c121a` (Phase 1), measured in the same session.
+
+| Fixture · profile | First paint | Shown (import done) | Longest task during import | Longest task to first paint | Peak renderer RSS |
+|---|---|---|---|---|---|
+| orch12 · desktop | 15.2 s → **8.6 s** | 12.8 → 6.3 s | 7374 → **0 ms** | 7374 → 316 ms | 962 → **730 MB** |
+| orch12 · phone | 38.9 s → **8.4 s** | 37.7 → 7.3 s | 31457 → **155 ms** | 31457 → 272 ms | 904 → **648 MB** |
+| orch32 · desktop | 52.3 s → **31.7 s** | 49.8 → 29.4 s | 18651 → **0 ms** | 18651 → 315 ms | 2059 → **1069 MB** |
+| orch32 · phone | 112.9 s → **37.6 s** | 111.6 → 36.3 s | 78915 → **150 ms** | 78915 → 353 ms | 2124 → **1079 MB** |
+
+The phone profile throttles only the main thread (CDP CPU throttling does not reach workers), so its worker phases are under-estimated: on a real phone the worker parse and Verovio's import are also slower.
+
+On orch32 the import worker reads the 31.6 MB file in about 1.0 s and builds the timeline in about 0.25 s (orch12: 0.5 s and 0.17 s), measured on desktop.
+
+Small scores, median of 5 runs, time to a painted score (Phase 1 → Phase 2):
+
+| Score | Desktop | Phone viewport (unthrottled) |
+|---|---|---|
+| Sample (page load) | 957 → 945 ms | 987 → 988 ms |
+| Ensemble (file) | 599 → 610 ms | 589 → 601 ms |
+| Cielito, 12 staves (file) | 1251 → 1058 ms | 1248 → 1057 ms |
+
+Against the targets:
+
+- **Main-thread blocking during import:** met. No task over 200 ms on either profile, also asserted by `validation/large-score.mjs`.
+- **Main-thread blocking to first paint:** not yet. One 270–350 ms task remains after the score is shown, while the first system is drawn.
+- **orch32 first paint:** not yet; 31.7 s on desktop (target 8 s) and 37.6 s on the phone profile (target 30 s). Most of what remains is Verovio's MusicXML import of the whole score in its worker, about 25 s. That is Phase 3: chunked import.
+- **Peak memory:** about 1.07 GB on orch32 (target 1 GB), down from 2.1 GB. Most of it is Verovio's WASM heap for the whole-score import, which is also Phase 3.
+- **Small scores:** within the +10% budget.

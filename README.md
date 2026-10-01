@@ -16,7 +16,7 @@ Open the URL printed by Astro.
 | `npm run check` | Astro and TypeScript checks |
 | `npm run build` | Static site in `dist/` |
 | `npm run test:manifest` | Verifies the bundled GM sound packs |
-| `npm run test:validation` | Tracked suites: `test:document` (source retention, formats, identities), `test:performance` (playback timeline) and `test:reader` (the built reader in Chromium). Run `npm run build` first. |
+| `npm run test:validation` | Tracked suites: `test:document` (source retention, formats, identities), `test:parser-diff` (the streaming MusicXML reader against the former DOM importer), `test:score-db`, `test:performance` (playback timeline), `test:reader` (the built reader in Chromium) and `test:large` (a ~5 MB orchestral score). Run `npm run build` first. |
 | `npm run test:reader:firefox`, `npm run test:reader:webkit` | Reader suite in Firefox or WebKit (`npm run test:browsers` installs the Playwright engines) |
 | `npm run test:example` | Local-only check of the Cielito Lindo MusicXML in Chromium; needs the Git-ignored `examples/` and `tests/` files |
 
@@ -38,6 +38,8 @@ CI (`.github/workflows/ci.yml`) runs check, build, the manifest check and `test:
 ## Import scope
 
 Verovio engraves every format. MusicXML (partwise or timewise), compressed MXL and MEI originals are imported by Verovio directly, so its native notation support applies. That includes voices, tuplets, grace notes, accidentals, ties, slurs, dynamics, hairpins, articulations, lyrics, barlines and endings. ABC (through abcjs), MIDI (quantized to sixteenth notes) and the built-in sample are converted to MEI from the shared score model. ABC voices are shown as separate staves, with source beaming, triplets and `w:` lyrics. MIDI cannot recover original spelling, beaming or articulations.
+
+Files are read, hashed and, for MusicXML and MXL, parsed in a short-lived import worker, in one streaming pass that also takes the playback marks; the playback timeline is built there too. The page receives the score in small chunks, so opening a large file does not freeze it.
 
 Hidden staves, bars-per-line breaks, transposition and the written/concert view are view transforms on Verovio's imported MEI. The original file is kept byte-for-byte and never modified. Bars are widened for dense notes and lyrics before a system scales to the viewport.
 
