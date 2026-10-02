@@ -572,7 +572,7 @@ export default function Reader({ musicXml, scoreUrl }: ReaderProps) {
         if (disposed) return;
         setScoreWidth(previous => previous === canvas.clientWidth ? previous : canvas.clientWidth);
         // Every multi-stave score gets a focus button per stave; a hide button joins it from five staves.
-        const buttons = (displayScore.parts.length > 1 ? 1 : 0) + (displayScore.parts.length > 4 ? 1 : 0);
+        const buttons = (score.parts.length > 1 ? 1 : 0) + (score.parts.length > 4 ? 1 : 0);
         const maxGutter = maxControlGutter(canvas.clientWidth);
         const metricsFor = (stavePx: number, staffPitchPx: number) => partControlMetrics(stavePx, { staffPitchPx, maxGutter, buttons });
         const metaHeight = canvas.closest('.score-content')?.querySelector('.score-meta')?.getBoundingClientRect().height || 0;
