@@ -107,4 +107,6 @@ The gleitz General MIDI set has no drum-kit bank. Drum notes 35–70 use a 2 MB 
 
 ## License notes
 
+Scoreflow (this viewer) is released under the [MIT License](LICENSE). Closed-source features are planned as separate plugins, outside this repository.
+
 The score engraver is [Verovio](https://www.verovio.org/) (npm `verovio` 6.3.0), licensed under LGPL-3.0-or-later. It is bundled unmodified, with its WebAssembly module, into the Web Worker chunk. The Bravura, Petaluma and Petaluma Script fonts in `public/fonts/` are SIL Open Font License fonts from Steinberg; the Petaluma license text is in [`public/fonts/Petaluma-OFL.txt`](public/fonts/Petaluma-OFL.txt).
