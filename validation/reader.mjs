@@ -1364,4 +1364,44 @@ try {
   assert.deepEqual(linkErrors, []);
   await linkContext.close();
   console.log(`${engine}: score link passed`);
+
+  // Focus: a stave's focus button hides every other stave; the mixer's eye buttons reveal hidden staves again.
+  const focusContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const focus = await focusContext.newPage();
+  const focusErrors = [];
+  focus.on('pageerror', error => focusErrors.push(error.message));
+  const focusReady = () => focus.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg'), null, { timeout: 30000 });
+  const staves = () => focus.locator('.part-control .part-name').allTextContents();
+  await focus.goto(url);
+  await focus.locator('input[type=file]').setInputFiles(resolve(root, 'validation/fixtures/ensemble.musicxml'));
+  await focus.waitForFunction(() => document.querySelector('h1')?.textContent === 'Migration ensemble');
+  await focusReady();
+  assert.equal(await focus.locator('.staff-focus').count(), 5, 'Every stave of a multi-stave score has a focus button');
+  await focus.getByRole('button', { name: 'Focus on Track 3', exact: true }).click();
+  await focus.waitForFunction(() => document.querySelectorAll('.part-control').length === 1);
+  await focusReady();
+  assert.deepEqual(await staves(), ['Track 3'], 'Focus hides every other stave');
+  assert.equal(await focus.evaluate(() => document.querySelector('.score-system svg g.measure').querySelectorAll(':scope > g.staff').length), 1);
+  assert.equal(await focus.locator('.staff-focus').getAttribute('aria-pressed'), 'true');
+  // The mixer reveals hidden staves, and cannot hide the last visible one.
+  await focus.locator('.header-more-toggle').isVisible().then(more => more && focus.locator('.header-more-toggle').click());
+  await focus.getByRole('button', { name: 'Track mixer', exact: true }).click();
+  const mixerPanel = focus.getByRole('dialog', { name: 'Track mixer' });
+  assert.equal(await focus.locator('.mixer-visibility-button').count(), 5);
+  assert.equal(await mixerPanel.getByRole('button', { name: 'Hide Track 3', exact: true }).isDisabled(), true, 'The last visible stave cannot be hidden');
+  await mixerPanel.getByRole('button', { name: 'Show Track 5', exact: true }).click();
+  await mixerPanel.getByRole('button', { name: 'Hide Track 5', exact: true }).waitFor();
+  await focus.getByRole('button', { name: 'Close track mixer', exact: true }).click();
+  await focus.waitForFunction(() => document.querySelectorAll('.part-control').length === 2);
+  await focusReady();
+  assert.deepEqual(await staves(), ['Track 3', 'Track 5'], 'The mixer reveals a hidden stave');
+  // Focusing a stave again isolates it; focusing the focused stave shows them all.
+  await focus.getByRole('button', { name: 'Focus on Track 5', exact: true }).click();
+  await focus.waitForFunction(() => document.querySelectorAll('.part-control').length === 1);
+  await focus.getByRole('button', { name: 'Show all staves', exact: true }).click();
+  await focus.waitForFunction(() => document.querySelectorAll('.part-control').length === 5);
+  await focusReady();
+  assert.deepEqual(focusErrors, []);
+  await focusContext.close();
+  console.log(`${engine}: stave focus passed`);
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

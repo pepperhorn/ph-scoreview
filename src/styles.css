@@ -106,6 +106,7 @@ html,body,#root{height:100%;overflow:hidden}
 .staff-eye{display:grid;place-items:center;width:var(--part-eye,28px);height:var(--part-eye,28px);border:0;border-radius:6px;background:transparent;color:#69816c;flex:none}
 .staff-eye svg{width:calc(var(--part-eye,28px) * .62);height:calc(var(--part-eye,28px) * .62)}
 .staff-eye:hover,.hidden-staves button:hover{background:#edf3ec}.staff-eye:disabled{opacity:.35;cursor:default}
+.staff-focus.is-focused{background:#e3ede1;color:#345642}.mixer-visibility-button{width:32px;height:32px}.mixer-visibility-button[aria-pressed=false]{color:#a3ada4}.mixer-visibility-button:disabled{opacity:.35;cursor:default}
 .hidden-staves{display:flex;flex-wrap:wrap;justify-content:center;gap:4px;margin:4px 0 10px}
 .hidden-staves button{display:flex;align-items:center;gap:4px;max-width:180px;padding:3px 6px;border:1px solid #e4e9e2;border-radius:6px;background:#fff;color:#738075;font-size:10px}
 .hidden-staves img{width:16px;height:16px}.hidden-staves span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -119,7 +120,7 @@ html,body,#root{height:100%;overflow:hidden}
 .mixer-backdrop{position:fixed;inset:0;z-index:110;display:grid;place-items:center;padding:16px;background:#17271b66}
 .mixer-panel{width:min(500px,100%);max-height:min(82vh,720px);display:flex;flex-direction:column;overflow:hidden;padding:18px 20px 20px;border:1px solid #e2e9e0;border-radius:16px;background:#fff;box-shadow:0 18px 60px #15251a40}
 .mixer-heading,.mixer-heading>div{display:flex;align-items:center;gap:9px}.mixer-heading{justify-content:space-between;color:#345642}.mixer-heading h2{margin:0;font-size:17px;font-weight:650}.mixer-panel>p{margin:3px 0 14px;color:#78867a;font-size:12px}
-.mixer-tracks{overflow-y:auto;min-height:0;scrollbar-width:thin}.mixer-track{display:grid;grid-template-columns:28px minmax(0,1fr) 142px;align-items:center;gap:9px;min-height:49px;padding:7px 2px;border-top:1px solid #edf0eb}.mixer-track img{width:24px;height:24px}.mixer-track-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#344439}.mixer-track-name small{display:block;font-size:10px;color:#88948a}.mixer-track select{width:100%;height:32px;padding:0 6px;border:1px solid #dfe6dc;border-radius:7px;background:#fff;color:#345642;font-size:11px}
+.mixer-tracks{overflow-y:auto;min-height:0;scrollbar-width:thin}.mixer-track{display:grid;grid-template-columns:28px minmax(0,1fr) 34px 142px;align-items:center;gap:9px;min-height:49px;padding:7px 2px;border-top:1px solid #edf0eb}.mixer-track img{width:24px;height:24px}.mixer-track-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#344439}.mixer-track-name small{display:block;font-size:10px;color:#88948a}.mixer-track select{width:100%;height:32px;padding:0 6px;border:1px solid #dfe6dc;border-radius:7px;background:#fff;color:#345642;font-size:11px}
 .pitch-panel{grid-column:1/-1;min-height:0}.pitch-panel .pitch-options{display:flex;align-items:end;gap:30px;flex-wrap:wrap}.pitch-panel .pitch-label{display:block;margin-bottom:7px;color:#536055;font-size:11px;font-weight:700}.semitone-control{display:flex;align-items:center;gap:4px}.semitone-control button{width:30px;height:30px;display:grid;place-items:center;border:1px solid #dfe6dc;border-radius:7px;background:#fff;color:#3e6047}.semitone-control button:disabled{opacity:.4;cursor:default}.semitone-control output{min-width:95px;text-align:center;color:#345642;font-size:12px;font-weight:700}.semitone-control .pitch-reset{margin-left:5px}.pitch-view{width:max-content}.pitch-view button{min-width:85px}.pitch-panel .pitch-hint{margin:11px 0 0;font-size:11px}
 .pitch-key-control{display:flex;align-items:center;gap:6px}
 .pitch-key-readout{min-width:72px;text-align:center;color:#345642;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -228,7 +229,7 @@ html,body,#root{height:100%;overflow:hidden}
   .header-secondary-panel .header-key-flip-button{width:96px;height:34px}
   .header-secondary-panel .header-key-flip-label{display:inline}
 }
-@media(max-width:580px){.mixer-panel{padding:15px}.mixer-track{grid-template-columns:24px minmax(0,1fr) 120px;gap:6px}}
+@media(max-width:580px){.mixer-panel{padding:15px}.mixer-track{grid-template-columns:24px minmax(0,1fr) 32px 120px;gap:6px}}
 /* Short landscape Endless centres the stage on the viewport. A stack taller than the viewport is top-aligned instead,
    so no staff ends up above the scroll origin; the title stays just above the stage. */
 @media(max-height:500px) and (orientation:landscape){
