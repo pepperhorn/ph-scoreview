@@ -70,6 +70,18 @@ import songXml from './scores/song.musicxml?raw';
 
 For a `File` selected elsewhere in your app, use `await file.text()` and pass that string. Changing the prop loads the new score and resets playback.
 
+To open a publicly hosted score instead, link to the page with `?score=<url>` (URL-encoded), or pass the `scoreUrl` prop, which wins over the query parameter:
+
+```
+https://your-host/?score=https%3A%2F%2Fexample.com%2Fscores%2Fsong.mxl
+```
+
+```tsx
+<Reader scoreUrl="https://example.com/scores/song.mxl" />
+```
+
+The file is downloaded in the browser and opened like a chosen file, so any supported format works (MusicXML, MXL, MIDI, MEI, ABC). Its format comes from the URL's extension, or from the response's `Content-Type` when the URL has none. The host must allow cross-origin requests (CORS) unless it is the reader's own origin. Site-relative paths such as `?score=/scores/song.musicxml` also work.
+
 ### Known limitations
 
 - Lyrics always use Times. Verovio spaces lyric syllables with Times metrics, so the stave text font setting does not apply to them.

@@ -18,6 +18,7 @@ import { forgetLastFile, isSameFile, lastFileToFile, readLastFile, readLastFileI
 import { withEngravingDocument } from '../lib/notation/document';
 import { SCORE_FILE_ACCEPT } from '../lib/score-files';
 import { PAGE_PAD_PX, pageOfSystem, systemPages, turnTarget, type ReadingPage, type SystemSpan } from '../lib/paging';
+import { fetchScoreFile, scoreUrlFromSearch } from '../lib/remote-score';
 import OpenScoreDialog from './OpenScoreDialog';
 import '@fontsource/poppins/400.css';
 import '@fontsource/poppins/500.css';
@@ -53,7 +54,11 @@ type AudioPlayer = {
   dispose(): void;
   loadNotes?(notes: number[]): Promise<void>;
 };
-export type ReaderProps = { musicXml?: string };
+export type ReaderProps = {
+  musicXml?: string;
+  /** A public score file (MusicXML, MXL, MIDI, MEI or ABC) to download and open on load; `?score=<url>` on the page does the same. */
+  scoreUrl?: string;
+};
 /** The widest control gutter a viewport can spare. */
 const maxControlGutter = (width: number) => Math.max(120, Math.round(width * .42));
 /** Keyboard steps on the stave scale slider commit once they settle; drags and pinches commit on release. */
@@ -78,7 +83,7 @@ const scrollBehavior = (): ScrollBehavior => window.matchMedia('(prefers-reduced
 /** Where the viewport centre sits in a measure, so a re-layout can put that point back at the centre. */
 type ZoomAnchor = { index: number; fx: number; fy: number };
 
-export default function Reader({ musicXml }: ReaderProps) {
+export default function Reader({ musicXml, scoreUrl }: ReaderProps) {
   const [score, setScore] = useState<Score>(sampleScore);
   const [scoreRevision, setScoreRevision] = useState(0);
   const [prefs, setPrefs] = useState<Prefs>(defaults);
@@ -218,15 +223,22 @@ export default function Reader({ musicXml }: ReaderProps) {
       setPrefs(next);
     }
     catch { /* keep defaults */ }
+    // A score link in the page URL opens like the scoreUrl prop (which wins when both are given).
+    const remoteUrl = scoreUrl || scoreUrlFromSearch(window.location.search);
     // The last opened file is offered (never opened) on start, unless a score was supplied or one is already opening.
     let offerCancelled = false;
     void readLastFileInfo().then(info => {
       if (offerCancelled) return;
       setLastFileInfo(info);
-      if (info && !musicXml && importRunRef.current === 0 && !reopenDismissed()) setReopenOffer(info);
+      if (info && !musicXml && !remoteUrl && importRunRef.current === 0 && !reopenDismissed()) setReopenOffer(info);
     });
-    // The sample's record (saved zoom and settings) is read before the first paint; the musicXml prop loads its own.
+    // The sample's record (saved zoom and settings) is read before the first paint; a supplied score loads its own.
     if (musicXml) { setReady(true); return () => { offerCancelled = true; }; }
+    if (remoteUrl) {
+      setReady(true);
+      if (!scoreUrl) void readUrl(remoteUrl);
+      return () => { offerCancelled = true; };
+    }
     let cancelled = false;
     const sample = score;
     const src = sampleSource(sample);
@@ -346,6 +358,17 @@ export default function Reader({ musicXml }: ReaderProps) {
     }
     catch (e) { if (run === importRunRef.current) { setPainting(false); setLargeNotice(''); showError(e, 'Could not open this file.', 'open'); } }
   };
+  /** Download a public score and open it like a chosen file. */
+  const readUrl = async (url: string) => {
+    const run = ++importRunRef.current;
+    startOpening(); stop(true); setPainting(true); setError('');
+    try {
+      const file = await fetchScoreFile(url, window.location.href);
+      if (run === importRunRef.current) await readFile(file);
+    }
+    catch (e) { if (run === importRunRef.current) { setPainting(false); showError(e, 'Could not download this score.'); } }
+  };
+  useEffect(() => { if (scoreUrl) void readUrl(scoreUrl); }, [scoreUrl]);
   /** After an out-of-memory failure: engrave in smaller chunks and open or draw the score again. */
   const retryOutOfMemory = () => {
     const retry = oomRetry;
