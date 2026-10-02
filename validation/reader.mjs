@@ -1329,4 +1329,39 @@ try {
   assert.deepEqual(openErrors, []);
   await openContext.close();
   console.log(`${engine}: open dialog passed`);
+
+  // A public score link opens on load: `?score=<url>` downloads it (cross-origin, so CORS applies) and opens it like a file.
+  const linkContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const linkXml = await readFile(resolve(root, 'validation/fixtures/ensemble.musicxml'));
+  const linkRequests = [];
+  await linkContext.route('https://scores.example/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    linkRequests.push(path);
+    const cors = { 'access-control-allow-origin': '*' };
+    if (path === '/ensemble.musicxml') return route.fulfill({ status: 200, headers: { ...cors, 'content-type': 'application/octet-stream' }, body: linkXml });
+    if (path === '/download') return route.fulfill({ status: 200, headers: { ...cors, 'content-type': 'application/vnd.recordare.musicxml+xml' }, body: linkXml });
+    // A CORS refusal reaches the page as a failed fetch (Playwright's fulfilled responses skip the CORS check itself).
+    if (path === '/unreachable.musicxml') return route.abort('failed');
+    return route.fulfill({ status: 404, headers: cors, body: 'missing' });
+  });
+  const link = await linkContext.newPage();
+  const linkErrors = [];
+  link.on('pageerror', error => linkErrors.push(error.message));
+  const linked = async target => {
+    await link.goto(`${url}/?score=${encodeURIComponent(target)}`);
+    await link.waitForFunction(() => document.querySelector('h1')?.textContent === 'Migration ensemble', null, { timeout: 30000 });
+    assert.equal(await link.locator('.part-control').count(), 5, `${target} opens the linked score`);
+    assert.equal(await link.locator('.reopen-banner').count(), 0, 'No reopen offer when a score is linked');
+  };
+  await linked('https://scores.example/ensemble.musicxml');
+  await linked('https://scores.example/download');
+  for (const [target, message] of [['https://scores.example/missing.musicxml', /404/], ['https://scores.example/unreachable.musicxml', /CORS/], ['javascript:alert(1)', /http or https/]]) {
+    await link.goto(`${url}/?score=${encodeURIComponent(target)}`);
+    await link.getByRole('alert').first().waitFor();
+    assert.match(await link.getByRole('alert').first().textContent(), message, `${target} explains why it can't open`);
+  }
+  assert.deepEqual(linkRequests, ['/ensemble.musicxml', '/download', '/missing.musicxml', '/unreachable.musicxml']);
+  assert.deepEqual(linkErrors, []);
+  await linkContext.close();
+  console.log(`${engine}: score link passed`);
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
