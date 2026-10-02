@@ -25,7 +25,9 @@ export function scoreUrlFromSearch(search: string): string | null {
 
 /** A file name for the download: the URL's own name when it has a score extension, else one from the media type. */
 export function remoteFileName(url: URL, contentType: string): string {
-  const last = decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() || '');
+  const raw = url.pathname.split('/').filter(Boolean).pop() || '';
+  let last = raw;
+  try { last = decodeURIComponent(raw); } catch { /* a malformed escape: keep the name as written */ }
   if (last && scoreFormatOf(last)) return last;
   const type = contentType.split(';')[0].trim().toLowerCase();
   const extension = MEDIA_EXTENSIONS.find(([pattern]) => pattern.test(type))?.[1];

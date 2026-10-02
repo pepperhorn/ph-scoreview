@@ -56,7 +56,7 @@ type AudioPlayer = {
 };
 export type ReaderProps = {
   musicXml?: string;
-  /** A public score file (MusicXML, MXL, MIDI, MEI or ABC) to download and open on load; `?score=<url>` on the page does the same. */
+  /** A public score file (MusicXML, MXL, MIDI, MEI or ABC) to download and open on load; `?score=<url>` on the page does the same. `musicXml` wins when both are given. */
   scoreUrl?: string;
 };
 /** The widest control gutter a viewport can spare. */
@@ -368,7 +368,8 @@ export default function Reader({ musicXml, scoreUrl }: ReaderProps) {
     }
     catch (e) { if (run === importRunRef.current) { setPainting(false); showError(e, 'Could not download this score.'); } }
   };
-  useEffect(() => { if (scoreUrl) void readUrl(scoreUrl); }, [scoreUrl]);
+  // Supplied MusicXML text wins over a link.
+  useEffect(() => { if (scoreUrl && !musicXml) void readUrl(scoreUrl); }, [scoreUrl]);
   /** After an out-of-memory failure: engrave in smaller chunks and open or draw the score again. */
   const retryOutOfMemory = () => {
     const retry = oomRetry;
