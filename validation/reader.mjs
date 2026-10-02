@@ -1404,4 +1404,32 @@ try {
   assert.deepEqual(focusErrors, []);
   await focusContext.close();
   console.log(`${engine}: stave focus passed`);
+
+  // Endless with real (non-overlay) scrollbars: a vertical scrollbar appearing must not narrow the viewport, or the
+  // width change re-engraves, the scrollbar goes, and the score re-engraves forever. Headless Chromium hides
+  // scrollbars by default, so this needs its own browser.
+  if (engine === 'chromium') {
+    const scrolling = await chromium.launch({ headless: true, args: ['--no-sandbox'], ignoreDefaultArgs: ['--hide-scrollbars'] });
+    try {
+      for (const [width, height] of [[1920, 1080], [1366, 768], [820, 1180]]) {
+        const loopContext = await scrolling.newContext({ viewport: { width, height } });
+        await loopContext.addInitScript(() => {
+          localStorage.setItem('scoreflow-prefs', JSON.stringify({ mode: 'landscape' }));
+          window.__loadingShown = 0;
+          let shown = false;
+          new MutationObserver(() => { const now = !!document.querySelector('.score-loading'); if (now && !shown) window.__loadingShown++; shown = now; }).observe(document, { subtree: true, childList: true });
+        });
+        const loop = await loopContext.newPage();
+        await loop.goto(url);
+        await loop.locator('input[type=file]').setInputFiles(resolve(root, 'validation/fixtures/ensemble.musicxml'));
+        await loop.waitForFunction(() => document.querySelector('h1')?.textContent === 'Migration ensemble' && !document.querySelector('.score-loading') && document.querySelector('.score-system svg'), null, { timeout: 30000 });
+        const settled = await loop.evaluate(() => window.__loadingShown);
+        await loop.waitForTimeout(4000);
+        const after = await loop.evaluate(() => ({ shown: window.__loadingShown, gutter: getComputedStyle(document.querySelector('.score-viewport')).scrollbarGutter }));
+        assert.equal(after.shown, settled, `Endless at ${width}x${height} settles instead of re-engraving (${JSON.stringify(after)})`);
+        await loopContext.close();
+      }
+    } finally { await scrolling.close(); }
+    console.log(`${engine}: endless with scrollbars passed`);
+  }
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

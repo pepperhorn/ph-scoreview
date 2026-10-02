@@ -303,3 +303,6 @@ html,body,#root{height:100%;overflow:hidden}
 .error .oom-retry-button{margin-top:8px}
 .error{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .forget-last-file{color:#8a6a5e}
+/* Endless fits the score to the viewport height, so a vertical scrollbar can come and go as it re-engraves; its space is
+   reserved, or the width change re-engraves again and loops. */
+.landscape .score-viewport{scrollbar-gutter:stable}
