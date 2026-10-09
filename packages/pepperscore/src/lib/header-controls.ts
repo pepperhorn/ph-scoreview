@@ -4,7 +4,7 @@
  * Maintainers: edit this list to reorder header controls or move them between
  * tiers. Array order is render order. `primary` controls always sit inline in
  * the header; `secondary` controls sit inline above MOBILE_HEADER_BREAKPOINT
- * and move into the "More controls" dropdown at or below it. Reader.tsx maps
+ * and move into the "More controls" dropdown at or below it. PepperScore.tsx maps
  * each id to its element; every control is always rendered (`bars` is disabled outside Vertical view, `keyFlip` when the key has no enharmonic) so the
  * header footprint never depends on client-only state.
  */

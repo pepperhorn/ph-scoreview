@@ -1,5 +1,5 @@
 /* ===== pepperscore root. Every rule in this file is scoped to it (validation/css-scope.mjs). ===== */
-/* data-ps-short/-tiny/-wide (root height <=500px / <=360px / width >= height) are set by a ResizeObserver in Reader.tsx, so they
+/* data-ps-short/-tiny/-wide (root height <=500px / <=360px / width >= height) are set by a ResizeObserver in PepperScore.tsx, so they
    appear only after hydration, and rules using them carry one more attribute of specificity than the @media blocks they replaced. */
 .pepperscore{position:relative;display:flex;flex-direction:column;overflow:hidden;isolation:isolate;container:pepperscore / inline-size;font-family:Poppins,Arial,sans-serif;color:#242824;background:#fff;font-synthesis:none;line-height:normal;text-align:left;outline:none}
 .pepperscore[data-ps-height=auto]{height:100%;min-height:480px}
@@ -313,5 +313,17 @@
 /* Endless fits the score to the viewport height, so a vertical scrollbar can come and go as it re-engraves; its space is
    reserved, or the width change re-engraves again and loops. */
 .pepperscore .ps-landscape .score-viewport{scrollbar-gutter:stable}
-/* Overlay panels take focus when they open (Reader.tsx focusOnMount) so Escape reaches the root's key handler. */
+/* Overlay panels take focus when they open (PepperScore.tsx focusOnMount) so Escape reaches the root's key handler. */
 .pepperscore .mixer-panel:focus,.pepperscore .instrument-picker-panel:focus{outline:none}
+/* Compact play/stop button of chrome="minimal", overlaid on the score's top right corner. */
+.pepperscore .ps-compact-play{position:absolute;top:8px;right:8px;z-index:9;width:36px;height:36px;border-radius:50%;background:#345642;color:#fff;box-shadow:0 3px 8px #34564233}
+.pepperscore .ps-compact-play:hover{background:#254633}
+.pepperscore .ps-compact-play.is-loading{opacity:.75}
+/* Without the page-controls row (controls.zoom off) the edge fades end at the viewport's bottom edge. */
+.pepperscore .no-page-controls.ps-portrait .edge-end,.pepperscore .no-page-controls.ps-landscape .edge-fade{bottom:0}
+/* Without the drawer handle at the bottom, toasts and notices sit near the bottom edge; an empty or failed natural-height
+   snippet keeps enough height to show its toast. */
+.pepperscore .app-shell.no-drawer .ps-toast,.pepperscore .app-shell.no-drawer .reader-notices{bottom:12px}
+.pepperscore[data-ps-height=natural]{min-height:120px}
+/* A natural-height Endless snippet has no viewport height to centre the score in: no balancing row below it. */
+.pepperscore[data-ps-height=natural] .ps-landscape .score-content{grid-template-rows:auto auto}

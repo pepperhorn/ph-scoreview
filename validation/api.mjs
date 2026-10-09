@@ -1,5 +1,7 @@
 // Chrome presets and settings mapping for the public PepperScore props (pure modules, run in Node).
 import assert from 'node:assert/strict';
+import { readdir, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { resolveChrome } from '../packages/pepperscore/src/lib/chrome.ts';
 import { defaults, settingsToPrefs, viewToMode } from '../packages/pepperscore/src/lib/prefs.ts';
 
@@ -22,4 +24,13 @@ assert.deepEqual(settingsToPrefs({ semitones: 40, overlap: 9, barsPerLine: 7, co
 assert.equal(viewToMode('vertical'), 'portrait'); assert.equal(viewToMode('endless'), 'landscape');
 assert.equal(defaults.mode, 'portrait');
 
-console.log('API: chrome presets, control overrides, settings mapping passed');
+// The component never reads the page URL (the demo maps ?score= to scoreUrl): no location reads anywhere in the library source.
+const src = new URL('../packages/pepperscore/src/', import.meta.url).pathname;
+const locationReads = [];
+for (const entry of await readdir(src, { recursive: true, withFileTypes: true })) {
+  if (!entry.isFile() || !/\.(ts|tsx|js|mjs)$/.test(entry.name)) continue;
+  const path = join(entry.parentPath, entry.name);
+  (await readFile(path, 'utf8')).split('\n').forEach((line, index) => { if (/\bwindow\.location\b|\blocation\.(href|search)\b/.test(line)) locationReads.push(`${path.slice(src.length)}:${index + 1}: ${line.trim()}`); });
+}
+assert.deepEqual(locationReads, [], 'packages/pepperscore/src never reads window.location, location.href or location.search');
+console.log('API: chrome presets, control overrides, settings mapping and no page URL reads passed');

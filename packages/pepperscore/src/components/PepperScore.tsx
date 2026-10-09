@@ -1,15 +1,16 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { ChevronDown, ChevronLeft, ChevronRight, Ellipsis, Eye, EyeOff, FileMusic, Focus, FolderOpen, History, Hourglass, Minus, Pause, Play, Plus, RotateCcw, SlidersHorizontal, Square, Settings2, Trash2, VolumeX, X } from 'lucide-react';
 import { exampleScore, gmProgramForSoundfont, gmSoundfontLabel, GM_FAMILIES, GM_SOUNDS, instrumentDetails, type GmFamily, type GmSound, type Part, type Score } from '../lib/score';
 import { cancelImports, importMusicXmlText, importScoreFile, parseAbc } from '../lib/import';
 import { portraitBarLimit, renderScore, type MeasureGeometry, type RenderResult } from '../lib/render';
 import { partControlMetrics, type PartControlMetrics } from '../lib/part-controls';
-import { HEADER_CONTROLS, MOBILE_HEADER_BREAKPOINT, type HeaderControlId } from '../lib/header-controls';
+import { HEADER_CONTROL_GROUP, HEADER_CONTROLS, MOBILE_HEADER_BREAKPOINT, type HeaderControlId } from '../lib/header-controls';
+import { resolveChrome, type ChromePreset, type PepperScoreControls } from '../lib/chrome';
 import { clampStaveScale, deviceClass, ENDLESS_STAVE_SCALE, minimumDefaultStaveScale, STAVE_SCALE_MAX, STAVE_SCALE_MIN, STAVE_SCALE_STEP } from '../lib/stave-scale';
 import { buildFileState, clampBpm, MAX_BPM, MIN_BPM, textSource, type FileSource, type FileState, type ScoreView } from '../lib/file-state';
 import { sampleSource, type ScoreDb } from '../lib/score-db';
-import { defaults, sanitizeSavedPrefs, type Prefs } from '../lib/prefs';
+import { defaults, sanitizeSavedPrefs, settingsToPrefs, viewToMode, type PepperScoreSettings, type Prefs } from '../lib/prefs';
 import { readerStorage, type PersistNamespace } from '../lib/storage';
 import { scoreForView, spokenKey, transposeReadout } from '../lib/transpose';
 import type { SpellingKey } from '../lib/spelling';
@@ -21,16 +22,12 @@ import { isSameFile, lastFileToFile, type LastFileInfo } from '../lib/last-file'
 import { withEngravingDocument } from '../lib/notation/document';
 import { SCORE_FILE_ACCEPT } from '../lib/score-files';
 import { PAGE_PAD_PX, pageOfSystem, systemPages, turnTarget, type ReadingPage, type SystemSpan } from '../lib/paging';
-import { fetchScoreFile, scoreUrlFromSearch } from '../lib/remote-score';
+import { fetchScoreFile } from '../lib/remote-score';
 import OpenScoreDialog from './OpenScoreDialog';
 import { loadPackInfo, resolveAssetBase, type SoundPackName } from '../lib/assets';
 import { fallbackSf2Url, planKey, planSound, type SoundPlan, type SoundRequest, type SoundSource } from '../lib/sounds';
 import { addDrumFallback, loadPlayers, type AudioPlayer } from '../lib/sound-players';
 import { ensureMusicFonts } from '../lib/asset-fonts';
-import '@fontsource/poppins/400.css';
-import '@fontsource/poppins/500.css';
-import '@fontsource/poppins/600.css';
-import '@fontsource/poppins/700.css';
 
 /** Short key name for readouts: 'Gb', 'C#m'. */
 const keyName = (key: SpellingKey) => `${key.tonic}${key.mode === 'minor' ? 'm' : ''}`;
@@ -46,26 +43,52 @@ const soundRequest = (part: Part): SoundRequest => {
 /** Sample packs route each note to its part's gain, so parts share them; sf2 and note-file players are bound to one part's gain. */
 const audioKey = (plan: SoundPlan, part: Part) => plan.kind === 'sample-pack' ? planKey(plan) : `${planKey(plan)}|${part.id}`;
 const SILENT_PLAYBACK_NOTICE = 'Audio couldn’t start on this device — playing silently.';
-export type ReaderProps = {
+export type PepperScoreReadyInfo = { title: string; composer?: string; parts: Array<{ id: string; name: string }>; measures: number };
+export type PepperScoreHandle = {
+  /** Start playback (no-op while playing, or when the chrome loads no audio). */
+  play(): Promise<void>;
+  stop(): void;
+  /** Set the absolute transposition in semitones (clamped to -12…12), like `settings.semitones`. */
+  transpose(semitones: number): void;
+};
+export type PepperScoreProps = {
+  /** Score sources; the first present wins, in this order. */
   musicXml?: string;
-  /** A public score file (MusicXML, MXL, MIDI, MEI or ABC) to download and open on load; `?score=<url>` on the page does the same. `musicXml` wins when both are given. */
+  /** A score file (MusicXML, MXL, MIDI, MEI or ABC). */
+  file?: File;
+  /** A public score file to download and open (relative URLs resolve against the page). */
   scoreUrl?: string;
+  abc?: string;
+  /** `"full"` (default): header, drawer, mixer, sample score and open-file UI; `"minimal"`: notation with a compact play button; `"none"`: engraving only, no audio. */
+  chrome?: ChromePreset;
+  /** Per-control overrides of the chrome preset (lib/chrome.ts). */
+  controls?: PepperScoreControls;
+  /** Initial reading view; changing it re-applies it. */
+  view?: 'vertical' | 'endless';
+  /** `"fill"` fills the parent's height; any CSS length fixes it; omitted, full chrome fills its parent (480px floor) and the others size to their score. */
+  height?: string;
+  /** Extra classes on the `.pepperscore` root. */
+  className?: string;
+  /** Initial reader settings; changing a key re-applies that key. A score's saved record (with `persist`) wins over them. */
+  settings?: PepperScoreSettings;
+  /**
+   * Namespace of the saved state (prefs, per-score records, last file; see lib/storage.ts); `false` saves nothing.
+   * Default `"pepperscore"` for full chrome, `false` otherwise. `"scoreflow"` keeps the original Scoreflow names.
+   */
+  persist?: PersistNamespace;
   /** Root of a pepperscore-sounds-<pack> layout; default: the jsDelivr copy of pepperscore-sounds-<soundPack>. */
   assetBaseUrl?: string;
   soundPack?: SoundPackName;
   /** Sounds that replace the built-in ones for the programs (or drum kit) they claim; the first claiming entry wins. */
   soundSources?: SoundSource[];
-  /** `"fill"` fills the parent's height; any CSS length fixes it; omitted, the reader fills its parent with a 480px floor. */
-  height?: string;
-  /** Extra classes on the `.pepperscore` root. */
-  className?: string;
+  /** A score finished loading and drew (once per score). */
+  onReady?(info: PepperScoreReadyInfo): void;
+  onPlay?(): void;
+  onStop?(): void;
+  onError?(error: Error): void;
   /** Focus the reader on mount so page-turn keys work before any click. */
   autoFocus?: boolean;
-  /**
-   * Namespace of the saved state (prefs, per-score records, last file; see lib/storage.ts); `false` saves nothing.
-   * Default `"pepperscore"`. `"scoreflow"` keeps the original Scoreflow names.
-   */
-  persist?: PersistNamespace;
+  ref?: React.Ref<PepperScoreHandle>;
 };
 /** The widest control gutter a viewport can spare. */
 const maxControlGutter = (width: number) => Math.max(120, Math.round(width * .42));
@@ -93,8 +116,20 @@ const flag = (element: HTMLElement, key: 'psShort' | 'psTiny' | 'psWide', on: bo
 /** Where the viewport centre sits in a measure, so a re-layout can put that point back at the centre. */
 type ZoomAnchor = { index: number; fx: number; fy: number };
 
-export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = 'core', soundSources, height, className, autoFocus, persist = 'pepperscore' }: ReaderProps) {
-  const storage = useMemo(() => readerStorage(persist), [persist]);
+export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: preset = 'full', controls, view, height, className, settings, persist, assetBaseUrl, soundPack = 'core', soundSources, onReady, onPlay, onStop, onError, autoFocus, ref }: PepperScoreProps) {
+  const chrome = useMemo(() => resolveChrome(preset, controls), [preset, controls?.mixer, controls?.openFile, controls?.drawer, controls?.transport, controls?.viewToggle, controls?.zoom]);
+  const storage = useMemo(() => readerStorage(persist ?? (preset === 'full' ? 'pepperscore' : false)), [persist, preset]);
+  // Host settings and view as prefs; only keys the host gives are applied (on mount, on each score load, and when they change).
+  const settingsKey = JSON.stringify(settings ?? {});
+  const hostPrefs = useMemo<Partial<Prefs>>(() => {
+    const mapped = settingsToPrefs(settings);
+    if (mapped.zoom != null) mapped.zoom = clampStaveScale(mapped.zoom);
+    return { ...mapped, ...(view ? { mode: viewToMode(view) } : {}) };
+  }, [settingsKey, view]);
+  const hostPrefsRef = useRef(hostPrefs);
+  const callbacks = useRef({ onReady, onPlay, onStop, onError });
+  callbacks.current = { onReady, onPlay, onStop, onError };
+  const natural = !height && preset !== 'full';
   const storageRef = useRef(storage);
   storageRef.current = storage;
   const [score, setScore] = useState<Score>(sampleScore);
@@ -109,7 +144,7 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
   const [pickerPartId, setPickerPartId] = useState<string | null>(null);
   const [pickerFamily, setPickerFamily] = useState<GmFamily>('Keyboard');
   const [pickerPage, setPickerPage] = useState(0);
-  const [abc, setAbc] = useState(sampleAbc);
+  const [abcDraft, setAbcDraft] = useState(sampleAbc);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   /** Non-blocking "large score, this may take a while" notice for the file being opened. */
@@ -135,6 +170,10 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
   const [activeNotes, setActiveNotes] = useState<string[]>([]);
   const [position, setPosition] = useState(0);
   const [ready, setReady] = useState(false);
+  // Whether a score has loaded. Full chrome starts with the sample; the others show an empty frame until their source
+  // loads. The first render depends only on the chrome, never on source props, so a client-only source (the demo's
+  // ?score= link) cannot cause a hydration mismatch.
+  const [loaded, setLoaded] = useState(preset === 'full');
   const [staffCenters, setStaffCenters] = useState<Record<string, number>>({});
   const [controlMetrics, setControlMetrics] = useState<PartControlMetrics>(() => partControlMetrics(72));
   const [zoomDraft, setZoomDraft] = useState<number | null>(null);
@@ -196,6 +235,8 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
   // its imports and renders never supersede another reader's on the shared worker.
   const channelRef = useRef(0);
   const restartRedrawsRef = useRef(0);
+  /** The score revision onReady last fired for. */
+  const readyRevisionRef = useRef(-1);
   useEffect(() => { const channel = openVerovioChannel(); channelRef.current = channel; return () => { cancelImports(channel); closeVerovioChannel(channel); }; }, []);
   useEffect(() => ensureMusicFonts(assetBase), [assetBase]);
   const hiddenSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
@@ -235,23 +276,19 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
   }, [timelineOf, score, visibleScore, timelineKey, visibleKey]);
 
   useEffect(() => {
-    setPrefs(sanitizeSavedPrefs(storage.readPrefs()));
-    // A score link in the page URL opens like the scoreUrl prop (which wins when both are given).
-    const remoteUrl = scoreUrl || scoreUrlFromSearch(window.location.search);
+    setPrefs({ ...sanitizeSavedPrefs(storage.readPrefs()), ...hostPrefsRef.current });
+    const hasSource = Boolean(musicXml || file || scoreUrl || abc);
     // The last opened file is offered (never opened) on start, unless a score was supplied or one is already opening.
     let offerCancelled = false;
     void storage.lastFile.readInfo().then(info => {
       if (offerCancelled) return;
       setLastFileInfo(info);
-      if (info && !musicXml && !remoteUrl && importRunRef.current === 0 && !storage.reopenDismissed()) setReopenOffer(info);
+      if (chrome.openFile && info && !hasSource && importRunRef.current === 0 && !storage.reopenDismissed()) setReopenOffer(info);
     });
-    // The sample's record (saved zoom and settings) is read before the first paint; a supplied score loads its own.
-    if (musicXml) { setReady(true); return () => { offerCancelled = true; }; }
-    if (remoteUrl) {
-      setReady(true);
-      if (!scoreUrl) void readUrl(remoteUrl);
-      return () => { offerCancelled = true; };
-    }
+    // A supplied score loads in the source effect below; without one, only full chrome shows the sample (the others
+    // stay an empty frame: never ready, nothing engraved).
+    if (hasSource || preset !== 'full') return () => { offerCancelled = true; };
+    // The sample's record (saved zoom and settings) is read before the first paint.
     let cancelled = false;
     const sample = score;
     const src = sampleSource(sample);
@@ -310,33 +347,32 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
       if (!state) return part;
       return { ...part, instrument: state.instrument, gmSoundfont: state.gmSoundfont || (state.instrument === part.instrument ? part.gmSoundfont : instrumentDetails(state.instrument).soundfont || undefined) };
     }) } : next;
-    stop(true); setPainting(true); setPickerPartId(null); setScore(restored); setScoreRevision(value => value + 1); setSource(nextSource);
+    stop(true); setPainting(true); setPickerPartId(null); setScore(restored); setScoreRevision(value => value + 1); setSource(nextSource); setLoaded(true);
     setHiddenIds(saved ? next.parts.filter(part => saved.parts[part.id]?.visible === false).map(part => part.id) : []);
     setTrackVolumes(saved ? Object.fromEntries(next.parts.map(part => [part.id, saved.parts[part.id]?.volume ?? 100])) : {});
     setError('');
-    setPrefs(prev => saved ? { ...prev, ...saved.settings, zoom } : { ...prev, bpm: clampBpm(Math.round(next.tempo)), zoom: null, semitones: 0, keyFlip: false, scorePitch: next.parts.some(part => part.pitchBasis === 'concert') ? 'concert' : 'written' });
+    // A saved per-score record (persist on) wins over the host's settings and view: they are initial values, and the
+    // reader's own edits to this score are newer. Without a record, the per-score resets keep the host's keys.
+    setPrefs(prev => saved ? { ...prev, ...saved.settings, zoom } : { ...prev, bpm: clampBpm(Math.round(next.tempo)), zoom: null, semitones: 0, keyFlip: false, scorePitch: next.parts.some(part => part.pitchBasis === 'concert') ? 'concert' : 'written', ...hostPrefsRef.current });
     viewportRef.current?.scrollTo({ left: 0, top: 0 });
     setDrawer(false);
   };
-  useEffect(() => {
-    if (!musicXml) return;
+  /** Import supplied MusicXML text (read and identified in the import worker, like a file). */
+  const readMusicXml = async (text: string) => {
     const run = ++importRunRef.current;
-    stop(true); setPainting(true);
-    void (async () => {
-      try {
-        // Read (and identified) in the import worker, like a file.
-        const job = importMusicXmlText(musicXml, 'MusicXML', channelRef.current);
-        const src = await job.source;
-        const [saved, next] = await Promise.all([readScoreRecord(storageRef.current.scoreDb, src), job.score]);
-        if (run !== importRunRef.current) return;
-        if (next.document) await prepareEngraving(next.document);
-        if (run === importRunRef.current) loadScore(next, src, saved);
-      } catch (e) {
-        if (run === importRunRef.current) { setPainting(false); showError(e, 'Could not read the supplied MusicXML.'); }
-      }
-    })();
-    return () => { importRunRef.current++; };
-  }, [musicXml]);
+    setReady(true);
+    startOpening(); stop(true); setPainting(true);
+    try {
+      const job = importMusicXmlText(text, 'MusicXML', channelRef.current);
+      const src = await job.source;
+      const [saved, next] = await Promise.all([readScoreRecord(storageRef.current.scoreDb, src), job.score]);
+      if (run !== importRunRef.current) return;
+      if (next.document) await prepareEngraving(next.document);
+      if (run === importRunRef.current) loadScore(next, src, saved);
+    } catch (e) {
+      if (run === importRunRef.current) { setPainting(false); showError(e, 'Could not read the supplied MusicXML.'); }
+    }
+  };
   /**
    * Show an error; an out-of-memory one gets guidance and a retry with smaller engraving chunks. So does a renderer that
    * kept restarting under this reader (other readers running out of memory), which has no raw message to show.
@@ -359,6 +395,7 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
   const readFile = async (file?: File) => {
     if (!file) return;
     const run = ++importRunRef.current;
+    setReady(true);
     lastFileRef.current = file;
     startOpening();
     const phone = deviceClass() === 'compact';
@@ -389,15 +426,30 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
   /** Download a public score and open it like a chosen file. */
   const readUrl = async (url: string) => {
     const run = ++importRunRef.current;
+    setReady(true);
     startOpening(); stop(true); setPainting(true); setError('');
     try {
-      const file = await fetchScoreFile(url, window.location.href);
+      const file = await fetchScoreFile(url, document.baseURI);
       if (run === importRunRef.current) await readFile(file);
     }
     catch (e) { if (run === importRunRef.current) { setPainting(false); showError(e, 'Could not download this score.'); } }
   };
-  // Supplied MusicXML text wins over a link.
-  useEffect(() => { if (scoreUrl && !musicXml) void readUrl(scoreUrl); }, [scoreUrl]);
+  // The supplied source: the first present of musicXml, file, scoreUrl and abc. A newer source (or unmount) retires an import in flight.
+  useEffect(() => {
+    if (musicXml) { void readMusicXml(musicXml); return () => { importRunRef.current++; }; }
+    if (file) { void readFile(file); return () => { importRunRef.current++; }; }
+    if (scoreUrl) { void readUrl(scoreUrl); return () => { importRunRef.current++; }; }
+    if (abc) { void readAbc(abc); return () => { importRunRef.current++; }; }
+  }, [musicXml, file, scoreUrl, abc]);
+  // Host settings and view: a changed key is applied again (unchanged keys keep the reader's own edits).
+  useEffect(() => {
+    const previous = hostPrefsRef.current;
+    hostPrefsRef.current = hostPrefs;
+    const changed = Object.fromEntries(Object.entries(hostPrefs).filter(([key, value]) => previous[key as keyof Prefs] !== value)) as Partial<Prefs>;
+    if (!Object.keys(changed).length || !ready) return;
+    if ('semitones' in changed || 'scorePitch' in changed) changePitch(changed);
+    else update(changed);
+  }, [hostPrefs]);
   /** After an out-of-memory failure: engrave in smaller chunks and open or draw the score again. */
   const retryOutOfMemory = () => {
     const retry = oomRetry;
@@ -422,6 +474,7 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
   const forgetLast = () => { setReopenOffer(null); setLastFileInfo(null); void storage.lastFile.forget(); };
   const readAbc = async (text: string) => {
     const run = ++importRunRef.current;
+    setReady(true);
     startOpening();
     setPainting(true);
     try {
@@ -626,9 +679,14 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
         // Every multi-stave score gets a focus button per stave; a hide button joins it from five staves.
         const buttons = (score.parts.length > 1 ? 1 : 0) + (score.parts.length > 4 ? 1 : 0);
         const maxGutter = maxControlGutter(canvas.clientWidth);
-        const metricsFor = (stavePx: number, staffPitchPx: number) => partControlMetrics(stavePx, { staffPitchPx, maxGutter, buttons });
+        // Without part controls (they follow the mixer) the score takes the full width.
+        const metricsFor = (stavePx: number, staffPitchPx: number) => {
+          const metrics = partControlMetrics(stavePx, { staffPitchPx, maxGutter, buttons });
+          return chrome.partControls ? metrics : { ...metrics, gutter: 0 };
+        };
         const metaHeight = canvas.closest('.score-content')?.querySelector('.score-meta')?.getBoundingClientRect().height || 0;
-        const availableHeight = Math.max(120, (viewportRef.current?.clientHeight || 600) - metaHeight - 70);
+        // A natural-height root sizes to its score, so there is no viewport height to fit against.
+        const availableHeight = natural ? 4000 : Math.max(120, (viewportRef.current?.clientHeight || 600) - metaHeight - 70);
         // Without a user zoom the default ('fit': four bars in Vertical) is re-resolved for the viewport, so rotation re-fits.
         const requested = prefs.zoom ?? 'fit';
         const result = await renderScore(canvas, displayScore, prefs.mode, prefs.names, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.chordSymbols, prefs.inferChordSymbols, availableHeight, requested, 0, { gutterFor: (stavePx, staffPitchPx) => metricsFor(stavePx, staffPitchPx).gutter, fitCap: ENDLESS_STAVE_SCALE[deviceClass()], fitFloor: minimumDefaultStaveScale(deviceClass()), font: prefs.notationFont, textFont: prefs.annotationFont, transpose: prefs.semitones, flip: prefs.keyFlip, scorePitch, hiddenPartIds: hiddenIds, generation, focusMeasure: anchor?.index, channel: channelRef.current });
@@ -661,6 +719,10 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
         if (anchor) restoreZoomAnchor(anchor, result, prefs.mode);
         restartRedrawsRef.current = 0;
         setError('');
+        if (scoreRevision > 0 && readyRevisionRef.current !== scoreRevision) {
+          readyRevisionRef.current = scoreRevision;
+          callbacks.current.onReady?.({ title: score.title, composer: score.composer || undefined, parts: score.parts.map(part => ({ id: part.id, name: part.name })), measures: score.parts[0]?.measures.length ?? 0 });
+        }
         if (largeNoticeArmedRef.current) { largeNoticeArmedRef.current = false; setLargeNotice(''); }
       } catch (e) {
         // The renderer restarted under this draw (another reader ran out of memory): draw again, a bounded number of times.
@@ -682,7 +744,7 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
     const delay = !quiet && hasPaintedRef.current && !window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 260 : 0;
     timer = window.setTimeout(() => void draw(), delay);
     return () => { disposed = true; window.clearTimeout(timer); cancelAnimationFrame(frame); };
-  }, [ready, resizeTick, scoreRevision, hiddenIds, prefs.mode, prefs.notationFont, prefs.annotationFont, prefs.names, prefs.chordSymbols, prefs.inferChordSymbols, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.zoom, prefs.semitones, prefs.keyFlip, scorePitch]);
+  }, [ready, resizeTick, scoreRevision, chrome.partControls, hiddenIds, prefs.mode, prefs.notationFont, prefs.annotationFont, prefs.names, prefs.chordSymbols, prefs.inferChordSymbols, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.zoom, prefs.semitones, prefs.keyFlip, scorePitch]);
 
   /** Each rendered system's top and bottom in the viewport's scroll coordinates (score title included). */
   const systemSpans = (): SystemSpan[] => {
@@ -712,7 +774,8 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
     const spans = modeRef.current === 'portrait' ? systemSpans() : [];
     // The pad above a page stays inside the previous system's blank bottom margin (20 Verovio units).
     const pad = Math.min(PAGE_PAD_PX, 16 * (renderRef.current?.scale ?? 1));
-    const pages = spans.length ? systemPages(spans, viewport.clientHeight, overlapRef.current, pad) : [];
+    // A natural-height root shows its whole score: no pages, and no tail (which would grow the root it is measured by).
+    const pages = spans.length && !natural ? systemPages(spans, viewport.clientHeight, overlapRef.current, pad) : [];
     const lastStart = pages.at(-1)?.start ?? 0;
     const tail = lastStart > 0 ? Math.max(0, Math.ceil(lastStart + viewport.clientHeight - (viewport.scrollHeight - pageTailRef.current))) : 0;
     if (tail !== pageTailRef.current) { pageTailRef.current = tail; content.style.setProperty('--page-tail', `${tail}px`); }
@@ -794,6 +857,7 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
     const note = active ? result?.point(active) : undefined;
     canvasRef.current?.querySelectorAll('.reader-note.is-playing').forEach(n => n.classList.remove('is-playing'));
     canvasRef.current?.querySelectorAll('.playback-line').forEach(n => n.remove());
+    if (!chrome.playhead) return;
     for (const id of activeNotes) {
       const point = result?.point(id);
       if (point && !point.rest) point.element?.classList.add('is-playing');
@@ -870,6 +934,7 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
     return audio;
   };
   const play = async () => {
+    if (!chrome.audio) return;
     if (playing || loadingAudio) { stop(); return; }
     const run = ++playRunRef.current;
     claimPlayback(playbackOwner);
@@ -917,6 +982,25 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
       setPlaying(true);
     } catch (e) { if (run === playRunRef.current) { setLoadingAudio(false); releasePlayback(playbackOwner); setError(e instanceof Error ? e.message : 'Audio could not start.'); } }
   };
+  // Host callbacks: onError for each shown error, onPlay/onStop on the playing edges (stop-others included).
+  useEffect(() => { if (error) callbacks.current.onError?.(new Error(error)); }, [error]);
+  const wasPlayingRef = useRef(false);
+  useEffect(() => {
+    if (playing && !wasPlayingRef.current) callbacks.current.onPlay?.();
+    if (!playing && wasPlayingRef.current) callbacks.current.onStop?.();
+    wasPlayingRef.current = playing;
+  }, [playing]);
+  const busyRef = useRef(false);
+  busyRef.current = playing || loadingAudio;
+  const latestPlayRef = useRef(play);
+  latestPlayRef.current = play;
+  const changePitchRef = useRef(changePitch);
+  changePitchRef.current = changePitch;
+  useImperativeHandle(ref, () => ({
+    play: async () => { if (chrome.audio && !busyRef.current) await latestPlayRef.current(); },
+    stop: () => stopRef.current(true),
+    transpose: semitones => changePitchRef.current({ semitones: clampSemitones(Math.round(Number(semitones) || 0)) }),
+  }), [chrome.audio]);
   // Unmount: release only this reader's players and track gains; the shared AudioContext and Verovio worker stay for other readers.
   useEffect(() => () => { importRunRef.current++; playRunRef.current++; renderRef.current?.dispose(); if (playRef.current) { cancelAnimationFrame(playRef.current.frame); clearInterval(playRef.current.interval); } scheduledStopsRef.current.splice(0).forEach(item => item.stop()); audioRef.current?.players.forEach(players => players.forEach(p => p.dispose())); audioRef.current?.trackGains.forEach(gain => gain.disconnect()); audioRef.current = null; releasePlayback(playbackOwner); }, []);
   const openInstrumentPicker = (part: Part) => {
@@ -985,16 +1069,18 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
     </label>,
     mixer: <button className="icon-button mixer-trigger" aria-label="Track mixer" title="Track mixer" aria-haspopup="dialog" aria-expanded={mixer} onClick={() => { setDrawer(false); setMoreOpen(false); setMixer(true); }}><SlidersHorizontal size={18}/><span className="mixer-trigger-label">Track mixer</span></button>,
   };
-  const renderControls = (tier: 'primary' | 'secondary') => HEADER_CONTROLS.filter(control => control.tier === tier && headerElements[control.id]).map(control => <div key={control.id} className={`header-control header-control-${control.id}`} data-header-control={control.id}>{headerElements[control.id]}</div>);
+  const renderControls = (tier: 'primary' | 'secondary') => HEADER_CONTROLS.filter(control => control.tier === tier && chrome[HEADER_CONTROL_GROUP[control.id]] && headerElements[control.id]).map(control => <div key={control.id} className={`header-control header-control-${control.id}`} data-header-control={control.id}>{headerElements[control.id]}</div>);
   const primaryControls = renderControls('primary');
   const secondaryControls = renderControls('secondary');
 
-  const heightMode = height === 'fill' ? 'fill' : height ? 'fixed' : 'auto';
+  const heightMode = height === 'fill' ? 'fill' : height ? 'fixed' : natural ? 'natural' : 'auto';
+  const hasSource = Boolean(musicXml || file || scoreUrl || abc);
+  const compactLabel = playing || loadingAudio ? 'Stop playback' : 'Play score';
   return <div ref={rootRef} className={`pepperscore ${className ?? ''}`.trim()} data-ps-height={heightMode} style={heightMode === 'fixed' ? { height } : undefined}
     tabIndex={0} role="region" aria-label="Score reader" onKeyDown={onRootKeyDown}>
-  <main className="app-shell">
-    <header className="topbar" aria-label="Playback transport">
-      <input ref={fileRef} type="file" accept={SCORE_FILE_ACCEPT} hidden onChange={e => { readFile(e.target.files?.[0]); e.target.value = ''; }}/>
+  <main className={`app-shell ${chrome.drawer ? '' : 'no-drawer'}`}>
+    {chrome.header && <header className="topbar" aria-label="Playback transport">
+      {chrome.openFile && <input ref={fileRef} type="file" accept={SCORE_FILE_ACCEPT} hidden onChange={e => { readFile(e.target.files?.[0]); e.target.value = ''; }}/>}
       <div className="transport">
         {primaryControls}
         {/* Secondary controls render once. CSS lays them out inline above MOBILE_HEADER_BREAKPOINT and as the
@@ -1004,9 +1090,11 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
           <div id={panelId} className="header-secondary-panel" role="group" aria-label="Secondary controls">{secondaryControls}</div>
         </div>}
       </div>
-    </header>
+    </header>}
+    {/* Shown once a score has loaded: an empty or failed snippet has nothing to play. */}
+    {chrome.compactPlay && loaded && <button type="button" className={`ps-compact-play icon-button ${loadingAudio ? 'is-loading' : ''}`} aria-label={compactLabel} title={compactLabel} onClick={() => { if (playing || loadingAudio) stop(true); else void play(); }}>{playing || loadingAudio ? <Square size={15} fill="currentColor"/> : <Play size={15} fill="currentColor"/>}</button>}
 
-    {mixer && <div className="mixer-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setMixer(false); }}>
+    {chrome.mixer && mixer && <div className="mixer-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setMixer(false); }}>
       <section ref={focusOnMount} tabIndex={-1} className="mixer-panel" role="dialog" aria-modal="true" aria-label="Track mixer">
         <div className="mixer-heading"><div><SlidersHorizontal size={18}/><h2>Track mixer</h2></div><button className="icon-button" aria-label="Close track mixer" onClick={() => setMixer(false)}><X size={19}/></button></div>
         <p>Choose each track’s sound and volume.</p>
@@ -1014,9 +1102,9 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
       </section>
     </div>}
 
-    {openDialog && <OpenScoreDialog onClose={() => setOpenDialog(false)} onOpenFile={file => void readFile(file)} onOpenAbc={text => void readAbc(text)} onBrowse={() => fileRef.current?.click()}/>}
+    {chrome.openFile && openDialog && <OpenScoreDialog onClose={() => setOpenDialog(false)} onOpenFile={file => void readFile(file)} onOpenAbc={text => void readAbc(text)} onBrowse={() => fileRef.current?.click()}/>}
 
-    {pickerPart && <div className="instrument-picker-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setPickerPartId(null); }}>
+    {chrome.partControls && pickerPart && <div className="instrument-picker-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setPickerPartId(null); }}>
       <section ref={focusOnMount} tabIndex={-1} className="instrument-picker-panel" role="dialog" aria-modal="true" aria-label={`Choose voice for ${pickerPart.name}`}>
         <div className="instrument-picker-heading"><div><h2>{pickerPart.name}</h2><p>Choose a playback sound</p></div><button className="icon-button" aria-label="Close voice picker" onClick={() => setPickerPartId(null)}><X size={19}/></button></div>
         <div className="instrument-family-filters" role="group" aria-label="Instrument families">{GM_FAMILIES.map(family => <button key={family} className={pickerFamily === family ? 'is-selected' : ''} aria-pressed={pickerFamily === family} onClick={() => { setPickerFamily(family); setPickerPage(0); }}>{family}</button>)}</div>
@@ -1025,10 +1113,10 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
       </section>
     </div>}
 
-    <section className={`reader-area ps-${prefs.mode} ${score.parts.length > 4 ? 'has-many-staves' : ''}`}>
+    <section className={`reader-area ps-${prefs.mode} ${score.parts.length > 4 ? 'has-many-staves' : ''} ${chrome.zoom ? '' : 'no-page-controls'}`}>
       <div className="edge-fade edge-start"/><div className="edge-fade edge-end"/>
       <div className="score-viewport" ref={viewportRef} onTouchStart={e => {
-        if (score.parts.length > 4 && e.touches.length === 2) {
+        if (chrome.zoom && score.parts.length > 4 && e.touches.length === 2) {
           const distance = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
           pinchRef.current = { distance, zoom: renderedZoomRef.current, nextZoom: renderedZoomRef.current };
           swipeRef.current = null;
@@ -1054,8 +1142,8 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
         swipeRef.current = null;
       }} onTouchCancel={() => { if (pinchRef.current) { setZoomDraft(null); clearStaveScalePreview(); } pinchRef.current = null; swipeRef.current = null; }}>
         {loadingFont && <div className="font-load-progress" role="status" aria-label="Loading notation font"/>}
-        {painting && <div className="score-loading" role="status" aria-label={painted ? 'Rendering score' : 'Preparing score'}><span className="score-loading-spinner"/><span>{painted ? 'Rendering score' : 'Preparing score'}</span></div>}
-        <div ref={contentRef} className={`score-content ${painting || !painted ? 'is-painting' : ''}`} data-stave-scale={painted ? renderedZoom : undefined} style={{ '--landscape-meta-offset': prefs.chordSymbols ? '0px' : '35px', '--annotation-font': textFonts[prefs.annotationFont] || textFonts.Sans, '--score-text-font': textFonts[prefs.annotationFont] || textFonts.Sans, '--music-font': prefs.notationFont } as React.CSSProperties}>
+        {painting && (loaded || hasSource) && <div className="score-loading" role="status" aria-label={painted ? 'Rendering score' : 'Preparing score'}><span className="score-loading-spinner"/><span>{painted ? 'Rendering score' : 'Preparing score'}</span></div>}
+        {loaded && <div ref={contentRef} className={`score-content ${painting || !painted ? 'is-painting' : ''}`} data-stave-scale={painted ? renderedZoom : undefined} style={{ '--landscape-meta-offset': prefs.chordSymbols ? '0px' : '35px', '--annotation-font': textFonts[prefs.annotationFont] || textFonts.Sans, '--score-text-font': textFonts[prefs.annotationFont] || textFonts.Sans, '--music-font': prefs.notationFont } as React.CSSProperties}>
           {(hasScoreText || hiddenIds.length > 0) && <div className="score-meta">
             {score.title && <h1>{score.title}</h1>}
             {score.subtitle && <p className="score-subtitle">{score.subtitle}</p>}
@@ -1065,13 +1153,14 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
           </div>}
           <div className="score-stage">
             <div className="score-staves" ref={canvasRef}/>
-            <div className="part-controls" style={{ '--part-icon': `${controlMetrics.icon}px`, '--part-font': `${controlMetrics.font}px`, '--part-eye': `${controlMetrics.eye}px`, '--part-control-height': `${controlMetrics.height}px` } as React.CSSProperties}>{visibleScore.parts.map((part, index) => <div key={part.id} className="part-control" style={{ top: `${staffCenters[part.id] ?? 86 + index * ((prefs.names || prefs.counts) ? 125 : 100)}px` }} title={`Sound for ${part.name}`}><button className="instrument-control" aria-label={`Instrument for ${part.name}`} aria-haspopup="dialog" onClick={() => openInstrumentPicker(part)}><img className="part-icon" src={instrumentDetails(part.instrument).icon} alt=""/></button><span className="part-name" title={part.name}>{part.name}</span>{score.parts.length > 1 && <button className={`staff-eye staff-focus ${focusedId === part.id ? 'is-focused' : ''}`} aria-label={focusedId === part.id ? 'Show all staves' : `Focus on ${part.name}`} title={focusedId === part.id ? 'Show all staves' : `Focus on ${part.name}`} aria-pressed={focusedId === part.id} onClick={() => focusPart(part.id)}><Focus size={17}/></button>}{score.parts.length > 4 && <button className="staff-eye" aria-label={`Hide ${part.name}`} title={`Hide ${part.name}`} onClick={() => togglePart(part.id)} disabled={visibleScore.parts.length <= 1}><Eye size={17}/></button>}</div>)}</div>
+            {chrome.partControls && <div className="part-controls" style={{ '--part-icon': `${controlMetrics.icon}px`, '--part-font': `${controlMetrics.font}px`, '--part-eye': `${controlMetrics.eye}px`, '--part-control-height': `${controlMetrics.height}px` } as React.CSSProperties}>{visibleScore.parts.map((part, index) => <div key={part.id} className="part-control" style={{ top: `${staffCenters[part.id] ?? 86 + index * ((prefs.names || prefs.counts) ? 125 : 100)}px` }} title={`Sound for ${part.name}`}><button className="instrument-control" aria-label={`Instrument for ${part.name}`} aria-haspopup="dialog" onClick={() => openInstrumentPicker(part)}><img className="part-icon" src={instrumentDetails(part.instrument).icon} alt=""/></button><span className="part-name" title={part.name}>{part.name}</span>{score.parts.length > 1 && <button className={`staff-eye staff-focus ${focusedId === part.id ? 'is-focused' : ''}`} aria-label={focusedId === part.id ? 'Show all staves' : `Focus on ${part.name}`} title={focusedId === part.id ? 'Show all staves' : `Focus on ${part.name}`} aria-pressed={focusedId === part.id} onClick={() => focusPart(part.id)}><Focus size={17}/></button>}{score.parts.length > 4 && <button className="staff-eye" aria-label={`Hide ${part.name}`} title={`Hide ${part.name}`} onClick={() => togglePart(part.id)} disabled={visibleScore.parts.length <= 1}><Eye size={17}/></button>}</div>)}</div>}
           </div>
-        </div>
+        </div>}
       </div>
-      <div className="page-controls"><button aria-label="Previous view" onClick={() => turn(-1)}><ChevronLeft size={18}/></button><span>{prefs.mode === 'portrait' ? 'SCROLL TO READ' : 'SWIPE TO READ'}</span><button aria-label="Next view" onClick={() => turn(1)}><ChevronRight size={18}/></button></div>
+      {chrome.zoom && <div className="page-controls"><button aria-label="Previous view" onClick={() => turn(-1)}><ChevronLeft size={18}/></button><span>{prefs.mode === 'portrait' ? 'SCROLL TO READ' : 'SWIPE TO READ'}</span><button aria-label="Next view" onClick={() => turn(1)}><ChevronRight size={18}/></button></div>}
     </section>
 
+    {chrome.drawer && <>
     <button className={`drawer-handle ${drawer ? 'is-open' : ''}`} onClick={() => setDrawer(!drawer)} aria-expanded={drawer}><span className="handle-grip"/><span>{drawer ? 'Close options' : 'Options'}</span><ChevronDown size={16}/></button>
     {drawer && <div className="drawer-backdrop" onClick={() => setDrawer(false)}/>}
     <aside className={`bottom-drawer ${drawer ? 'is-open' : ''}`} aria-hidden={!drawer}>
@@ -1079,15 +1168,16 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
       <div className="drawer-grid">
 
         <div className="drawer-panel"><h3><Settings2 size={17}/> Reading</h3><div className="font-choice"><span>Notation font</span><div className="font-toggle" role="group" aria-label="Notation font"><button className={prefs.notationFont === 'Bravura' ? 'is-selected' : ''} aria-pressed={prefs.notationFont === 'Bravura'} onClick={() => update({ notationFont: 'Bravura' })}>Bravura</button><button className={prefs.notationFont === 'Petaluma' ? 'is-selected' : ''} aria-pressed={prefs.notationFont === 'Petaluma'} onClick={() => update({ notationFont: 'Petaluma' })}>Petaluma</button></div></div><div className="font-choice"><span>Stave text font</span><div className="font-toggle" role="group" aria-label="Stave text font">{(['Sans', 'Serif', 'Mono'] as const).map(font => <button key={font} className={prefs.annotationFont === font ? 'is-selected' : ''} aria-pressed={prefs.annotationFont === font} onClick={() => update({ annotationFont: font })}>{font}</button>)}</div></div><label className="field-label" htmlFor={overhangId}>Overhang <span>{prefs.overlap === 0 ? 'Off' : `${prefs.overlap} ${prefs.mode === 'portrait' ? (prefs.overlap === 1 ? 'system' : 'systems') : (prefs.overlap === 1 ? 'bar' : 'bars')}`}</span></label><input id={overhangId} className="ps-range" type="range" min="0" max="3" step="1" value={prefs.overlap} onChange={e => update({ overlap: Number(e.target.value) })}/><div className="ps-switch-row"><span>Note names</span><button className={`ps-switch ${prefs.names ? 'is-on' : ''}`} role="switch" aria-label="Note names" aria-checked={prefs.names} onClick={() => update({ names: !prefs.names })}/></div><div className="ps-switch-row"><span>Chord symbols</span><button className={`ps-switch ${prefs.chordSymbols ? 'is-on' : ''}`} role="switch" aria-label="Chord symbols" aria-checked={prefs.chordSymbols} onClick={() => update({ chordSymbols: !prefs.chordSymbols })}/></div><label className="ps-switch-row inference-row"><span>Infer chord symbols</span><input type="checkbox" checked={prefs.inferChordSymbols} onChange={e => update({ inferChordSymbols: e.target.checked })}/></label><div className="ps-switch-row"><span>Beat counts</span><button className={`ps-switch ${prefs.counts ? 'is-on' : ''}`} role="switch" aria-label="Beat counts" aria-checked={prefs.counts} onClick={() => update({ counts: !prefs.counts })}/></div><div className="ps-switch-row"><span>Count subdivisions</span><button className={`ps-switch ${prefs.subdivisions ? 'is-on' : ''}`} role="switch" aria-label="Count subdivisions" aria-checked={prefs.subdivisions} onClick={() => update({ subdivisions: !prefs.subdivisions, counts: true })}/></div>{score.parts.length > 4 && <button className="text-action reset-staves" onClick={resetStaves}><RotateCcw size={15}/> Reset score staves</button>}</div>
-        <div className="drawer-panel abc-panel"><h3><FileMusic size={17}/> ABC notation</h3><p>Paste ABC text here, or use the open button in the header for files and folders.</p><textarea value={abc} onChange={e => setAbc(e.target.value)} spellCheck={false} aria-label="ABC notation"/><button className="primary-action" onClick={() => void readAbc(abc)}>View notation <ChevronRight size={17}/></button><button className="text-action" onClick={loadSample}><FileMusic size={16}/> Open sample score</button>{lastFileInfo && <button className="text-action forget-last-file" title={LAST_FILE_PRIVACY} onClick={forgetLast}><Trash2 size={15}/> Forget last opened file</button>}</div>
+        <div className="drawer-panel abc-panel"><h3><FileMusic size={17}/> ABC notation</h3><p>Paste ABC text here, or use the open button in the header for files and folders.</p><textarea value={abcDraft} onChange={e => setAbcDraft(e.target.value)} spellCheck={false} aria-label="ABC notation"/><button className="primary-action" onClick={() => void readAbc(abcDraft)}>View notation <ChevronRight size={17}/></button><button className="text-action" onClick={loadSample}><FileMusic size={16}/> Open sample score</button>{lastFileInfo && <button className="text-action forget-last-file" title={LAST_FILE_PRIVACY} onClick={forgetLast}><Trash2 size={15}/> Forget last opened file</button>}</div>
         <div className="drawer-panel pitch-panel"><h3><Settings2 size={17}/> Pitch</h3><div className="pitch-options"><div><span className="pitch-label">Transpose score</span><div className="semitone-control"><button aria-label="Transpose down a semitone" disabled={prefs.semitones <= -12} onClick={() => transposeBy(-1)}><Minus size={16}/></button><output aria-live={drawer ? 'polite' : 'off'}>{prefs.semitones > 0 ? '+' : ''}{prefs.semitones} semitones</output><button aria-label="Transpose up a semitone" disabled={prefs.semitones >= 12} onClick={() => transposeBy(1)}><Plus size={16}/></button><button className="pitch-reset" aria-label="Reset transposition" title="Reset transposition" disabled={prefs.semitones === 0 && !prefs.keyFlip} onClick={() => changePitch({ semitones: 0, keyFlip: false })}><RotateCcw size={15}/></button></div></div><div className="pitch-key"><span className="pitch-label">Key</span><div className="pitch-key-control"><output className="pitch-key-readout" aria-live={drawer ? 'polite' : 'off'}>{readout.text}</output><button className={`pitch-key-flip ${flipTo ? '' : 'is-disabled'}`} aria-label={flipLabel} title={flipLabel} aria-disabled={!flipTo} onClick={flipKey}><span className="pitch-key-flip-icon" aria-hidden="true">⇄</span><span className="pitch-key-flip-label">{flipText}</span></button></div></div>{!concertBasis && <div><span className="pitch-label">Score view</span><div className="font-toggle pitch-view" role="group" aria-label="Score pitch view"><button className={prefs.scorePitch === 'written' ? 'is-selected' : ''} aria-pressed={prefs.scorePitch === 'written'} onClick={() => changePitch({ scorePitch: 'written' })}>Transposing</button><button className={prefs.scorePitch === 'concert' ? 'is-selected' : ''} aria-pressed={prefs.scorePitch === 'concert'} onClick={() => changePitch({ scorePitch: 'concert' })}>Concert</button></div></div>}</div><p className="pitch-hint">{concertBasis ? 'This score is written at concert pitch, so it is shown at concert pitch. Playback stays at concert pitch.' : hasTransposingParts ? 'Transposing shows written parts; Concert shows sounding pitches. Playback stays at concert pitch.' : 'This score has no instrument transposition data, so both views match.'}</p></div>
       </div>
       {error && <div className="ps-error" role="alert"><span className="ps-error-text">{error}</span>{oomButton}</div>}
       <div className="drawer-foot">SPACE / PAGE DOWN · next view &nbsp;&nbsp; PAGE UP · previous view <span>FluidR3 GM · CC BY 3.0; TimGM drums · GPL-2</span></div>
     </aside>
+    </>}
     {!drawer && (notice || largeNotice || reopenOffer) && <div className="reader-notices">
       {largeNotice && <div className="large-file-notice" role="status"><Hourglass className="large-file-notice-icon" size={16}/><span className="large-file-notice-text">{largeNotice}</span><button className="large-file-notice-dismiss" onClick={() => setLargeNotice('')} aria-label="Dismiss large score notice"><X size={16}/></button></div>}
-      {reopenOffer && <div className="reopen-banner" role="status" aria-label="Reopen last file">
+      {chrome.openFile && reopenOffer && <div className="reopen-banner" role="status" aria-label="Reopen last file">
         <History className="reopen-banner-icon" size={16}/>
         <span className="reopen-banner-body"><span className="reopen-banner-text">Reopen <strong className="reopen-banner-name">{reopenOffer.name}</strong>?</span><span className="reopen-banner-privacy" title={LAST_FILE_PRIVACY}>Kept only on this device.</span></span>
         <span className="reopen-banner-actions">
