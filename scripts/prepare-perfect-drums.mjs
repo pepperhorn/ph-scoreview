@@ -9,7 +9,7 @@ const { SoundFont2 } = soundfont2;
 const sf = new SoundFont2(new Uint8Array(readFileSync(input)));
 const preset = sf.presets.find(item => item.header.bank === 128 && item.header.preset === 0);
 if (!preset) throw new Error('Expected drum bank 128, preset 0.');
-const output = resolve('public/soundfonts/perfect-drums');
+const output = resolve('packages/pepperscore-sounds-complete/soundfonts/perfect-drums');
 mkdirSync(output, { recursive: true });
 const notes = {};
 for (let note = 35; note <= 70; note++) {

@@ -1,0 +1,7 @@
+{
+  "name": "pepperscore-sounds-complete",
+  "version": "0.1.0",
+  "description": "All pepperscore assets: music fonts, instrument icons, Perfect Drums, TimGM6mb and all 128 FluidR3 GM sounds.",
+  "license": "SEE LICENSE IN LICENSES.md",
+  "files": ["fonts", "instruments", "soundfonts", "pack.json", "LICENSES.md", "README.md"]
+}

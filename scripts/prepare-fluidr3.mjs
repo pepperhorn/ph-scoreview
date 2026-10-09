@@ -1,9 +1,9 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-const manifest = JSON.parse(await readFile(resolve('src/lib/gm-soundfont-manifest.json'), 'utf8'));
+const manifest = JSON.parse(await readFile(resolve('packages/pepperscore/src/lib/gm-soundfont-manifest.json'), 'utf8'));
 const names = manifest.programs.map(({ soundfont }) => soundfont);
-const root = resolve('public/soundfonts/fluidr3');
+const root = resolve('packages/pepperscore-sounds-complete/soundfonts/fluidr3');
 const source = 'https://gleitz.github.io/midi-js-soundfonts/FluidR3_GM';
 const semitones = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 const keyToMidi = key => {
