@@ -121,9 +121,10 @@ try {
 
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: engine !== 'firefox' });
   const errors = [], remote = [], consoleLines = [];
+  const assetPaths = [];
   page.on('console', m => consoleLines.push(`${m.type()}: ${m.text()}`));
   page.on('pageerror', e => errors.push(e.message));
-  page.on('request', r => { if (/^https?:/.test(r.url()) && !r.url().startsWith(url)) remote.push(r.url()); });
+  page.on('request', r => { if (/^https?:/.test(r.url()) && !r.url().startsWith(url)) remote.push(r.url()); else if (r.url().startsWith(url)) assetPaths.push(new URL(r.url()).pathname); });
   await page.addInitScript(() => {
     window.__audioStarts = 0;
     window.__contexts = [];
@@ -211,7 +212,7 @@ try {
   assert.equal(reveal.transform, 'none', 'Painted score settles at its natural scale');
   assert.ok(await page.locator('svg .note').count() > 0, 'Verovio native notes render');
   assert.ok(await page.locator('svg .notehead use').count() > 0, 'Noteheads retain their glyph references');
-  // SMuFL text glyphs (the sample's metronome mark) keep their music font, served by an app-level local @font-face.
+  // SMuFL text glyphs (the sample's metronome mark) keep their music font, served by the @font-face injected from the asset base.
   const smufl = await page.evaluate(async () => {
     const glyph = document.querySelector('.score-system svg g.tempo tspan[font-family]');
     await document.fonts.load('20px Bravura');
@@ -443,8 +444,12 @@ try {
   // The playhead can show at the bar start a frame before the first note highlights, so wait for both.
   await page.waitForFunction(() => document.querySelector('.playback-line') && document.querySelector('.is-playing') && (window.__audioStarts > 0 || document.querySelector('.playback-notice')));
   assert.ok(await page.locator('.is-playing').count() > 0);
-  if (await page.locator('.playback-notice').count() === 0) assert.ok(await page.evaluate(() => window.__audioStarts) > 0, 'Audible playback starts audio sources');
-  else console.log(`${engine}: audio unavailable, reader playback ran silently`);
+  if (await page.locator('.playback-notice').count() === 0) {
+    assert.ok(await page.evaluate(() => window.__audioStarts) > 0, 'Audible playback starts audio sources');
+    // Silent runs (no audio output) return before loading any pack, so only audible playback reads them.
+    assert.ok(assetPaths.includes('/pack.json'), 'Playback reads pack.json from the asset base');
+    assert.ok(assetPaths.includes('/soundfonts/fluidr3/acoustic_grand_piano.json'), `The sample's piano comes from the pack: ${assetPaths.filter(path => path.startsWith('/soundfonts')).join(', ')}`);
+  } else console.log(`${engine}: audio unavailable, reader playback ran silently`);
   await page.getByRole('button', { name: 'Pause playback', exact: true }).click();
   const stopped = await page.evaluate(() => window.__audioStarts);
   await page.waitForTimeout(650);
