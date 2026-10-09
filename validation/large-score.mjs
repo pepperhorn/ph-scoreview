@@ -13,11 +13,11 @@ import { chromium, firefox, webkit } from 'playwright-core';
 import { orchestral } from './synthetic.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-const dist = resolve(root, 'dist');
+const dist = resolve(root, 'apps/reader/dist');
 const engine = process.env.BROWSER || 'chromium';
 const launcher = { chromium, firefox, webkit }[engine];
 if (!launcher) throw new Error(`BROWSER must be chromium, firefox or webkit (got "${engine}")`);
-if (!existsSync(resolve(dist, 'index.html'))) throw new Error('dist/index.html is missing: run `npm run build` before validation/large-score.mjs');
+if (!existsSync(resolve(dist, 'index.html'))) throw new Error('apps/reader/dist/index.html is missing: run `npm run build` before validation/large-score.mjs');
 /**
  * Budgets: first paint measured at 6.9-9.9 s locally (desktop Chromium, 12-core WSL2), x 1.5. Shared CI runners are
  * slower, so CI doubles it; LARGE_SCORE_BUDGET_SCALE overrides.

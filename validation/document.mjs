@@ -35,8 +35,8 @@ try {
   const oversizedArchive = zipSync({ 'META-INF/container.xml': strToU8('<?xml version="1.0"?><container><rootfiles><rootfile full-path="big.musicxml"/></rootfiles></container>'), 'big.musicxml': oversizedZeros });
   const archive = zipSync({ 'META-INF/container.xml': strToU8('<?xml version="1.0"?><container><rootfiles><rootfile full-path="score.musicxml"/></rootfiles></container>'), 'score.musicxml': strToU8(xml) });
   const actual = await page.evaluate(async ({ xml, archive }) => {
-    const { parseMusicXml, parseMei, parseAbc, importFile, parseMidi } = await import('/src/lib/import.ts');
-    const { scoreToMei } = await import('/src/lib/notation/document.ts');
+    const { parseMusicXml, parseMei, parseAbc, importFile, parseMidi } = await import('/packages/pepperscore/src/lib/import.ts');
+    const { scoreToMei } = await import('/packages/pepperscore/src/lib/notation/document.ts');
     const source = parseMusicXml(xml);
     const mxl = await importFile(new File([new Uint8Array(archive)], 'score.mxl'));
     const abc = await parseAbc('X:1\nT:Voices\nM:4/4\nL:1/8\nK:C\nC D E F|');
@@ -59,8 +59,8 @@ try {
     };
   }, { xml, archive: Array.from(archive) });
   const review = await page.evaluate(async ({ encodedArchive, oversizedArchive }) => {
-    const { parseMusicXml, parseMei, importFile } = await import('/src/lib/import.ts');
-    const { readFileState } = await import('/src/lib/file-state.ts');
+    const { parseMusicXml, parseMei, importFile } = await import('/packages/pepperscore/src/lib/import.ts');
+    const { readFileState } = await import('/packages/pepperscore/src/lib/file-state.ts');
     // H2: channel-10 drum kits exported as program 1 are drum kits, not piano.
     const drum = parseMusicXml('<?xml version="1.0"?><score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Kit</part-name><score-instrument id="P1-I36"><instrument-name>Bass Drum 1</instrument-name></score-instrument><midi-instrument id="P1-I36"><midi-channel>10</midi-channel><midi-program>1</midi-program><midi-unpitched>37</midi-unpitched></midi-instrument></score-part></part-list><part id="P1"><measure number="1"><attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>percussion</sign></clef></attributes><note><unpitched><display-step>F</display-step><display-octave>4</display-octave></unpitched><duration>4</duration><instrument id="P1-I36"/><voice>1</voice><type>whole</type></note></measure></part></score-partwise>');
     // H5: MEI keySig/meterSig elements, accid.ges, <accid> children, measure state and a later scoreDef change.
@@ -83,8 +83,8 @@ try {
     let oversized = '';
     try { await importFile(new File([new Uint8Array(oversizedArchive)], 'big.mxl')); } catch (error) { oversized = error.message; }
     // N: ABC navigation is engraved through the MEI adapter (repeat barlines, volta endings, segno/coda, D.C./D.S./Fine).
-    const { parseAbc } = await import('/src/lib/import.ts');
-    const { scoreToMei } = await import('/src/lib/notation/document.ts');
+    const { parseAbc } = await import('/packages/pepperscore/src/lib/import.ts');
+    const { scoreToMei } = await import('/packages/pepperscore/src/lib/notation/document.ts');
     const repeats = await parseAbc('X:1\nM:4/4\nL:1/4\nK:C\n|:C4|[1D4:|[2E4|]\n');
     const jumps = await parseAbc('X:1\nM:4/4\nL:1/4\nK:C\nC4|!segno!D4|"^To Coda"E4|"^Fine"F4|"^D.S. al Coda"G4|!coda!A4|]\n');
     const both = await parseAbc('X:1\nM:4/4\nL:1/4\nK:C\n|:C4::D4:|\n');
@@ -136,7 +136,7 @@ try {
   // ID-less MusicXML (typical of notation-program exports): the engraving copy gets deterministic note IDs and
   // expanded multi-measure rests; the original text stays byte-identical; ID'd sources keep their own IDs.
   const idless = await page.evaluate(async () => {
-    const { importFile } = await import('/src/lib/import.ts');
+    const { importFile } = await import('/packages/pepperscore/src/lib/import.ts');
     const text = await (await fetch('/validation/fixtures/idless-sibelius.musicxml')).text();
     const score = await importFile(new File([text], 'idless.musicxml'));
     const engraving = new DOMParser().parseFromString(score.document.engravingText, 'application/xml');
@@ -180,7 +180,7 @@ try {
   const pageErrors = [];
   page.on('pageerror', error => pageErrors.push(error.message));
   const unhandled = await page.evaluate(async () => {
-    const { importScoreFile, importMusicXmlText } = await import('/src/lib/import.ts');
+    const { importScoreFile, importMusicXmlText } = await import('/packages/pepperscore/src/lib/import.ts');
     const rejections = [];
     const listen = event => rejections.push(String(event.reason?.message || event.reason));
     window.addEventListener('unhandledrejection', listen);
@@ -207,9 +207,9 @@ try {
   console.log('Document import: superseded and failed imports leave no unhandled rejection passed');
   // The worker's string MEI view transform (no DOMParser in workers) matches the reader's former DOM transform.
   const meiView = await page.evaluate(async () => {
-    const { buildViewMei, scanBaseline } = await import('/src/lib/notation/mei-view.ts');
-    const { scoreToMei } = await import('/src/lib/notation/document.ts');
-    const { exampleScore } = await import('/src/lib/score.ts');
+    const { buildViewMei, scanBaseline } = await import('/packages/pepperscore/src/lib/notation/mei-view.ts');
+    const { scoreToMei } = await import('/packages/pepperscore/src/lib/notation/document.ts');
+    const { exampleScore } = await import('/packages/pepperscore/src/lib/score.ts');
     const MEI = 'http://www.music-encoding.org/ns/mei';
     const XML = 'http://www.w3.org/XML/1998/namespace';
     const parse = text => new DOMParser().parseFromString(text, 'application/xml');
@@ -307,7 +307,7 @@ try {
   lead.name = 'Lead';
   lead.addNote({ midi: 60, time: 0, duration: 0.5 });
   const drums = await page.evaluate(async midiBytes => {
-    const { parseMidi, parseAbc } = await import('/src/lib/import.ts');
+    const { parseMidi, parseAbc } = await import('/packages/pepperscore/src/lib/import.ts');
     const fromMidi = await parseMidi(new Uint8Array(midiBytes).buffer);
     const fromAbc = await parseAbc('X:1\nT:Kit\nM:4/4\nL:1/8\nV:1 clef=perc name="Drums"\nV:2 clef=treble name="Tune"\nK:D\n[V:1] F2 c2 [Fg]2 ^c2|\n[V:2] D E F G A B c d|\n');
     const summary = score => {
@@ -368,8 +368,8 @@ try {
   // Phase 3 chunk slices: prevailing attributes are carried (per staff, the meter unprinted), credits only in the first
   // slice, stable measure IDs, span-aware overlaps, page-aligned plans; non-partwise or prefixed sources do not index.
   const chunks = await page.evaluate(async () => {
-    const { indexMusicXml, sliceMusicXml, planChunk, leadFor, tailFor, measureId } = await import('/src/lib/notation/musicxml-chunks.ts');
-    const { parseMusicXml } = await import('/src/lib/import.ts');
+    const { indexMusicXml, sliceMusicXml, planChunk, leadFor, tailFor, measureId } = await import('/packages/pepperscore/src/lib/notation/musicxml-chunks.ts');
+    const { parseMusicXml } = await import('/packages/pepperscore/src/lib/import.ts');
     const measure = (n, extra = '', id = '') => `<measure number="${n}"${id ? ` id="${id}"` : ''}>${extra}<note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><type>whole</type><staff>1</staff></note><backup><duration>4</duration></backup><note><pitch><step>C</step><octave>3</octave></pitch><duration>4</duration><voice>5</voice><type>whole</type><staff>2</staff></note></measure>`;
     const measures = Array.from({ length: 12 }, (_, index) => {
       const n = index + 1;

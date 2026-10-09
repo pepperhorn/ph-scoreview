@@ -9,12 +9,14 @@ npm install
 npm run dev   # binds to 0.0.0.0
 ```
 
-Open the URL printed by Astro.
+Open the URL printed by Astro. To pick a port, run the reader workspace directly: `npm run dev -w pepperscore-reader -- --port 4400` (the root `dev` script does not forward extra arguments).
+
+The repository is an npm workspace: `packages/pepperscore` (the component), `packages/pepperscore-sounds-complete` (assets), `apps/reader` (this site).
 
 | Script | Purpose |
 | --- | --- |
 | `npm run check` | Astro and TypeScript checks |
-| `npm run build` | Static site in `dist/` |
+| `npm run build` | Static site in `apps/reader/dist/` |
 | `npm run test:manifest` | Verifies the bundled GM sound packs |
 | `npm run test:validation` | Tracked suites: `test:document` (source retention, formats, identities), `test:parser-diff` (the streaming MusicXML reader against the former DOM importer), `test:score-db`, `test:performance` (playback timeline), `test:reader` (the built reader in Chromium) and `test:large` (a ~5 MB orchestral score). Run `npm run build` first. |
 | `npm run test:reader:firefox`, `npm run test:reader:webkit` | Reader suite in Firefox or WebKit (`npm run test:browsers` installs the Playwright engines) |
@@ -62,7 +64,7 @@ When chord symbols are enabled, source symbols from MusicXML, MEI, and ABC appea
 To open a song when mounting the React reader, pass MusicXML text directly through the `musicXml` prop. No base64 or URL encoding is needed:
 
 ```tsx
-import Reader from './components/Reader';
+import Reader from 'pepperscore';
 import songXml from './scores/song.musicxml?raw';
 
 <Reader musicXml={songXml} />
@@ -93,20 +95,20 @@ The file is downloaded in the browser and opened like a chosen file, so any supp
 
 ## Per-file state and sharing format
 
-For an opened file, Scoreflow hashes its bytes with SHA-256 and saves the versioned [file settings schema](src/lib/file-state.schema.json) in browser storage under that hash. Reopening the same bytes restores view, notation options, zoom, BPM, instrument assignments, track volumes, and stave visibility. Hiding a stave also mutes its playback; the source file stays untouched.
+For an opened file, Scoreflow hashes its bytes with SHA-256 and saves the versioned [file settings schema](packages/pepperscore/src/lib/file-state.schema.json) in browser storage under that hash. Reopening the same bytes restores view, notation options, zoom, BPM, instrument assignments, track volumes, and stave visibility. Hiding a stave also mutes its playback; the source file stays untouched.
 
-The [portable score envelope schema](src/lib/score-share.schema.json) describes how a compressed score and its settings can travel together. It is a format for a future sharing flow, not a link service. A short URL for a large score would require hosted storage or a short-link backend; putting the score in a URL fragment would produce a long link.
+The [portable score envelope schema](packages/pepperscore/src/lib/score-share.schema.json) describes how a compressed score and its settings can travel together. It is a format for a future sharing flow, not a link service. A short URL for a large score would require hosted storage or a short-link backend; putting the score in a URL fragment would produce a long link.
 
 ## Soundfont
 
-The [GM soundfont manifest](src/lib/gm-soundfont-manifest.json) lists all 128 FluidR3 GM programs (numbered 1–128), each with a local sample pack, family, and the closest supplied SVG icon. Its `voices` section retains the original 16 common defaults. MIDI tracks use the program mapping to choose an icon. MusicXML parts whose `virtual-library` is `General MIDI` use a matching `virtual-name` for both icon and exact playback sound; a valid `midi-program` is used when no GM virtual name is supplied. Other libraries keep the normal part-name fallback. Run `npm run test:manifest` to check program order, icon files, and audio packs.
+The [GM soundfont manifest](packages/pepperscore/src/lib/gm-soundfont-manifest.json) lists all 128 FluidR3 GM programs (numbered 1–128), each with a local sample pack, family, and the closest supplied SVG icon. Its `voices` section retains the original 16 common defaults. MIDI tracks use the program mapping to choose an icon. MusicXML parts whose `virtual-library` is `General MIDI` use a matching `virtual-name` for both icon and exact playback sound; a valid `midi-program` is used when no GM virtual name is supplied. Other libraries keep the normal part-name fallback. Run `npm run test:manifest` to check program order, icon files, and audio packs.
 
-The 128 FluidR3 GM programs use local, reduced MP3 sample packs from [gleitz/midi-js-soundfonts](https://github.com/gleitz/midi-js-soundfonts). The packs total about 47 MB on disk, but only sounds used by the current score load in the browser, and only their required samples are decoded. FluidR3 samples are CC BY 3.0; attribution and details of the reduction are in [`public/soundfonts/fluidr3/ATTRIBUTION.txt`](public/soundfonts/fluidr3/ATTRIBUTION.txt). To regenerate the packs from upstream, run `node scripts/prepare-fluidr3.mjs`.
+The 128 FluidR3 GM programs use local, reduced MP3 sample packs from [gleitz/midi-js-soundfonts](https://github.com/gleitz/midi-js-soundfonts). The packs total about 47 MB on disk, but only sounds used by the current score load in the browser, and only their required samples are decoded. FluidR3 samples are CC BY 3.0; attribution and details of the reduction are in [`packages/pepperscore-sounds-complete/soundfonts/fluidr3/ATTRIBUTION.txt`](packages/pepperscore-sounds-complete/soundfonts/fluidr3/ATTRIBUTION.txt). To regenerate the packs from upstream, run `node scripts/prepare-fluidr3.mjs`.
 
-The gleitz General MIDI set has no drum-kit bank. Drum notes 35–70 use a 2 MB local pack extracted from [Perfect Drums V2](https://musical-artifacts.com/artifacts/8466), the fixed hi-hat successor to the user's [V1 suggestion](https://musical-artifacts.com/artifacts/6554). The source SF2 is 244 MB and is not loaded by the browser. [Attribution and license](public/soundfonts/perfect-drums/ATTRIBUTION.txt) and the [preparation script](scripts/prepare-perfect-drums.mjs) are included. Other drum notes fall back to the local `TimGM6mb.sf2` kit through smplr; its GPL-2 license is in `public/soundfonts/COPYING.txt`. Pitched parts use Web Audio sample players. Playback schedules a short window ahead, and track gains feed a shared compressor. All playback assets are served from this app's origin.
+The gleitz General MIDI set has no drum-kit bank. Drum notes 35–70 use a 2 MB local pack extracted from [Perfect Drums V2](https://musical-artifacts.com/artifacts/8466), the fixed hi-hat successor to the user's [V1 suggestion](https://musical-artifacts.com/artifacts/6554). The source SF2 is 244 MB and is not loaded by the browser. [Attribution and license](packages/pepperscore-sounds-complete/soundfonts/perfect-drums/ATTRIBUTION.txt) and the [preparation script](scripts/prepare-perfect-drums.mjs) are included. Other drum notes fall back to the local `TimGM6mb.sf2` kit through smplr; its GPL-2 license is in `packages/pepperscore-sounds-complete/soundfonts/COPYING.txt`. Pitched parts use Web Audio sample players. Playback schedules a short window ahead, and track gains feed a shared compressor. All playback assets are served from this app's origin.
 
 ## License notes
 
 Scoreflow (this viewer) is released under the [MIT License](LICENSE). Closed-source features are planned as separate plugins, outside this repository.
 
-The score engraver is [Verovio](https://www.verovio.org/) (npm `verovio` 6.3.0), licensed under LGPL-3.0-or-later. It is bundled unmodified, with its WebAssembly module, into the Web Worker chunk. The Bravura, Petaluma and Petaluma Script fonts in `public/fonts/` are SIL Open Font License fonts from Steinberg; the Petaluma license text is in [`public/fonts/Petaluma-OFL.txt`](public/fonts/Petaluma-OFL.txt).
+The score engraver is [Verovio](https://www.verovio.org/) (npm `verovio` 6.3.0), licensed under LGPL-3.0-or-later. It is bundled unmodified, with its WebAssembly module, into the Web Worker chunk. The Bravura, Petaluma and Petaluma Script fonts in `packages/pepperscore-sounds-complete/fonts/` are SIL Open Font License fonts from Steinberg; the Petaluma license text is in [`packages/pepperscore-sounds-complete/fonts/Petaluma-OFL.txt`](packages/pepperscore-sounds-complete/fonts/Petaluma-OFL.txt).

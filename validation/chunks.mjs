@@ -12,14 +12,14 @@ import { extname, join, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { chromium, firefox, webkit } from 'playwright-core';
-import { indexMusicXml, sliceMusicXml } from '../src/lib/notation/musicxml-chunks.ts';
+import { indexMusicXml, sliceMusicXml } from '../packages/pepperscore/src/lib/notation/musicxml-chunks.ts';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-const dist = resolve(root, 'dist');
+const dist = resolve(root, 'apps/reader/dist');
 const engine = process.env.BROWSER || 'chromium';
 const launcher = { chromium, firefox, webkit }[engine];
 if (!launcher) throw new Error(`BROWSER must be chromium, firefox or webkit (got "${engine}")`);
-if (!existsSync(resolve(dist, 'index.html'))) throw new Error('dist/index.html is missing: run `npm run build` before validation/chunks.mjs');
+if (!existsSync(resolve(dist, 'index.html'))) throw new Error('apps/reader/dist/index.html is missing: run `npm run build` before validation/chunks.mjs');
 
 // A slice's first measure: a key it sets before its first note replaces the carried key (two keys there make Verovio
 // write two key signatures); a key change later in the measure keeps the carried key for the notes before it.
