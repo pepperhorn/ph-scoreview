@@ -1177,6 +1177,44 @@ try {
   // Real-world exports (e.g. Sibelius) carry no note IDs and open with a multi-measure rest whose first bar holds
   // only directions and second only a <forward>. Every source measure must engrave, every event must map to its
   // engraved note, and the playhead must move through the empty intro before highlighting the first note.
+  // TimGM6mb fallback: with a pack.json that lists no FluidR3 sounds, every melodic part plays through the SF2, and
+  // parts on different programs share one download and parse of it.
+  const sf2Context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const sf2 = await sf2Context.newPage();
+  const sf2Errors = [], sf2Requests = [];
+  sf2.on('pageerror', e => sf2Errors.push(e.message));
+  sf2.on('request', r => sf2Requests.push(new URL(r.url()).pathname));
+  await sf2.route('**/pack.json', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ pack: 'core', fluidr3: [] }) }));
+  await sf2.addInitScript(() => {
+    window.__audioStarts = 0;
+    const start = AudioBufferSourceNode.prototype.start;
+    AudioBufferSourceNode.prototype.start = function (...args) { window.__audioStarts++; return start.apply(this, args); };
+    // Every read of the soundfont bytes, including re-reads through a blob: URL, which the request listener can miss.
+    window.__sf2Reads = 0;
+    const fetchNative = window.fetch;
+    window.fetch = function (input, ...rest) { const href = String(input instanceof Request ? input.url : input); if (href.endsWith('.sf2') || href.startsWith('blob:')) window.__sf2Reads++; return fetchNative.call(this, input, ...rest); };
+  });
+  const sf2Part = (id, name, program) => ({ list: `<score-part id="${id}"><part-name>${name}</part-name><midi-instrument id="${id}-I1"><midi-channel>${id === 'P1' ? 1 : 2}</midi-channel><midi-program>${program}</midi-program></midi-instrument></score-part>`, body: `<part id="${id}"><measure number="1"><attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>${['C', 'E', 'G', 'C'].map(step => `<note><pitch><step>${step}</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>`).join('')}</measure></part>` });
+  const sf2Parts = [sf2Part('P1', 'Oboe', 69), sf2Part('P2', 'Horn', 61)];
+  const sf2Score = `<?xml version="1.0"?><score-partwise version="4.0"><work><work-title>Fallback duet</work-title></work><part-list>${sf2Parts.map(part => part.list).join('')}</part-list>${sf2Parts.map(part => part.body).join('')}</score-partwise>`;
+  await sf2.goto(url);
+  await sf2.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg'), undefined, { timeout: 30000 });
+  await sf2.locator('input[type=file]').setInputFiles({ name: 'fallback-duet.musicxml', mimeType: 'application/xml', buffer: Buffer.from(sf2Score) });
+  await sf2.waitForFunction(() => document.querySelector('h1')?.textContent === 'Fallback duet');
+  await sf2.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg'), undefined, { timeout: 30000 });
+  await sf2.getByRole('button', { name: 'Play score', exact: true }).click();
+  await sf2.waitForFunction(() => window.__audioStarts > 0 || document.querySelector('.playback-notice') || document.querySelector('.toast'), undefined, { timeout: 30000 });
+  assert.equal(await sf2.locator('.toast').count(), 0, await sf2.locator('.toast').allTextContents());
+  if (await sf2.locator('.playback-notice').count() === 0) {
+    assert.ok(await sf2.evaluate(() => window.__audioStarts) > 0, 'TimGM6mb fallback parts start audio sources');
+    assert.equal(sf2Requests.filter(path => path === '/soundfonts/TimGM6mb.sf2').length, 1, 'Two TimGM6mb parts on different programs download the soundfont once');
+    assert.equal(await sf2.evaluate(() => window.__sf2Reads), 1, 'Two TimGM6mb parts read (and parse) the soundfont bytes once');
+    assert.ok(!sf2Requests.some(path => path.startsWith('/soundfonts/fluidr3/')), `No FluidR3 pack is loaded when pack.json lists none: ${sf2Requests.filter(path => path.startsWith('/soundfonts/')).join(', ')}`);
+    console.log(`${engine}: TimGM6mb fallback shares one soundfont download passed`);
+  } else console.log(`${engine}: audio unavailable, TimGM6mb fallback check skipped`);
+  assert.deepEqual(sf2Errors, []);
+  await sf2Context.close();
+
   const idlessContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const idless = await idlessContext.newPage();
   const idlessErrors = [];

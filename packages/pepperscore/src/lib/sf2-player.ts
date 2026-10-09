@@ -1,18 +1,24 @@
-import type { Instrument, InstrumentZone, Preset } from 'soundfont2';
+import type { Instrument, InstrumentZone, Preset, SoundFont2 } from 'soundfont2';
 import type { AudioPlayer } from './sound-players';
 
-const objectUrls = new Map<string, Promise<string>>();
+const soundfonts = new Map<string, Promise<SoundFont2>>();
 
-/** Each SF2 is downloaded once per URL; every program and instance reads it through one object URL. */
-function cachedObjectUrl(url: string): Promise<string> {
-  let cached = objectUrls.get(url);
+/**
+ * Each SF2 is downloaded and parsed once per URL. Every program, part and instance builds its player from the same
+ * parsed soundfont (read-only here), so disposing one player never touches data another is using.
+ */
+function parsedSoundfont(url: string): Promise<SoundFont2> {
+  let cached = soundfonts.get(url);
   if (!cached) {
-    cached = fetch(url).then(response => {
-      if (!response.ok) throw new Error(`Could not load the soundfont (${response.status}).`);
-      return response.blob();
-    }).then(blob => URL.createObjectURL(blob));
-    cached.catch(() => objectUrls.delete(url));
-    objectUrls.set(url, cached);
+    cached = Promise.all([
+      fetch(url).then(response => {
+        if (!response.ok) throw new Error(`Could not load the soundfont (${response.status}).`);
+        return response.arrayBuffer();
+      }),
+      import('soundfont2'),
+    ]).then(([buffer, { default: soundfont2 }]) => new soundfont2.SoundFont2(new Uint8Array(buffer)));
+    cached.catch(() => soundfonts.delete(url));
+    soundfonts.set(url, cached);
   }
   return cached;
 }
@@ -44,28 +50,21 @@ export type Sf2Options = { url: string; drums: boolean; program?: number; preset
 
 /** A player for one preset of an SF2. `preset` names an SF2 preset, or failing that a single SF2 instrument. */
 export async function loadSf2Player(context: AudioContext, { url, drums, program, preset, destination }: Sf2Options): Promise<AudioPlayer> {
-  const [{ Soundfont2 }, { default: soundfont2 }, objectUrl] = await Promise.all([import('smplr'), import('soundfont2'), cachedObjectUrl(url)]);
+  const [{ Instrument: smplrInstrument, sf2InstrumentToPreset }, soundfont] = await Promise.all([import('smplr'), parsedSoundfont(url)]);
+  const match = findPreset(soundfont.presets, drums, program, preset);
+  const instrument = match ? layeredInstrument(match) : preset ? soundfont.instruments.find(item => item.header.name === preset) : undefined;
+  if (!instrument) throw new Error(preset ? `The soundfont has no preset or instrument named "${preset}".` : drums ? 'The soundfont has no standard drum kit.' : `The soundfont has no instrument for GM program ${program}.`);
+  // smplr's own Soundfont2 fetches and parses the file per sampler; this plugin only turns the shared instrument into samples.
+  const Sf2Sampler = smplrInstrument<{ instrument: Instrument }>((ctx, options, smplr) => {
+    const { json, buffers } = sf2InstrumentToPreset(options.instrument, ctx);
+    return smplr.loadInstrument(json, buffers);
+  });
   const output = context.createGain();
   output.connect(destination);
-  let layered: Instrument | undefined;
-  const sampler = Soundfont2(context, {
-    url: objectUrl,
-    destination: output,
-    createSoundfont: data => {
-      const sf = new soundfont2.SoundFont2(data);
-      const match = findPreset(sf.presets, drums, program, preset);
-      if (!match) return sf;
-      layered = layeredInstrument(match);
-      return { instruments: [...sf.instruments, layered] };
-    },
-  });
-  try {
-    await sampler.ready;
-    const name = layered ? LAYERED : preset;
-    if (!name || !sampler.instrumentNames.includes(name)) throw new Error(preset ? `The soundfont has no preset or instrument named "${preset}".` : drums ? 'The soundfont has no standard drum kit.' : `The soundfont has no instrument for GM program ${program}.`);
-    await sampler.loadInstrument(name);
-  } catch (error) { sampler.dispose(); output.disconnect(); throw error; }
-  // Stacked layers add up: scale by 1/sqrt(the most regions any one note sounds) to sit near single-layer presets.
-  if (layered) output.gain.value = 1 / Math.sqrt(Math.max(1, ...Array.from({ length: 128 }, (_, note) => layered!.zones.filter(zone => zone.keyRange!.lo <= note && note <= zone.keyRange!.hi).length)));
+  const sampler = Sf2Sampler(context, { instrument, destination: output });
+  try { await sampler.ready; } catch (error) { sampler.dispose(); output.disconnect(); throw error; }
+  // Stacked layers add up: scale by 1/sqrt(the most regions any one note sounds) so the preset sits near single-layer
+  // ones. A global approximation: notes with fewer layers are scaled by the same amount.
+  if (match) output.gain.value = 1 / Math.sqrt(Math.max(1, ...Array.from({ length: 128 }, (_, note) => instrument.zones.filter(zone => zone.keyRange!.lo <= note && note <= zone.keyRange!.hi).length)));
   return { start: options => sampler.start(options), stop: () => sampler.stop(), dispose: () => { sampler.dispose(); output.disconnect(); } };
 }

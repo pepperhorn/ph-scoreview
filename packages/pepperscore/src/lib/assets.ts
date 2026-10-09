@@ -24,7 +24,10 @@ export const assetUrl = (base: string, path: string): string => new URL(path.rep
 export type PackInfo = { pack: SoundPackName | 'unknown'; fluidr3: ReadonlySet<string> };
 const packInfo = new Map<string, Promise<PackInfo>>();
 
-/** The base's pack.json, cached per base. A missing or invalid one lists no FluidR3 sounds, so every program falls back to TimGM6mb. */
+/**
+ * The base's pack.json, cached per base. A missing or invalid one lists no FluidR3 sounds, so every program falls back
+ * to TimGM6mb; a failed fetch is not cached, so the next playback tries again.
+ */
 export function loadPackInfo(base: string): Promise<PackInfo> {
   let info = packInfo.get(base);
   if (!info) {
@@ -33,7 +36,7 @@ export function loadPackInfo(base: string): Promise<PackInfo> {
       .then(json => ({
         pack: json?.pack === 'core' || json?.pack === 'complete' ? json.pack : 'unknown' as const,
         fluidr3: new Set(Array.isArray(json?.fluidr3) ? json.fluidr3.filter((name): name is string => typeof name === 'string') : []),
-      }), () => ({ pack: 'unknown' as const, fluidr3: new Set<string>() }));
+      }), () => { packInfo.delete(base); return { pack: 'unknown' as const, fluidr3: new Set<string>() }; });
     packInfo.set(base, info);
   }
   return info;

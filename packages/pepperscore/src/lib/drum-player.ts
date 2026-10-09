@@ -42,7 +42,10 @@ export class DrumPlayer {
   dispose() { this.stop(); this.decoded.clear(); }
 }
 
-/** A note-file kit: a manifest `{ name, notes: { midi: file } }` with files beside it (Perfect Drums, or a soundSources entry). */
+/**
+ * A note-file kit: a manifest `{ name, notes: { midi: file } }` with files beside it (Perfect Drums, or a soundSources entry).
+ * Samples are one-shots (note length is ignored) and notes 42/44/46 choke each other like hi-hats, even for a melodic program.
+ */
 export async function loadNoteFilePlayer(context: AudioContext, manifestUrl: string) {
   const response = await fetch(manifestUrl);
   if (!response.ok) throw new Error('Could not load the drum kit manifest.');

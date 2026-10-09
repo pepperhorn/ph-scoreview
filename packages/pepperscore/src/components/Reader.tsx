@@ -828,6 +828,9 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
       if (plan.kind === 'note-files' && plan.drums) await addDrumFallback(audio.context, players, notes, fallbackSf2Url(assetBase), destination);
       await Promise.all(players.map(player => player.loadNotes?.(notes)));
     }
+    // Players no visible part uses any more (another score, a changed instrument, a hidden part) are released.
+    const used = new Set(audio.partKeys.values());
+    for (const [key, players] of audio.players) if (!used.has(key)) { players.forEach(player => player.dispose()); audio.players.delete(key); }
     return audio;
   };
   const play = async () => {
