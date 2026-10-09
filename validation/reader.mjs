@@ -202,6 +202,9 @@ try {
   };
   await page.goto(url);
   await ready();
+  const musicFonts = await page.evaluate(() => document.querySelector('style[data-pepperscore-fonts]')?.textContent ?? '');
+  for (const file of ['Bravura', 'Petaluma', 'PetalumaScript']) assert.ok(musicFonts.includes(`url('${url}/fonts/${file}.woff2')`), `${file} loads from the asset base: ${musicFonts}`);
+  assert.doesNotMatch(await readFile(resolve(root, 'packages/pepperscore/src/styles.css'), 'utf8'), /@font-face/, 'Music fonts are not hardcoded in the stylesheet');
   // Paint reveal zooms out from an enlarged scale while fading in.
   const reveal = await page.evaluate(() => { const style = getComputedStyle(document.querySelector('.score-content')); return { transition: style.transitionProperty, transform: style.transform }; });
   assert.match(reveal.transition, /transform/, 'Score paint animates scale');

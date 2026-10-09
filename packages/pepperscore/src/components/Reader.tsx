@@ -20,6 +20,8 @@ import { SCORE_FILE_ACCEPT } from '../lib/score-files';
 import { PAGE_PAD_PX, pageOfSystem, systemPages, turnTarget, type ReadingPage, type SystemSpan } from '../lib/paging';
 import { fetchScoreFile, scoreUrlFromSearch } from '../lib/remote-score';
 import OpenScoreDialog from './OpenScoreDialog';
+import { resolveAssetBase, type SoundPackName } from '../lib/assets';
+import { ensureMusicFonts } from '../lib/asset-fonts';
 import '@fontsource/poppins/400.css';
 import '@fontsource/poppins/500.css';
 import '@fontsource/poppins/600.css';
@@ -58,6 +60,9 @@ export type ReaderProps = {
   musicXml?: string;
   /** A public score file (MusicXML, MXL, MIDI, MEI or ABC) to download and open on load; `?score=<url>` on the page does the same. `musicXml` wins when both are given. */
   scoreUrl?: string;
+  /** Root of a pepperscore-sounds-<pack> layout; default: the jsDelivr copy of pepperscore-sounds-<soundPack>. */
+  assetBaseUrl?: string;
+  soundPack?: SoundPackName;
 };
 /** The widest control gutter a viewport can spare. */
 const maxControlGutter = (width: number) => Math.max(120, Math.round(width * .42));
@@ -83,7 +88,7 @@ const scrollBehavior = (): ScrollBehavior => window.matchMedia('(prefers-reduced
 /** Where the viewport centre sits in a measure, so a re-layout can put that point back at the centre. */
 type ZoomAnchor = { index: number; fx: number; fy: number };
 
-export default function Reader({ musicXml, scoreUrl }: ReaderProps) {
+export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = 'core' }: ReaderProps) {
   const [score, setScore] = useState<Score>(sampleScore);
   const [scoreRevision, setScoreRevision] = useState(0);
   const [prefs, setPrefs] = useState<Prefs>(defaults);
@@ -173,6 +178,8 @@ export default function Reader({ musicXml, scoreUrl }: ReaderProps) {
   /** Destination of the last programmatic smooth scroll, so a turn or follow during it builds on where it lands. */
   const scrollTargetRef = useRef<{ top: number; left: number; at: number } | null>(null);
   const userScrollAtRef = useRef(-Infinity);
+  const assetBase = useMemo(() => resolveAssetBase(assetBaseUrl, soundPack), [assetBaseUrl, soundPack]);
+  useEffect(() => ensureMusicFonts(assetBase), [assetBase]);
   const hiddenSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
   const visibleScore = useMemo(() => {
     const parts = score.parts.filter(part => !hiddenSet.has(part.id));
