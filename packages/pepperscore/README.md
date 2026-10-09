@@ -63,9 +63,109 @@ import tune from '../scores/tune.musicxml?raw';
   <PepperScore client:only="react" chrome="minimal" musicXml={tune} />
   ```
 
-- All styles are scoped under `.pepperscore` (no rules on `html`, `body` or bare `*`, no `position: fixed`, no viewport units). Tailwind's preflight does not change the reader, and the reader does not change the page. Add your own classes to the root with `className`.
+- All styles are scoped under `.pepperscore` (no rules on `html`, `body` or bare `*`, no `position: fixed`, no viewport units). Tailwind's preflight does not change the reader, and the reader does not change the page.
 - For a full reader page, give the island a sized parent (as above) or pass `height="100dvh"`.
-- `?raw` imports work for MusicXML, MEI and ABC text. For binary MXL or MIDI, serve the file from `public/` and pass `scoreUrl`, or pass a `File` through `file`.
+- `?raw` imports work for MusicXML, MEI and ABC text. For binary MXL or MIDI, serve the file from `public/` and pass `scoreUrl`, or pass a `File` through `file` from a React component (see below).
+- `output: 'server'` with `@astrojs/node` works with `client:visible` and `client:load`: importing pepperscore on the server touches no `window`, `document` or storage, and the server renders only the empty frame. The pack smoke test (`npm run test:pack`) builds and serves exactly that setup.
+
+### Callbacks, `ref` and `File` need a React wrapper
+
+Astro islands only pass serializable props across the island boundary. Functions (`onReady`, `onPlay`, `onStop`, `onError`), `ref` and `File` objects cannot be passed from an `.astro` file. Put them in a small React component and use that as the island:
+
+```tsx
+// src/components/ScoreSnippet.tsx
+import { useRef, useState } from 'react';
+import { PepperScore, type PepperScoreHandle, type PepperScoreProps } from 'pepperscore';
+import 'pepperscore/style.css';
+
+type Props = Pick<PepperScoreProps, 'musicXml' | 'abc' | 'scoreUrl' | 'height' | 'ariaLabel'>;
+
+export default function ScoreSnippet(props: Props) {
+  const score = useRef<PepperScoreHandle>(null);
+  const [bars, setBars] = useState<number>();
+  return (
+    <figure className="score-snippet not-prose my-6">
+      <div className="score-snippet-frame overflow-hidden rounded-xl border shadow-sm">
+        <PepperScore
+          ref={score}
+          chrome="minimal"
+          assetBaseUrl="/pepperscore-sounds/"
+          onReady={info => setBars(info.measures)}
+          onError={error => console.warn('Score failed to load:', error.message)}
+          {...props}
+        />
+      </div>
+      <figcaption className="score-snippet-actions mt-2 flex items-center gap-2 text-sm">
+        <button type="button" className="score-snippet-play rounded-md border px-3 py-1" onClick={() => void score.current?.play()}>Play</button>
+        <button type="button" className="score-snippet-transpose rounded-md border px-3 py-1" onClick={() => score.current?.transpose(2)}>Up a tone</button>
+        {bars && <span className="score-snippet-bars text-muted-foreground">{bars} bars</span>}
+      </figcaption>
+    </figure>
+  );
+}
+```
+
+```astro
+---
+import ScoreSnippet from '../components/ScoreSnippet';
+import tune from '../scores/tune.musicxml?raw';
+---
+<ScoreSnippet client:visible musicXml={tune} ariaLabel="Example 1: G major scale" />
+```
+
+A `File` from an `<input type="file">` works the same way: keep it in the wrapper's state and pass it as `file`.
+
+### Tailwind v4
+
+pepperscore's stylesheet is unlayered, while Tailwind v4 puts utilities in `@layer utilities`. Unlayered rules beat layered ones, so a utility passed through `className` loses when it sets a property the root already sets: `h-*`, `min-h-*`, `bg-*`, `flex`/`block`, `relative`, `overflow-*`. Utilities the root does not set (`rounded-*`, `border`, `shadow-*`, `ring-*`, `m-*`) do apply, but the reliable pattern is:
+
+- put sizing, spacing and decoration on a **wrapper element**;
+- set the height with the **`height` prop** (`height="420px"`, `height="calc(100dvh - 4rem)"`, or `height="fill"` inside a sized wrapper).
+
+Inside Tailwind Typography's `prose`, add `not-prose` to the wrapper.
+
+### becreative-style examples
+
+A full reader page (`output: 'server'`, a shared layout, Tailwind v4):
+
+```astro
+---
+// src/pages/scores/[slug].astro
+import Layout from '../../layouts/Layout.astro';
+import { PepperScore } from 'pepperscore';
+import 'pepperscore/style.css';
+const { slug } = Astro.params;
+---
+<Layout title="Score">
+  <main class="score-page mx-auto max-w-6xl px-4 py-6">
+    <div class="score-page-frame overflow-hidden rounded-xl border">
+      <PepperScore client:load height="calc(100dvh - 8rem)" scoreUrl={`/scores/${slug}.musicxml`} assetBaseUrl="/pepperscore-sounds/" />
+    </div>
+  </main>
+</Layout>
+```
+
+An inline snippet in a lesson:
+
+```astro
+---
+// src/pages/lessons/scales.astro
+import Layout from '../../layouts/Layout.astro';
+import { PepperScore } from 'pepperscore';
+import 'pepperscore/style.css';
+import scale from '../../scores/g-major-scale.musicxml?raw';
+---
+<Layout title="Scales">
+  <article class="lesson prose mx-auto max-w-3xl px-4 py-6">
+    <p>Play the G major scale, then try it up a tone.</p>
+    <div class="lesson-snippet not-prose my-6 overflow-hidden rounded-xl border shadow-sm">
+      <PepperScore client:visible chrome="minimal" musicXml={scale} assetBaseUrl="/pepperscore-sounds/" ariaLabel="G major scale" />
+    </div>
+  </article>
+</Layout>
+```
+
+Use the `ScoreSnippet` wrapper above when the page needs callbacks or `ref`.
 
 ### Dev server note (Astro)
 
@@ -99,6 +199,7 @@ export default defineConfig({
 | `view` | `'vertical' \| 'endless'` | saved or `'vertical'` | Vertical scrolls down, Endless scrolls sideways. Changing the prop re-applies it. |
 | `height` | `string` | natural | `"fill"`: the parent's height. Any CSS length (`"420px"`, `"60vh"`, `"100dvh"`) fixes it. Omitted: `full` fills its parent with a 480px floor, and `minimal`/`none` take the height of their score. |
 | `className` | `string` | | Extra classes on the `.pepperscore` root. |
+| `ariaLabel` | `string` | `"Score: <title>"`, or `"Score reader"` | Accessible name of the reader's landmark region. By default it is `Score: ` and the loaded score's title, or `Score reader` while there is no titled score. Give each snippet on a page a distinct name when titles repeat. |
 | `settings` | `PepperScoreSettings` | | **Initial** reader settings: `noteNames`, `chordSymbols`, `inferChords`, `beatCounts`, `subdivisions` (booleans); `musicFont` (`'Bravura' \| 'Petaluma'`); `staveFont` (`'Sans' \| 'Serif' \| 'Mono'`); `barsPerLine` (`'auto' \| 1–4`); `zoom` (stave scale, `null` = device default); `semitones` (−12…12); `concert` (concert vs written pitch); `overlap` (0–3 lines kept on a page turn). Changing a key in the prop re-applies that key. Drawer edits still work in between. With `persist` on, **a saved per-score record overrides `settings` and `view`** when that score is opened again. The record holds the settings, view, zoom, transposition, part sounds and hidden staves the reader stored for that exact file. |
 | `persist` | `string \| false` | `'pepperscore'` for `full`, `false` for `minimal`/`none` | Storage namespace, see below. `false` reads and writes nothing. |
 | `assetBaseUrl` | `string` | jsDelivr copy of `pepperscore-sounds-<soundPack>` | Root of a sounds-package layout. Relative values resolve against the page, and a missing trailing slash is added. |
@@ -107,7 +208,7 @@ export default defineConfig({
 | `onReady` | `(info: { title, composer?, parts: { id, name }[], measures }) => void` | | Once per loaded score, after it is drawn. |
 | `onPlay` / `onStop` | `() => void` | | Playback starts or stops, including when another instance takes over playback. |
 | `onError` | `(error: Error) => void` | | Each error the reader shows: an unreadable file, a failed download or a renderer failure. |
-| `autoFocus` | `boolean` | `false` | Focus the reader on mount so the page-turn keys work before any click. Keyboard shortcuts belong to the focused reader only. |
+| `autoFocus` | `boolean` | `false` | Focus the reader on mount so the page-turn keys work before any click. Keyboard shortcuts belong to the focused reader only. Each reader is one Tab stop, and keyboard focus shows a focus ring on it (clicks do not). |
 | `ref` | `Ref<PepperScoreHandle>` | | `{ play(): Promise<void>; stop(): void; transpose(semitones: number): void }`. `play` does nothing while playing, before a score has loaded, or with `chrome="none"`. `transpose` sets the **absolute** transposition (clamped to −12…12), the same as `settings.semitones`. It does not add to the current value. |
 
 When more than one source prop is set, the first present wins, in this order: `musicXml`, `file`, `scoreUrl`, `abc`.
@@ -150,7 +251,7 @@ Saved state lives under a namespace `<ns>`:
 - IndexedDB: `<ns>` (per-score records) and `<ns>-last-file` (the last opened file, kept on this device so it can be reopened).
 - sessionStorage: `<ns>-reopen-dismissed`.
 
-Readers that share a namespace share their state. The default is `"pepperscore"` for `chrome="full"` and `false` for `minimal` and `none`, so snippets never write storage unless you give them a namespace. With persistence on, host `settings` are written into `<ns>-prefs` like any other change, and they are re-applied on every mount.
+Set `persist` once per instance: prefs are read on mount, so changing the prop on a mounted reader writes its current prefs into the new namespace. To switch namespaces, remount the reader (for example `key={namespace}`). Readers that share a namespace share their state. The default is `"pepperscore"` for `chrome="full"` and `false` for `minimal` and `none`, so snippets never write storage unless you give them a namespace. With persistence on, host `settings` are written into `<ns>-prefs` like any other change, and they are re-applied on every mount.
 
 **Diagnostic hooks exempt from `persist`.** The reader reads three localStorage keys whatever `persist` is, even with `persist={false}`. They are for tests and troubleshooting. Nothing sets them except a person or a test, and the reader only removes `scoreflow-simulate-oom` after it fires.
 
@@ -188,6 +289,19 @@ cp -rL node_modules/pepperscore-sounds-core public/pepperscore-sounds   # -L: pn
 
 Use the sounds package version that matches `SOUNDS_VERSION` (exported by this package). A base on another origin must send CORS headers (`Access-Control-Allow-Origin`), because fonts and sounds are fetched.
 
+**If the assets cannot be loaded** (a wrong `assetBaseUrl`, or nothing published there yet), the reader keeps working: the score still engraves (Verovio's own glyphs; text glyphs fall back), playback runs silently with the usual "playing silently" notice and no error, and the console shows one warning naming the `assetBaseUrl` that failed. A failing `soundSources` entry of your own still reports through `onError`.
+
+### Testing before the sounds packages are published
+
+Until `pepperscore-sounds-core` is on npm, the default jsDelivr URL returns 404, so fonts fall back and playback is silent. Self-host the sounds instead. Install the local tarball (`npm run pack:local` in this repository writes `.packs/pepperscore-sounds-core-<version>.tgz`), or copy `packages/pepperscore-sounds-complete`, then:
+
+```bash
+pnpm add -D /path/to/.packs/pepperscore-sounds-core-0.1.0.tgz
+cp -rL node_modules/pepperscore-sounds-core public/pepperscore-sounds   # -L follows pnpm's symlinks
+```
+
+and pass `assetBaseUrl="/pepperscore-sounds/"` on every instance (or in your wrapper component).
+
 ### Sound resolution and `soundSources`
 
 For each part's sound (a GM program, or the drum kit):
@@ -222,11 +336,13 @@ Drums use the Perfect Drums note files unless a source claims them. `soundSource
 
 ## Licenses
 
-- **pepperscore** is MIT licensed (see `LICENSE`).
-- **Verovio** 6.3.0 is bundled unmodified in `dist/assets/verovio.worker-*.js` under **LGPL-3.0-or-later**.
+The package licence is `MIT AND LGPL-3.0-or-later`:
+
+- **The pepperscore component code is MIT licensed** (see `LICENSE`).
+- **The bundled Verovio worker is LGPL-3.0-or-later.** `dist/assets/verovio.worker-*.js` bundles Verovio 6.3.0 ([source](https://github.com/rism-digital/verovio/tree/version-6.3.0)), unmodified, with its WebAssembly module. The LGPL-3.0 and GPL-3.0 texts ship in `LICENSES/LGPL-3.0.txt` and `LICENSES/GPL-3.0.txt`. Hosts that bundle pepperscore redistribute that worker chunk as is; keep these notices with it.
 - **Sound packs** (`pepperscore-sounds-core`, `pepperscore-sounds-complete`): each asset set keeps its own license, listed in the package's `LICENSES.md`:
   - TimGM6mb.sf2: GPL-2.0
   - FluidR3 GM sample packs: CC BY 3.0 (attribution in `soundfonts/fluidr3/ATTRIBUTION.txt`)
-  - Bravura, Petaluma and Petaluma Script fonts: SIL Open Font License 1.1
+  - Bravura, Petaluma and Petaluma Script fonts: SIL Open Font License 1.1 (`fonts/Bravura-OFL.txt`, `fonts/Petaluma-OFL.txt`)
   - Perfect Drums samples: attribution in `soundfonts/perfect-drums/ATTRIBUTION.txt` (the source artifact states WTFPL)
   - Instrument icons: MIT

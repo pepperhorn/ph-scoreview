@@ -2,6 +2,10 @@
 /* data-ps-short/-tiny/-wide (root height <=500px / <=360px / width >= height) are set by a ResizeObserver in PepperScore.tsx, so they
    appear only after hydration, and rules using them carry one more attribute of specificity than the @media blocks they replaced. */
 .pepperscore{position:relative;display:flex;flex-direction:column;overflow:hidden;isolation:isolate;container:pepperscore / inline-size;font-family:Poppins,Arial,sans-serif;color:#242824;background:#fff;font-synthesis:none;line-height:normal;text-align:left;outline:none}
+/* Keyboard focus ring (WCAG 2.4.7): the root and the containers that take focus show it on keyboard focus only, never on a click. */
+.pepperscore:focus-visible{outline:2px solid #8fb89a;outline-offset:-2px}
+.pepperscore .mixer-panel:focus-visible,.pepperscore .instrument-picker-panel:focus-visible,.pepperscore .open-dialog:focus-visible{outline:2px solid #8fb89a;outline-offset:-2px}
+.pepperscore .bpm-control input:focus-visible{outline:2px solid #8fb89a;outline-offset:2px}
 .pepperscore[data-ps-height=auto]{height:100%;min-height:480px}
 .pepperscore[data-ps-height=fill]{height:100%}
 .pepperscore[data-ps-height=natural]{height:auto}
@@ -314,7 +318,7 @@
    reserved, or the width change re-engraves again and loops. */
 .pepperscore .ps-landscape .score-viewport{scrollbar-gutter:stable}
 /* Overlay panels take focus when they open (PepperScore.tsx focusOnMount) so Escape reaches the root's key handler. */
-.pepperscore .mixer-panel:focus,.pepperscore .instrument-picker-panel:focus{outline:none}
+.pepperscore .mixer-panel:focus:not(:focus-visible),.pepperscore .instrument-picker-panel:focus:not(:focus-visible){outline:none}
 /* Compact play/stop button of chrome="minimal", overlaid on the score's top right corner. */
 .pepperscore .ps-compact-play{position:absolute;top:8px;right:8px;z-index:9;width:36px;height:36px;border-radius:50%;background:#345642;color:#fff;box-shadow:0 3px 8px #34564233}
 .pepperscore .ps-compact-play:hover{background:#254633}

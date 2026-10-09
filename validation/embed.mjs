@@ -59,6 +59,12 @@ async function openPage(context) {
   return { page, errors };
 }
 const events = page => page.evaluate(() => window.__events);
+/**
+ * onPlay, onStop and onError are delivered from React passive effects, which run after the commit that changed the DOM
+ * (in WebKit, sometimes after a poll has already seen the new DOM). So wait for the callback itself, never assume it
+ * fired because the matching DOM state is visible.
+ */
+const eventFired = (page, who, kind) => page.waitForFunction(([who, kind]) => window.__events.some(([w, k]) => w === who && k === kind), [who, kind], { timeout: 5000 });
 
 try {
   // 1. Engraving only (chrome="none") loads no audio, even when asked to play, and shows no controls.
@@ -117,7 +123,7 @@ try {
     // Callbacks and the minimal chrome.
     await page.locator('.embed-c .ps-toast').waitFor({ timeout: 30000 });
     assert.ok(inside(await rect(page, '.pepperscore.embed-c'), await rect(page, '.embed-c .ps-toast')), 'Snippet C\'s error toast stays inside it');
-    assert.ok((await events(page)).some(([who, kind]) => who === 'c' && kind === 'error'), 'onError fires');
+    await eventFired(page, 'c', 'error'); // onError fires
     for (const who of ['full', 'a', 'b', 'none']) assert.ok((await events(page)).some(([w, kind, info]) => w === who && kind === 'ready' && info.parts.length > 0 && info.measures > 0), `onReady fires for ${who}`);
     assert.ok((await events(page)).some(([who, kind, info]) => who === 'a' && kind === 'ready' && info.title === 'Snippet A' && info.measures === 4), 'onReady carries the title and measure count');
     for (const root of ['.embed-a', '.embed-b', '.embed-c']) {
@@ -128,6 +134,13 @@ try {
     assert.ok(noneBox.root <= noneBox.system + noneBox.meta + 60, `an Endless natural-height snippet adds no empty band below its score: ${JSON.stringify(noneBox)}`);
     assert.equal(await page.locator('.embed-a .score-meta h1').textContent(), 'Snippet A', 'credits show in minimal');
     assert.equal(await page.locator('.embed-full .ps-compact-play').count(), 0, 'full has no compact play button');
+
+    // Landmark names: "Score: <title>" once a titled score loads, "Score reader" without one, and the ariaLabel prop wins.
+    const label = root => page.locator(root).getAttribute('aria-label');
+    assert.equal(await label('.pepperscore.embed-a'), 'Score: Snippet A', 'a titled score names the region after its title');
+    assert.equal(await label('.pepperscore.embed-full'), 'Score: A little room to play', 'the full reader is named after the sample it shows');
+    assert.equal(await label('.pepperscore.embed-c'), 'Score reader', 'a snippet with no loaded score keeps the generic name');
+    assert.equal(await label('.pepperscore.embed-none'), 'Engraving-only example', 'ariaLabel overrides the default name');
 
     // Review Focus 2 and natural height: a minimal snippet without height sizes to its score; settings.zoom survives the
     // score load and a source change.
@@ -141,6 +154,7 @@ try {
     assert.equal(Math.round((await rect(page, '.pepperscore.embed-b')).height), 200, 'height="200px" fixes the root height');
     await page.evaluate(() => window.__embed.setAbcA('X:1\nT:Snippet A two\nM:4/4\nL:1/4\nK:G\nG B d B | c A F A | G4 |'));
     await page.waitForFunction(() => document.querySelector('.embed-a .score-meta h1')?.textContent === 'Snippet A two' && !document.querySelector('.embed-a .score-loading') && !document.querySelector('.embed-a .score-content.is-painting'), null, { timeout: 30000 });
+    assert.equal(await label('.pepperscore.embed-a'), 'Score: Snippet A two', 'the region name follows a source change');
     assert.equal(await page.locator('.embed-a .score-content').getAttribute('data-stave-scale'), '1.5', 'settings.zoom survives a source change');
 
     // A control override on a minimal snippet: the header shows only that control (no empty More toggle), the compact
@@ -231,6 +245,17 @@ try {
     await page.locator('.embed-b').focus();
     await page.keyboard.press('Escape');
     assert.equal(await page.locator('.embed-full .header-more-toggle').getAttribute('aria-expanded'), 'true', 'Escape in B leaves the full reader\'s More panel open');
+    // Focus ring (WCAG 2.4.7): a click that focuses a root shows no ring; Tab onto a root shows it.
+    await page.keyboard.press('Escape');
+    await page.locator('#host-probe').click(); // blur B (focused from the keyboard above) so the next click focuses it afresh
+    await page.locator('.embed-b .score-viewport').click({ position: { x: 300, y: 40 } });
+    const ring = root => page.evaluate(root => { const element = document.querySelector(root); return { focused: document.activeElement === element, outline: getComputedStyle(element).outlineStyle }; }, root);
+    assert.deepEqual(await ring('.pepperscore.embed-b'), { focused: true, outline: 'none' }, 'mouse focus on a root shows no focus ring');
+    await page.locator('.host-button').focus();
+    await page.keyboard.press('Tab');
+    const keyboardRing = await ring('.pepperscore.embed-full');
+    if (keyboardRing.focused || engine !== 'webkit') assert.deepEqual(keyboardRing, { focused: true, outline: 'solid' }, 'keyboard focus on a root shows the focus ring');
+    else console.log(`${engine}: Tab skips non-form controls (platform setting), keyboard focus ring check skipped`);
     assert.deepEqual(errors, []);
     await context.close();
   }
@@ -250,6 +275,7 @@ try {
     await playingIn(page, '.embed-b .ps-compact-play', 'Stop playback');
     await page.locator('.embed-b .ps-compact-play').click();
     await page.waitForFunction(() => document.querySelector('.embed-b .ps-compact-play').getAttribute('aria-label') === 'Play score', null, { timeout: 5000 });
+    await eventFired(page, 'b', 'stop');
     const played = (await events(page)).map(([who, kind]) => `${who}:${kind}`);
     assert.ok(played.indexOf('a:stop') > played.indexOf('a:play') && played.indexOf('a:play') >= 0 && played.indexOf('b:stop') > played.indexOf('b:play') && played.indexOf('b:play') >= 0, `onPlay/onStop: ${played}`);
     const paths = requests.filter(url => url.startsWith(server.url)).map(url => new URL(url).pathname);
@@ -278,7 +304,7 @@ try {
     assert.notEqual(await page.evaluate(() => window.__contexts[0].state), 'closed', 'the shared AudioContext stays open');
     await page.evaluate(() => window.__embed.refs.full.current.play());
     await playingIn(page, '.embed-full .play-button', 'Pause playback');
-    assert.ok((await events(page)).some(([who, kind]) => who === 'full' && kind === 'play'), 'ref.play() starts the full reader');
+    await eventFired(page, 'full', 'play'); // ref.play() starts the full reader and fires onPlay
     await page.evaluate(() => window.__embed.refs.full.current.stop());
     await page.waitForFunction(() => document.querySelector('.embed-full .play-button').getAttribute('aria-label') === 'Play score', null, { timeout: 5000 });
     assert.equal(await page.evaluate(() => window.__contexts.length), 1, 'still one shared AudioContext');
@@ -466,5 +492,36 @@ try {
     assert.deepEqual(changed, [], `Host rules change the reader (${state}):\n${changed.slice(0, 12).join('\n')}`);
     await context.close();
   }
-  console.log(`${engine}: embedding (chrome presets, callbacks, ref, settings, sounds and asset base, style isolation, containment, unique ids, focused keyboard, shared engine, persist) passed`);
+  // 9. An assetBaseUrl with nothing behind it (the default CDN URL before the sounds packages are published): engraving
+  // works with fallback fonts, playback runs silently with the usual notice and no error, and one console warning names
+  // the base. Served locally as 404s, so nothing leaves the machine.
+  {
+    const { context, requests } = await hostContext();
+    await context.route('**/missing-assets/**', route => route.fulfill({ status: 404, body: '' }));
+    const page = await context.newPage();
+    const errors = [], warnings = [];
+    page.on('pageerror', error => errors.push(error.message));
+    page.on('console', message => { if (/^pepperscore: could not load/.test(message.text())) warnings.push(message.text()); });
+    await page.goto(`${server.url}/embed-missing-assets`);
+    await rendered(page, '.pepperscore.embed-missing');
+    await page.locator('.embed-missing .ps-compact-play').click();
+    await page.locator('.embed-missing .playback-notice').waitFor({ timeout: 30000 });
+    assert.match(await page.locator('.embed-missing .playback-notice-text').textContent(), /playing silently/, 'playback degrades to the silent notice');
+    await page.waitForFunction(() => window.__missingEvents.some(([kind]) => kind === 'play'), null, { timeout: 10000 });
+    assert.equal(await page.locator('.embed-missing .ps-toast').count(), 0, 'no error toast');
+    assert.deepEqual((await page.evaluate(() => window.__missingEvents)).filter(([kind]) => kind === 'error'), [], 'no onError');
+    const audio = await page.evaluate(() => window.__contexts.some(context => context.state === 'running'));
+    const missing = requests.filter(url => url.includes('/missing-assets/'));
+    if (audio) assert.ok(missing.some(url => /pack\.json|soundfonts\//.test(url)), `playback asked the missing base for sounds: ${missing}`);
+    await page.waitForTimeout(500);
+    if (missing.length) {
+      assert.equal(warnings.length, 1, `one console warning for the failed base: ${JSON.stringify(warnings)}`);
+      assert.ok(warnings[0].includes(`"${server.url}/missing-assets/"`), `the warning names the assetBaseUrl: ${warnings[0]}`);
+    } else console.log(`${engine}: no asset was requested from the missing base (audio unavailable, music font unused), warning check skipped`);
+    assert.deepEqual(requests.filter(url => /^https?:/.test(url) && !url.startsWith(server.url)), [], 'no remote requests');
+    assert.deepEqual(errors, []);
+    await context.close();
+  }
+
+  console.log(`${engine}: embedding (chrome presets, callbacks, ref, settings, sounds and asset base, style isolation, containment, unique ids, focused keyboard, focus ring, landmark names, shared engine, persist, missing assets) passed`);
 } finally { await browser.close(); await server.close(); }

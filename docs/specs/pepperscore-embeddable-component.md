@@ -33,6 +33,7 @@ import 'pepperscore/style.css';
   view="vertical" | "endless"
   height="420px" | "fill"        // "fill": parent's height; omitted: natural height (full chrome: fills parent, min 480px)
   className="…"
+  ariaLabel="…"                  // landmark name; default "Score: <title>", else "Score reader"
   settings={{ noteNames, chordSymbols, inferChords, beatCounts, subdivisions, musicFont, staveFont, barsPerLine, zoom, semitones, concert, overlap }}
   persist="pepperscore" | false  // storage namespace; default "pepperscore" for full, false otherwise
   assetBaseUrl="…"               // default: jsDelivr URL of the matching pepperscore-sounds-<pack> version
@@ -75,7 +76,7 @@ import 'pepperscore/style.css';
 `assetBaseUrl` points to the root of a sounds package layout:
 
 ```
-fonts/Bravura.woff2, Petaluma.woff2, PetalumaScript.woff2, Petaluma-OFL.txt
+fonts/Bravura.woff2, Bravura-OFL.txt, Petaluma.woff2, PetalumaScript.woff2, Petaluma-OFL.txt
 instruments/*.svg
 soundfonts/TimGM6mb.sf2, COPYING.txt
 soundfonts/perfect-drums/manifest.json + *.mp3

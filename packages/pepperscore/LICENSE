@@ -21,4 +21,20 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ---
-dist/assets/verovio.worker-*.js bundles Verovio 6.3.0 (https://www.verovio.org/), unmodified, under LGPL-3.0-or-later.
+The MIT License above covers the pepperscore component code. It does not cover
+Verovio.
+
+dist/assets/verovio.worker-*.js is a combined work: pepperscore's own worker
+code (MIT) bundled with the Verovio 6.3.0 music engraving library and its
+WebAssembly module (https://www.verovio.org/, Copyright (c) the Verovio
+contributors). Verovio is used unmodified and is licensed under the GNU Lesser
+General Public License, version 3 or (at your option) any later version
+(LGPL-3.0-or-later). Copies of the licenses are included in this package:
+
+  LICENSES/LGPL-3.0.txt  GNU Lesser General Public License, version 3
+  LICENSES/GPL-3.0.txt   GNU General Public License, version 3
+
+Verovio 6.3.0 source code: https://github.com/rism-digital/verovio/tree/version-6.3.0
+(also published on npm as verovio@6.3.0). You may replace the bundled Verovio
+with a compatible modified version by rebuilding this package from its source
+(https://github.com/pepperhorn/ph-scoreview) against your own verovio build.
