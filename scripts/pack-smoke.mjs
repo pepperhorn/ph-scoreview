@@ -12,6 +12,7 @@ const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const run = (args, cwd) => execFileSync(npm, args, { cwd, stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8' });
 const readJson = path => JSON.parse(readFileSync(join(root, path), 'utf8'));
 const hosts = (process.env.PACK_SMOKE_HOSTS || 'vite,astro').split(',').map(host => host.trim());
+for (const host of hosts) assert.ok(host === 'vite' || host === 'astro', `PACK_SMOKE_HOSTS lists vite and/or astro, not "${host}"`);
 // No --prefer-offline: a stale cached packument can miss a just-published dependency (ETARGET); cached tarballs are reused anyway.
 const install = (app, tarball, packages) => run(['install', '--no-audit', '--no-fund', tarball, ...packages], app);
 const react = ['react@^19.2.0', 'react-dom@^19.2.0'];

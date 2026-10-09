@@ -113,7 +113,7 @@ The three kinds map to the existing players (smplr Soundfont2, `FluidPlayer`, th
 
 ## Build and publish
 
-- `packages/pepperscore` builds with Vite library mode: `dist/index.js` (ESM), `dist/index.d.ts`, `dist/style.css`; workers are emitted as separate chunks via `new URL(…, import.meta.url)` so host bundlers (Vite/Astro, webpack 5, Next) resolve them. Verovio's WASM stays inlined in its worker as today.
+- `packages/pepperscore` builds with Vite library mode: `dist/index.js` (ESM), `dist/index.d.ts`, `dist/style.css`; workers are emitted as separate chunks referenced through `new URL(…, import.meta.url)`, which host bundlers copy as assets. Vite and Astro hosts are tested (`npm run test:pack`); webpack 5 and Next are untested. Verovio's WASM stays inlined in its worker as today.
 - `react`/`react-dom` are peer dependencies (>=19); other deps are regular dependencies.
 - Publishing is manual (`npm publish -w …`); nothing in CI publishes.
 

@@ -7,7 +7,7 @@
   "workspaces": ["packages/*", "apps/*"],
   "scripts": {
     "dev": "npm run dev -w pepperscore-reader",
-    "build": "npm run build -w pepperscore && npm run build -w pepperscore-reader",
+    "build": "npm run build -w pepperscore && npm run build -w pepperscore-reader && node scripts/check-demo-dist.mjs",
     "check": "npm run check -w pepperscore && npm run check -w pepperscore-reader",
     "test:manifest": "node scripts/verify-gm-manifest.mjs && node validation/sound-packs.mjs",
     "sounds:core": "node scripts/sounds-core.mjs",

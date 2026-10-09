@@ -162,7 +162,7 @@ Readers that share a namespace share their state. The default is `"pepperscore"`
 
 ## Assets and self-hosting
 
-Music fonts (Bravura, Petaluma, Petaluma Script), instrument icons and sounds are not in this package. They load at runtime from `assetBaseUrl`, which points at the root of a `pepperscore-sounds-*` package:
+Music fonts (Bravura, Petaluma, Petaluma Script) and sounds are not in this package (the instrument icons the UI shows are bundled). They load at runtime from `assetBaseUrl`, which points at the root of a `pepperscore-sounds-*` package:
 
 ```
 fonts/  instruments/  soundfonts/  pack.json
