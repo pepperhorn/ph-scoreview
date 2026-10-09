@@ -35,6 +35,9 @@ jobs:
       - name: Validation suite (document, performance, reader and large score on chromium)
         run: npm run test:validation
         timeout-minutes: 10
+      - name: Pack smoke test (npm pack into fresh Vite and Astro apps; installs from the npm registry, uploads nothing)
+        run: npm run test:pack
+        timeout-minutes: 8
 
   reader:
     name: Reader (${{ matrix.browser }})

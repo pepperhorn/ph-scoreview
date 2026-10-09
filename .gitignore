@@ -13,3 +13,4 @@ dist/
 /packages/pepperscore-sounds-core/instruments/
 /packages/pepperscore-sounds-core/soundfonts/
 /packages/pepperscore-sounds-core/pack.json
+/.packs/

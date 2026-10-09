@@ -33,7 +33,9 @@
     "test:embed:firefox": "BROWSER=firefox node validation/embed.mjs",
     "test:embed:webkit": "BROWSER=webkit node validation/embed.mjs",
     "test:browsers": "playwright-core install chromium firefox webkit",
-    "test:api": "node validation/api.mjs"
+    "test:api": "node validation/api.mjs",
+    "test:pack": "node scripts/pack-smoke.mjs",
+    "pack:local": "node scripts/pack-local.mjs"
   },
   "devDependencies": {
     "playwright-core": "^1.63.0",
