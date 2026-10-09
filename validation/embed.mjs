@@ -253,10 +253,16 @@ try {
     const played = (await events(page)).map(([who, kind]) => `${who}:${kind}`);
     assert.ok(played.indexOf('a:stop') > played.indexOf('a:play') && played.indexOf('a:play') >= 0 && played.indexOf('b:stop') > played.indexOf('b:play') && played.indexOf('b:play') >= 0, `onPlay/onStop: ${played}`);
     const paths = requests.filter(url => url.startsWith(server.url)).map(url => new URL(url).pathname);
-    assert.ok(paths.includes('/embed-sounds/acoustic_grand_piano.json'), 'A\'s soundSources entry is fetched for its program');
+    // Silent runs (no audio output, e.g. headless Firefox on CI) show a playback notice and return before loading any
+    // sounds, so the sound assertions run per snippet only where its playback was audible (as in reader.mjs).
+    const silent = await page.evaluate(() => ({ a: !!document.querySelector('.embed-a .playback-notice'), b: !!document.querySelector('.embed-b .playback-notice') }));
     assert.ok(!paths.includes('/custom-assets/soundfonts/fluidr3/acoustic_grand_piano.json'), 'the source wins over the pack');
-    assert.ok(paths.includes('/custom-assets/pack.json'), 'pack.json comes from the custom asset base');
-    assert.equal(paths.filter(path => path === '/custom-assets/soundfonts/TimGM6mb.sf2').length, 1, 'B\'s five programs missing from the pack fall back to TimGM6mb, downloaded once');
+    if (!silent.a || !silent.b) assert.ok(paths.includes('/custom-assets/pack.json'), 'pack.json comes from the custom asset base');
+    if (!silent.a) assert.ok(paths.includes('/embed-sounds/acoustic_grand_piano.json'), 'A\'s soundSources entry is fetched for its program');
+    else console.log(`${engine}: audio unavailable, A's soundSources fetch check skipped`);
+    if (!silent.b) assert.equal(paths.filter(path => path === '/custom-assets/soundfonts/TimGM6mb.sf2').length, 1, 'B\'s five programs missing from the pack fall back to TimGM6mb, downloaded once');
+    else console.log(`${engine}: audio unavailable, B's TimGM6mb fallback check skipped`);
+    if (silent.a && silent.b) assert.deepEqual(paths.filter(path => /soundfonts|pack\.json|embed-sounds/.test(path)), [], 'silent playback loads no sounds');
     assert.ok(paths.includes('/custom-assets/fonts/Bravura.woff2') || (await page.evaluate(() => document.querySelector('style[data-pepperscore-fonts]').textContent)).includes('/custom-assets/fonts/Bravura.woff2'), 'fonts come from the custom asset base');
     assert.deepEqual(paths.filter(path => /^\/(fonts|soundfonts|instruments|pack\.json)/.test(path)), [], 'nothing loads from the default "/" base');
     assert.deepEqual(requests.filter(url => !url.startsWith(server.url) && /^https?:/.test(url) && !/poppins/i.test(url)), [], 'no remote requests (no CDN default)');
