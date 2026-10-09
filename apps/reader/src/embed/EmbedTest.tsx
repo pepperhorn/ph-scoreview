@@ -21,7 +21,7 @@ export default function EmbedTest() {
   const [views, setViews] = useState<Record<'a' | 'b' | 'none', View>>({ a: undefined, b: undefined, none: 'endless' });
   const [controlsB, setControlsB] = useState<PepperScoreControls | undefined>(undefined);
   const [mounted, setMounted] = useState<Record<Who, boolean>>({ full: true, a: true, b: true, c: true, none: true });
-  const refs = { full: useRef<PepperScoreHandle>(null), a: useRef<PepperScoreHandle>(null), b: useRef<PepperScoreHandle>(null), none: useRef<PepperScoreHandle>(null) };
+  const refs = { full: useRef<PepperScoreHandle>(null), a: useRef<PepperScoreHandle>(null), b: useRef<PepperScoreHandle>(null), c: useRef<PepperScoreHandle>(null), none: useRef<PepperScoreHandle>(null) };
   const unmount = (who: Who) => setMounted(previous => ({ ...previous, [who]: false }));
   if (typeof window !== 'undefined') {
     window.__events ??= [];
@@ -34,10 +34,10 @@ export default function EmbedTest() {
     onError: (error: Error) => window.__events.push([who, 'error', error.message]),
   });
   return <div className="embed-test">
-    {mounted.full && <div className="host-box embed-box-full"><PepperScore ref={refs.full} className="embed-full" height="fill" assetBaseUrl={ASSETS} {...log('full')} /></div>}
+    {mounted.full && <div className="host-box embed-box-full"><PepperScore ref={refs.full} className="embed-full" height="fill" assetBaseUrl={ASSETS} settings={{ noteNames: false }} {...log('full')} /></div>}
     {mounted.a && <div className="host-snippet"><PepperScore ref={refs.a} className="embed-a" chrome="minimal" view={views.a} abc={abcA} assetBaseUrl={ASSETS} soundSources={pianoSource} settings={{ zoom: 1.5 }} {...log('a')} /></div>}
     {mounted.b && <div className="host-snippet"><PepperScore ref={refs.b} className="embed-b" chrome="minimal" view={views.b} controls={controlsB} musicXml={ensemble} height="200px" assetBaseUrl={ASSETS} {...log('b')} /></div>}
-    {mounted.c && <div className="host-snippet"><PepperScore className="embed-c" chrome="minimal" musicXml="<score-partwise><part" assetBaseUrl={ASSETS} {...log('c')} /></div>}
+    {mounted.c && <div className="host-snippet"><PepperScore ref={refs.c} className="embed-c" chrome="minimal" musicXml="<score-partwise><part" assetBaseUrl={ASSETS} {...log('c')} /></div>}
     {mounted.none && <div className="host-snippet"><PepperScore ref={refs.none} className="embed-none" chrome="none" view={views.none} abc={tune('Engraving only', 8)} assetBaseUrl={ASSETS} {...log('none')} /></div>}
   </div>;
 }

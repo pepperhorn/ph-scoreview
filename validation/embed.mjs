@@ -67,9 +67,13 @@ try {
     const { page, errors } = await openPage(context);
     await rendered(page, '.pepperscore.embed-none');
     await page.evaluate(() => window.__embed.refs.none.current.play());
+    // A snippet whose score failed to load never plays (in particular not the hidden built-in sample).
+    await page.locator('.embed-c .ps-toast').waitFor({ timeout: 30000 });
+    await page.evaluate(() => window.__embed.refs.c.current.play());
     await page.waitForTimeout(1500);
+    assert.ok(!(await events(page)).some(([who, kind]) => (who === 'c' || who === 'none') && kind === 'play'), 'ref.play() on a failed or engraving-only snippet fires no onPlay');
     assert.equal(await page.evaluate(() => window.__contexts.length), 0, 'chrome="none" creates no AudioContext');
-    assert.deepEqual(requests.filter(url => /soundfonts|pack\.json|embed-sounds/.test(url)), [], 'chrome="none" loads no audio assets');
+    assert.deepEqual(requests.filter(url => /soundfonts|pack\.json|embed-sounds/.test(url)), [], 'chrome="none" and a failed snippet load no audio assets');
     assert.equal(await page.locator('.embed-none .play-button, .embed-none .ps-compact-play, .embed-none .topbar, .embed-none .drawer-handle, .embed-none .page-controls, .embed-none .part-control').count(), 0, 'no controls at all');
     assert.deepEqual(errors, []);
     await context.close();
@@ -195,8 +199,15 @@ try {
 
     // Keyboard shortcuts only affect the focused instance (the full reader, given the ensemble, taller than its box, and B at
     // 200px); Escape elsewhere leaves another instance's More panel open.
+    // settings are initial values: the reader's own drawer choice (note names on, against the host's noteNames: false)
+    // survives opening another score.
+    await page.locator('.embed-full .drawer-handle').click();
+    await page.locator('.embed-full button[role=switch][aria-label="Note names"]').click();
+    assert.equal(await page.locator('.embed-full button[role=switch][aria-label="Note names"]').getAttribute('aria-checked'), 'true');
+    await page.locator('.embed-full button[aria-label="Close options"]').first().click();
     await page.locator('.embed-full input[type=file]').setInputFiles(new URL('./fixtures/ensemble.musicxml', import.meta.url).pathname);
     await page.waitForFunction(() => document.querySelector('.embed-full .score-meta h1')?.textContent !== 'A little room to play' && document.querySelector('.embed-full .score-system svg') && !document.querySelector('.embed-full .score-loading') && !document.querySelector('.embed-full .score-content.is-painting'), null, { timeout: 60000 });
+    assert.equal(await page.locator('.embed-full button[role=switch][aria-label="Note names"]').getAttribute('aria-checked'), 'true', 'a drawer edit survives a score load (host settings are initial values)');
     const scrollTop = root => page.evaluate(root => document.querySelector(`${root} .score-viewport`).scrollTop, root);
     // A page turn scrolls smoothly: let a reader land before taking its position.
     const settled = root => page.evaluate(async root => {
@@ -306,7 +317,8 @@ try {
       document.querySelector('.embed-full .mode-toggle-endless').click();
       window.__embed.setViews({ a: 'endless', b: 'endless', none: 'vertical' });
     });
-    await page.waitForFunction(roots => roots.every(root => { const element = document.querySelector(root); return element.querySelector('.ps-toast.is-out-of-memory') || (element.querySelector('.score-system svg:not([data-before])') && !element.querySelector('.score-content.is-painting')); }), SOURCED, { timeout: 60000 });
+    // Each root must draw new systems in its new view: Endless for full, A and B; Vertical for the engraving-only one.
+    await page.waitForFunction(roots => roots.every(root => { const element = document.querySelector(root); const view = root.endsWith('none') ? '.ps-portrait' : '.ps-landscape'; return element.querySelector('.ps-toast.is-out-of-memory') || (element.querySelector(`${view} .score-system svg:not([data-before])`) && !element.querySelector('.score-content.is-painting')); }), SOURCED, { timeout: 60000 });
     const outcome = await page.evaluate(roots => roots.map(root => document.querySelector(root).querySelector('.ps-toast.is-out-of-memory') ? 'oom' : 'rendered').sort(), SOURCED);
     assert.deepEqual(outcome, ['oom', 'rendered', 'rendered', 'rendered'], `One reader reports the failure, the others still render: ${outcome}`);
     assert.equal(await page.evaluate(() => window.__verovioWorkers), workers + 1, 'The failure restarted the shared Verovio worker');
@@ -368,6 +380,11 @@ try {
     await page.waitForFunction(() => window.__pepperscoreVerovioChannels === 5 && window.__importWorkers.length === 2, null, { timeout: 30000 });
     const alive = () => page.evaluate(() => window.__importWorkers.filter(worker => !worker.__terminated).length);
     assert.equal(await alive(), 2, 'B and C are still importing');
+    // ref.play() on a snippet still loading its score is a no-op (it never plays the hidden sample).
+    await page.evaluate(() => window.__embed.refs.b.current.play());
+    await page.waitForTimeout(500);
+    assert.ok(!(await events(page)).some(([who, kind]) => who === 'b' && kind === 'play'), 'ref.play() while B is still loading fires no onPlay');
+    assert.equal(await page.evaluate(() => window.__contexts.length), 0, 'ref.play() while B is still loading loads no audio');
     await page.evaluate(() => window.__embed.unmount('b'));
     await page.waitForFunction(() => !document.querySelector('.embed-b'));
     await page.waitForTimeout(300);

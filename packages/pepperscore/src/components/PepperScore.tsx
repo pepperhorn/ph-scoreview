@@ -299,6 +299,8 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     });
     return () => { cancelled = true; offerCancelled = true; };
   }, []);
+  // Global prefs are saved with the host's settings applied (they are re-applied on mount anyway); a key the host later
+  // drops keeps its last value here.
   useEffect(() => { if (ready) { const { zoom: _zoom, ...global } = prefs; storage.writePrefs(global); } }, [prefs, ready, storage]);
   useEffect(() => {
     if (!ready || !source) return;
@@ -352,8 +354,11 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     setTrackVolumes(saved ? Object.fromEntries(next.parts.map(part => [part.id, saved.parts[part.id]?.volume ?? 100])) : {});
     setError('');
     // A saved per-score record (persist on) wins over the host's settings and view: they are initial values, and the
-    // reader's own edits to this score are newer. Without a record, the per-score resets keep the host's keys.
-    setPrefs(prev => saved ? { ...prev, ...saved.settings, zoom } : { ...prev, bpm: clampBpm(Math.round(next.tempo)), zoom: null, semitones: 0, keyFlip: false, scorePitch: next.parts.some(part => part.pitchBasis === 'concert') ? 'concert' : 'written', ...hostPrefsRef.current });
+    // reader's own edits to this score are newer. Without a record, the per-score resets (zoom, transposition, pitch
+    // view) take the host's value for the keys it gives; every other pref keeps what the reader has now (drawer edits).
+    const host = hostPrefsRef.current;
+    const hostResets: Partial<Prefs> = Object.fromEntries((['zoom', 'semitones', 'scorePitch'] as const).filter(key => host[key] !== undefined).map(key => [key, host[key]]));
+    setPrefs(prev => saved ? { ...prev, ...saved.settings, zoom } : { ...prev, bpm: clampBpm(Math.round(next.tempo)), zoom: null, semitones: 0, keyFlip: false, scorePitch: next.parts.some(part => part.pitchBasis === 'concert') ? 'concert' : 'written', ...hostResets });
     viewportRef.current?.scrollTo({ left: 0, top: 0 });
     setDrawer(false);
   };
@@ -390,8 +395,8 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   /** Import a score's engraving on this reader's channel; a renderer restart under it is tried once more. */
   const prepareEngraving = (doc: NonNullable<Score['document']>) => prepareVerovio(doc, channelRef.current)
     .catch(error => isRestarted(error) ? prepareVerovio(doc, channelRef.current) : Promise.reject(error));
-  /** Opening any score retires the large-score notice and the reopen offer. */
-  const startOpening = () => { largeNoticeArmedRef.current = false; setLargeNotice(''); setReopenOffer(null); };
+  /** Opening any score retires the large-score notice, the reopen offer and the last error (so a repeated failure reports again). */
+  const startOpening = () => { largeNoticeArmedRef.current = false; setLargeNotice(''); setReopenOffer(null); setError(''); };
   const readFile = async (file?: File) => {
     if (!file) return;
     const run = ++importRunRef.current;
@@ -934,7 +939,8 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     return audio;
   };
   const play = async () => {
-    if (!chrome.audio) return;
+    // Nothing to play until a supplied score has loaded: an unloaded, loading or failed snippet never plays the hidden sample.
+    if (!chrome.audio || !loaded) return;
     if (playing || loadingAudio) { stop(); return; }
     const run = ++playRunRef.current;
     claimPlayback(playbackOwner);
@@ -1074,7 +1080,6 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const secondaryControls = renderControls('secondary');
 
   const heightMode = height === 'fill' ? 'fill' : height ? 'fixed' : natural ? 'natural' : 'auto';
-  const hasSource = Boolean(musicXml || file || scoreUrl || abc);
   const compactLabel = playing || loadingAudio ? 'Stop playback' : 'Play score';
   return <div ref={rootRef} className={`pepperscore ${className ?? ''}`.trim()} data-ps-height={heightMode} style={heightMode === 'fixed' ? { height } : undefined}
     tabIndex={0} role="region" aria-label="Score reader" onKeyDown={onRootKeyDown}>
@@ -1142,7 +1147,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
         swipeRef.current = null;
       }} onTouchCancel={() => { if (pinchRef.current) { setZoomDraft(null); clearStaveScalePreview(); } pinchRef.current = null; swipeRef.current = null; }}>
         {loadingFont && <div className="font-load-progress" role="status" aria-label="Loading notation font"/>}
-        {painting && (loaded || hasSource) && <div className="score-loading" role="status" aria-label={painted ? 'Rendering score' : 'Preparing score'}><span className="score-loading-spinner"/><span>{painted ? 'Rendering score' : 'Preparing score'}</span></div>}
+        {painting && (loaded || ready) && <div className="score-loading" role="status" aria-label={painted ? 'Rendering score' : 'Preparing score'}><span className="score-loading-spinner"/><span>{painted ? 'Rendering score' : 'Preparing score'}</span></div>}
         {loaded && <div ref={contentRef} className={`score-content ${painting || !painted ? 'is-painting' : ''}`} data-stave-scale={painted ? renderedZoom : undefined} style={{ '--landscape-meta-offset': prefs.chordSymbols ? '0px' : '35px', '--annotation-font': textFonts[prefs.annotationFont] || textFonts.Sans, '--score-text-font': textFonts[prefs.annotationFont] || textFonts.Sans, '--music-font': prefs.notationFont } as React.CSSProperties}>
           {(hasScoreText || hiddenIds.length > 0) && <div className="score-meta">
             {score.title && <h1>{score.title}</h1>}

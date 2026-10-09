@@ -30,7 +30,7 @@ const locationReads = [];
 for (const entry of await readdir(src, { recursive: true, withFileTypes: true })) {
   if (!entry.isFile() || !/\.(ts|tsx|js|mjs)$/.test(entry.name)) continue;
   const path = join(entry.parentPath, entry.name);
-  (await readFile(path, 'utf8')).split('\n').forEach((line, index) => { if (/\bwindow\.location\b|\blocation\.(href|search)\b/.test(line)) locationReads.push(`${path.slice(src.length)}:${index + 1}: ${line.trim()}`); });
+  (await readFile(path, 'utf8')).split('\n').forEach((line, index) => { if (/\b(window|document|globalThis|self)\.location\b|(^|[^.\w])location\.\w/.test(line)) locationReads.push(`${path.slice(src.length)}:${index + 1}: ${line.trim()}`); });
 }
-assert.deepEqual(locationReads, [], 'packages/pepperscore/src never reads window.location, location.href or location.search');
+assert.deepEqual(locationReads, [], 'packages/pepperscore/src never reads the page location (window/document/globalThis.location, location.*)');
 console.log('API: chrome presets, control overrides, settings mapping and no page URL reads passed');
