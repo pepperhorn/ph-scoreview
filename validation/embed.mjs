@@ -208,6 +208,19 @@ try {
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('.embed-a .header-more-toggle').getAttribute('aria-expanded'), 'true', 'Escape in B leaves A\'s More panel open');
 
+  // persist: A writes only under "embedtest", B (persist={false}) writes nothing; nothing under the default names.
+  await page.locator('.embed-b').getByRole('button', { name: 'Endless view', exact: true }).click();
+  await page.locator('.embed-a').getByRole('button', { name: 'Endless view', exact: true }).click();
+  await page.waitForTimeout(800);
+  const stored = await page.evaluate(async () => ({ local: Object.keys(localStorage).sort(), session: Object.keys(sessionStorage).sort(), listed: typeof indexedDB.databases === 'function', dbs: typeof indexedDB.databases === 'function' ? (await indexedDB.databases()).map(db => db.name).sort() : [] }));
+  assert.ok(stored.local.length > 0 && stored.local.every(key => key.startsWith('embedtest-')), `Only embedtest-* keys: ${stored.local}`);
+  assert.ok(stored.local.includes('embedtest-prefs'), `A keeps its prefs under embedtest-prefs: ${stored.local}`);
+  assert.ok(stored.session.every(key => key.startsWith('embedtest-')), `Only embedtest-* session keys: ${stored.session}`);
+  if (stored.listed) {
+    assert.ok(stored.dbs.includes('embedtest'), `A's score database is listed: ${stored.dbs}`);
+    assert.ok(stored.dbs.every(name => name === 'embedtest' || name === 'embedtest-last-file'), `Only embedtest databases (none for B or the default names): ${stored.dbs}`);
+  } else console.log(`${engine}: indexedDB.databases() is unavailable; the database-name assertions are skipped`);
+
   assert.deepEqual(errors, []);
   await context.close();
 

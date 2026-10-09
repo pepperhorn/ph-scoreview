@@ -12,7 +12,8 @@ export const LARGE_FILE_BYTES = 8 * MB;
 export const LARGE_SCORE_STAFF_MEASURES = 2400;
 /**
  * Test / tuning override: `localStorage['scoreflow-large-file-bytes']` (a positive number of bytes) replaces
- * LARGE_FILE_BYTES, so validation can trigger the notice with a small fixture.
+ * LARGE_FILE_BYTES, so validation can trigger the notice with a small fixture. A diagnostic hook: un-namespaced and
+ * exempt from `persist` (storage.ts).
  */
 export const LARGE_FILE_BYTES_OVERRIDE_KEY = 'scoreflow-large-file-bytes';
 /**

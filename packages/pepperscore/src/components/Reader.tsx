@@ -7,15 +7,17 @@ import { portraitBarLimit, renderScore, type MeasureGeometry, type RenderResult 
 import { partControlMetrics, type PartControlMetrics } from '../lib/part-controls';
 import { HEADER_CONTROLS, MOBILE_HEADER_BREAKPOINT, type HeaderControlId } from '../lib/header-controls';
 import { clampStaveScale, deviceClass, ENDLESS_STAVE_SCALE, minimumDefaultStaveScale, STAVE_SCALE_MAX, STAVE_SCALE_MIN, STAVE_SCALE_STEP } from '../lib/stave-scale';
-import { buildFileState, clampBpm, MAX_BPM, MIN_BPM, textSource, type FileSettings, type FileSource, type FileState, type ScoreView } from '../lib/file-state';
-import { sampleSource, scoreDb } from '../lib/score-db';
+import { buildFileState, clampBpm, MAX_BPM, MIN_BPM, textSource, type FileSource, type FileState, type ScoreView } from '../lib/file-state';
+import { sampleSource, type ScoreDb } from '../lib/score-db';
+import { defaults, sanitizeSavedPrefs, type Prefs } from '../lib/prefs';
+import { readerStorage, type PersistNamespace } from '../lib/storage';
 import { scoreForView, spokenKey, transposeReadout } from '../lib/transpose';
 import type { SpellingKey } from '../lib/spelling';
 import { baseTimelineFor, deriveTimeline, playbackDuration, playbackEventsFrom, playbackMidis, playbackPositionAt, type BaseTimeline } from '../lib/playback/timeline';
 import { closeVerovioChannel, isOutOfMemory, isSuperseded, openVerovioChannel, prepareVerovio, reduceChunkSize } from '../lib/verovio-runtime';
 import { claimPlayback, getSharedAudio, releasePlayback, resumeAudio } from '../lib/audio-engine';
 import { isLargeFile, isLargeScore, largeScoreMessage, staffMeasures } from '../lib/large-file';
-import { forgetLastFile, isSameFile, lastFileToFile, readLastFile, readLastFileInfo, rememberLastFile, type LastFileInfo } from '../lib/last-file';
+import { isSameFile, lastFileToFile, type LastFileInfo } from '../lib/last-file';
 import { withEngravingDocument } from '../lib/notation/document';
 import { SCORE_FILE_ACCEPT } from '../lib/score-files';
 import { PAGE_PAD_PX, pageOfSystem, systemPages, turnTarget, type ReadingPage, type SystemSpan } from '../lib/paging';
@@ -30,9 +32,6 @@ import '@fontsource/poppins/500.css';
 import '@fontsource/poppins/600.css';
 import '@fontsource/poppins/700.css';
 
-/** Reader settings; `zoom` is the score's explicit stave scale, or null for the device default (see stave-scale.ts). */
-type Prefs = FileSettings & { zoom: number | null };
-const defaults: Prefs = { mode: 'portrait', notationFont: 'Bravura', barsPerLine: 'auto', overlap: 1, names: false, chordSymbols: false, inferChordSymbols: false, counts: false, subdivisions: false, annotationFont: 'Sans', bpm: 96, zoom: null, semitones: 0, scorePitch: 'written', keyFlip: false };
 /** Short key name for readouts: 'Gb', 'C#m'. */
 const keyName = (key: SpellingKey) => `${key.tonic}${key.mode === 'minor' ? 'm' : ''}`;
 const clampSemitones = (semitones: number) => Math.max(-12, Math.min(12, semitones));
@@ -62,6 +61,11 @@ export type ReaderProps = {
   className?: string;
   /** Focus the reader on mount so page-turn keys work before any click. */
   autoFocus?: boolean;
+  /**
+   * Namespace of the saved state (prefs, per-score records, last file; see lib/storage.ts); `false` saves nothing.
+   * Default `"pepperscore"`. `"scoreflow"` keeps the original Scoreflow names.
+   */
+  persist?: PersistNamespace;
 };
 /** The widest control gutter a viewport can spare. */
 const maxControlGutter = (width: number) => Math.max(120, Math.round(width * .42));
@@ -69,7 +73,7 @@ const maxControlGutter = (width: number) => Math.max(120, Math.round(width * .42
 const STAVE_SCALE_COMMIT_MS = 180;
 /** A per-score record read never holds up the first paint for longer than this. */
 const SCORE_RECORD_TIMEOUT_MS = 1200;
-const readScoreRecord = (source: FileSource) => Promise.race([
+const readScoreRecord = (scoreDb: ScoreDb, source: FileSource) => Promise.race([
   scoreDb.read(source).catch(() => null),
   new Promise<null>(resolve => setTimeout(() => resolve(null), SCORE_RECORD_TIMEOUT_MS)),
 ]);
@@ -79,16 +83,16 @@ const FOLLOW_SUSPEND_MS = 2500;
 const SCROLL_SETTLE_MS = 900;
 /** Guidance added to the renderer's out-of-memory message. */
 const OOM_GUIDANCE = 'Close other tabs, or try again with smaller sections.';
-/** "Not now" on the reopen offer lasts for this tab's session. */
-const REOPEN_DISMISSED_KEY = 'scoreflow-reopen-dismissed';
-const reopenDismissed = () => { try { return sessionStorage.getItem(REOPEN_DISMISSED_KEY) === '1'; } catch { return false; } };
 const LAST_FILE_PRIVACY = 'The last opened file is kept only on this device (in this browser), so it can be reopened after a reload. It is never uploaded.';
 const scrollBehavior = (): ScrollBehavior => window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
 const flag = (element: HTMLElement, key: 'psShort' | 'psTiny' | 'psWide', on: boolean) => { if (on) element.dataset[key] = ''; else delete element.dataset[key]; };
 /** Where the viewport centre sits in a measure, so a re-layout can put that point back at the centre. */
 type ZoomAnchor = { index: number; fx: number; fy: number };
 
-export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = 'core', soundSources, height, className, autoFocus }: ReaderProps) {
+export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = 'core', soundSources, height, className, autoFocus, persist = 'pepperscore' }: ReaderProps) {
+  const storage = useMemo(() => readerStorage(persist), [persist]);
+  const storageRef = useRef(storage);
+  storageRef.current = storage;
   const [score, setScore] = useState<Score>(sampleScore);
   const [scoreRevision, setScoreRevision] = useState(0);
   const [prefs, setPrefs] = useState<Prefs>(defaults);
@@ -226,27 +230,15 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
   }, [timelineOf, score, visibleScore, timelineKey, visibleKey]);
 
   useEffect(() => {
-    try {
-      // Zoom is per score (score-db), so a legacy global zoom is ignored.
-      const { zoom: _legacyZoom, ...saved } = JSON.parse(localStorage.getItem('scoreflow-prefs') || '{}');
-      const next = { ...defaults, ...saved, zoom: null };
-      if (typeof next.barsPerLine === 'number') next.barsPerLine = Math.max(1, Math.min(4, next.barsPerLine));
-      if (!Number.isInteger(next.semitones)) next.semitones = 0;
-      next.semitones = Math.max(-12, Math.min(12, next.semitones));
-      if (!['written', 'concert'].includes(next.scorePitch)) next.scorePitch = 'written';
-      if (typeof next.keyFlip !== 'boolean') next.keyFlip = false;
-      if (!['Sans', 'Serif', 'Mono'].includes(next.annotationFont)) next.annotationFont = 'Sans';
-      setPrefs(next);
-    }
-    catch { /* keep defaults */ }
+    setPrefs(sanitizeSavedPrefs(storage.readPrefs()));
     // A score link in the page URL opens like the scoreUrl prop (which wins when both are given).
     const remoteUrl = scoreUrl || scoreUrlFromSearch(window.location.search);
     // The last opened file is offered (never opened) on start, unless a score was supplied or one is already opening.
     let offerCancelled = false;
-    void readLastFileInfo().then(info => {
+    void storage.lastFile.readInfo().then(info => {
       if (offerCancelled) return;
       setLastFileInfo(info);
-      if (info && !musicXml && !remoteUrl && importRunRef.current === 0 && !reopenDismissed()) setReopenOffer(info);
+      if (info && !musicXml && !remoteUrl && importRunRef.current === 0 && !storage.reopenDismissed()) setReopenOffer(info);
     });
     // The sample's record (saved zoom and settings) is read before the first paint; a supplied score loads its own.
     if (musicXml) { setReady(true); return () => { offerCancelled = true; }; }
@@ -258,28 +250,29 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
     let cancelled = false;
     const sample = score;
     const src = sampleSource(sample);
-    void readScoreRecord(src).then(saved => {
+    void readScoreRecord(storageRef.current.scoreDb, src).then(saved => {
       if (cancelled) return;
       if (importRunRef.current === 0) loadScore(sample, src, saved);
       setReady(true);
     });
     return () => { cancelled = true; offerCancelled = true; };
   }, []);
-  useEffect(() => { if (ready) { const { zoom: _zoom, ...global } = prefs; localStorage.setItem('scoreflow-prefs', JSON.stringify(global)); } }, [prefs, ready]);
+  useEffect(() => { if (ready) { const { zoom: _zoom, ...global } = prefs; storage.writePrefs(global); } }, [prefs, ready, storage]);
   useEffect(() => {
     if (!ready || !source) return;
     const view = prefs.zoom !== null ? { zoom: prefs.zoom, zoomDevice: deviceClass() } : savedViewRef.current;
     savedViewRef.current = view;
-    scoreDb.write(buildFileState(source, prefs, score, hiddenIds, trackVolumes, view));
-  }, [ready, source, prefs, score, hiddenIds, trackVolumes]);
+    storage.scoreDb.write(buildFileState(source, prefs, score, hiddenIds, trackVolumes, view));
+  }, [ready, source, prefs, score, hiddenIds, trackVolumes, storage]);
   // Unload can cut an IndexedDB transaction short, so pending writes are also saved synchronously (write-ahead).
   useEffect(() => {
-    const persist = () => scoreDb.persistPending();
-    const hidden = () => { if (document.visibilityState === 'hidden') persist(); };
-    window.addEventListener('pagehide', persist);
+    const { scoreDb } = storage;
+    const persistPending = () => scoreDb.persistPending();
+    const hidden = () => { if (document.visibilityState === 'hidden') persistPending(); };
+    window.addEventListener('pagehide', persistPending);
     document.addEventListener('visibilitychange', hidden);
-    return () => { window.removeEventListener('pagehide', persist); document.removeEventListener('visibilitychange', hidden); void scoreDb.flush(); };
-  }, []);
+    return () => { window.removeEventListener('pagehide', persistPending); document.removeEventListener('visibilitychange', hidden); void scoreDb.flush(); };
+  }, [storage]);
   const update = (patch: Partial<Prefs>) => {
     if (['mode', 'notationFont', 'annotationFont', 'barsPerLine', 'names', 'chordSymbols', 'inferChordSymbols', 'counts', 'subdivisions', 'semitones', 'scorePitch', 'keyFlip'].some(key => key in patch && patch[key as keyof Prefs] !== prefs[key as keyof Prefs])) setPainting(true);
     if (patch.mode && patch.mode !== prefs.mode) viewportRef.current?.scrollTo({ left: 0, top: 0 });
@@ -329,7 +322,7 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
         // Read (and identified) in the import worker, like a file.
         const job = importMusicXmlText(musicXml, 'MusicXML', channelRef.current);
         const src = await job.source;
-        const [saved, next] = await Promise.all([readScoreRecord(src), job.score]);
+        const [saved, next] = await Promise.all([readScoreRecord(storageRef.current.scoreDb, src), job.score]);
         if (next.document) await prepareVerovio(next.document, channelRef.current);
         if (run === importRunRef.current) loadScore(next, src, saved);
       } catch (e) {
@@ -366,7 +359,7 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
       // while the score imports, so its zoom is applied before the first paint.
       const job = importScoreFile(file, channelRef.current);
       const nextSource = await job.source;
-      const [saved, nextScore] = await Promise.all([readScoreRecord(nextSource), job.score]);
+      const [saved, nextScore] = await Promise.all([readScoreRecord(storageRef.current.scoreDb, nextSource), job.score]);
       // A compact file (an .mxl, a dense MIDI) can still be a large score: warn before engraving starts.
       if (!largeBytes && run === importRunRef.current && isLargeScore(nextScore)) setLargeNotice(largeScoreMessage(file.size, { phone, staffMeasures: staffMeasures(nextScore) }));
       if (nextScore.document) await prepareVerovio(nextScore.document, channelRef.current);
@@ -374,7 +367,7 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
         largeNoticeArmedRef.current = true;
         loadScore(nextScore, nextSource, saved);
         // Remembered after the import succeeds, off the open path; an unchanged file is not written again.
-        if (!isSameFile(lastFileInfo, file)) void rememberLastFile(file).then(info => { if (info) setLastFileInfo(info); });
+        if (!isSameFile(lastFileInfo, file)) void storageRef.current.lastFile.remember(file).then(info => { if (info) setLastFileInfo(info); });
       }
     }
     catch (e) { if (run === importRunRef.current) { setPainting(false); setLargeNotice(''); showError(e, 'Could not open this file.', 'open'); } }
@@ -404,22 +397,22 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
   };
   const reopenLastFile = async () => {
     setReopenOffer(null);
-    const record = await readLastFile();
+    const record = await storage.lastFile.read();
     if (!record) { setLastFileInfo(null); setError('The last opened file is no longer stored on this device.'); return; }
     void readFile(lastFileToFile(record));
   };
   const dismissReopen = () => {
     setReopenOffer(null);
-    try { sessionStorage.setItem(REOPEN_DISMISSED_KEY, '1'); } catch { /* hidden for this page only */ }
+    storage.dismissReopen();
   };
-  const forgetLast = () => { setReopenOffer(null); setLastFileInfo(null); void forgetLastFile(); };
+  const forgetLast = () => { setReopenOffer(null); setLastFileInfo(null); void storage.lastFile.forget(); };
   const readAbc = async (text: string) => {
     const run = ++importRunRef.current;
     startOpening();
     setPainting(true);
     try {
       const src = textSource('abc', text, 'Pasted ABC');
-      const [next, saved] = await Promise.all([parseAbc(text), readScoreRecord(src)]);
+      const [next, saved] = await Promise.all([parseAbc(text), readScoreRecord(storageRef.current.scoreDb, src)]);
       if (run === importRunRef.current) loadScore(next, src, saved);
     } catch (e) { if (run === importRunRef.current) { setPainting(false); setError(e instanceof Error ? e.message : 'Could not read ABC notation.'); } }
   };
@@ -429,7 +422,7 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
     setPainting(true);
     const sample = sampleScore();
     const src = sampleSource(sample);
-    const saved = await readScoreRecord(src);
+    const saved = await readScoreRecord(storageRef.current.scoreDb, src);
     if (run === importRunRef.current) loadScore(sample, src, saved);
   };
   const togglePart = (id: string) => {

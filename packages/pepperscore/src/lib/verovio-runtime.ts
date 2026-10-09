@@ -24,7 +24,7 @@ let forceChunks = false;
 let recycleHeapBytes = 1024 * 2 ** 20;
 // Diagnostics and tests: localStorage `scoreflow-chunking` = {"force": true, "budget": 16} engraves every MusicXML
 // score in chunks of that size (validation/chunks.mjs compares chunked and whole engravings); `recycleHeapBytes`
-// lowers the idle-recycle threshold.
+// lowers the idle-recycle threshold. A diagnostic hook: un-namespaced and exempt from `persist` (storage.ts).
 try {
   const setting = JSON.parse(globalThis.localStorage?.getItem('scoreflow-chunking') || 'null') as { force?: boolean; budget?: number; recycleHeapBytes?: number } | null;
   if (setting?.force) forceChunks = true;
@@ -42,7 +42,10 @@ export function reduceChunkSize(): number {
   stopWorker(restarted());
   return chunkBudget;
 }
-/** Test hook: `localStorage['scoreflow-simulate-oom']` makes the next probe or render fail as out of memory, once. */
+/**
+ * Test hook: `localStorage['scoreflow-simulate-oom']` makes the next probe or render fail as out of memory, once. A
+ * diagnostic hook: un-namespaced and exempt from `persist` (storage.ts).
+ */
 function takeSimulatedOom(): boolean {
   try {
     if (!globalThis.localStorage?.getItem('scoreflow-simulate-oom')) return false;
