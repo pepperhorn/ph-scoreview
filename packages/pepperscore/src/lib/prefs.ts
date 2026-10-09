@@ -16,3 +16,31 @@ export function sanitizeSavedPrefs(raw: unknown): Prefs {
   if (!['Sans', 'Serif', 'Mono'].includes(next.annotationFont)) next.annotationFont = 'Sans';
   return next;
 }
+
+/** Initial reader settings a host passes as `settings` (spec names). Changing a key in the prop re-applies that key. */
+export type PepperScoreSettings = Partial<{
+  noteNames: boolean; chordSymbols: boolean; inferChords: boolean; beatCounts: boolean; subdivisions: boolean;
+  musicFont: 'Bravura' | 'Petaluma'; staveFont: 'Sans' | 'Serif' | 'Mono'; barsPerLine: 'auto' | number;
+  /** Explicit stave scale (clamped to the slider range when applied), or null for the device default. */
+  zoom: number | null;
+  semitones: number; concert: boolean; overlap: number;
+}>;
+const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, Math.round(value)));
+
+export function settingsToPrefs(settings: PepperScoreSettings = {}): Partial<Prefs> {
+  const out: Partial<Prefs> = {};
+  if (settings.noteNames !== undefined) out.names = settings.noteNames;
+  if (settings.chordSymbols !== undefined) out.chordSymbols = settings.chordSymbols;
+  if (settings.inferChords !== undefined) out.inferChordSymbols = settings.inferChords;
+  if (settings.beatCounts !== undefined) out.counts = settings.beatCounts;
+  if (settings.subdivisions !== undefined) out.subdivisions = settings.subdivisions;
+  if (settings.musicFont !== undefined) out.notationFont = settings.musicFont;
+  if (settings.staveFont !== undefined) out.annotationFont = settings.staveFont;
+  if (settings.barsPerLine !== undefined) out.barsPerLine = settings.barsPerLine === 'auto' ? 'auto' : clamp(settings.barsPerLine, 1, 4);
+  if (settings.zoom !== undefined) out.zoom = settings.zoom;
+  if (settings.semitones !== undefined) out.semitones = clamp(settings.semitones, -12, 12);
+  if (settings.concert !== undefined) out.scorePitch = settings.concert ? 'concert' : 'written';
+  if (settings.overlap !== undefined) out.overlap = clamp(settings.overlap, 0, 3);
+  return out;
+}
+export const viewToMode = (view: 'vertical' | 'endless'): Prefs['mode'] => view === 'endless' ? 'landscape' : 'portrait';

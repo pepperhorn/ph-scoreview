@@ -30,3 +30,9 @@ export const MOBILE_HEADER_BREAKPOINT = 760;
 
 /** Stave scale (zoom) bounds shared by the header slider and pinch zoom live with the defaults in stave-scale.ts. */
 export { clampStaveScale, STAVE_SCALE_MAX, STAVE_SCALE_MIN, STAVE_SCALE_STEP } from './stave-scale';
+
+/** Which `controls` key shows each header control (see chrome.ts). */
+export const HEADER_CONTROL_GROUP: Record<HeaderControlId, 'transport' | 'viewToggle' | 'openFile' | 'zoom' | 'mixer'> = {
+  stop: 'transport', play: 'transport', bpm: 'transport', transpose: 'transport', keyFlip: 'transport', bars: 'transport',
+  mode: 'viewToggle', openFile: 'openFile', staveScale: 'zoom', mixer: 'mixer',
+};
