@@ -9,3 +9,7 @@ dist/
 *.tsbuildinfo
 .DS_Store
 /apps/reader/public/variations/
+/packages/pepperscore-sounds-core/fonts/
+/packages/pepperscore-sounds-core/instruments/
+/packages/pepperscore-sounds-core/soundfonts/
+/packages/pepperscore-sounds-core/pack.json

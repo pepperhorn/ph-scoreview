@@ -1,0 +1,8 @@
+{
+  "name": "pepperscore-sounds-core",
+  "version": "0.1.0",
+  "description": "Core pepperscore assets (~15 MB): music fonts, instrument icons, Perfect Drums, TimGM6mb and 19 common FluidR3 GM sounds.",
+  "license": "SEE LICENSE IN LICENSES.md",
+  "files": ["fonts", "instruments", "soundfonts", "pack.json", "LICENSES.md", "README.md"],
+  "scripts": { "prepack": "node ../../scripts/sounds-core.mjs ." }
+}
