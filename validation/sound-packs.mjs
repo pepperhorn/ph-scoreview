@@ -25,7 +25,7 @@ try {
   execFileSync(process.execPath, [join(root, 'scripts/sounds-core.mjs'), out], { stdio: 'pipe' });
   assert.deepEqual(json(join(out, 'pack.json')), { pack: 'core', fluidr3: CORE_FLUIDR3 });
   assert.deepEqual(readdirSync(join(out, 'soundfonts/fluidr3')).sort(), [...CORE_FLUIDR3.map(name => `${name}.json`), 'ATTRIBUTION.txt'].sort());
-  for (const file of ['fonts/Bravura.woff2', 'fonts/Petaluma.woff2', 'fonts/PetalumaScript.woff2', 'fonts/Petaluma-OFL.txt', 'instruments/piano.svg', 'soundfonts/TimGM6mb.sf2', 'soundfonts/COPYING.txt', 'soundfonts/perfect-drums/manifest.json']) {
+  for (const file of ['fonts/Bravura.woff2', 'fonts/Petaluma.woff2', 'fonts/PetalumaScript.woff2', 'fonts/Petaluma-OFL.txt', 'fonts/Bravura-OFL.txt', 'instruments/piano.svg', 'soundfonts/TimGM6mb.sf2', 'soundfonts/COPYING.txt', 'soundfonts/perfect-drums/manifest.json']) {
     assert.ok(statSync(join(out, file)).size > 0, `core has ${file}`);
   }
   const bytes = size(out);

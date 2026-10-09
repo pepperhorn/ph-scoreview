@@ -25,8 +25,9 @@ let recycleHeapBytes = 1024 * 2 ** 20;
 // Diagnostics and tests: localStorage `scoreflow-chunking` = {"force": true, "budget": 16} engraves every MusicXML
 // score in chunks of that size (validation/chunks.mjs compares chunked and whole engravings); `recycleHeapBytes`
 // lowers the idle-recycle threshold. A diagnostic hook: un-namespaced and exempt from `persist` (storage.ts).
-try {
-  const setting = JSON.parse(globalThis.localStorage?.getItem('scoreflow-chunking') || 'null') as { force?: boolean; budget?: number; recycleHeapBytes?: number } | null;
+// Browser only: Node 25 has a global localStorage whose access prints a warning on an SSR server.
+if (typeof window !== 'undefined') try {
+  const setting = JSON.parse(window.localStorage?.getItem('scoreflow-chunking') || 'null') as { force?: boolean; budget?: number; recycleHeapBytes?: number } | null;
   if (setting?.force) forceChunks = true;
   if (Number(setting?.budget) > 0) chunkBudget = Number(setting!.budget);
   if (Number(setting?.recycleHeapBytes) > 0) recycleHeapBytes = Number(setting!.recycleHeapBytes);

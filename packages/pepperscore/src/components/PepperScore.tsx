@@ -24,7 +24,7 @@ import { SCORE_FILE_ACCEPT } from '../lib/score-files';
 import { PAGE_PAD_PX, pageOfSystem, systemPages, turnTarget, type ReadingPage, type SystemSpan } from '../lib/paging';
 import { fetchScoreFile } from '../lib/remote-score';
 import OpenScoreDialog from './OpenScoreDialog';
-import { loadPackInfo, resolveAssetBase, type SoundPackName } from '../lib/assets';
+import { loadPackInfo, resolveAssetBase, warnAssetBase, type SoundPackName } from '../lib/assets';
 import { fallbackSf2Url, planKey, planSound, type SoundPlan, type SoundRequest, type SoundSource } from '../lib/sounds';
 import { addDrumFallback, loadPlayers, type AudioPlayer } from '../lib/sound-players';
 import { ensureMusicFonts } from '../lib/asset-fonts';
@@ -69,6 +69,8 @@ export type PepperScoreProps = {
   height?: string;
   /** Extra classes on the `.pepperscore` root. */
   className?: string;
+  /** Accessible name of the reader's landmark region; default `"Score: <title>"` once a titled score loads, else `"Score reader"`. */
+  ariaLabel?: string;
   /** Initial reader settings; changing a key re-applies that key. A score's saved record (with `persist`) wins over them. */
   settings?: PepperScoreSettings;
   /**
@@ -116,7 +118,7 @@ const flag = (element: HTMLElement, key: 'psShort' | 'psTiny' | 'psWide', on: bo
 /** Where the viewport centre sits in a measure, so a re-layout can put that point back at the centre. */
 type ZoomAnchor = { index: number; fx: number; fy: number };
 
-export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: preset = 'full', controls, view, height, className, settings, persist, assetBaseUrl, soundPack = 'core', soundSources, onReady, onPlay, onStop, onError, autoFocus, ref }: PepperScoreProps) {
+export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: preset = 'full', controls, view, height, className, ariaLabel, settings, persist, assetBaseUrl, soundPack = 'core', soundSources, onReady, onPlay, onStop, onError, autoFocus, ref }: PepperScoreProps) {
   const chrome = useMemo(() => resolveChrome(preset, controls), [preset, controls?.mixer, controls?.openFile, controls?.drawer, controls?.transport, controls?.viewToggle, controls?.zoom]);
   const storage = useMemo(() => readerStorage(persist ?? (preset === 'full' ? 'pepperscore' : false)), [persist, preset]);
   // Host settings and view as prefs; only keys the host gives are applied (on mount, on each score load, and when they change).
@@ -238,7 +240,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   /** The score revision onReady last fired for. */
   const readyRevisionRef = useRef(-1);
   useEffect(() => { const channel = openVerovioChannel(); channelRef.current = channel; return () => { cancelImports(channel); closeVerovioChannel(channel); }; }, []);
-  useEffect(() => ensureMusicFonts(assetBase), [assetBase]);
+  useEffect(() => ensureMusicFonts(assetBase, failed => warnAssetBase(assetBase, failed)), [assetBase]);
   const hiddenSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
   const visibleScore = useMemo(() => {
     const parts = score.parts.filter(part => !hiddenSet.has(part.id));
@@ -904,7 +906,8 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   }, [active, activeNotes, prefs.mode, painting, measureCursorKey, layoutTick]);
 
   // Returns null when the device can't produce sound (no output device, autoplay blocked, resume() never settling),
-  // so playback falls back to a silent wall-clock run instead of hanging on a suspended AudioContext.
+  // so playback falls back to a silent wall-clock run instead of hanging on a suspended AudioContext. Also null when the
+  // built-in sounds at assetBaseUrl fail to load.
   const ensureAudio = async (timeline: BaseTimeline) => {
     if (!audioRef.current) {
       const sharedAudio = getSharedAudio();
@@ -923,15 +926,22 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     const page = document.baseURI;
     const plans = new Map(visibleScore.parts.map(part => [part.id, planSound(soundRequest(part), { sources: soundSources, fluidr3: pack.fluidr3, base: assetBase, page })]));
     audio.partKeys = new Map(visibleScore.parts.map(part => [part.id, audioKey(plans.get(part.id)!, part)]));
+    // A built-in sound that fails to load (an assetBaseUrl with no sounds package behind it) plays silently, with one
+    // console warning, instead of failing playback. A host soundSources entry that fails still reports an error.
+    const builtinFailed = (e: unknown) => { warnAssetBase(assetBase, `built-in sounds (${e instanceof Error ? e.message : String(e)})`); return null; };
     for (const key of new Set(audio.partKeys.values())) {
       const matching = visibleScore.parts.filter(part => audio.partKeys.get(part.id) === key);
       const plan = plans.get(matching[0].id)!;
       const notes = playbackMidis(timeline, new Set(matching.map(part => part.id)), prefs.semitones);
       const destination = audio.trackGains.get(matching[0].id)!;
+      const builtin = plan.sourceId.startsWith('builtin:');
       let players = audio.players.get(key);
-      if (!players) { players = await loadPlayers(audio.context, plan, destination); audio.players.set(key, players); }
-      if (plan.kind === 'note-files' && plan.drums) await addDrumFallback(audio.context, players, notes, fallbackSf2Url(assetBase), destination);
-      await Promise.all(players.map(player => player.loadNotes?.(notes)));
+      try {
+        if (!players) { players = await loadPlayers(audio.context, plan, destination); audio.players.set(key, players); }
+        await Promise.all(players.map(player => player.loadNotes?.(notes)));
+      } catch (e) { if (builtin) return builtinFailed(e); throw e; }
+      // The drum fallback is always the built-in TimGM6mb kit.
+      if (plan.kind === 'note-files' && plan.drums) try { await addDrumFallback(audio.context, players, notes, fallbackSf2Url(assetBase), destination); } catch (e) { return builtinFailed(e); }
     }
     // Players no visible part uses any more (another score, a changed instrument, a hidden part) are released.
     const used = new Set(audio.partKeys.values());
@@ -1082,7 +1092,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const heightMode = height === 'fill' ? 'fill' : height ? 'fixed' : natural ? 'natural' : 'auto';
   const compactLabel = playing || loadingAudio ? 'Stop playback' : 'Play score';
   return <div ref={rootRef} className={`pepperscore ${className ?? ''}`.trim()} data-ps-height={heightMode} style={heightMode === 'fixed' ? { height } : undefined}
-    tabIndex={0} role="region" aria-label="Score reader" onKeyDown={onRootKeyDown}>
+    tabIndex={0} role="region" aria-label={ariaLabel || (loaded && score.title ? `Score: ${score.title}` : 'Score reader')} onKeyDown={onRootKeyDown}>
   <main className={`app-shell ${chrome.drawer ? '' : 'no-drawer'}`}>
     {chrome.header && <header className="topbar" aria-label="Playback transport">
       {chrome.openFile && <input ref={fileRef} type="file" accept={SCORE_FILE_ACCEPT} hidden onChange={e => { readFile(e.target.files?.[0]); e.target.value = ''; }}/>}

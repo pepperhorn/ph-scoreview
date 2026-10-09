@@ -14,7 +14,8 @@ export default function soundPack() {
     hooks: {
       'astro:server:setup': ({ server }) => {
         server.middlewares.use(async (request, response, next) => {
-          const pathname = decodeURIComponent(new URL(request.url ?? '/', 'http://localhost').pathname);
+          let pathname;
+          try { pathname = decodeURIComponent(new URL(request.url ?? '/', 'http://localhost').pathname); } catch { return next(); } // malformed %-escape
           if (!ENTRIES.some(entry => pathname === `/${entry}` || pathname.startsWith(`/${entry}/`))) return next();
           const file = resolve(SOUNDS, `.${pathname}`);
           if (!file.startsWith(SOUNDS)) return next();

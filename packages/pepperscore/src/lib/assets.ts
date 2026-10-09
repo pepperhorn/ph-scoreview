@@ -41,3 +41,15 @@ export function loadPackInfo(base: string): Promise<PackInfo> {
   }
   return info;
 }
+
+const warnedBases = new Set<string>();
+/**
+ * One console warning per asset base when its fonts or built-in sounds fail to load (for example the default CDN URL
+ * before the sounds packages are published). The reader keeps working: fonts fall back and playback runs silently.
+ */
+export function warnAssetBase(base: string, what: string): void {
+  if (warnedBases.has(base)) return;
+  warnedBases.add(base);
+  console.warn(`pepperscore: could not load ${what} from assetBaseUrl "${base}". Music fonts fall back and playback is silent. `
+    + 'Serve a pepperscore-sounds-core (or -complete) package there, or self-host one and pass its URL as assetBaseUrl.');
+}

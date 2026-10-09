@@ -38,6 +38,6 @@ export default function EmbedTest() {
     {mounted.a && <div className="host-snippet"><PepperScore ref={refs.a} className="embed-a" chrome="minimal" view={views.a} abc={abcA} assetBaseUrl={ASSETS} soundSources={pianoSource} settings={{ zoom: 1.5 }} {...log('a')} /></div>}
     {mounted.b && <div className="host-snippet"><PepperScore ref={refs.b} className="embed-b" chrome="minimal" view={views.b} controls={controlsB} musicXml={ensemble} height="200px" assetBaseUrl={ASSETS} {...log('b')} /></div>}
     {mounted.c && <div className="host-snippet"><PepperScore ref={refs.c} className="embed-c" chrome="minimal" musicXml="<score-partwise><part" assetBaseUrl={ASSETS} {...log('c')} /></div>}
-    {mounted.none && <div className="host-snippet"><PepperScore ref={refs.none} className="embed-none" chrome="none" view={views.none} abc={tune('Engraving only', 8)} assetBaseUrl={ASSETS} {...log('none')} /></div>}
+    {mounted.none && <div className="host-snippet"><PepperScore ref={refs.none} className="embed-none" ariaLabel="Engraving-only example" chrome="none" view={views.none} abc={tune('Engraving only', 8)} assetBaseUrl={ASSETS} {...log('none')} /></div>}
   </div>;
 }
