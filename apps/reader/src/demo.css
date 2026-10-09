@@ -1,0 +1,2 @@
+/* The demo page owns the page: the component never styles html or body. */
+html,body{margin:0;height:100%;overflow:hidden;background:#fff}

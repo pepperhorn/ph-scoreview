@@ -5,7 +5,7 @@ import { exampleScore, gmProgramForSoundfont, gmSoundfontLabel, GM_FAMILIES, GM_
 import { importMusicXmlText, importScoreFile, parseAbc } from '../lib/import';
 import { portraitBarLimit, renderScore, type MeasureGeometry, type RenderResult } from '../lib/render';
 import { partControlMetrics, type PartControlMetrics } from '../lib/part-controls';
-import { HEADER_CONTROLS, MOBILE_HEADER_QUERY, type HeaderControlId } from '../lib/header-controls';
+import { HEADER_CONTROLS, MOBILE_HEADER_BREAKPOINT, type HeaderControlId } from '../lib/header-controls';
 import { clampStaveScale, deviceClass, ENDLESS_STAVE_SCALE, minimumDefaultStaveScale, STAVE_SCALE_MAX, STAVE_SCALE_MIN, STAVE_SCALE_STEP } from '../lib/stave-scale';
 import { buildFileState, clampBpm, MAX_BPM, MIN_BPM, textSource, type FileSettings, type FileSource, type FileState, type ScoreView } from '../lib/file-state';
 import { sampleSource, scoreDb } from '../lib/score-db';
@@ -65,6 +65,10 @@ export type ReaderProps = {
   soundPack?: SoundPackName;
   /** Sounds that replace the built-in ones for the programs (or drum kit) they claim; the first claiming entry wins. */
   soundSources?: SoundSource[];
+  /** `"fill"` fills the parent's height; any CSS length fixes it; omitted, the reader fills its parent with a 480px floor. */
+  height?: string;
+  /** Extra classes on the `.pepperscore` root. */
+  className?: string;
 };
 /** The widest control gutter a viewport can spare. */
 const maxControlGutter = (width: number) => Math.max(120, Math.round(width * .42));
@@ -87,10 +91,11 @@ const REOPEN_DISMISSED_KEY = 'scoreflow-reopen-dismissed';
 const reopenDismissed = () => { try { return sessionStorage.getItem(REOPEN_DISMISSED_KEY) === '1'; } catch { return false; } };
 const LAST_FILE_PRIVACY = 'The last opened file is kept only on this device (in this browser), so it can be reopened after a reload. It is never uploaded.';
 const scrollBehavior = (): ScrollBehavior => window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+const flag = (element: HTMLElement, key: 'psShort' | 'psTiny' | 'psWide', on: boolean) => { if (on) element.dataset[key] = ''; else delete element.dataset[key]; };
 /** Where the viewport centre sits in a measure, so a re-layout can put that point back at the centre. */
 type ZoomAnchor = { index: number; fx: number; fy: number };
 
-export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = 'core', soundSources }: ReaderProps) {
+export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = 'core', soundSources, height, className }: ReaderProps) {
   const [score, setScore] = useState<Score>(sampleScore);
   const [scoreRevision, setScoreRevision] = useState(0);
   const [prefs, setPrefs] = useState<Prefs>(defaults);
@@ -154,6 +159,7 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
   const staveScaleInputRef = useRef<HTMLInputElement | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const [scoreWidth, setScoreWidth] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -538,16 +544,27 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
   useEffect(() => () => window.clearTimeout(zoomCommitRef.current), []);
   useEffect(() => {
     if (!moreOpen) return;
-    // Layout is CSS-only (styles.css); this listener just closes an open panel once the header widens past the breakpoint.
-    const compact = window.matchMedia(MOBILE_HEADER_QUERY);
-    const widened = () => { if (!compact.matches) setMoreOpen(false); };
-    compact.addEventListener('change', widened);
     const outside = (event: PointerEvent) => { if (!moreRef.current?.contains(event.target as Node)) setMoreOpen(false); };
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') { setMoreOpen(false); moreRef.current?.querySelector<HTMLButtonElement>('.header-more-toggle')?.focus(); } };
     document.addEventListener('pointerdown', outside);
     document.addEventListener('keydown', escape);
-    return () => { compact.removeEventListener('change', widened); document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape); };
+    return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape); };
   }, [moreOpen]);
+  // Sizes come from the root, not the viewport: short/tiny/wide replace the old max-height/orientation media queries,
+  // and a root wider than the header breakpoint closes the More panel.
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const observer = new ResizeObserver(() => {
+      const width = root.clientWidth, height = root.clientHeight, natural = root.dataset.psHeight === 'natural';
+      flag(root, 'psShort', !natural && height <= 500);
+      flag(root, 'psTiny', !natural && height <= 360);
+      flag(root, 'psWide', width >= height);
+      if (width > MOBILE_HEADER_BREAKPOINT) setMoreOpen(false);
+    });
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, []);
   useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
@@ -922,8 +939,8 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
     openFile: <button className="header-open-file" aria-label="Open score file" title="Open score file" aria-haspopup="dialog" aria-expanded={openDialog} onClick={() => { setDrawer(false); setMoreOpen(false); setOpenDialog(true); }}><FolderOpen size={17}/><span className="header-open-file-label">Open</span></button>,
     bpm: <label className="bpm-control"><span>BPM</span><input type="number" min={MIN_BPM} max={MAX_BPM} value={prefs.bpm} onChange={e => { stop(true); update({ bpm: clampBpm(Number(e.target.value) || 96) }); }}/></label>,
     mode: <div className="mode-toggle" role="group" aria-label="Reading mode">
-      <button aria-label="Vertical view" title="Vertical view" className={`mode-toggle-vertical ${prefs.mode === 'portrait' ? 'selected' : ''}`} onClick={() => update({ mode: 'portrait' })}><span className="mode-toggle-label-full">Vertical</span><span className="mode-toggle-label-short" aria-hidden="true">V</span></button>
-      <button aria-label="Endless view" title="Endless view" className={`mode-toggle-endless ${prefs.mode === 'landscape' ? 'selected' : ''}`} onClick={() => update({ mode: 'landscape' })}><span className="mode-toggle-label-full">Endless</span><span className="mode-toggle-label-short" aria-hidden="true">E</span></button>
+      <button aria-label="Vertical view" title="Vertical view" className={`mode-toggle-vertical ${prefs.mode === 'portrait' ? 'is-selected' : ''}`} onClick={() => update({ mode: 'portrait' })}><span className="mode-toggle-label-full">Vertical</span><span className="mode-toggle-label-short" aria-hidden="true">V</span></button>
+      <button aria-label="Endless view" title="Endless view" className={`mode-toggle-endless ${prefs.mode === 'landscape' ? 'is-selected' : ''}`} onClick={() => update({ mode: 'landscape' })}><span className="mode-toggle-label-full">Endless</span><span className="mode-toggle-label-short" aria-hidden="true">E</span></button>
     </div>,
     transpose: <div className="header-transpose" role="group" aria-label="Transpose">
       <span className="header-transpose-label" aria-hidden="true">Transpose</span>
@@ -951,7 +968,9 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
   const primaryControls = renderControls('primary');
   const secondaryControls = renderControls('secondary');
 
-  return <main className="app-shell">
+  const heightMode = height === 'fill' ? 'fill' : height ? 'fixed' : 'auto';
+  return <div ref={rootRef} className={`pepperscore ${className ?? ''}`.trim()} data-ps-height={heightMode} style={heightMode === 'fixed' ? { height } : undefined}>
+  <main className="app-shell">
     <header className="topbar" aria-label="Playback transport">
       <input ref={fileRef} type="file" accept={SCORE_FILE_ACCEPT} hidden onChange={e => { readFile(e.target.files?.[0]); e.target.value = ''; }}/>
       <div className="transport">
@@ -959,7 +978,7 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
         {/* Secondary controls render once. CSS lays them out inline above MOBILE_HEADER_BREAKPOINT and as the
             More dropdown (toggle shown, panel display:none until data-open) at or below it, so SSR paints the right arrangement. */}
         {secondaryControls.length > 0 && <div className="header-more" ref={moreRef} data-open={moreOpen ? 'true' : 'false'}>
-          <button className={`icon-button header-more-toggle ${moreOpen ? 'open' : ''}`} aria-label="More controls" title="More controls" aria-expanded={moreOpen} aria-controls="header-secondary-panel" onClick={() => setMoreOpen(open => !open)}><Ellipsis size={19}/></button>
+          <button className={`icon-button header-more-toggle ${moreOpen ? 'is-open' : ''}`} aria-label="More controls" title="More controls" aria-expanded={moreOpen} aria-controls="header-secondary-panel" onClick={() => setMoreOpen(open => !open)}><Ellipsis size={19}/></button>
           <div id="header-secondary-panel" className="header-secondary-panel" role="group" aria-label="Secondary controls">{secondaryControls}</div>
         </div>}
       </div>
@@ -978,13 +997,13 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
     {pickerPart && <div className="instrument-picker-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setPickerPartId(null); }}>
       <section className="instrument-picker-panel" role="dialog" aria-modal="true" aria-label={`Choose voice for ${pickerPart.name}`}>
         <div className="instrument-picker-heading"><div><h2>{pickerPart.name}</h2><p>Choose a playback sound</p></div><button className="icon-button" aria-label="Close voice picker" onClick={() => setPickerPartId(null)}><X size={19}/></button></div>
-        <div className="instrument-family-filters" role="group" aria-label="Instrument families">{GM_FAMILIES.map(family => <button key={family} className={pickerFamily === family ? 'selected' : ''} aria-pressed={pickerFamily === family} onClick={() => { setPickerFamily(family); setPickerPage(0); }}>{family}</button>)}</div>
-        <div className="instrument-picker-grid">{pickerSounds.map(sound => <button key={sound.program ?? 'drum-kit'} className={playbackSound(pickerPart) === (sound.soundfont || 'drum-kit') ? 'selected' : ''} aria-pressed={playbackSound(pickerPart) === (sound.soundfont || 'drum-kit')} onClick={() => changeInstrument(pickerPart.id, sound)}><img src={sound.icon} alt=""/><span>{sound.label}</span></button>)}</div>
+        <div className="instrument-family-filters" role="group" aria-label="Instrument families">{GM_FAMILIES.map(family => <button key={family} className={pickerFamily === family ? 'is-selected' : ''} aria-pressed={pickerFamily === family} onClick={() => { setPickerFamily(family); setPickerPage(0); }}>{family}</button>)}</div>
+        <div className="instrument-picker-grid">{pickerSounds.map(sound => <button key={sound.program ?? 'drum-kit'} className={playbackSound(pickerPart) === (sound.soundfont || 'drum-kit') ? 'is-selected' : ''} aria-pressed={playbackSound(pickerPart) === (sound.soundfont || 'drum-kit')} onClick={() => changeInstrument(pickerPart.id, sound)}><img src={sound.icon} alt=""/><span>{sound.label}</span></button>)}</div>
         <div className="instrument-picker-pages"><button aria-label="Previous instruments" disabled={pickerPage === 0} onClick={() => setPickerPage(page => page - 1)}><ChevronLeft size={18}/></button><span>Page {pickerPage + 1} of {pickerPages}</span><button aria-label="Next instruments" disabled={pickerPage + 1 >= pickerPages} onClick={() => setPickerPage(page => page + 1)}><ChevronRight size={18}/></button></div>
       </section>
     </div>}
 
-    <section className={`reader-area ${prefs.mode} ${score.parts.length > 4 ? 'has-many-staves' : ''}`}>
+    <section className={`reader-area ps-${prefs.mode} ${score.parts.length > 4 ? 'has-many-staves' : ''}`}>
       <div className="edge-fade edge-start"/><div className="edge-fade edge-end"/>
       <div className="score-viewport" ref={viewportRef} onTouchStart={e => {
         if (score.parts.length > 4 && e.touches.length === 2) {
@@ -1031,17 +1050,17 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
       <div className="page-controls"><button aria-label="Previous view" onClick={() => turn(-1)}><ChevronLeft size={18}/></button><span>{prefs.mode === 'portrait' ? 'SCROLL TO READ' : 'SWIPE TO READ'}</span><button aria-label="Next view" onClick={() => turn(1)}><ChevronRight size={18}/></button></div>
     </section>
 
-    <button className={`drawer-handle ${drawer ? 'open' : ''}`} onClick={() => setDrawer(!drawer)} aria-expanded={drawer}><span className="handle-grip"/><span>{drawer ? 'Close options' : 'Options'}</span><ChevronDown size={16}/></button>
+    <button className={`drawer-handle ${drawer ? 'is-open' : ''}`} onClick={() => setDrawer(!drawer)} aria-expanded={drawer}><span className="handle-grip"/><span>{drawer ? 'Close options' : 'Options'}</span><ChevronDown size={16}/></button>
     {drawer && <div className="drawer-backdrop" onClick={() => setDrawer(false)}/>}
-    <aside className={`bottom-drawer ${drawer ? 'open' : ''}`} aria-hidden={!drawer}>
-      <div className="drawer-top"><div><div className="eyebrow">MAKE IT YOURS</div><h2>Reading options</h2></div><button className="icon-button" aria-label="Close options" onClick={() => setDrawer(false)}><X size={20}/></button></div>
+    <aside className={`bottom-drawer ${drawer ? 'is-open' : ''}`} aria-hidden={!drawer}>
+      <div className="drawer-top"><div><div className="ps-eyebrow">MAKE IT YOURS</div><h2>Reading options</h2></div><button className="icon-button" aria-label="Close options" onClick={() => setDrawer(false)}><X size={20}/></button></div>
       <div className="drawer-grid">
 
-        <div className="drawer-panel"><h3><Settings2 size={17}/> Reading</h3><div className="font-choice"><span>Notation font</span><div className="font-toggle" role="group" aria-label="Notation font"><button className={prefs.notationFont === 'Bravura' ? 'selected' : ''} aria-pressed={prefs.notationFont === 'Bravura'} onClick={() => update({ notationFont: 'Bravura' })}>Bravura</button><button className={prefs.notationFont === 'Petaluma' ? 'selected' : ''} aria-pressed={prefs.notationFont === 'Petaluma'} onClick={() => update({ notationFont: 'Petaluma' })}>Petaluma</button></div></div><div className="font-choice"><span>Stave text font</span><div className="font-toggle" role="group" aria-label="Stave text font">{(['Sans', 'Serif', 'Mono'] as const).map(font => <button key={font} className={prefs.annotationFont === font ? 'selected' : ''} aria-pressed={prefs.annotationFont === font} onClick={() => update({ annotationFont: font })}>{font}</button>)}</div></div><label className="field-label" htmlFor="overhang">Overhang <span>{prefs.overlap === 0 ? 'Off' : `${prefs.overlap} ${prefs.mode === 'portrait' ? (prefs.overlap === 1 ? 'system' : 'systems') : (prefs.overlap === 1 ? 'bar' : 'bars')}`}</span></label><input id="overhang" className="range" type="range" min="0" max="3" step="1" value={prefs.overlap} onChange={e => update({ overlap: Number(e.target.value) })}/><div className="switch-row"><span>Note names</span><button className={`switch ${prefs.names ? 'on' : ''}`} role="switch" aria-label="Note names" aria-checked={prefs.names} onClick={() => update({ names: !prefs.names })}/></div><div className="switch-row"><span>Chord symbols</span><button className={`switch ${prefs.chordSymbols ? 'on' : ''}`} role="switch" aria-label="Chord symbols" aria-checked={prefs.chordSymbols} onClick={() => update({ chordSymbols: !prefs.chordSymbols })}/></div><label className="switch-row inference-row"><span>Infer chord symbols</span><input type="checkbox" checked={prefs.inferChordSymbols} onChange={e => update({ inferChordSymbols: e.target.checked })}/></label><div className="switch-row"><span>Beat counts</span><button className={`switch ${prefs.counts ? 'on' : ''}`} role="switch" aria-label="Beat counts" aria-checked={prefs.counts} onClick={() => update({ counts: !prefs.counts })}/></div><div className="switch-row"><span>Count subdivisions</span><button className={`switch ${prefs.subdivisions ? 'on' : ''}`} role="switch" aria-label="Count subdivisions" aria-checked={prefs.subdivisions} onClick={() => update({ subdivisions: !prefs.subdivisions, counts: true })}/></div>{score.parts.length > 4 && <button className="text-action reset-staves" onClick={resetStaves}><RotateCcw size={15}/> Reset score staves</button>}</div>
+        <div className="drawer-panel"><h3><Settings2 size={17}/> Reading</h3><div className="font-choice"><span>Notation font</span><div className="font-toggle" role="group" aria-label="Notation font"><button className={prefs.notationFont === 'Bravura' ? 'is-selected' : ''} aria-pressed={prefs.notationFont === 'Bravura'} onClick={() => update({ notationFont: 'Bravura' })}>Bravura</button><button className={prefs.notationFont === 'Petaluma' ? 'is-selected' : ''} aria-pressed={prefs.notationFont === 'Petaluma'} onClick={() => update({ notationFont: 'Petaluma' })}>Petaluma</button></div></div><div className="font-choice"><span>Stave text font</span><div className="font-toggle" role="group" aria-label="Stave text font">{(['Sans', 'Serif', 'Mono'] as const).map(font => <button key={font} className={prefs.annotationFont === font ? 'is-selected' : ''} aria-pressed={prefs.annotationFont === font} onClick={() => update({ annotationFont: font })}>{font}</button>)}</div></div><label className="field-label" htmlFor="overhang">Overhang <span>{prefs.overlap === 0 ? 'Off' : `${prefs.overlap} ${prefs.mode === 'portrait' ? (prefs.overlap === 1 ? 'system' : 'systems') : (prefs.overlap === 1 ? 'bar' : 'bars')}`}</span></label><input id="overhang" className="ps-range" type="range" min="0" max="3" step="1" value={prefs.overlap} onChange={e => update({ overlap: Number(e.target.value) })}/><div className="ps-switch-row"><span>Note names</span><button className={`ps-switch ${prefs.names ? 'is-on' : ''}`} role="switch" aria-label="Note names" aria-checked={prefs.names} onClick={() => update({ names: !prefs.names })}/></div><div className="ps-switch-row"><span>Chord symbols</span><button className={`ps-switch ${prefs.chordSymbols ? 'is-on' : ''}`} role="switch" aria-label="Chord symbols" aria-checked={prefs.chordSymbols} onClick={() => update({ chordSymbols: !prefs.chordSymbols })}/></div><label className="ps-switch-row inference-row"><span>Infer chord symbols</span><input type="checkbox" checked={prefs.inferChordSymbols} onChange={e => update({ inferChordSymbols: e.target.checked })}/></label><div className="ps-switch-row"><span>Beat counts</span><button className={`ps-switch ${prefs.counts ? 'is-on' : ''}`} role="switch" aria-label="Beat counts" aria-checked={prefs.counts} onClick={() => update({ counts: !prefs.counts })}/></div><div className="ps-switch-row"><span>Count subdivisions</span><button className={`ps-switch ${prefs.subdivisions ? 'is-on' : ''}`} role="switch" aria-label="Count subdivisions" aria-checked={prefs.subdivisions} onClick={() => update({ subdivisions: !prefs.subdivisions, counts: true })}/></div>{score.parts.length > 4 && <button className="text-action reset-staves" onClick={resetStaves}><RotateCcw size={15}/> Reset score staves</button>}</div>
         <div className="drawer-panel abc-panel"><h3><FileMusic size={17}/> ABC notation</h3><p>Paste ABC text here, or use the open button in the header for files and folders.</p><textarea value={abc} onChange={e => setAbc(e.target.value)} spellCheck={false} aria-label="ABC notation"/><button className="primary-action" onClick={() => void readAbc(abc)}>View notation <ChevronRight size={17}/></button><button className="text-action" onClick={loadSample}><FileMusic size={16}/> Open sample score</button>{lastFileInfo && <button className="text-action forget-last-file" title={LAST_FILE_PRIVACY} onClick={forgetLast}><Trash2 size={15}/> Forget last opened file</button>}</div>
-        <div className="drawer-panel pitch-panel"><h3><Settings2 size={17}/> Pitch</h3><div className="pitch-options"><div><span className="pitch-label">Transpose score</span><div className="semitone-control"><button aria-label="Transpose down a semitone" disabled={prefs.semitones <= -12} onClick={() => transposeBy(-1)}><Minus size={16}/></button><output aria-live={drawer ? 'polite' : 'off'}>{prefs.semitones > 0 ? '+' : ''}{prefs.semitones} semitones</output><button aria-label="Transpose up a semitone" disabled={prefs.semitones >= 12} onClick={() => transposeBy(1)}><Plus size={16}/></button><button className="pitch-reset" aria-label="Reset transposition" title="Reset transposition" disabled={prefs.semitones === 0 && !prefs.keyFlip} onClick={() => changePitch({ semitones: 0, keyFlip: false })}><RotateCcw size={15}/></button></div></div><div className="pitch-key"><span className="pitch-label">Key</span><div className="pitch-key-control"><output className="pitch-key-readout" aria-live={drawer ? 'polite' : 'off'}>{readout.text}</output><button className={`pitch-key-flip ${flipTo ? '' : 'is-disabled'}`} aria-label={flipLabel} title={flipLabel} aria-disabled={!flipTo} onClick={flipKey}><span className="pitch-key-flip-icon" aria-hidden="true">⇄</span><span className="pitch-key-flip-label">{flipText}</span></button></div></div>{!concertBasis && <div><span className="pitch-label">Score view</span><div className="font-toggle pitch-view" role="group" aria-label="Score pitch view"><button className={prefs.scorePitch === 'written' ? 'selected' : ''} aria-pressed={prefs.scorePitch === 'written'} onClick={() => changePitch({ scorePitch: 'written' })}>Transposing</button><button className={prefs.scorePitch === 'concert' ? 'selected' : ''} aria-pressed={prefs.scorePitch === 'concert'} onClick={() => changePitch({ scorePitch: 'concert' })}>Concert</button></div></div>}</div><p className="pitch-hint">{concertBasis ? 'This score is written at concert pitch, so it is shown at concert pitch. Playback stays at concert pitch.' : hasTransposingParts ? 'Transposing shows written parts; Concert shows sounding pitches. Playback stays at concert pitch.' : 'This score has no instrument transposition data, so both views match.'}</p></div>
+        <div className="drawer-panel pitch-panel"><h3><Settings2 size={17}/> Pitch</h3><div className="pitch-options"><div><span className="pitch-label">Transpose score</span><div className="semitone-control"><button aria-label="Transpose down a semitone" disabled={prefs.semitones <= -12} onClick={() => transposeBy(-1)}><Minus size={16}/></button><output aria-live={drawer ? 'polite' : 'off'}>{prefs.semitones > 0 ? '+' : ''}{prefs.semitones} semitones</output><button aria-label="Transpose up a semitone" disabled={prefs.semitones >= 12} onClick={() => transposeBy(1)}><Plus size={16}/></button><button className="pitch-reset" aria-label="Reset transposition" title="Reset transposition" disabled={prefs.semitones === 0 && !prefs.keyFlip} onClick={() => changePitch({ semitones: 0, keyFlip: false })}><RotateCcw size={15}/></button></div></div><div className="pitch-key"><span className="pitch-label">Key</span><div className="pitch-key-control"><output className="pitch-key-readout" aria-live={drawer ? 'polite' : 'off'}>{readout.text}</output><button className={`pitch-key-flip ${flipTo ? '' : 'is-disabled'}`} aria-label={flipLabel} title={flipLabel} aria-disabled={!flipTo} onClick={flipKey}><span className="pitch-key-flip-icon" aria-hidden="true">⇄</span><span className="pitch-key-flip-label">{flipText}</span></button></div></div>{!concertBasis && <div><span className="pitch-label">Score view</span><div className="font-toggle pitch-view" role="group" aria-label="Score pitch view"><button className={prefs.scorePitch === 'written' ? 'is-selected' : ''} aria-pressed={prefs.scorePitch === 'written'} onClick={() => changePitch({ scorePitch: 'written' })}>Transposing</button><button className={prefs.scorePitch === 'concert' ? 'is-selected' : ''} aria-pressed={prefs.scorePitch === 'concert'} onClick={() => changePitch({ scorePitch: 'concert' })}>Concert</button></div></div>}</div><p className="pitch-hint">{concertBasis ? 'This score is written at concert pitch, so it is shown at concert pitch. Playback stays at concert pitch.' : hasTransposingParts ? 'Transposing shows written parts; Concert shows sounding pitches. Playback stays at concert pitch.' : 'This score has no instrument transposition data, so both views match.'}</p></div>
       </div>
-      {error && <div className="error" role="alert"><span className="error-text">{error}</span>{oomButton}</div>}
+      {error && <div className="ps-error" role="alert"><span className="ps-error-text">{error}</span>{oomButton}</div>}
       <div className="drawer-foot">SPACE / PAGE DOWN · next view &nbsp;&nbsp; PAGE UP · previous view <span>FluidR3 GM · CC BY 3.0; TimGM drums · GPL-2</span></div>
     </aside>
     {!drawer && (notice || largeNotice || reopenOffer) && <div className="reader-notices">
@@ -1057,6 +1076,7 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
       </div>}
       {notice && <div className="playback-notice" role="status"><VolumeX className="playback-notice-icon" size={16}/><span className="playback-notice-text">{notice}</span><button className="playback-notice-dismiss" onClick={() => setNotice('')} aria-label="Dismiss playback notice"><X size={16}/></button></div>}
     </div>}
-    {error && !drawer && <div className={`toast ${oomButton ? 'is-out-of-memory' : ''}`} role="alert"><span className="toast-text">{error}</span>{oomButton}<button className="toast-dismiss" onClick={() => setError('')} aria-label="Dismiss"><X size={16}/></button></div>}
-  </main>;
+    {error && !drawer && <div className={`ps-toast ${oomButton ? 'is-out-of-memory' : ''}`} role="alert"><span className="ps-toast-text">{error}</span>{oomButton}<button className="ps-toast-dismiss" onClick={() => setError('')} aria-label="Dismiss"><X size={16}/></button></div>}
+  </main>
+  </div>;
 }

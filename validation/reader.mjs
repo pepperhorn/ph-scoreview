@@ -27,7 +27,7 @@ try {
   // First paint: the header's mobile/desktop arrangement is pure CSS, so the server-rendered HTML already matches the
   // viewport and hydration never reflows it (a JS media-query hook used to swap desktop -> mobile after hydration).
   const breakpoint = Number((await readFile(resolve(root, 'packages/pepperscore/src/lib/header-controls.ts'), 'utf8')).match(/MOBILE_HEADER_BREAKPOINT = (\d+);/)[1]);
-  assert.match(await readFile(resolve(root, 'packages/pepperscore/src/styles.css'), 'utf8'), new RegExp(`/\\* HEADER BREAKPOINT \\(mobile\\)[^*]*\\*/\\s*@media\\(max-width:${breakpoint}px\\)`), `The header's CSS breakpoint matches MOBILE_HEADER_BREAKPOINT (${breakpoint}px)`);
+  assert.match(await readFile(resolve(root, 'packages/pepperscore/src/styles.css'), 'utf8'), new RegExp(`/\\* HEADER BREAKPOINT \\(mobile\\)[^*]*\\*/\\s*@container pepperscore \\(max-width:${breakpoint}px\\)`), `The header's container breakpoint matches MOBILE_HEADER_BREAKPOINT (${breakpoint}px)`);
   const headerArrangement = target => target.evaluate(() => {
     const visible = element => !!element && element.getClientRects().length > 0 && getComputedStyle(element).visibility !== 'hidden';
     const box = selector => { const element = document.querySelector(selector); if (!visible(element)) return null; const rect = element.getBoundingClientRect(); return [rect.left, rect.top, rect.width, rect.height].map(value => Math.round(value * 10) / 10); };
@@ -79,7 +79,7 @@ try {
       window.__firstPaint = Object.fromEntries(Object.entries({ stop: '.stop-button', play: '.play-button', open: '.header-open-file', mode: '.mode-toggle', more: '.header-more-toggle', bars: '.header-bars-setting', transpose: '.header-transpose-readout', keyFlip: '.header-key-flip-button' }).map(([key, selector]) => [key, box(selector)]));
     }));
     await hydrate.goto(url);
-    if (savedMode) await hydrate.waitForFunction(() => document.querySelector('.mode-toggle-endless.selected'), null, { timeout: 30000 });
+    if (savedMode) await hydrate.waitForFunction(() => document.querySelector('.mode-toggle-endless.is-selected'), null, { timeout: 30000 });
     await hydrate.waitForFunction(() => !document.querySelector('astro-island[ssr]') && !document.querySelector('.score-loading') && document.querySelector('.score-system svg') && !document.querySelector('.score-content').getAnimations().length, null, { timeout: 30000 });
     const hydrated = await headerArrangement(hydrate);
     const firstPaint = await hydrate.evaluate(() => window.__firstPaint);
@@ -199,7 +199,7 @@ try {
   });
   const ready = async () => {
     await page.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg') && !document.querySelector('.score-content').getAnimations().length, { timeout: 30000 });
-    assert.equal(await page.locator('.toast').count(), 0, await page.locator('.toast').allTextContents());
+    assert.equal(await page.locator('.ps-toast').count(), 0, await page.locator('.ps-toast').allTextContents());
   };
   await page.goto(url);
   await ready();
@@ -338,7 +338,7 @@ try {
   assert.equal(await page.locator('svg .chord .note.reader-note').count(), 0, 'No single chord notehead is the highlight target');
   await page.getByRole('button', { name: 'Play score', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('.chord.is-playing'), { timeout: 20000 }).catch(async error => {
-    const state = await page.evaluate(() => ({ contexts: window.__contexts.map(c => ({ state: c.state, time: c.currentTime })), starts: window.__audioStarts, playing: document.querySelectorAll('.is-playing').length, toasts: [...document.querySelectorAll('.toast')].map(t => t.textContent), notice: document.querySelector('.playback-notice')?.textContent ?? null, loading: !!document.querySelector('.audio-loading, [aria-busy=true]') }));
+    const state = await page.evaluate(() => ({ contexts: window.__contexts.map(c => ({ state: c.state, time: c.currentTime })), starts: window.__audioStarts, playing: document.querySelectorAll('.is-playing').length, toasts: [...document.querySelectorAll('.ps-toast')].map(t => t.textContent), notice: document.querySelector('.playback-notice')?.textContent ?? null, loading: !!document.querySelector('.audio-loading, [aria-busy=true]') }));
     throw new Error(`No chord highlighted after Play: ${JSON.stringify(state)}; console: ${consoleLines.slice(-10).join(' | ')}`, { cause: error });
   });
   const chordFills = await page.evaluate(() => [...document.querySelector('.chord.is-playing').querySelectorAll('.notehead')].map(head => getComputedStyle(head).fill));
@@ -574,7 +574,7 @@ try {
   desk.on('pageerror', e => deskErrors.push(e.message));
   const deskReady = async () => {
     await desk.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg') && !document.querySelector('.score-content').getAnimations().length, { timeout: 30000 });
-    assert.equal(await desk.locator('.toast').count(), 0, await desk.locator('.toast').allTextContents());
+    assert.equal(await desk.locator('.ps-toast').count(), 0, await desk.locator('.ps-toast').allTextContents());
   };
   const deskSlider = () => desk.getByRole('slider', { name: 'Stave scale', exact: true });
   const deskCommitted = async zoom => { await desk.waitForFunction(value => document.querySelector('.score-content')?.dataset.staveScale === String(value), zoom, { timeout: 8000 }); await deskReady(); };
@@ -863,7 +863,7 @@ try {
   });
   const pagerReady = async () => {
     await pager.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg') && !document.querySelector('.score-content').getAnimations().length, { timeout: 30000 });
-    assert.equal(await pager.locator('.toast').count(), 0, await pager.locator('.toast').allTextContents());
+    assert.equal(await pager.locator('.ps-toast').count(), 0, await pager.locator('.ps-toast').allTextContents());
   };
   const pagerHeader = async action => {
     const toggle = pager.getByRole('button', { name: 'More controls', exact: true });
@@ -1154,7 +1154,7 @@ try {
   await silent.getByRole('button', { name: 'Play score', exact: true }).click();
   await silent.locator('.playback-notice').waitFor({ timeout: 5000 });
   assert.match(await silent.locator('.playback-notice').textContent(), /playing silently/);
-  assert.equal(await silent.locator('.toast').count(), 0, 'Silent fallback is a notice, not an error toast');
+  assert.equal(await silent.locator('.ps-toast').count(), 0, 'Silent fallback is a notice, not an error toast');
   await silent.waitForFunction(() => document.querySelector('.is-playing') && document.querySelector('.playback-line'), { timeout: 5000 });
   const firstLeft = await lineLeft();
   await silent.waitForFunction(first => parseFloat(document.querySelector('.playback-line')?.style.left ?? 'NaN') > first, firstLeft, { timeout: 5000 });
@@ -1203,8 +1203,8 @@ try {
   await sf2.waitForFunction(() => document.querySelector('h1')?.textContent === 'Fallback duet');
   await sf2.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg'), undefined, { timeout: 30000 });
   await sf2.getByRole('button', { name: 'Play score', exact: true }).click();
-  await sf2.waitForFunction(() => window.__audioStarts > 0 || document.querySelector('.playback-notice') || document.querySelector('.toast'), undefined, { timeout: 30000 });
-  assert.equal(await sf2.locator('.toast').count(), 0, await sf2.locator('.toast').allTextContents());
+  await sf2.waitForFunction(() => window.__audioStarts > 0 || document.querySelector('.playback-notice') || document.querySelector('.ps-toast'), undefined, { timeout: 30000 });
+  assert.equal(await sf2.locator('.ps-toast').count(), 0, await sf2.locator('.ps-toast').allTextContents());
   if (await sf2.locator('.playback-notice').count() === 0) {
     assert.ok(await sf2.evaluate(() => window.__audioStarts) > 0, 'TimGM6mb fallback parts start audio sources');
     assert.equal(sf2Requests.filter(path => path === '/soundfonts/TimGM6mb.sf2').length, 1, 'Two TimGM6mb parts on different programs download the soundfont once');
@@ -1229,7 +1229,7 @@ try {
   await idless.locator('input[type=file]').setInputFiles(resolve(root, 'validation/fixtures/idless-sibelius.musicxml'));
   await idless.waitForFunction(() => document.querySelector('h1')?.textContent === 'ID-less export');
   await idless.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg') && !document.querySelector('.score-content').getAnimations().length, undefined, { timeout: 30000 });
-  assert.equal(await idless.locator('.toast').count(), 0, await idless.locator('.toast').allTextContents());
+  assert.equal(await idless.locator('.ps-toast').count(), 0, await idless.locator('.ps-toast').allTextContents());
   assert.equal(await idless.locator('svg g.measure').count(), 5, 'Each source measure engraves, including both bars of the multi-measure rest');
   assert.equal(await idless.locator('svg .multiRest').count(), 0, 'Multi-measure rests are expanded to one bar per source measure');
   // 9 events: C3, E3, G3 (tied) | G3, A2+E3 chord, rest, C2 (voice 2) | grace E2, F2.
@@ -1269,7 +1269,7 @@ try {
   opener.on('pageerror', e => openErrors.push(e.message));
   const openReady = async () => {
     await opener.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg') && !document.querySelector('.score-content').getAnimations().length, { timeout: 30000 });
-    assert.equal(await opener.locator('.toast').count(), 0, await opener.locator('.toast').allTextContents());
+    assert.equal(await opener.locator('.ps-toast').count(), 0, await opener.locator('.ps-toast').allTextContents());
   };
   const openButton = () => opener.locator('.header-open-file');
   const dialog = () => opener.getByRole('dialog', { name: 'Open a score' });

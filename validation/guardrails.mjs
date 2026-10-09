@@ -36,7 +36,7 @@ const SAMPLE_TITLE = 'A little room to play';
 
 const painted = page => page.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg') && !document.querySelector('.score-content').getAnimations().length, null, { timeout: 30000 });
 const title = page => page.evaluate(() => document.querySelector('.score-meta h1')?.textContent ?? null);
-const noToast = async page => assert.equal(await page.locator('.toast').count(), 0, (await page.locator('.toast').allTextContents()).join(' | '));
+const noToast = async page => assert.equal(await page.locator('.ps-toast').count(), 0, (await page.locator('.ps-toast').allTextContents()).join(' | '));
 /** The remembered file's info record, read straight from IndexedDB (null when there is none). */
 const storedInfo = page => page.evaluate(() => new Promise(resolve => {
   const request = indexedDB.open('scoreflow-last-file', 1);
@@ -122,7 +122,7 @@ try {
     assert.equal(await tabBanner.count(), 0, 'A forgotten file is not offered after a reload');
     assert.equal(await title(tab), SAMPLE_TITLE);
     await tab.getByRole('button', { name: 'Options', exact: true }).click();
-    await tab.locator('.bottom-drawer.open').waitFor();
+    await tab.locator('.bottom-drawer.is-open').waitFor();
     assert.equal(await tab.locator('.forget-last-file').count(), 0, 'No forget button once forgotten');
     await tab.locator('button[aria-label="Close options"]').click();
 
@@ -149,10 +149,10 @@ try {
     await painted(page);
     await page.evaluate(() => localStorage.setItem('scoreflow-simulate-oom', '1'));
     await page.locator('input[type=file]').setInputFiles(fixture);
-    const toast = page.locator('.toast');
+    const toast = page.locator('.ps-toast');
     await toast.waitFor({ timeout: 30000 });
     assert.equal(await toast.getAttribute('role'), 'alert');
-    const text = await page.locator('.toast-text').textContent();
+    const text = await page.locator('.ps-toast-text').textContent();
     assert.match(text, /ran out of memory/i, `The alert says the renderer ran out of memory: ${text}`);
     assert.match(text, /Close other tabs, or try again with smaller sections\./, 'The alert says what to do');
     const retry = page.getByRole('button', { name: 'Try again with smaller sections', exact: true });
@@ -217,9 +217,9 @@ try {
     await page.evaluate(() => localStorage.setItem('scoreflow-simulate-oom', '1'));
     await page.locator('input[type=file]').setInputFiles(fixture);
     // The simulated failure keeps the notice up until the draw fails, then the error replaces it.
-    await page.locator('.toast').waitFor({ timeout: 30000 });
+    await page.locator('.ps-toast').waitFor({ timeout: 30000 });
     assert.equal(await page.locator('.large-file-notice').count(), 0, 'An error clears the notice');
-    await page.locator('.toast .oom-retry-button').click();
+    await page.locator('.ps-toast .oom-retry-button').click();
     await painted(page);
     await noToast(page);
     assert.deepEqual(errors, []);
