@@ -59,6 +59,12 @@ async function openPage(context) {
   return { page, errors };
 }
 const events = page => page.evaluate(() => window.__events);
+/**
+ * onPlay, onStop and onError are delivered from React passive effects, which run after the commit that changed the DOM
+ * (in WebKit, sometimes after a poll has already seen the new DOM). So wait for the callback itself, never assume it
+ * fired because the matching DOM state is visible.
+ */
+const eventFired = (page, who, kind) => page.waitForFunction(([who, kind]) => window.__events.some(([w, k]) => w === who && k === kind), [who, kind], { timeout: 5000 });
 
 try {
   // 1. Engraving only (chrome="none") loads no audio, even when asked to play, and shows no controls.
@@ -117,7 +123,7 @@ try {
     // Callbacks and the minimal chrome.
     await page.locator('.embed-c .ps-toast').waitFor({ timeout: 30000 });
     assert.ok(inside(await rect(page, '.pepperscore.embed-c'), await rect(page, '.embed-c .ps-toast')), 'Snippet C\'s error toast stays inside it');
-    assert.ok((await events(page)).some(([who, kind]) => who === 'c' && kind === 'error'), 'onError fires');
+    await eventFired(page, 'c', 'error'); // onError fires
     for (const who of ['full', 'a', 'b', 'none']) assert.ok((await events(page)).some(([w, kind, info]) => w === who && kind === 'ready' && info.parts.length > 0 && info.measures > 0), `onReady fires for ${who}`);
     assert.ok((await events(page)).some(([who, kind, info]) => who === 'a' && kind === 'ready' && info.title === 'Snippet A' && info.measures === 4), 'onReady carries the title and measure count');
     for (const root of ['.embed-a', '.embed-b', '.embed-c']) {
@@ -269,6 +275,7 @@ try {
     await playingIn(page, '.embed-b .ps-compact-play', 'Stop playback');
     await page.locator('.embed-b .ps-compact-play').click();
     await page.waitForFunction(() => document.querySelector('.embed-b .ps-compact-play').getAttribute('aria-label') === 'Play score', null, { timeout: 5000 });
+    await eventFired(page, 'b', 'stop');
     const played = (await events(page)).map(([who, kind]) => `${who}:${kind}`);
     assert.ok(played.indexOf('a:stop') > played.indexOf('a:play') && played.indexOf('a:play') >= 0 && played.indexOf('b:stop') > played.indexOf('b:play') && played.indexOf('b:play') >= 0, `onPlay/onStop: ${played}`);
     const paths = requests.filter(url => url.startsWith(server.url)).map(url => new URL(url).pathname);
@@ -297,7 +304,7 @@ try {
     assert.notEqual(await page.evaluate(() => window.__contexts[0].state), 'closed', 'the shared AudioContext stays open');
     await page.evaluate(() => window.__embed.refs.full.current.play());
     await playingIn(page, '.embed-full .play-button', 'Pause playback');
-    assert.ok((await events(page)).some(([who, kind]) => who === 'full' && kind === 'play'), 'ref.play() starts the full reader');
+    await eventFired(page, 'full', 'play'); // ref.play() starts the full reader and fires onPlay
     await page.evaluate(() => window.__embed.refs.full.current.stop());
     await page.waitForFunction(() => document.querySelector('.embed-full .play-button').getAttribute('aria-label') === 'Play score', null, { timeout: 5000 });
     assert.equal(await page.evaluate(() => window.__contexts.length), 1, 'still one shared AudioContext');
