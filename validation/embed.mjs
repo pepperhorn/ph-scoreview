@@ -12,6 +12,100 @@ const inside = (outer, inner) => inner.left >= outer.left - 1 && inner.top >= ou
 const rect = (page, selector) => page.locator(selector).first().evaluate(element => { const r = element.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height }; });
 const rendered = (page, root) => page.waitForFunction(root => { const element = document.querySelector(root); return element && element.querySelector('.score-system svg') && !element.querySelector('.score-loading'); }, root, { timeout: 60000 });
 try {
+  // Two readers importing and engraving at once both render; one AudioContext; playing B stops A; unmounting B leaves A working.
+  {
+    const multi = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    await multi.route(/poppins/i, route => route.abort());
+    await multi.addInitScript(() => {
+      window.__contexts = [];
+      const Native = window.AudioContext;
+      window.AudioContext = class extends Native { constructor(...args) { super(...args); window.__contexts.push(this); } };
+    });
+    const tab = await multi.newPage();
+    const tabErrors = [];
+    tab.on('pageerror', error => tabErrors.push(error.message));
+    await tab.goto(`${server.url}/embed-test`);
+    await rendered(tab, '.pepperscore.embed-a');
+    await rendered(tab, '.pepperscore.embed-b');
+    const label = root => tab.locator(`${root} .play-button`).getAttribute('aria-label');
+    // The label reads "Pause playback" while audio still loads: wait until the instance has actually started.
+    const playingIn = root => tab.waitForFunction(root => { const button = document.querySelector(`${root} .play-button`); return button && !button.classList.contains('is-loading') && button.getAttribute('aria-label') === 'Pause playback'; }, root, { timeout: 30000 });
+    await tab.locator('.embed-a .play-button').click();
+    await playingIn('.embed-a');
+    await tab.locator('.embed-b .play-button').click();
+    await playingIn('.embed-b');
+    await tab.waitForFunction(() => document.querySelector('.embed-a .play-button').getAttribute('aria-label') === 'Play score', null, { timeout: 5000 });
+    assert.equal(await label('.embed-a'), 'Play score', 'Playing B stops A');
+    await tab.locator('.embed-b .stop-button').click();
+    assert.equal(await tab.evaluate(() => window.__contexts.length), 1, 'Instances share one AudioContext');
+    // Review Focus 3: unmounting B keeps the shared worker and AudioContext for A.
+    await tab.locator('.host-unmount').click();
+    await tab.waitForFunction(() => !document.querySelector('.embed-b'));
+    await tab.locator('.embed-a').getByRole('button', { name: 'Endless view', exact: true }).click();
+    await tab.waitForFunction(() => document.querySelector('.embed-a .score-content.is-painting') === null && document.querySelector('.embed-a .ps-landscape .score-system svg'), null, { timeout: 60000 });
+    assert.notEqual(await tab.evaluate(() => window.__contexts[0].state), 'closed', 'The shared AudioContext stays open');
+    await tab.locator('.embed-a .play-button').click();
+    await playingIn('.embed-a');
+    await tab.locator('.embed-a .stop-button').click();
+    assert.deepEqual(tabErrors, []);
+    await multi.close();
+  }
+  // A worker restart (out of memory in one reader) does not blank the other reader. The failure is armed once both
+  // readers have drawn (at mount the first engraving is the placeholder score, whose render the import retires), then
+  // both re-engrave at once, so the failing request and the other reader's requests are in flight together.
+  {
+    const oom = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    await oom.route(/poppins/i, route => route.abort());
+    await oom.addInitScript(() => {
+      window.__verovioWorkers = 0;
+      const Native = window.Worker;
+      window.Worker = class extends Native { constructor(url, ...rest) { super(url, ...rest); if (String(url).includes('verovio')) window.__verovioWorkers++; } };
+    });
+    const tab = await oom.newPage();
+    await tab.goto(`${server.url}/embed-test`);
+    await rendered(tab, '.pepperscore.embed-a');
+    await rendered(tab, '.pepperscore.embed-b');
+    const workers = await tab.evaluate(() => window.__verovioWorkers);
+    await tab.evaluate(() => {
+      // Systems drawn so far are marked: the reader that renders must draw new ones.
+      for (const svg of document.querySelectorAll('.score-system svg')) svg.setAttribute('data-before', '');
+      localStorage.setItem('scoreflow-simulate-oom', '1');
+      for (const root of document.querySelectorAll('.pepperscore')) root.querySelector('.mode-toggle-endless').click();
+    });
+    await tab.waitForFunction(() => [...document.querySelectorAll('.pepperscore')].every(root => root.querySelector('.ps-toast.is-out-of-memory') || (root.querySelector('.ps-landscape .score-system svg:not([data-before])') && !root.querySelector('.score-content.is-painting'))), null, { timeout: 60000 });
+    const outcome = await tab.evaluate(() => [...document.querySelectorAll('.pepperscore')].map(root => root.querySelector('.ps-toast.is-out-of-memory') ? 'oom' : 'rendered').sort());
+    assert.deepEqual(outcome, ['oom', 'rendered'], `One reader reports the failure, the other still renders: ${outcome}`);
+    assert.equal(await tab.evaluate(() => window.__verovioWorkers), workers + 1, 'The failure restarted the shared Verovio worker');
+    await oom.close();
+  }
+
+  // Two readers showing the same score: Verovio's SVG and glyph ids are per reader, so each reader's <use> glyphs and
+  // scoped <style> rules resolve inside its own root (here A in Petaluma, B in Bravura).
+  {
+    const same = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    await same.route(/poppins/i, route => route.abort());
+    const tab = await same.newPage();
+    await tab.goto(`${server.url}/embed-test`);
+    await rendered(tab, '.pepperscore.embed-a');
+    await rendered(tab, '.pepperscore.embed-b');
+    await tab.locator('.embed-a input[type=file]').setInputFiles(new URL('./fixtures/expressive.musicxml', import.meta.url).pathname);
+    await tab.waitForFunction(() => document.querySelector('.embed-a .score-meta h1')?.textContent === document.querySelector('.embed-b .score-meta h1')?.textContent, null, { timeout: 60000 });
+    await tab.locator('.embed-a .drawer-handle').click();
+    await tab.locator('.embed-a').getByRole('button', { name: 'Petaluma', exact: true }).click();
+    await tab.locator('.embed-a button[aria-label="Close options"]').first().click();
+    await tab.waitForFunction(() => document.querySelector('.embed-a .score-content')?.style.getPropertyValue('--music-font') === 'Petaluma' && !document.querySelector('.embed-a .score-content.is-painting') && document.querySelector('.embed-a .score-system svg'), null, { timeout: 60000 });
+    const glyphs = await tab.evaluate(() => ['.embed-a', '.embed-b'].map(root => {
+      const element = document.querySelector(root);
+      const uses = [...element.querySelectorAll('.score-system svg use')];
+      const svgIds = [...element.querySelectorAll('.score-system svg[id]')].map(svg => svg.id);
+      return { uses: uses.length, foreign: uses.filter(use => !element.contains(document.getElementById((use.getAttribute('href') || use.getAttribute('xlink:href')).slice(1)))).length, svgIds };
+    }));
+    assert.ok(glyphs.every(item => item.uses > 0), `Both readers draw glyphs: ${JSON.stringify(glyphs)}`);
+    assert.deepEqual(glyphs.map(item => item.foreign), [0, 0], 'Every glyph reference resolves inside its own reader');
+    assert.ok(!glyphs[0].svgIds.some(id => glyphs[1].svgIds.includes(id)), `SVG ids (which scope Verovio's style rules) differ between readers: ${JSON.stringify(glyphs.map(item => item.svgIds))}`);
+    await same.close();
+  }
+
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   await context.route(/poppins/i, route => route.abort());
   const page = await context.newPage();

@@ -19,13 +19,14 @@ import type { VerovioReply, VerovioRequest } from './verovio-protocol';
  *   the many-staff height fit, and the Auto-bars wrap check, without laying out the whole score.
  *
  * Requests are serialized. Between requests the loop yields, so a newer render ticket arrives before older
- * queued renders run, and those are answered `superseded` instead of laying out a stale view.
+ * queued renders run, and those are answered `superseded` instead of laying out a stale view. Tickets are compared
+ * per channel (one per reader instance), so one reader never supersedes another's renders.
  */
 
 /** Options Verovio applies while loading data, so a change needs a reload rather than `redoLayout`. */
 const LOAD_OPTIONS = ['breaks', 'transpose', 'transposeToSoundingPitch', 'xmlIdChecksum'];
-/** Baselines kept for re-rendering: the current score and the previous one (still on screen while a new one imports). */
-const BASELINE_LIMIT = 2;
+/** Safety cap; the runtime releases baselines no channel uses (verovio-runtime.ts releaseUnused). */
+const BASELINE_LIMIT = 12;
 /**
  * A MusicXML score of at least this many staff-measures (parts x measures) is engraved in chunks. Below it a whole
  * import is quick (about a second) and keeps the whole-document path, unless chunking is forced (an out-of-memory retry).
@@ -234,6 +235,20 @@ async function importSource(revision: number, bytes: ArrayBuffer, force: boolean
   return entry.info;
 }
 
+/**
+ * Verovio's SVG id comes from the score checksum, and its glyph defs (`E050-<id>`) and scoped `<style>` rules
+ * (`#<id> g.dir …`) hang off it, so two readers showing the same score would repeat them: every `<use>` resolves to the
+ * first reader's glyphs (in its notation font) and each reader's style rules reach the other's SVG. The channel
+ * suffix keeps these ids per reader. Element ids (notes, measures) stay as they are: the reader maps them to its
+ * score and only looks them up inside its own root.
+ */
+function svgFor(target: Toolkit, page: number, channel: number): string {
+  const svg = target.renderToSVG(page);
+  const id = /<svg\b[^>]*?\sid="([^"]+)"/.exec(svg)?.[1];
+  if (!id || !/^[\w-]+$/.test(id)) return svg;
+  return svg.replace(new RegExp(`(?<=[#"-])${id}(?![\\w-])`, 'g'), `${id}-c${channel}`);
+}
+
 /** Staves a view engraves (a chunk's size is set in staff-measures). */
 const stavesOf = (info: BaselineInfo, view: ViewSpec) => Math.max(1, info.staffDefs.length - view.hiddenStaves.length);
 
@@ -251,19 +266,19 @@ async function handle(request: VerovioRequest): Promise<unknown> {
       const core = Math.min(total, request.measures * 2);
       const limit = request.measures >= total ? total : core + tailFor(entry.index, core);
       load(target, buildViewMei(await spelledChunk(entry, 0, limit, request.view.spelling), request.view), request.options);
-      return { svg: target.renderToSVG(1), pageCount: target.getPageCount(), measures: limit };
+      return { svg: svgFor(target, 1, request.channel), pageCount: target.getPageCount(), measures: limit };
     }
     const { info } = entry;
     const mei = await spelledWhole(entry, request.view.spelling);
     const limit = request.measures >= info.measureIds.length ? info.measureIds.length : probeLimit(mei, request.measures, info.measureIds.length);
     load(target, buildViewMei(mei, request.view, limit), request.options);
-    const svg = target.renderToSVG(1);
+    const svg = svgFor(target, 1, request.channel);
     return { svg, pageCount: target.getPageCount(), measures: limit };
   }
   if (entry.kind === 'whole') {
     const target = await ensureLayout([request.revision], request.view, request.options, async () => buildViewMei(await spelledWhole(entry, request.view.spelling), request.view));
     const count = target.getPageCount();
-    const pages = request.pages.filter(page => page >= 1 && page <= count).map(page => ({ page, svg: target.renderToSVG(page) }));
+    const pages = request.pages.filter(page => page >= 1 && page <= count).map(page => ({ page, svg: svgFor(target, page, request.channel) }));
     return { pageCount: count, pages };
   }
   // Chunked: pages are systems of `breakEvery` measures; each is drawn from the chunk document that holds it.
@@ -284,7 +299,7 @@ async function handle(request: VerovioRequest): Promise<unknown> {
     for (const page of wanted) {
       const local = plan.firstPage + (page - 1 - plan.firstSystem);
       if (local > count) throw new Error(`A score chunk laid out ${count} pages where ${local} were expected.`);
-      pages.push({ page, svg: target.renderToSVG(local) });
+      pages.push({ page, svg: svgFor(target, local, request.channel) });
     }
   }
   return { pageCount: total, pages };
@@ -312,14 +327,15 @@ function drainLog(kind: VerovioRequest['kind']): void {
 }
 
 const queue: VerovioRequest[] = [];
-let latestTicket = 0;
+/** The newest render ticket per channel (reader instance); older queued probes and renders on it are superseded. */
+const latestTickets = new Map<number, number>();
 let running = false;
 const reply = (message: VerovioReply) => self.postMessage(message);
 
 async function step(): Promise<void> {
   const request = queue.shift();
   if (!request) { running = false; return; }
-  if (request.kind !== 'import' && request.kind !== 'release' && request.ticket < latestTicket) {
+  if (request.kind !== 'import' && request.kind !== 'release' && request.ticket < (latestTickets.get(request.channel) ?? 0)) {
     reply({ id: request.id, error: 'Superseded score render.', code: 'superseded' });
   } else {
     try { const value = await handle(request); drainLog(request.kind); reply({ id: request.id, value, heap: heapBytes() }); }
@@ -337,7 +353,7 @@ async function step(): Promise<void> {
 
 self.onmessage = (event: MessageEvent<VerovioRequest>) => {
   const request = event.data;
-  if (request.kind === 'probe' || request.kind === 'render') latestTicket = Math.max(latestTicket, request.ticket);
+  if (request.kind === 'probe' || request.kind === 'render') latestTickets.set(request.channel, Math.max(latestTickets.get(request.channel) ?? 0, request.ticket));
   queue.push(request);
   if (!running) { running = true; setTimeout(() => void step(), 0); }
 };

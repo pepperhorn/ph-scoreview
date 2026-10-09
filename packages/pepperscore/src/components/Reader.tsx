@@ -12,7 +12,8 @@ import { sampleSource, scoreDb } from '../lib/score-db';
 import { scoreForView, spokenKey, transposeReadout } from '../lib/transpose';
 import type { SpellingKey } from '../lib/spelling';
 import { baseTimelineFor, deriveTimeline, playbackDuration, playbackEventsFrom, playbackMidis, playbackPositionAt, type BaseTimeline } from '../lib/playback/timeline';
-import { disposeVerovio, isOutOfMemory, isSuperseded, prepareVerovio, reduceChunkSize } from '../lib/verovio-runtime';
+import { closeVerovioChannel, isOutOfMemory, isSuperseded, openVerovioChannel, prepareVerovio, reduceChunkSize } from '../lib/verovio-runtime';
+import { claimPlayback, getSharedAudio, releasePlayback, resumeAudio } from '../lib/audio-engine';
 import { isLargeFile, isLargeScore, largeScoreMessage, staffMeasures } from '../lib/large-file';
 import { forgetLastFile, isSameFile, lastFileToFile, readLastFile, readLastFileInfo, rememberLastFile, type LastFileInfo } from '../lib/last-file';
 import { withEngravingDocument } from '../lib/notation/document';
@@ -45,17 +46,7 @@ const soundRequest = (part: Part): SoundRequest => {
 };
 /** Sample packs route each note to its part's gain, so parts share them; sf2 and note-file players are bound to one part's gain. */
 const audioKey = (plan: SoundPlan, part: Part) => plan.kind === 'sample-pack' ? planKey(plan) : `${planKey(plan)}|${part.id}`;
-const RESUME_TIMEOUT_MS = 1000;
 const SILENT_PLAYBACK_NOTICE = 'Audio couldn’t start on this device — playing silently.';
-// AudioContext.resume() can stay pending forever (no output device, autoplay policy), so give it a bounded wait.
-const resumeAudio = async (context: AudioContext) => {
-  if (context.state === 'running') return true;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try { await Promise.race([context.resume(), new Promise(resolve => { timer = setTimeout(resolve, RESUME_TIMEOUT_MS); })]); }
-  catch { /* a rejected resume means no sound; fall through to the state check */ }
-  finally { clearTimeout(timer); }
-  return (context.state as AudioContextState) === 'running'; // re-read: resume() changes it
-};
 export type ReaderProps = {
   musicXml?: string;
   /** A public score file (MusicXML, MXL, MIDI, MEI or ABC) to download and open on load; `?score=<url>` on the page does the same. `musicXml` wins when both are given. */
@@ -170,6 +161,7 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
   const viewportRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const renderRef = useRef<RenderResult | null>(null);
+  /** This reader's players and track gains on the page's shared AudioContext and master (audio-engine.ts). */
   const audioRef = useRef<{ context: AudioContext; master: DynamicsCompressorNode; players: Map<string, AudioPlayer[]>; partKeys: Map<string, string>; trackGains: Map<string, GainNode>; mixScale: number } | null>(null);
   const playRef = useRef<{ start: number; beat: number; frame: number; interval?: ReturnType<typeof setInterval> } | null>(null);
   const scheduledStopsRef = useRef<Array<{ stop: () => void; end: number }>>([]);
@@ -192,6 +184,10 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
   const scrollTargetRef = useRef<{ top: number; left: number; at: number } | null>(null);
   const userScrollAtRef = useRef(-Infinity);
   const assetBase = useMemo(() => resolveAssetBase(assetBaseUrl, soundPack), [assetBaseUrl, soundPack]);
+  // This reader's Verovio channel (opened in an effect and closed in its cleanup, so StrictMode's remount gets a new one):
+  // its imports and renders never supersede another reader's on the shared worker.
+  const channelRef = useRef(0);
+  useEffect(() => { const channel = openVerovioChannel(); channelRef.current = channel; return () => closeVerovioChannel(channel); }, []);
   useEffect(() => ensureMusicFonts(assetBase), [assetBase]);
   const hiddenSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
   const visibleScore = useMemo(() => {
@@ -289,7 +285,11 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
     if (patch.mode && patch.mode !== prefs.mode) viewportRef.current?.scrollTo({ left: 0, top: 0 });
     setPrefs(prev => ({ ...prev, ...patch }));
   };
+  // Another reader starting playback stops this one through the shared owner slot (audio-engine claimPlayback).
+  const stopRef = useRef<(reset?: boolean) => void>(() => {});
+  const playbackOwner = useMemo(() => ({ stop: () => stopRef.current(true) }), []);
   const stop = useCallback((reset = false) => {
+    releasePlayback(playbackOwner);
     playRunRef.current += 1;
     if (playRef.current) { cancelAnimationFrame(playRef.current.frame); clearInterval(playRef.current.interval); }
     playRef.current = null;
@@ -299,6 +299,7 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
     setLoadingAudio(false);
     if (reset) { setPosition(0); setActive(null); setActiveNotes([]); }
   }, []);
+  stopRef.current = stop;
   const changePitch = (patch: Partial<Prefs>) => { stop(true); update(patch); };
   const transposeBy = (delta: number) => changePitch({ semitones: clampSemitones(prefs.semitones + delta) });
   /** Show a score with its saved record (if any). The saved zoom applies only on the device class it was chosen on. */
@@ -326,10 +327,10 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
     void (async () => {
       try {
         // Read (and identified) in the import worker, like a file.
-        const job = importMusicXmlText(musicXml);
+        const job = importMusicXmlText(musicXml, 'MusicXML', channelRef.current);
         const src = await job.source;
         const [saved, next] = await Promise.all([readScoreRecord(src), job.score]);
-        if (next.document) await prepareVerovio(next.document);
+        if (next.document) await prepareVerovio(next.document, channelRef.current);
         if (run === importRunRef.current) loadScore(next, src, saved);
       } catch (e) {
         if (run === importRunRef.current) { setPainting(false); setError(e instanceof Error ? e.message : 'Could not read the supplied MusicXML.'); }
@@ -363,12 +364,12 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
     try {
       // The import worker reads and hashes the file once and parses it off the main thread; the saved record is read
       // while the score imports, so its zoom is applied before the first paint.
-      const job = importScoreFile(file);
+      const job = importScoreFile(file, channelRef.current);
       const nextSource = await job.source;
       const [saved, nextScore] = await Promise.all([readScoreRecord(nextSource), job.score]);
       // A compact file (an .mxl, a dense MIDI) can still be a large score: warn before engraving starts.
       if (!largeBytes && run === importRunRef.current && isLargeScore(nextScore)) setLargeNotice(largeScoreMessage(file.size, { phone, staffMeasures: staffMeasures(nextScore) }));
-      if (nextScore.document) await prepareVerovio(nextScore.document);
+      if (nextScore.document) await prepareVerovio(nextScore.document, channelRef.current);
       if (run === importRunRef.current) {
         largeNoticeArmedRef.current = true;
         loadScore(nextScore, nextSource, saved);
@@ -623,7 +624,7 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
         const availableHeight = Math.max(120, (viewportRef.current?.clientHeight || 600) - metaHeight - 70);
         // Without a user zoom the default ('fit': four bars in Vertical) is re-resolved for the viewport, so rotation re-fits.
         const requested = prefs.zoom ?? 'fit';
-        const result = await renderScore(canvas, displayScore, prefs.mode, prefs.names, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.chordSymbols, prefs.inferChordSymbols, availableHeight, requested, 0, { gutterFor: (stavePx, staffPitchPx) => metricsFor(stavePx, staffPitchPx).gutter, fitCap: ENDLESS_STAVE_SCALE[deviceClass()], fitFloor: minimumDefaultStaveScale(deviceClass()), font: prefs.notationFont, textFont: prefs.annotationFont, transpose: prefs.semitones, flip: prefs.keyFlip, scorePitch, hiddenPartIds: hiddenIds, generation, focusMeasure: anchor?.index });
+        const result = await renderScore(canvas, displayScore, prefs.mode, prefs.names, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.chordSymbols, prefs.inferChordSymbols, availableHeight, requested, 0, { gutterFor: (stavePx, staffPitchPx) => metricsFor(stavePx, staffPitchPx).gutter, fitCap: ENDLESS_STAVE_SCALE[deviceClass()], fitFloor: minimumDefaultStaveScale(deviceClass()), font: prefs.notationFont, textFont: prefs.annotationFont, transpose: prefs.semitones, flip: prefs.keyFlip, scorePitch, hiddenPartIds: hiddenIds, generation, focusMeasure: anchor?.index, channel: channelRef.current });
         if (disposed || generation !== renderRunRef.current) { result.dispose(); return; }
         renderRef.current = result;
         // Systems drawn later (scrolling, playback) change block sizes: re-page, and let the playhead find new notes.
@@ -827,16 +828,9 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
   // so playback falls back to a silent wall-clock run instead of hanging on a suspended AudioContext.
   const ensureAudio = async (timeline: BaseTimeline) => {
     if (!audioRef.current) {
-      let context: AudioContext;
-      try { context = new AudioContext(); } catch { return null; }
-      const master = context.createDynamicsCompressor();
-      master.threshold.value = -15;
-      master.knee.value = 12;
-      master.ratio.value = 4;
-      master.attack.value = .003;
-      master.release.value = .18;
-      master.connect(context.destination);
-      audioRef.current = { context, master, players: new Map(), partKeys: new Map(), trackGains: new Map(), mixScale: 1 };
+      const sharedAudio = getSharedAudio();
+      if (!sharedAudio) return null;
+      audioRef.current = { ...sharedAudio, players: new Map(), partKeys: new Map(), trackGains: new Map(), mixScale: 1 };
     }
     const audio = audioRef.current;
     if (!await resumeAudio(audio.context)) return null;
@@ -868,6 +862,7 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
   const play = async () => {
     if (playing || loadingAudio) { stop(); return; }
     const run = ++playRunRef.current;
+    claimPlayback(playbackOwner);
     try {
       setLoadingAudio(true);
       const timeline = await loadTimeline();
@@ -912,7 +907,8 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
       setPlaying(true);
     } catch (e) { if (run === playRunRef.current) { setLoadingAudio(false); setError(e instanceof Error ? e.message : 'Audio could not start.'); } }
   };
-  useEffect(() => () => { importRunRef.current++; playRunRef.current++; renderRef.current?.dispose(); disposeVerovio(); if (playRef.current) { cancelAnimationFrame(playRef.current.frame); clearInterval(playRef.current.interval); } scheduledStopsRef.current.splice(0).forEach(item => item.stop()); audioRef.current?.players.forEach(players => players.forEach(p => p.dispose())); audioRef.current?.context.close(); }, []);
+  // Unmount: release only this reader's players and track gains; the shared AudioContext and Verovio worker stay for other readers.
+  useEffect(() => () => { importRunRef.current++; playRunRef.current++; renderRef.current?.dispose(); if (playRef.current) { cancelAnimationFrame(playRef.current.frame); clearInterval(playRef.current.interval); } scheduledStopsRef.current.splice(0).forEach(item => item.stop()); audioRef.current?.players.forEach(players => players.forEach(p => p.dispose())); audioRef.current?.trackGains.forEach(gain => gain.disconnect()); audioRef.current = null; releasePlayback(playbackOwner); }, []);
   const openInstrumentPicker = (part: Part) => {
     const currentSound = playbackSound(part);
     const selected = GM_SOUNDS.find(sound => (sound.soundfont || 'drum-kit') === currentSound);

@@ -351,16 +351,19 @@ export async function parseMidi(buffer: ArrayBuffer): Promise<Score> {
 /** What the import worker hands back: a parsed score, or the bytes of a format the main thread reads. */
 type WorkerResult = { kind: 'score'; score: Score } | { kind: 'bytes'; bytes: Uint8Array };
 type ImportJob = { sha256: Promise<string>; size: Promise<number | undefined>; result: Promise<WorkerResult> };
-/** The import whose score is still arriving; a newer import stops it. A job past its score finishes its timeline. */
-let parsing: { worker: Worker; fail: (error: Error) => void } | undefined;
+/**
+ * Per channel (reader instance), the import whose score is still arriving; a newer import on the same channel stops
+ * it. A job past its score finishes its timeline.
+ */
+const parsing = new Map<number, { worker: Worker; fail: (error: Error) => void }>();
 
 /**
  * Run one import in a fresh worker (docs/specs/large-score-performance.md, Phase 2). The main thread only assembles
  * the Score from bounded chunks (each message is its own short task) and wraps the transferred bytes; it never
  * parses or hashes the file. The playback timeline arrives after the score and is registered for its document.
  */
-function runImport(request: ImportRequest, file?: File): ImportJob {
-  parsing?.fail(new Error('Superseded import.'));
+function runImport(request: ImportRequest, file: File | undefined, channel: number): ImportJob {
+  parsing.get(channel)?.fail(new Error('Superseded import.'));
   const worker = new Worker(new URL('./import.worker.ts', import.meta.url), { type: 'module' });
   let resolveHash!: (sha256: string) => void, resolveResult!: (result: WorkerResult) => void;
   let rejectHash!: (error: Error) => void, rejectResult!: (error: Error) => void;
@@ -370,9 +373,9 @@ function runImport(request: ImportRequest, file?: File): ImportJob {
   let score: Score | undefined;
   let hash: string | undefined, size: number | undefined;
   const identity = new IdentityBuilder();
-  const stop = () => { worker.terminate(); if (parsing?.worker === worker) parsing = undefined; };
+  const stop = () => { worker.terminate(); if (parsing.get(channel)?.worker === worker) parsing.delete(channel); };
   const fail = (error: Error) => { stop(); rejectHash(error); rejectResult(error); timeline?.reject(error); };
-  parsing = { worker, fail };
+  parsing.set(channel, { worker, fail });
   worker.onerror = event => { event.preventDefault(); fail(new Error(event.message || 'The score could not be read.')); };
   worker.onmessage = ({ data }: MessageEvent<ImportReply>) => {
     switch (data.kind) {
@@ -386,7 +389,7 @@ function runImport(request: ImportRequest, file?: File): ImportJob {
         break;
       }
       case 'done': {
-        if (parsing?.worker === worker) parsing = undefined;
+        if (parsing.get(channel)?.worker === worker) parsing.delete(channel);
         const original = data.original ? new Uint8Array(data.original) : undefined;
         const engraving = data.engraving ? new Uint8Array(data.engraving) : undefined;
         const text = request.kind === 'text' ? request.text : undefined;
@@ -429,15 +432,16 @@ export type ScoreImport = { source: Promise<FileSource>; score: Promise<Score> }
 
 /**
  * Open a score file. The import worker reads and hashes it once and reads MusicXML/MXL off the main thread; MEI,
- * ABC and MIDI are small and are read here from the bytes the worker hands back.
+ * ABC and MIDI are small and are read here from the bytes the worker hands back. `channel` is the reader's (see
+ * verovio-runtime openVerovioChannel): a newer import only supersedes imports on the same channel.
  */
-export function importScoreFile(file: File): ScoreImport {
+export function importScoreFile(file: File, channel = 0): ScoreImport {
   if (file.size > MAX_SCORE_FILE_BYTES) {
     const error = Promise.reject(new Error(`This file is ${formatMb(file.size)}; scores up to ${formatMb(MAX_SCORE_FILE_BYTES)} can be opened.`));
     error.catch(() => {});
     return { source: error as Promise<never>, score: error as Promise<never> };
   }
-  const job = runImport({ kind: 'file', file }, file);
+  const job = runImport({ kind: 'file', file }, file, channel);
   const score = job.result.then(async result => {
     if (result.kind === 'score') return result.score;
     return readOnMainThread(file, result.bytes, await job.sha256);
@@ -462,10 +466,11 @@ export function importFile(file: File): Promise<Score> {
 
 /**
  * Read MusicXML text the page already holds (the Reader's musicXml prop) in the import worker, which also takes its
- * source identity (the same as file-state.ts textSource, without hashing on the main thread).
+ * source identity (the same as file-state.ts textSource, without hashing on the main thread). Superseded only by a
+ * newer import on the same `channel`.
  */
-export function importMusicXmlText(text: string, name = 'MusicXML'): ScoreImport {
-  const job = runImport({ kind: 'text', text });
+export function importMusicXmlText(text: string, name = 'MusicXML', channel = 0): ScoreImport {
+  const job = runImport({ kind: 'text', text }, undefined, channel);
   return handled({
     source: job.sha256.then(async sha256 => ({ name, size: (await job.size) ?? 0, sha256, format: 'musicxml' })),
     score: job.result.then(result => { if (result.kind !== 'score') throw new Error('This file is not a MusicXML score.'); return result.score; }),

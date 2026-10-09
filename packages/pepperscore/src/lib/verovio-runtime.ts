@@ -8,6 +8,9 @@ export class VerovioError extends Error {
 export const isSuperseded = (error: unknown) => error instanceof VerovioError && error.code === 'superseded';
 /** Verovio ran out of WASM memory (its heap is capped at 2 GiB); `reduceChunkSize` then a retry may succeed. */
 export const isOutOfMemory = (error: unknown) => error instanceof VerovioError && error.code === 'oom';
+/** The worker was recycled under a request (another reader's out-of-memory failure, a heap recycle); retried once. */
+export const isRestarted = (error: unknown) => error instanceof VerovioError && error.code === 'restarted';
+const restarted = () => new VerovioError('Verovio restarted.', 'restarted');
 
 /**
  * Engraving chunk budget, in staff-measures per chunk (see docs/specs/large-score-performance.md, Phase 3). Long
@@ -36,7 +39,7 @@ export const chunkSettings = () => ({ budget: chunkBudget, force: forceChunks })
 export function reduceChunkSize(): number {
   chunkBudget = Math.max(MIN_CHUNK_STAFF_MEASURES, Math.floor(chunkBudget / 2));
   forceChunks = true;
-  stopWorker(new VerovioError('Superseded score render.', 'superseded'));
+  stopWorker(restarted());
   return chunkBudget;
 }
 /** Test hook: `localStorage['scoreflow-simulate-oom']` makes the next probe or render fail as out of memory, once. */
@@ -71,8 +74,9 @@ function getWorker(): Worker {
     // heap is returned once the worker is idle, but only for a chunked score, which re-imports in one index pass, and
     // never right after an import (the render that needs it follows): a whole-document score would be imported again
     // and recycled again, over and over. Its heap is returned before the next score's import instead.
-    const idle = !pending.size && item.kind !== 'import' && importing === undefined && currentChunked;
-    if (data.code === 'oom' || (heap > recycleHeapBytes && idle)) stopWorker(new VerovioError('Superseded score render.', 'superseded'));
+    // Other readers' requests still in flight fail as `restarted` and are sent again to the fresh worker.
+    const idle = !pending.size && item.kind !== 'import' && importsInFlight === 0 && currentChunked;
+    if (data.code === 'oom' || (heap > recycleHeapBytes && idle)) stopWorker(restarted());
   };
   worker.onerror = event => {
     event.preventDefault();
@@ -109,79 +113,129 @@ export function verovioRevision(document: SourceDocument): number {
   return revision;
 }
 
-/** Baselines the worker holds (it keeps the same two most recent). */
+/** Baselines the worker holds (the runtime releases those no channel uses, see releaseUnused). */
 const baselines = new Map<number, Promise<BaselineInfo>>();
+/** Baselines kept even when no channel uses them (a reader switching back to its previous score reuses one). */
 const BASELINE_LIMIT = 2;
-/** The revision most recently imported successfully: the one a missing baseline is re-imported for. */
-let current = 0;
-/** Whether `current` is engraved in chunks (cheap to re-import after the worker is recycled). */
+/** Whether the most recent import is engraved in chunks (cheap to re-import after the worker is recycled). */
 let currentChunked = false;
 /** The worker's WASM heap after its latest reply (bytes). */
 let heap = 0;
 /** A heap above this is not reused well by a different score: the worker is recycled before the next import. */
 const RECYCLE_BEFORE_IMPORT_BYTES = 384 * 2 ** 20;
-/** The revision whose import is in flight, if any. */
-let importing: number | undefined;
+/** Imports in flight on any channel (a worker is never recycled as idle while one runs). */
+let importsInFlight = 0;
+
+/** One channel per reader instance: its own render tickets, current/previous revisions and import in flight. */
+type Channel = { current: number; previous: number; importing?: number };
+const channels = new Map<number, Channel>();
+let nextChannel = 0;
+const channelState = (id: number): Channel => {
+  let state = channels.get(id);
+  if (!state) { state = { current: 0, previous: 0 }; channels.set(id, state); }
+  return state;
+};
+/** A reader mounted: a channel of its own, so its imports and renders never supersede another reader's. */
+export function openVerovioChannel(): number {
+  const id = ++nextChannel;
+  channelState(id);
+  return id;
+}
+/**
+ * A reader unmounted: forget what only it used; the worker (and its WASM heap) goes when the last opened channel
+ * closes. Channel 0, the default for direct callers of render.ts, is never opened and does not keep the worker.
+ */
+export function closeVerovioChannel(id: number): void {
+  channels.delete(id);
+  if (![...channels.keys()].some(open => open !== 0)) { stopWorker(new VerovioError('Verovio renderer disposed.')); return; }
+  releaseUnused();
+}
+const inUse = (revision: number) => [...channels.values()].some(state => state.current === revision || state.previous === revision || state.importing === revision);
+/** Keep at least BASELINE_LIMIT baselines; beyond that drop (and release in the worker) the oldest no channel uses. */
+function releaseUnused(): void {
+  for (const revision of [...baselines.keys()]) {
+    if (baselines.size <= BASELINE_LIMIT) return;
+    if (inUse(revision)) continue;
+    baselines.delete(revision);
+    if (worker) request({ kind: 'release', revision }).catch(() => {});
+  }
+}
+/** A channel shows `revision` now; the one it showed before stays its previous (still on screen while a new score imports). */
+const adopt = (state: Channel, revision: number) => { if (state.current !== revision) { state.previous = state.current; state.current = revision; } };
 
 /**
  * Import a source once per revision and return its structure. The worker keeps Verovio's MEI baseline; the main
- * thread never receives it. A rejected import is forgotten so a retry imports again.
+ * thread never receives it. A rejected import is forgotten so a retry imports again. Readers showing the same
+ * document share its baseline.
  */
-export function prepareVerovio(document: SourceDocument): Promise<BaselineInfo> {
+export function prepareVerovio(document: SourceDocument, channel = 0): Promise<BaselineInfo> {
   const revision = verovioRevision(document);
+  const state = channelState(channel);
   let cached = baselines.get(revision);
-  if (cached) { baselines.delete(revision); baselines.set(revision, cached); return cached; }
+  if (cached) {
+    baselines.delete(revision); baselines.set(revision, cached);
+    return cached.then(info => { adopt(state, revision); return info; });
+  }
   // A large previous heap is not reused well by a different score; start from a fresh module instead.
-  if (heap > RECYCLE_BEFORE_IMPORT_BYTES && worker) stopWorker(new VerovioError('Superseded score render.', 'superseded'));
+  if (heap > RECYCLE_BEFORE_IMPORT_BYTES && worker) stopWorker(restarted());
   // The engraving goes as a copy of its UTF-8 bytes (transferred), never as a string decoded on the main thread; the
-  // document keeps its own bytes for a re-import after the worker is recycled.
-  const bytes = document.engravingBytes().slice();
-  cached = request<BaselineInfo>({ kind: 'import', revision, bytes: bytes.buffer, chunking: { force: forceChunks } }, [bytes.buffer]);
+  // document keeps its own bytes, so a restart under the import (another reader's failure) sends them again.
+  const send = () => {
+    const bytes = document.engravingBytes().slice();
+    return request<BaselineInfo>({ kind: 'import', revision, bytes: bytes.buffer, chunking: { force: forceChunks } }, [bytes.buffer]);
+  };
+  const attempt: Promise<BaselineInfo> = send().catch(error => {
+    if (!isRestarted(error)) throw error;
+    // The restart cleared the cache: this import is still the one other renders of the revision wait for.
+    if (!baselines.has(revision)) baselines.set(revision, attempt);
+    return send();
+  });
+  cached = attempt;
   baselines.set(revision, cached);
-  while (baselines.size > BASELINE_LIMIT) baselines.delete(baselines.keys().next().value!);
-  importing = revision;
-  const settled = () => { if (importing === revision) importing = undefined; };
-  cached.then(info => { current = revision; currentChunked = !!info.chunked; settled(); }, () => { settled(); if (baselines.get(revision) === cached) baselines.delete(revision); });
+  state.importing = revision;
+  importsInFlight++;
+  const settled = () => { importsInFlight--; if (state.importing === revision) state.importing = undefined; };
+  cached.then(info => { adopt(state, revision); currentChunked = !!info.chunked; settled(); releaseUnused(); },
+    () => { settled(); if (baselines.get(revision) === cached) baselines.delete(revision); });
   return cached;
 }
 
 /**
- * The baseline for a render. A render never starts importing while another score imports: that render belongs to
- * the score being replaced (and importing it again could recycle the worker under the new import).
+ * The baseline for a render. A render never starts importing while its own reader imports another score: that render
+ * belongs to the score being replaced (and importing it again could recycle the worker under the new import).
  */
-export function verovioBaseline(document: SourceDocument): Promise<BaselineInfo> {
+export function verovioBaseline(document: SourceDocument, channel = 0): Promise<BaselineInfo> {
   const revision = verovioRevision(document);
+  const { importing } = channelState(channel);
   if (!baselines.has(revision) && importing !== undefined && importing !== revision) return Promise.reject(new VerovioError('Superseded score render.', 'superseded'));
-  return prepareVerovio(document);
+  return prepareVerovio(document, channel);
 }
 
 let ticket = 0;
-/** A new render generation: the worker answers older queued probes and renders `superseded`. */
+/** A new render generation: the worker answers older queued probes and renders on the same channel `superseded`. */
 export const nextRenderTicket = () => ++ticket;
 
-async function withBaseline<T>(document: SourceDocument, run: (revision: number) => Promise<T>): Promise<T> {
+async function withBaseline<T>(document: SourceDocument, channel: number, run: (revision: number) => Promise<T>): Promise<T> {
   const revision = verovioRevision(document);
-  await verovioBaseline(document);
+  await verovioBaseline(document, channel);
   try { return await run(revision); }
   catch (error) {
-    // The worker restarted or dropped this revision: import it again, once, if it is still the current score.
-    if (!(error instanceof VerovioError) || error.code !== 'missing' || revision !== current) throw error;
+    // The worker restarted under the request, or dropped this revision while it is still the channel's score:
+    // import it again, once.
+    const retry = isRestarted(error) || (error instanceof VerovioError && error.code === 'missing' && revision === channelState(channel).current);
+    if (!retry) throw error;
     baselines.delete(revision);
-    await verovioBaseline(document);
+    await verovioBaseline(document, channel);
     return run(revision);
   }
 }
 
 /** Lay out the first `measures` measures as a small document and return page 1 (the first system). */
-export function probeVerovio(document: SourceDocument, renderTicket: number, view: ViewSpec, options: Record<string, unknown>, measures: number): Promise<ProbeResult> {
-  return withBaseline(document, revision => request<ProbeResult>({ kind: 'probe', ticket: renderTicket, revision, view, options, measures, chunkBudget, simulateOom: takeSimulatedOom() || undefined }));
+export function probeVerovio(document: SourceDocument, channel: number, renderTicket: number, view: ViewSpec, options: Record<string, unknown>, measures: number): Promise<ProbeResult> {
+  return withBaseline(document, channel, revision => request<ProbeResult>({ kind: 'probe', channel, ticket: renderTicket, revision, view, options, measures, chunkBudget, simulateOom: takeSimulatedOom() || undefined }));
 }
 
 /** Serialize one-based pages of the whole view laid out with `options`; the worker reuses its loaded document when it can. */
-export function renderVerovioPages(document: SourceDocument, renderTicket: number, view: ViewSpec, options: Record<string, unknown>, pages: number[]): Promise<PagesResult> {
-  return withBaseline(document, revision => request<PagesResult>({ kind: 'render', ticket: renderTicket, revision, view, options, pages, chunkBudget, simulateOom: takeSimulatedOom() || undefined }));
-}
-
-export function disposeVerovio(): void {
-  stopWorker(new VerovioError('Verovio renderer disposed.'));
+export function renderVerovioPages(document: SourceDocument, channel: number, renderTicket: number, view: ViewSpec, options: Record<string, unknown>, pages: number[]): Promise<PagesResult> {
+  return withBaseline(document, channel, revision => request<PagesResult>({ kind: 'render', channel, ticket: renderTicket, revision, view, options, pages, chunkBudget, simulateOom: takeSimulatedOom() || undefined }));
 }
