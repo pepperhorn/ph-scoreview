@@ -61,7 +61,28 @@ try {
   await page.locator('.embed-a .header-more-toggle').click();
   await page.locator('.embed-a').getByRole('button', { name: 'Track mixer', exact: true }).click();
   assert.ok(inside(boxA, await rect(page, '.embed-a .mixer-backdrop')), 'Mixer stays inside the root');
-  await page.locator('.embed-a').getByRole('button', { name: 'Close track mixer', exact: true }).click();
+  // Opened from the More panel (which hides, taking the focused trigger with it), the mixer still closes on Escape.
+  await page.keyboard.press('Escape');
+  await page.locator('.embed-a .mixer-backdrop').waitFor({ state: 'detached', timeout: 2000 });
+  // The voice picker opened from the mixer closes on Escape; after its close button (which unmounts) Escape still closes the mixer.
+  await page.locator('.embed-a .header-more-toggle').click();
+  await page.locator('.embed-a').getByRole('button', { name: 'Track mixer', exact: true }).click();
+  await page.locator('.embed-a .mixer-voice-button').first().click();
+  await page.keyboard.press('Escape');
+  await page.locator('.embed-a .instrument-picker-backdrop').waitFor({ state: 'detached', timeout: 2000 });
+  assert.equal(await page.locator('.embed-a .mixer-backdrop').count(), 1, 'Escape in the voice picker leaves the mixer open');
+  await page.locator('.embed-a .mixer-voice-button').first().click();
+  await page.locator('.embed-a').getByRole('button', { name: 'Close voice picker', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await page.locator('.embed-a .mixer-backdrop').waitFor({ state: 'detached', timeout: 2000 });
+  // Open score dialog: after a click on its text, Tab stays in the dialog and Escape closes it.
+  await page.locator('.embed-a .header-open-file').click();
+  await page.locator('.embed-a .open-dialog-intro').click();
+  await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(() => !!document.activeElement?.closest('.embed-a .open-dialog')), true, 'Tab stays in the open dialog after a click on its text');
+  await page.locator('.embed-a .open-dialog-intro').click();
+  await page.keyboard.press('Escape');
+  await page.locator('.embed-a .open-dialog').waitFor({ state: 'detached', timeout: 2000 });
   await page.locator('.embed-a input[type=file]').setInputFiles({ name: 'broken.musicxml', mimeType: 'application/xml', buffer: Buffer.from('<score-partwise><part') });
   await page.locator('.embed-a .ps-toast').waitFor({ timeout: 30000 });
   assert.ok(inside(boxA, await rect(page, '.embed-a .ps-toast')), 'Toast stays inside the root');
@@ -95,5 +116,43 @@ try {
 
   assert.deepEqual(errors, []);
   await context.close();
+
+  // Review Focus 1, exhaustively: the host's preflight-style rules change no computed style or size inside the reader.
+  // Each overlay state is compared with the same page after the host's element rules are deleted (its .host-* boxes stay).
+  for (const state of ['drawer', 'mixer', 'picker', 'dialog', 'toast']) {
+    const look = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    await look.route(/poppins/i, route => route.abort());
+    const tab = await look.newPage();
+    await tab.goto(`${server.url}/embed-test`);
+    await rendered(tab, '.pepperscore.embed-a');
+    if (state === 'drawer') await tab.locator('.embed-a .drawer-handle').click();
+    if (state === 'mixer') { await tab.locator('.embed-a .header-more-toggle').click(); await tab.locator('.embed-a').getByRole('button', { name: 'Track mixer', exact: true }).click(); }
+    if (state === 'picker') await tab.locator('.embed-a .instrument-control').first().click();
+    if (state === 'dialog') await tab.locator('.embed-a .header-open-file').click();
+    if (state === 'toast') { await tab.locator('.embed-a input[type=file]').setInputFiles({ name: 'broken.musicxml', mimeType: 'application/xml', buffer: Buffer.from('<score-partwise><part') }); await tab.locator('.embed-a .ps-toast').waitFor({ timeout: 30000 }); }
+    await tab.waitForTimeout(500);
+    const snapshot = () => tab.evaluate(() => {
+      const props = ['margin-top', 'margin-right', 'margin-bottom', 'margin-left', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left', 'border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width', 'font-size', 'font-weight', 'font-family', 'line-height', 'display', 'vertical-align', 'background-color', 'color', 'outline-style', 'max-width', 'box-sizing'];
+      const root = document.querySelector('.pepperscore.embed-a');
+      return [root, ...root.querySelectorAll('*')].filter(element => !element.closest('.score-staves')).map(element => {
+        const style = getComputedStyle(element), box = element.getBoundingClientRect();
+        const name = `${element.tagName.toLowerCase()}.${(element.getAttribute('class') || '').trim().split(/\s+/).join('.')}`;
+        return `${name} ${props.map(prop => style.getPropertyValue(prop)).join('|')}|${Math.round(box.width)}x${Math.round(box.height)}`;
+      });
+    });
+    const hosted = await snapshot();
+    await tab.evaluate(() => {
+      for (const sheet of document.styleSheets) for (let index = sheet.cssRules.length - 1; index >= 0; index--) {
+        const rule = sheet.cssRules[index];
+        if (rule.selectorText && !/pepperscore|host-|^astro/.test(rule.selectorText)) sheet.deleteRule(index);
+      }
+      document.styleSheets[0].insertRule('.host-box{box-sizing:border-box}', document.styleSheets[0].cssRules.length);
+    });
+    await tab.waitForTimeout(300);
+    const alone = await snapshot();
+    const changed = hosted.map((line, index) => line === alone[index] ? null : `host:  ${line}\nalone: ${alone[index]}`).filter(Boolean);
+    assert.deepEqual(changed, [], `Host rules change the reader (${state}):\n${changed.slice(0, 12).join('\n')}`);
+    await look.close();
+  }
   console.log(`${engine}: embedding (style isolation, containment, unique ids, focused keyboard) passed`);
 } finally { await browser.close(); await server.close(); }

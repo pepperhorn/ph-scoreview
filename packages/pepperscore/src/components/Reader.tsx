@@ -571,6 +571,18 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
     return () => observer.disconnect();
   }, []);
   useEffect(() => { if (autoFocus) rootRef.current?.focus({ preventScroll: true }); }, []);
+  // Keys are handled on the root, so focus has to stay inside it: an overlay takes focus when it opens, and when one
+  // closes with focus lost to <body> (its close button unmounted) focus returns to the overlay still open, or the root.
+  const focusOnMount = useCallback((element: HTMLElement | null) => { element?.focus({ preventScroll: true }); }, []);
+  const overlaysRef = useRef('');
+  useEffect(() => {
+    const overlays = `${mixer}|${pickerPartId ?? ''}`, was = overlaysRef.current;
+    overlaysRef.current = overlays;
+    if (!was || was === overlays) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && active.isConnected) return;
+    rootRef.current?.querySelector<HTMLElement>('.instrument-picker-panel, .mixer-panel')?.focus({ preventScroll: true }) ?? rootRef.current?.focus({ preventScroll: true });
+  }, [mixer, pickerPartId]);
   useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
@@ -989,7 +1001,7 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
     </header>
 
     {mixer && <div className="mixer-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setMixer(false); }}>
-      <section className="mixer-panel" role="dialog" aria-modal="true" aria-label="Track mixer">
+      <section ref={focusOnMount} tabIndex={-1} className="mixer-panel" role="dialog" aria-modal="true" aria-label="Track mixer">
         <div className="mixer-heading"><div><SlidersHorizontal size={18}/><h2>Track mixer</h2></div><button className="icon-button" aria-label="Close track mixer" onClick={() => setMixer(false)}><X size={19}/></button></div>
         <p>Choose each track’s sound and volume.</p>
         <div className="mixer-tracks">{score.parts.map(part => <div className="mixer-track" key={part.id}><img src={instrumentDetails(part.instrument).icon} alt=""/><span className="mixer-track-name">{part.name}{hiddenSet.has(part.id) && <small>Muted · hidden</small>}</span><button className="icon-button mixer-visibility-button" aria-label={`${hiddenSet.has(part.id) ? 'Show' : 'Hide'} ${part.name}`} title={`${hiddenSet.has(part.id) ? 'Show' : 'Hide'} ${part.name}`} aria-pressed={!hiddenSet.has(part.id)} onClick={() => togglePart(part.id)} disabled={!hiddenSet.has(part.id) && visibleScore.parts.length <= 1}>{hiddenSet.has(part.id) ? <EyeOff size={17}/> : <Eye size={17}/>}</button><button className="mixer-voice-button" aria-label={`Voice for ${part.name}`} onClick={() => openInstrumentPicker(part)}>{part.gmSoundfont ? gmSoundfontLabel(part.gmSoundfont) : instrumentDetails(part.instrument).label}<ChevronDown size={14}/></button><label className="mixer-volume"><span>Volume</span><input type="range" min="0" max="100" value={trackVolumes[part.id] ?? 100} aria-label={`Volume for ${part.name}`} onChange={event => setTrackVolumes(previous => ({ ...previous, [part.id]: Number(event.target.value) }))}/><output>{trackVolumes[part.id] ?? 100}%</output></label></div>)}</div>
@@ -999,7 +1011,7 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
     {openDialog && <OpenScoreDialog onClose={() => setOpenDialog(false)} onOpenFile={file => void readFile(file)} onOpenAbc={text => void readAbc(text)} onBrowse={() => fileRef.current?.click()}/>}
 
     {pickerPart && <div className="instrument-picker-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setPickerPartId(null); }}>
-      <section className="instrument-picker-panel" role="dialog" aria-modal="true" aria-label={`Choose voice for ${pickerPart.name}`}>
+      <section ref={focusOnMount} tabIndex={-1} className="instrument-picker-panel" role="dialog" aria-modal="true" aria-label={`Choose voice for ${pickerPart.name}`}>
         <div className="instrument-picker-heading"><div><h2>{pickerPart.name}</h2><p>Choose a playback sound</p></div><button className="icon-button" aria-label="Close voice picker" onClick={() => setPickerPartId(null)}><X size={19}/></button></div>
         <div className="instrument-family-filters" role="group" aria-label="Instrument families">{GM_FAMILIES.map(family => <button key={family} className={pickerFamily === family ? 'is-selected' : ''} aria-pressed={pickerFamily === family} onClick={() => { setPickerFamily(family); setPickerPage(0); }}>{family}</button>)}</div>
         <div className="instrument-picker-grid">{pickerSounds.map(sound => <button key={sound.program ?? 'drum-kit'} className={playbackSound(pickerPart) === (sound.soundfont || 'drum-kit') ? 'is-selected' : ''} aria-pressed={playbackSound(pickerPart) === (sound.soundfont || 'drum-kit')} onClick={() => changeInstrument(pickerPart.id, sound)}><img src={sound.icon} alt=""/><span>{sound.label}</span></button>)}</div>
