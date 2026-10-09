@@ -249,14 +249,18 @@ function svgFor(target: Toolkit, page: number, channel: number): string {
   return svg.replace(new RegExp(`(?<=[#"-])${id}(?![\\w-])`, 'g'), `${id}-c${channel}`);
 }
 
+/** How long a simulated out-of-memory request works before it fails (test hook). */
+const SIMULATED_OOM_MS = 300;
+
 /** Staves a view engraves (a chunk's size is set in staff-measures). */
 const stavesOf = (info: BaselineInfo, view: ViewSpec) => Math.max(1, info.staffDefs.length - view.hiddenStaves.length);
 
 async function handle(request: VerovioRequest): Promise<unknown> {
   if (request.kind === 'import') return importSource(request.revision, request.bytes, !!request.chunking?.force);
   if (request.kind === 'release') { baselines.delete(request.revision); return null; }
-  // Test hook (see verovio-runtime takeSimulatedOom): fail the way emscripten reports a heap that cannot grow.
-  if (request.simulateOom) throw new RangeError('Cannot enlarge memory arrays (simulated).');
+  // Test hook (see verovio-runtime takeSimulatedOom): fail the way emscripten reports a heap that cannot grow, after a
+  // while, as a real layout does (so other requests queue up behind it meanwhile).
+  if (request.simulateOom) { await new Promise(resolve => setTimeout(resolve, SIMULATED_OOM_MS)); throw new RangeError('Cannot enlarge memory arrays (simulated).'); }
   const entry = baseline(request.revision);
   if (request.kind === 'probe') {
     const target = await toolkit('probe');

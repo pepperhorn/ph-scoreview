@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom';
 import { ChevronDown, ChevronLeft, ChevronRight, Ellipsis, Eye, EyeOff, FileMusic, Focus, FolderOpen, History, Hourglass, Minus, Pause, Play, Plus, RotateCcw, SlidersHorizontal, Square, Settings2, Trash2, VolumeX, X } from 'lucide-react';
 import { exampleScore, gmProgramForSoundfont, gmSoundfontLabel, GM_FAMILIES, GM_SOUNDS, instrumentDetails, type GmFamily, type GmSound, type Part, type Score } from '../lib/score';
-import { importMusicXmlText, importScoreFile, parseAbc } from '../lib/import';
+import { cancelImports, importMusicXmlText, importScoreFile, parseAbc } from '../lib/import';
 import { portraitBarLimit, renderScore, type MeasureGeometry, type RenderResult } from '../lib/render';
 import { partControlMetrics, type PartControlMetrics } from '../lib/part-controls';
 import { HEADER_CONTROLS, MOBILE_HEADER_BREAKPOINT, type HeaderControlId } from '../lib/header-controls';
@@ -14,7 +14,7 @@ import { readerStorage, type PersistNamespace } from '../lib/storage';
 import { scoreForView, spokenKey, transposeReadout } from '../lib/transpose';
 import type { SpellingKey } from '../lib/spelling';
 import { baseTimelineFor, deriveTimeline, playbackDuration, playbackEventsFrom, playbackMidis, playbackPositionAt, type BaseTimeline } from '../lib/playback/timeline';
-import { closeVerovioChannel, isOutOfMemory, isSuperseded, openVerovioChannel, prepareVerovio, reduceChunkSize } from '../lib/verovio-runtime';
+import { closeVerovioChannel, isOutOfMemory, isRestarted, isSuperseded, openVerovioChannel, prepareVerovio, reduceChunkSize } from '../lib/verovio-runtime';
 import { claimPlayback, getSharedAudio, releasePlayback, resumeAudio } from '../lib/audio-engine';
 import { isLargeFile, isLargeScore, largeScoreMessage, staffMeasures } from '../lib/large-file';
 import { isSameFile, lastFileToFile, type LastFileInfo } from '../lib/last-file';
@@ -83,6 +83,10 @@ const FOLLOW_SUSPEND_MS = 2500;
 const SCROLL_SETTLE_MS = 900;
 /** Guidance added to the renderer's out-of-memory message. */
 const OOM_GUIDANCE = 'Close other tabs, or try again with smaller sections.';
+/** Shown when the renderer kept restarting under a draw (other readers on the page running out of memory). */
+const RENDERER_RESTARTED = 'The notation renderer restarted while drawing this score.';
+/** Draws re-run this many times after a renderer restart before the reader reports it. */
+const RESTART_REDRAWS = 2;
 const LAST_FILE_PRIVACY = 'The last opened file is kept only on this device (in this browser), so it can be reopened after a reload. It is never uploaded.';
 const scrollBehavior = (): ScrollBehavior => window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
 const flag = (element: HTMLElement, key: 'psShort' | 'psTiny' | 'psWide', on: boolean) => { if (on) element.dataset[key] = ''; else delete element.dataset[key]; };
@@ -191,7 +195,8 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
   // This reader's Verovio channel (opened in an effect and closed in its cleanup, so StrictMode's remount gets a new one):
   // its imports and renders never supersede another reader's on the shared worker.
   const channelRef = useRef(0);
-  useEffect(() => { const channel = openVerovioChannel(); channelRef.current = channel; return () => closeVerovioChannel(channel); }, []);
+  const restartRedrawsRef = useRef(0);
+  useEffect(() => { const channel = openVerovioChannel(); channelRef.current = channel; return () => { cancelImports(channel); closeVerovioChannel(channel); }; }, []);
   useEffect(() => ensureMusicFonts(assetBase), [assetBase]);
   const hiddenSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
   const visibleScore = useMemo(() => {
@@ -323,24 +328,32 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
         const job = importMusicXmlText(musicXml, 'MusicXML', channelRef.current);
         const src = await job.source;
         const [saved, next] = await Promise.all([readScoreRecord(storageRef.current.scoreDb, src), job.score]);
-        if (next.document) await prepareVerovio(next.document, channelRef.current);
+        if (run !== importRunRef.current) return;
+        if (next.document) await prepareEngraving(next.document);
         if (run === importRunRef.current) loadScore(next, src, saved);
       } catch (e) {
-        if (run === importRunRef.current) { setPainting(false); setError(e instanceof Error ? e.message : 'Could not read the supplied MusicXML.'); }
+        if (run === importRunRef.current) { setPainting(false); showError(e, 'Could not read the supplied MusicXML.'); }
       }
     })();
     return () => { importRunRef.current++; };
   }, [musicXml]);
-  /** Show an error; an out-of-memory one gets guidance and a retry with smaller engraving chunks. */
+  /**
+   * Show an error; an out-of-memory one gets guidance and a retry with smaller engraving chunks. So does a renderer that
+   * kept restarting under this reader (other readers running out of memory), which has no raw message to show.
+   */
   const showError = (e: unknown, fallback: string, retry?: 'open' | 'draw') => {
-    if (retry && isOutOfMemory(e)) {
-      const message = `${(e as Error).message} ${OOM_GUIDANCE}`;
+    const restarted = isRestarted(e);
+    if (retry && (isOutOfMemory(e) || restarted)) {
+      const message = `${restarted ? RENDERER_RESTARTED : (e as Error).message} ${OOM_GUIDANCE}`;
       setOomRetry({ message, kind: retry });
       setError(message);
       return;
     }
-    setError(e instanceof Error ? e.message : fallback);
+    setError(restarted ? RENDERER_RESTARTED : e instanceof Error ? e.message : fallback);
   };
+  /** Import a score's engraving on this reader's channel; a renderer restart under it is tried once more. */
+  const prepareEngraving = (doc: NonNullable<Score['document']>) => prepareVerovio(doc, channelRef.current)
+    .catch(error => isRestarted(error) ? prepareVerovio(doc, channelRef.current) : Promise.reject(error));
   /** Opening any score retires the large-score notice and the reopen offer. */
   const startOpening = () => { largeNoticeArmedRef.current = false; setLargeNotice(''); setReopenOffer(null); };
   const readFile = async (file?: File) => {
@@ -362,7 +375,8 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
       const [saved, nextScore] = await Promise.all([readScoreRecord(storageRef.current.scoreDb, nextSource), job.score]);
       // A compact file (an .mxl, a dense MIDI) can still be a large score: warn before engraving starts.
       if (!largeBytes && run === importRunRef.current && isLargeScore(nextScore)) setLargeNotice(largeScoreMessage(file.size, { phone, staffMeasures: staffMeasures(nextScore) }));
-      if (nextScore.document) await prepareVerovio(nextScore.document, channelRef.current);
+      if (run !== importRunRef.current) return;
+      if (nextScore.document) await prepareEngraving(nextScore.document);
       if (run === importRunRef.current) {
         largeNoticeArmedRef.current = true;
         loadScore(nextScore, nextSource, saved);
@@ -645,9 +659,12 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
         clearStaveScalePreview();
         refreshPages();
         if (anchor) restoreZoomAnchor(anchor, result, prefs.mode);
+        restartRedrawsRef.current = 0;
         setError('');
         if (largeNoticeArmedRef.current) { largeNoticeArmedRef.current = false; setLargeNotice(''); }
       } catch (e) {
+        // The renderer restarted under this draw (another reader ran out of memory): draw again, a bounded number of times.
+        if (!disposed && isRestarted(e) && restartRedrawsRef.current < RESTART_REDRAWS) { restartRedrawsRef.current++; setResizeTick(value => value + 1); return; }
         if (!disposed && !isSuperseded(e)) {
           if (largeNoticeArmedRef.current) { largeNoticeArmedRef.current = false; setLargeNotice(''); }
           showError(e, 'Could not draw this score.', 'draw');
@@ -898,7 +915,7 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
       };
       playRef.current = { start: started, beat: secondsStart, frame: requestAnimationFrame(tick), interval };
       setPlaying(true);
-    } catch (e) { if (run === playRunRef.current) { setLoadingAudio(false); setError(e instanceof Error ? e.message : 'Audio could not start.'); } }
+    } catch (e) { if (run === playRunRef.current) { setLoadingAudio(false); releasePlayback(playbackOwner); setError(e instanceof Error ? e.message : 'Audio could not start.'); } }
   };
   // Unmount: release only this reader's players and track gains; the shared AudioContext and Verovio worker stay for other readers.
   useEffect(() => () => { importRunRef.current++; playRunRef.current++; renderRef.current?.dispose(); if (playRef.current) { cancelAnimationFrame(playRef.current.frame); clearInterval(playRef.current.interval); } scheduledStopsRef.current.splice(0).forEach(item => item.stop()); audioRef.current?.players.forEach(players => players.forEach(p => p.dispose())); audioRef.current?.trackGains.forEach(gain => gain.disconnect()); audioRef.current = null; releasePlayback(playbackOwner); }, []);

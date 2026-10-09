@@ -43,18 +43,28 @@ export function reduceChunkSize(): number {
   return chunkBudget;
 }
 /**
- * Test hook: `localStorage['scoreflow-simulate-oom']` makes the next probe or render fail as out of memory, once. A
- * diagnostic hook: un-namespaced and exempt from `persist` (storage.ts).
+ * Test hook: `localStorage['scoreflow-simulate-oom']` = N (a positive integer; any other value counts as 1) makes the
+ * next probe or render fail as out of memory, and the next N - 1 probes or renders of the same channel too, the way a
+ * score too large for the device keeps failing in its own reader (other readers are unaffected). A diagnostic hook:
+ * un-namespaced and exempt from `persist` (storage.ts).
  */
-function takeSimulatedOom(): boolean {
+let simulatedOom: { channel: number; left: number } | undefined;
+function takeSimulatedOom(channel: number): boolean {
   try {
-    if (!globalThis.localStorage?.getItem('scoreflow-simulate-oom')) return false;
-    globalThis.localStorage.removeItem('scoreflow-simulate-oom');
-    return true;
-  } catch { return false; }
+    const armed = globalThis.localStorage?.getItem('scoreflow-simulate-oom');
+    if (armed) {
+      globalThis.localStorage.removeItem('scoreflow-simulate-oom');
+      const count = Number(armed);
+      simulatedOom = { channel, left: Number.isInteger(count) && count > 0 ? count : 1 };
+    }
+  } catch { /* no storage */ }
+  if (!simulatedOom || simulatedOom.channel !== channel || simulatedOom.left <= 0) return false;
+  simulatedOom.left--;
+  return true;
 }
 
-type Pending = { kind: VerovioRequest['kind']; resolve: (value: any) => void; reject: (reason: Error) => void };
+/** `channel`: the reader a probe or render belongs to (imports are shared by every reader showing the score). */
+type Pending = { kind: VerovioRequest['kind']; channel?: number; resolve: (value: any) => void; reject: (reason: Error) => void };
 let worker: Worker | undefined;
 let nextId = 0;
 const pending = new Map<number, Pending>();
@@ -77,9 +87,11 @@ function getWorker(): Worker {
     // heap is returned once the worker is idle, but only for a chunked score, which re-imports in one index pass, and
     // never right after an import (the render that needs it follows): a whole-document score would be imported again
     // and recycled again, over and over. Its heap is returned before the next score's import instead.
-    // Other readers' requests still in flight fail as `restarted` and are sent again to the fresh worker.
+    // Other readers' requests still in flight fail as `restarted` and are sent again to the fresh worker; the failing
+    // reader's own requests fail as out of memory (the same layout would only run out of memory again).
     const idle = !pending.size && item.kind !== 'import' && importsInFlight === 0 && currentChunked;
-    if (data.code === 'oom' || (heap > recycleHeapBytes && idle)) stopWorker(restarted());
+    if (data.code === 'oom') stopWorker(restarted(), item.channel);
+    else if (heap > recycleHeapBytes && idle) stopWorker(restarted());
   };
   worker.onerror = event => {
     event.preventDefault();
@@ -88,13 +100,18 @@ function getWorker(): Worker {
   return worker;
 }
 
-/** Terminate the worker (it holds the WASM heap, which never shrinks) and fail whatever it still owed. */
-function stopWorker(reason: Error): void {
+/**
+ * Terminate the worker (it holds the WASM heap, which never shrinks) and fail whatever it still owed with `reason`,
+ * except the probes and renders of `outOfMemory` (the channel that ran out of memory), which fail as out of memory.
+ */
+function stopWorker(reason: Error, outOfMemory?: number): void {
   worker?.terminate();
   worker = undefined;
   heap = 0;
   baselines.clear();
-  for (const item of pending.values()) item.reject(reason);
+  for (const item of pending.values()) {
+    item.reject(outOfMemory !== undefined && item.channel === outOfMemory ? new VerovioError('This score is too large for the notation renderer on this device (it ran out of memory).', 'oom') : reason);
+  }
   pending.clear();
 }
 
@@ -102,7 +119,7 @@ type Body = VerovioRequest extends infer R ? R extends unknown ? Omit<R, 'id'> :
 function request<T>(body: Body, transfer: Transferable[] = []): Promise<T> {
   const id = ++nextId;
   return new Promise<T>((resolve, reject) => {
-    pending.set(id, { kind: body.kind, resolve, reject });
+    pending.set(id, { kind: body.kind, channel: 'channel' in body ? body.channel : undefined, resolve, reject });
     getWorker().postMessage({ ...body, id }, transfer);
   });
 }
@@ -133,15 +150,23 @@ let importsInFlight = 0;
 type Channel = { current: number; previous: number; importing?: number };
 const channels = new Map<number, Channel>();
 let nextChannel = 0;
-const channelState = (id: number): Channel => {
+/**
+ * Opened channels only exist from openVerovioChannel until closeVerovioChannel; a closed (or never opened) channel is
+ * never brought back by a late request: its requests fail as `superseded`. Channel 0 always exists.
+ */
+const channelState = (id: number): Channel | undefined => {
   let state = channels.get(id);
-  if (!state) { state = { current: 0, previous: 0 }; channels.set(id, state); }
+  if (!state && id === 0) { state = { current: 0, previous: 0 }; channels.set(id, state); }
   return state;
 };
+const closed = () => new VerovioError('Superseded score render (the reader closed).', 'superseded');
+const publishChannels = () => { (globalThis as { __pepperscoreVerovioChannels?: number }).__pepperscoreVerovioChannels = [...channels.keys()].filter(id => id !== 0).length; };
 /** A reader mounted: a channel of its own, so its imports and renders never supersede another reader's. */
 export function openVerovioChannel(): number {
   const id = ++nextChannel;
-  channelState(id);
+  channels.set(id, { current: 0, previous: 0 });
+  // Exposed for diagnostics and validation/embed.mjs: the number of open reader channels.
+  publishChannels();
   return id;
 }
 /**
@@ -150,6 +175,7 @@ export function openVerovioChannel(): number {
  */
 export function closeVerovioChannel(id: number): void {
   channels.delete(id);
+  publishChannels();
   if (![...channels.keys()].some(open => open !== 0)) { stopWorker(new VerovioError('Verovio renderer disposed.')); return; }
   releaseUnused();
 }
@@ -174,6 +200,7 @@ const adopt = (state: Channel, revision: number) => { if (state.current !== revi
 export function prepareVerovio(document: SourceDocument, channel = 0): Promise<BaselineInfo> {
   const revision = verovioRevision(document);
   const state = channelState(channel);
+  if (!state) return Promise.reject(closed());
   let cached = baselines.get(revision);
   if (cached) {
     baselines.delete(revision); baselines.set(revision, cached);
@@ -209,7 +236,9 @@ export function prepareVerovio(document: SourceDocument, channel = 0): Promise<B
  */
 export function verovioBaseline(document: SourceDocument, channel = 0): Promise<BaselineInfo> {
   const revision = verovioRevision(document);
-  const { importing } = channelState(channel);
+  const state = channelState(channel);
+  if (!state) return Promise.reject(closed());
+  const { importing } = state;
   if (!baselines.has(revision) && importing !== undefined && importing !== revision) return Promise.reject(new VerovioError('Superseded score render.', 'superseded'));
   return prepareVerovio(document, channel);
 }
@@ -225,9 +254,10 @@ async function withBaseline<T>(document: SourceDocument, channel: number, run: (
   catch (error) {
     // The worker restarted under the request, or dropped this revision while it is still the channel's score:
     // import it again, once.
-    const retry = isRestarted(error) || (error instanceof VerovioError && error.code === 'missing' && revision === channelState(channel).current);
-    if (!retry) throw error;
-    baselines.delete(revision);
+    const missing = error instanceof VerovioError && error.code === 'missing' && revision === channelState(channel)?.current;
+    if (!isRestarted(error) && !missing) throw error;
+    // After a restart the cache is already empty (and may hold another reader's fresh re-import of this revision).
+    if (missing) baselines.delete(revision);
     await verovioBaseline(document, channel);
     return run(revision);
   }
@@ -235,10 +265,10 @@ async function withBaseline<T>(document: SourceDocument, channel: number, run: (
 
 /** Lay out the first `measures` measures as a small document and return page 1 (the first system). */
 export function probeVerovio(document: SourceDocument, channel: number, renderTicket: number, view: ViewSpec, options: Record<string, unknown>, measures: number): Promise<ProbeResult> {
-  return withBaseline(document, channel, revision => request<ProbeResult>({ kind: 'probe', channel, ticket: renderTicket, revision, view, options, measures, chunkBudget, simulateOom: takeSimulatedOom() || undefined }));
+  return withBaseline(document, channel, revision => request<ProbeResult>({ kind: 'probe', channel, ticket: renderTicket, revision, view, options, measures, chunkBudget, simulateOom: takeSimulatedOom(channel) || undefined }));
 }
 
 /** Serialize one-based pages of the whole view laid out with `options`; the worker reuses its loaded document when it can. */
 export function renderVerovioPages(document: SourceDocument, channel: number, renderTicket: number, view: ViewSpec, options: Record<string, unknown>, pages: number[]): Promise<PagesResult> {
-  return withBaseline(document, channel, revision => request<PagesResult>({ kind: 'render', channel, ticket: renderTicket, revision, view, options, pages, chunkBudget, simulateOom: takeSimulatedOom() || undefined }));
+  return withBaseline(document, channel, revision => request<PagesResult>({ kind: 'render', channel, ticket: renderTicket, revision, view, options, pages, chunkBudget, simulateOom: takeSimulatedOom(channel) || undefined }));
 }

@@ -20,6 +20,9 @@ try {
       window.__contexts = [];
       const Native = window.AudioContext;
       window.AudioContext = class extends Native { constructor(...args) { super(...args); window.__contexts.push(this); } };
+      window.__verovioWorkers = 0;
+      const NativeWorker = window.Worker;
+      window.Worker = class extends NativeWorker { constructor(url, ...rest) { super(url, ...rest); if (String(url).includes('verovio')) window.__verovioWorkers++; } };
     });
     const tab = await multi.newPage();
     const tabErrors = [];
@@ -39,11 +42,13 @@ try {
     await tab.locator('.embed-b .stop-button').click();
     assert.equal(await tab.evaluate(() => window.__contexts.length), 1, 'Instances share one AudioContext');
     // Review Focus 3: unmounting B keeps the shared worker and AudioContext for A.
+    const workers = await tab.evaluate(() => window.__verovioWorkers);
     await tab.locator('.host-unmount').click();
     await tab.waitForFunction(() => !document.querySelector('.embed-b'));
     await tab.locator('.embed-a').getByRole('button', { name: 'Endless view', exact: true }).click();
     await tab.waitForFunction(() => document.querySelector('.embed-a .score-content.is-painting') === null && document.querySelector('.embed-a .ps-landscape .score-system svg'), null, { timeout: 60000 });
     assert.notEqual(await tab.evaluate(() => window.__contexts[0].state), 'closed', 'The shared AudioContext stays open');
+    assert.equal(await tab.evaluate(() => window.__verovioWorkers), workers, 'A re-engraves on the same shared Verovio worker');
     await tab.locator('.embed-a .play-button').click();
     await playingIn('.embed-a');
     await tab.locator('.embed-a .stop-button').click();
@@ -79,6 +84,76 @@ try {
     await oom.close();
   }
 
+  // A real out-of-memory failure repeats in its own reader: its other requests fail with it (no retry of the same
+  // layout), so repeated failures never push the other reader past its retry. Each reader switches view twice, so a
+  // newer render of the failing reader is queued when the first one fails.
+  {
+    const repeat = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    await repeat.route(/poppins/i, route => route.abort());
+    const tab = await repeat.newPage();
+    const tabErrors = [];
+    tab.on('pageerror', error => tabErrors.push(error.message));
+    const failedDraws = [];
+    tab.on('console', message => { if (/Could not draw a score system/.test(message.text())) failedDraws.push(message.text()); });
+    await tab.goto(`${server.url}/embed-test`);
+    await rendered(tab, '.pepperscore.embed-a');
+    await rendered(tab, '.pepperscore.embed-b');
+    await tab.evaluate(() => {
+      for (const svg of document.querySelectorAll('.score-system svg')) svg.setAttribute('data-before', '');
+      localStorage.setItem('scoreflow-simulate-oom', '3');
+      for (const root of document.querySelectorAll('.pepperscore')) root.querySelector('.mode-toggle-endless').click();
+      // Once the first renders have sent their requests (a task later), switch back while they are still queued.
+      setTimeout(() => { for (const root of document.querySelectorAll('.pepperscore')) root.querySelector('.mode-toggle-vertical').click(); }, 20);
+    });
+    await tab.waitForFunction(() => [...document.querySelectorAll('.pepperscore')].every(root => root.querySelector('.ps-toast') || (root.querySelector('.ps-portrait .score-system svg:not([data-before])') && !root.querySelector('.score-content.is-painting'))), null, { timeout: 60000 });
+    await tab.waitForTimeout(1500);
+    const outcome = await tab.evaluate(() => [...document.querySelectorAll('.pepperscore')].map(root => root.querySelector('.ps-toast.is-out-of-memory') ? 'oom' : root.querySelector('.ps-toast') ? `toast: ${root.querySelector('.ps-toast-text').textContent}` : root.querySelector('.ps-portrait .score-system svg:not([data-before])') ? 'rendered' : 'blank').sort());
+    assert.deepEqual(outcome, ['oom', 'rendered'], `Repeated failures stay in one reader; the other renders: ${outcome}`);
+    assert.deepEqual(failedDraws, [], 'No system draw fails for good');
+    assert.deepEqual(tabErrors, []);
+    await repeat.close();
+  }
+  // A reader removed while its score is still parsing: its import worker is stopped, its channel stays closed (no late
+  // engraving brings it back), and the other reader keeps the same Verovio worker. Import replies are delayed so the
+  // removal lands mid-import.
+  {
+    const early = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    await early.route(/poppins/i, route => route.abort());
+    await early.addInitScript(() => {
+      window.__verovioWorkers = 0;
+      window.__importWorkers = [];
+      const Native = window.Worker;
+      window.Worker = class extends Native {
+        constructor(url, ...rest) {
+          super(url, ...rest);
+          this.__import = String(url).includes('import');
+          if (String(url).includes('verovio')) window.__verovioWorkers++;
+          if (this.__import) window.__importWorkers.push(this);
+        }
+        set onmessage(handler) { super.onmessage = this.__import && handler ? event => setTimeout(() => handler.call(this, event), 2000) : handler; }
+        get onmessage() { return super.onmessage; }
+        terminate() { this.__terminated = true; super.terminate(); }
+      };
+    });
+    const tab = await early.newPage();
+    const tabErrors = [];
+    tab.on('pageerror', error => tabErrors.push(error.message));
+    await tab.goto(`${server.url}/embed-test`);
+    await tab.waitForFunction(() => window.__pepperscoreVerovioChannels === 2 && window.__importWorkers.length === 2, null, { timeout: 30000 });
+    await tab.locator('.host-unmount').click();
+    await tab.waitForFunction(() => !document.querySelector('.embed-b'));
+    await tab.waitForTimeout(300);
+    assert.equal(await tab.evaluate(() => window.__importWorkers.filter(worker => !worker.__terminated).length), 1, 'Removing a reader stops its import worker');
+    await rendered(tab, '.pepperscore.embed-a');
+    await tab.waitForTimeout(3000);
+    assert.equal(await tab.evaluate(() => window.__pepperscoreVerovioChannels), 1, 'The removed reader\'s channel stays closed');
+    const workers = await tab.evaluate(() => window.__verovioWorkers);
+    await tab.locator('.embed-a').getByRole('button', { name: 'Endless view', exact: true }).click();
+    await tab.waitForFunction(() => document.querySelector('.embed-a .score-content.is-painting') === null && document.querySelector('.embed-a .ps-landscape .score-system svg'), null, { timeout: 60000 });
+    assert.equal(await tab.evaluate(() => window.__verovioWorkers), workers, 'A keeps re-engraving on the same Verovio worker');
+    assert.deepEqual(tabErrors, []);
+    await early.close();
+  }
   // Two readers showing the same score: Verovio's SVG and glyph ids are per reader, so each reader's <use> glyphs and
   // scoped <style> rules resolve inside its own root (here A in Petaluma, B in Bravura).
   {

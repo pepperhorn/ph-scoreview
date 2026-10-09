@@ -357,6 +357,11 @@ type ImportJob = { sha256: Promise<string>; size: Promise<number | undefined>; r
  */
 const parsing = new Map<number, { worker: Worker; fail: (error: Error) => void }>();
 
+/** A reader unmounted: stop its import still parsing (its score would never be shown). */
+export function cancelImports(channel: number): void {
+  parsing.get(channel)?.fail(new Error('Import cancelled.'));
+}
+
 /**
  * Run one import in a fresh worker (docs/specs/large-score-performance.md, Phase 2). The main thread only assembles
  * the Score from bounded chunks (each message is its own short task) and wraps the transferred bytes; it never

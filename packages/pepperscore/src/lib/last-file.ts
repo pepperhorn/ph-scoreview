@@ -3,7 +3,8 @@
  * (docs/specs/large-score-performance.md, Phase 3 "Guardrails"). It is never opened automatically.
  *
  * Database `<namespace>-last-file` (`scoreflow-last-file` for the Scoreflow names, see storage.ts), object store
- * `last-file` with two out-of-line keys: `info` (name, type, size, lastModified, savedAt) and `bytes` (the original file bytes, stored as the Blob itself so a large file is not read
+ * `last-file` with two out-of-line keys: `info` (name, type, size, lastModified, savedAt) and `bytes` (the
+ * original file bytes, stored as the Blob itself so a large file is not read
  * and cloned on the main thread; an ArrayBuffer is also accepted), written in one transaction, so the
  * offer can be shown without loading the bytes. Only files up to MAX_SCORE_FILE_BYTES are kept. Every access is
  * wrapped in try/catch: without IndexedDB (private mode, blocked) nothing is remembered and nothing throws.

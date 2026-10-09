@@ -2,7 +2,7 @@ import type { Part, Score, ScoreNote } from './score';
 import { inferChordSymbol } from './chords';
 import { spellChordSymbol } from './spelling';
 import { measureKey, scoreForView, spellingSpecFor } from './transpose';
-import { isSuperseded, nextRenderTicket, probeVerovio, renderVerovioPages, VerovioError, verovioBaseline } from './verovio-runtime';
+import { isRestarted, isSuperseded, nextRenderTicket, probeVerovio, renderVerovioPages, VerovioError, verovioBaseline } from './verovio-runtime';
 import { staffDefXmlId, type SourceDocument } from './notation/document';
 import type { BaselineInfo, ViewSpec } from './notation/mei-view';
 import { musicFontOptions } from './music-fonts';
@@ -707,7 +707,8 @@ export async function renderScore(
   const SUPERSEDED_RETRIES = 4;
   const load = (wanted: Slot[]) => {
     const promise = draw(wanted).then(() => { supersededDraws = 0; }, error => {
-      if (isSuperseded(error)) { stalled = true; return; }
+      // A renderer restarted twice under the draw (other readers running out of memory) stalls the same way.
+      if (isSuperseded(error) || isRestarted(error)) { stalled = true; return; }
       if (!alive()) return;
       for (const slot of wanted) if (!slot.svg) slot.failed = true;
       console.warn('Could not draw a score system:', error);
