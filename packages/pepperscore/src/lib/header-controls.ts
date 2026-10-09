@@ -4,7 +4,7 @@
  * Maintainers: edit this list to reorder header controls or move them between
  * tiers. Array order is render order. `primary` controls always sit inline in
  * the header; `secondary` controls sit inline above MOBILE_HEADER_BREAKPOINT
- * and move into the "More controls" dropdown at or below it. Reader.tsx maps
+ * and move into the "More controls" dropdown at or below it. PepperScore.tsx maps
  * each id to its element; every control is always rendered (`bars` is disabled outside Vertical view, `keyFlip` when the key has no enharmonic) so the
  * header footprint never depends on client-only state.
  */
@@ -30,3 +30,9 @@ export const MOBILE_HEADER_BREAKPOINT = 760;
 
 /** Stave scale (zoom) bounds shared by the header slider and pinch zoom live with the defaults in stave-scale.ts. */
 export { clampStaveScale, STAVE_SCALE_MAX, STAVE_SCALE_MIN, STAVE_SCALE_STEP } from './stave-scale';
+
+/** Which `controls` key shows each header control (see chrome.ts). */
+export const HEADER_CONTROL_GROUP: Record<HeaderControlId, 'transport' | 'viewToggle' | 'openFile' | 'zoom' | 'mixer'> = {
+  stop: 'transport', play: 'transport', bpm: 'transport', transpose: 'transport', keyFlip: 'transport', bars: 'transport',
+  mode: 'viewToggle', openFile: 'openFile', staveScale: 'zoom', mixer: 'mixer',
+};

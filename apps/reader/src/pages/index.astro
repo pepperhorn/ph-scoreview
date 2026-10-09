@@ -1,5 +1,5 @@
 ---
-import Reader from 'pepperscore';
+import DemoReader from '../DemoReader';
 import favicon from '../favicon.svg?url';
 import 'pepperscore/style.css';
 import '../demo.css';
@@ -14,5 +14,5 @@ import '../demo.css';
     <link rel="icon" type="image/svg+xml" href={favicon} />
     <title>Scoreflow — a quiet place to read music</title>
   </head>
-  <body><Reader client:load assetBaseUrl="/" height="100dvh" persist="scoreflow" autoFocus /></body>
+  <body><DemoReader client:load /></body>
 </html>

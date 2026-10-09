@@ -1,12 +1,9 @@
 /**
- * Opening a score from a public URL: the Reader's `scoreUrl` prop, or `?score=<url>` on the page. The file is
+ * Opening a score from a public URL (PepperScore's `scoreUrl` prop; the demo maps `?score=<url>` to it). The file is
  * downloaded here and then opened through the reader's normal file path, so its format is read from its name.
  */
 import { formatMb, MAX_SCORE_FILE_BYTES } from './mxl';
 import { scoreFormatOf } from './score-files';
-
-/** The query parameter that names a score to open on load. */
-export const SCORE_URL_PARAM = 'score';
 
 /** File extensions for score media types, for URLs whose path has no score extension. */
 const MEDIA_EXTENSIONS: Array<[RegExp, string]> = [
@@ -16,12 +13,6 @@ const MEDIA_EXTENSIONS: Array<[RegExp, string]> = [
   [/mei/, '.mei'],
   [/abc|^text\/plain$/, '.abc'],
 ];
-
-/** The score link named in a query string, if any (resolved against the page when fetched). */
-export function scoreUrlFromSearch(search: string): string | null {
-  const value = new URLSearchParams(search).get(SCORE_URL_PARAM)?.trim();
-  return value ? value : null;
-}
 
 /** A file name for the download: the URL's own name when it has a score extension, else one from the media type. */
 export function remoteFileName(url: URL, contentType: string): string {
