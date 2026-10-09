@@ -7,11 +7,11 @@ import { fileURLToPath } from 'node:url';
 import { chromium, firefox, webkit } from 'playwright-core';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-const dist = resolve(root, 'dist');
+const dist = resolve(root, 'apps/reader/dist');
 const engine = process.env.BROWSER || 'chromium';
 const launcher = { chromium, firefox, webkit }[engine];
 if (!launcher) throw new Error(`BROWSER must be chromium, firefox or webkit (got "${engine}")`);
-if (!process.env.READER_URL && !existsSync(resolve(dist, 'index.html'))) throw new Error('dist/index.html is missing: run `npm run build` before validation/reader.mjs');
+if (!process.env.READER_URL && !existsSync(resolve(dist, 'index.html'))) throw new Error('apps/reader/dist/index.html is missing: run `npm run build` before validation/reader.mjs');
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.wasm': 'application/wasm' };
 const server = createServer(async (request, response) => {
   const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
@@ -26,8 +26,8 @@ const browser = await launcher.launch({ headless: true, ...(engine === 'chromium
 try {
   // First paint: the header's mobile/desktop arrangement is pure CSS, so the server-rendered HTML already matches the
   // viewport and hydration never reflows it (a JS media-query hook used to swap desktop -> mobile after hydration).
-  const breakpoint = Number((await readFile(resolve(root, 'src/lib/header-controls.ts'), 'utf8')).match(/MOBILE_HEADER_BREAKPOINT = (\d+);/)[1]);
-  assert.match(await readFile(resolve(root, 'src/styles.css'), 'utf8'), new RegExp(`/\\* HEADER BREAKPOINT \\(mobile\\)[^*]*\\*/\\s*@media\\(max-width:${breakpoint}px\\)`), `The header's CSS breakpoint matches MOBILE_HEADER_BREAKPOINT (${breakpoint}px)`);
+  const breakpoint = Number((await readFile(resolve(root, 'packages/pepperscore/src/lib/header-controls.ts'), 'utf8')).match(/MOBILE_HEADER_BREAKPOINT = (\d+);/)[1]);
+  assert.match(await readFile(resolve(root, 'packages/pepperscore/src/styles.css'), 'utf8'), new RegExp(`/\\* HEADER BREAKPOINT \\(mobile\\)[^*]*\\*/\\s*@media\\(max-width:${breakpoint}px\\)`), `The header's CSS breakpoint matches MOBILE_HEADER_BREAKPOINT (${breakpoint}px)`);
   const headerArrangement = target => target.evaluate(() => {
     const visible = element => !!element && element.getClientRects().length > 0 && getComputedStyle(element).visibility !== 'hidden';
     const box = selector => { const element = document.querySelector(selector); if (!visible(element)) return null; const rect = element.getBoundingClientRect(); return [rect.left, rect.top, rect.width, rect.height].map(value => Math.round(value * 10) / 10); };

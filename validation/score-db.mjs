@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright-core';
 
-// Unit checks for src/lib/score-db.ts (per-score memory) in a real browser, served by a private Vite server.
+// Unit checks for packages/pepperscore/src/lib/score-db.ts (per-score memory) in a real browser, served by a private Vite server.
 const port = 43983;
 const server = spawn('node', ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { cwd: new URL('..', import.meta.url), stdio: 'ignore' });
 const pagePath = '/validation/performance.html';
@@ -20,8 +20,8 @@ try {
   await page.goto(`http://127.0.0.1:${port}${pagePath}`);
 
   const result = await page.evaluate(async () => {
-    const { createScoreDb } = await import('/src/lib/score-db.ts');
-    const { textSource } = await import('/src/lib/file-state.ts');
+    const { createScoreDb } = await import('/packages/pepperscore/src/lib/score-db.ts');
+    const { textSource } = await import('/packages/pepperscore/src/lib/file-state.ts');
     const settings = { mode: 'portrait', notationFont: 'Bravura', barsPerLine: 'auto', overlap: 1, names: false, chordSymbols: false, inferChordSymbols: false, counts: false, subdivisions: false, annotationFont: 'Sans', bpm: 96, semitones: 0, scorePitch: 'written' };
     const source = hash => ({ name: 'test.musicxml', size: 10, sha256: hash, format: 'musicxml' });
     const state = (hash, lastOpened, zoom = 1.3) => ({ version: 2, source: source(hash), lastOpened, settings, parts: { p1: { visible: true, instrument: 'piano', volume: 80 } }, view: { zoom, zoomDevice: 'desktop' } });
@@ -89,13 +89,13 @@ try {
     out.abcKey = textSource('abc', abc, 'ABC').sha256;
     out.abcKeyAgain = textSource('abc', abc, 'ABC').sha256;
     out.xmlKey = textSource('musicxml', abc, 'MusicXML').sha256;
-    const { exampleScore } = await import('/src/lib/score.ts');
-    const { withEngravingDocument } = await import('/src/lib/notation/document.ts');
-    const { sampleSource } = await import('/src/lib/score-db.ts');
+    const { exampleScore } = await import('/packages/pepperscore/src/lib/score.ts');
+    const { withEngravingDocument } = await import('/packages/pepperscore/src/lib/notation/document.ts');
+    const { sampleSource } = await import('/packages/pepperscore/src/lib/score-db.ts');
     out.sampleKey = sampleSource(withEngravingDocument(exampleScore())).sha256;
 
     // keyFlip: optional on read (records written before it default to false), validated, and always written.
-    const { parseFileState, buildFileState } = await import('/src/lib/file-state.ts');
+    const { parseFileState, buildFileState } = await import('/packages/pepperscore/src/lib/file-state.ts');
     const record = (extra) => ({ version: 2, source: source(hex(7)), lastOpened: 1, settings: { ...settings, ...extra }, parts: {} });
     out.keyFlipDefault = parseFileState(record({}), hex(7))?.settings.keyFlip;
     out.keyFlipKept = parseFileState(record({ keyFlip: true }), hex(7))?.settings.keyFlip;
@@ -133,7 +133,7 @@ try {
 
   // Write-ahead: records still inside the debounce window survive an immediate reload.
   await page.evaluate(async () => {
-    const { createScoreDb } = await import('/src/lib/score-db.ts');
+    const { createScoreDb } = await import('/packages/pepperscore/src/lib/score-db.ts');
     const settings = { mode: 'portrait', notationFont: 'Bravura', barsPerLine: 'auto', overlap: 1, names: false, chordSymbols: false, inferChordSymbols: false, counts: false, subdivisions: false, annotationFont: 'Sans', bpm: 96, semitones: 3, scorePitch: 'written', keyFlip: true };
     const source = { name: 'wal.musicxml', size: 1, sha256: 'a'.repeat(64), format: 'musicxml' };
     const db = createScoreDb({ dbName: 'scoreflow-test-wal', debounceMs: 400 });
@@ -145,7 +145,7 @@ try {
   });
   await page.reload();
   const wal = await page.evaluate(async () => {
-    const { createScoreDb } = await import('/src/lib/score-db.ts');
+    const { createScoreDb } = await import('/packages/pepperscore/src/lib/score-db.ts');
     const source = hash => ({ name: 'wal.musicxml', size: 1, sha256: hash.repeat(64), format: 'musicxml' });
     const db = createScoreDb({ dbName: 'scoreflow-test-wal', debounceMs: 0 });
     const restored = await db.read(source('a'));
@@ -175,10 +175,10 @@ try {
   // Keys stay stable across reloads.
   await page.reload();
   const again = await page.evaluate(async () => {
-    const { textSource } = await import('/src/lib/file-state.ts');
-    const { sampleSource } = await import('/src/lib/score-db.ts');
-    const { exampleScore } = await import('/src/lib/score.ts');
-    const { withEngravingDocument } = await import('/src/lib/notation/document.ts');
+    const { textSource } = await import('/packages/pepperscore/src/lib/file-state.ts');
+    const { sampleSource } = await import('/packages/pepperscore/src/lib/score-db.ts');
+    const { exampleScore } = await import('/packages/pepperscore/src/lib/score.ts');
+    const { withEngravingDocument } = await import('/packages/pepperscore/src/lib/notation/document.ts');
     return { abcKey: textSource('abc', 'X:1\nK:C\nCDEF|', 'ABC').sha256, sampleKey: sampleSource(withEngravingDocument(exampleScore())).sha256 };
   });
   assert.equal(again.abcKey, result.abcKey, 'ABC key is stable across reloads');

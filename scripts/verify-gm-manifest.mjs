@@ -4,7 +4,9 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-const manifest = JSON.parse(await readFile(resolve(root, 'src/lib/gm-soundfont-manifest.json'), 'utf8'));
+const lib = resolve(root, 'packages/pepperscore');
+const sounds = resolve(root, 'packages/pepperscore-sounds-complete');
+const manifest = JSON.parse(await readFile(resolve(lib, 'src/lib/gm-soundfont-manifest.json'), 'utf8'));
 assert.equal(manifest.version, 1);
 assert.equal(manifest.programNumbering, 'GM 1-128');
 assert.equal(manifest.programs.length, 128);
@@ -17,17 +19,17 @@ for (const [index, entry] of manifest.programs.entries()) {
   assert.ok(manifest.icons[entry.icon], `Missing icon mapping for ${entry.soundfont}`);
   assert.ok(families.includes(entry.family), `Missing family for ${entry.soundfont}`);
   assert.equal(entry.localPack, `/soundfonts/fluidr3/${entry.soundfont}.json`);
-  const pack = JSON.parse(await readFile(resolve(root, 'public', entry.localPack.slice(1)), 'utf8'));
+  const pack = JSON.parse(await readFile(resolve(sounds, entry.localPack.slice(1)), 'utf8'));
   assert.equal(pack.name, entry.soundfont);
   assert.ok(Object.keys(pack.samples).length > 0, `Empty audio pack for ${entry.soundfont}`);
 }
 for (const [id, icon] of Object.entries(manifest.icons)) {
   assert.equal(icon, `src/icons/${id}.svg`);
-  await stat(resolve(root, icon));
+  await stat(resolve(lib, icon));
 }
 for (const voice of manifest.voices) {
   assert.ok(manifest.icons[voice.icon], `Missing icon for ${voice.id}`);
-  const packPath = resolve(root, 'public', voice.localPack.replace(/^\//, ''));
+  const packPath = resolve(sounds, voice.localPack.replace(/^\//, ''));
   assert.ok((await stat(packPath)).size > 1000, `Missing audio pack for ${voice.id}`);
   if (voice.program === null) {
     assert.equal(voice.id, 'drum-kit');

@@ -1,17 +1,17 @@
 // In-page harness for validation/transpose.mjs: engraves a MusicXML score through the same pipeline the Verovio worker
 // uses for a transposed or key-flipped view (convert to an MEI baseline, Verovio interval transposition, the spelling
 // pass, the view MEI, an untransposed load) and checks what Verovio would draw against the spelling policy of
-// docs/specs/transpose-and-spelling.md with rules written out independently of src/lib/spelling.ts.
+// docs/specs/transpose-and-spelling.md with rules written out independently of packages/pepperscore/src/lib/spelling.ts.
 import createVerovioModule from 'verovio/wasm';
 import { VerovioToolkit } from 'verovio/esm';
-import { parseAbc, parseMei, parseMidi, parseMusicXml } from '../src/lib/import';
-import { buildViewMei, scanBaseline } from '../src/lib/notation/mei-view';
-import { spellBaseline } from '../src/lib/notation/mei-spelling';
-import { indexMusicXml, sliceMusicXml } from '../src/lib/notation/musicxml-chunks';
-import { staffNumbers } from '../src/lib/render';
-import { scoreForView, spellingSpecFor, type ScorePitchView } from '../src/lib/transpose';
-import { buildBaseTimeline, materializeTimeline } from '../src/lib/playback/timeline';
-import type { Score } from '../src/lib/score';
+import { parseAbc, parseMei, parseMidi, parseMusicXml } from '../packages/pepperscore/src/lib/import';
+import { buildViewMei, scanBaseline } from '../packages/pepperscore/src/lib/notation/mei-view';
+import { spellBaseline } from '../packages/pepperscore/src/lib/notation/mei-spelling';
+import { indexMusicXml, sliceMusicXml } from '../packages/pepperscore/src/lib/notation/musicxml-chunks';
+import { staffNumbers } from '../packages/pepperscore/src/lib/render';
+import { scoreForView, spellingSpecFor, type ScorePitchView } from '../packages/pepperscore/src/lib/transpose';
+import { buildBaseTimeline, materializeTimeline } from '../packages/pepperscore/src/lib/playback/timeline';
+import type { Score } from '../packages/pepperscore/src/lib/score';
 
 type Toolkit = InstanceType<typeof VerovioToolkit>;
 let toolkit: Promise<Toolkit> | undefined;

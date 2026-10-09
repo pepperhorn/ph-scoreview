@@ -25,7 +25,7 @@ try {
   const page = await browser.newPage();
   await page.goto(`http://127.0.0.1:${port}/validation/performance.html`);
   const result = await page.evaluate(async () => {
-    const { buildPerformanceTimeline, positionAtSeconds, eventsFromSeconds } = await import('/src/lib/playback/timeline.ts');
+    const { buildPerformanceTimeline, positionAtSeconds, eventsFromSeconds } = await import('/packages/pepperscore/src/lib/playback/timeline.ts');
     const note = (id, start, duration, midi, tieStart = false, tieStop = false) => ({ id, start, duration, voice: '1', pitches: [{ midi, step: 'C', octave: 4, alter: 0, tieStart, tieStop }] });
     const measure = (index, notes, directions = []) => ({ index, beats: 4, notes, directions });
     const part = (id, measures, clef = 'treble') => ({ id, name: id, clef, instrument: clef === 'percussion' ? 'drum-kit' : 'piano', measures });
@@ -61,7 +61,7 @@ try {
     const expr = buildPerformanceTimeline(expressive, { bpm: 120 });
     // <sound dynamics> is a percentage of forte (velocity 90).
     if (expr.events[0].velocity !== 52 || expr.events[1].velocity !== 90) throw new Error('Dynamics precedence failed');
-    const { parseMusicXml } = await import('/src/lib/import.ts');
+    const { parseMusicXml } = await import('/packages/pepperscore/src/lib/import.ts');
     const expressiveXml = await (await fetch('/validation/fixtures/expressive.musicxml')).text();
     const expressiveScore = parseMusicXml(expressiveXml);
     const performed = buildPerformanceTimeline(expressiveScore, { bpm: 90, musicXml: expressiveXml });
@@ -77,8 +77,8 @@ try {
   });
   assert.equal(result.cases, 9);
   const review = await page.evaluate(async ({ midiBytes }) => {
-    const { buildPerformanceTimeline, positionAtSeconds, eventsFromSeconds } = await import('/src/lib/playback/timeline.ts');
-    const { parseMusicXml, parseMidi, parseAbc } = await import('/src/lib/import.ts');
+    const { buildPerformanceTimeline, positionAtSeconds, eventsFromSeconds } = await import('/packages/pepperscore/src/lib/playback/timeline.ts');
+    const { parseMusicXml, parseMidi, parseAbc } = await import('/packages/pepperscore/src/lib/import.ts');
     const failures = [];
     const check = (condition, message, detail) => { if (!condition) failures.push(`${message}: ${JSON.stringify(detail)}`); };
     const approx = (a, b) => Math.abs(a - b) < 1e-6;
@@ -217,7 +217,7 @@ try {
     check(sost.diagnostics.some(d => d.includes('Sostenuto')) && sost.events[0].soundEndSeconds === 4, 'P7 sostenuto diagnosed, not synthesized', sost.diagnostics);
 
     // N: format-neutral navigation. MEI and ABC repeats, endings and jumps drive the same traversal as MusicXML.
-    const { parseMei } = await import('/src/lib/import.ts');
+    const { parseMei } = await import('/packages/pepperscore/src/lib/import.ts');
     const meiNote = (step, staff = 1) => `<staff n="${staff}"><layer n="1"><note pname="${step}" oct="4" dur="1"/></layer></staff>`;
     const meiDoc = (body, staves = 1) => `<?xml version="1.0"?><mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.0"><music><body><mdiv><score><scoreDef meter.count="4" meter.unit="4"><staffGrp>${Array.from({ length: staves }, (_, i) => `<staffDef n="${i + 1}" lines="5" clef.shape="G" clef.line="2"/>`).join('')}</staffGrp></scoreDef><section>${body}</section></score></mdiv></body></music></mei>`;
     const meiEndings = parseMei(meiDoc('<measure n="1" left="rptstart">' + meiNote('c') + '</measure><ending n="1"><measure n="2" right="rptend">' + meiNote('d') + '</measure></ending><ending n="2"><measure n="3">' + meiNote('e') + '</measure></ending><measure n="4" right="end">' + meiNote('f') + '</measure>'));
@@ -265,7 +265,7 @@ try {
     check(order(buildPerformanceTimeline({ ...mxlTwo, parts: mxlTwo.parts.slice(1), document: undefined }, { bpm: 120, fullScore: { ...mxlTwo, document: undefined } })) === '0,0,1', 'N8 MusicXML navigation read from the Score, not the XML', null);
 
     // R: the roadmap is an explicit, JSON-serializable list of segments with exact sub-bar positions.
-    const { buildRoadmap } = await import('/src/lib/playback/roadmap.ts');
+    const { buildRoadmap } = await import('/packages/pepperscore/src/lib/playback/roadmap.ts');
     const json = value => JSON.stringify(value);
     const seg = (fb, fbeat, tb, tbeat, extra = {}) => ({ from: { bar: fb, beat: fbeat }, to: { bar: tb, beat: tbeat }, ...extra });
     const endingsScore = parseMusicXml(single([
@@ -356,7 +356,7 @@ try {
 
     // T: the base timeline is built once, in beats at the opening tempo; BPM and transposition are applied while
     // playing and hidden parts only filter it, so none of them rebuild it.
-    const { buildBaseTimeline, deriveTimeline, materializeTimeline, playbackEventsFrom, playbackPositionAt, playbackDuration, playbackMidis } = await import('/src/lib/playback/timeline.ts');
+    const { buildBaseTimeline, deriveTimeline, materializeTimeline, playbackEventsFrom, playbackPositionAt, playbackDuration, playbackMidis } = await import('/packages/pepperscore/src/lib/playback/timeline.ts');
     const close = (a, b) => Math.abs(a - b) < 1e-9;
     const sameSegments = (a, b) => a.length === b.length && a.every((s, i) => s.noteId === b[i].noteId && close(s.startSeconds, b[i].startSeconds) && close(s.endSeconds, b[i].endSeconds));
     const sameEvents = (a, b) => a.length === b.length && a.every((e, i) => { const o = b[i]; return e.id === o.id && e.partId === o.partId && e.midi === o.midi && e.velocity === o.velocity && close(e.startSeconds, o.startSeconds) && close(e.endSeconds, o.endSeconds) && close(e.soundEndSeconds, o.soundEndSeconds) && sameSegments(e.visualSegments, o.visualSegments); });

@@ -1,4 +1,4 @@
-// Differential test of the Phase 2 streaming MusicXML reader (src/lib/notation/musicxml-source.ts) against the frozen
+// Differential test of the Phase 2 streaming MusicXML reader (packages/pepperscore/src/lib/notation/musicxml-source.ts) against the frozen
 // DOM importer it replaced (validation/reference/musicxml-dom.ts), in Chromium:
 //   - the Score model is deep-equal (keys, key order, values, undefined-valued keys),
 //   - the engraving text parses to the same document (one DOMParser + XMLSerializer round trip of the new text equals
@@ -92,8 +92,8 @@ try {
   await page.goto(`http://127.0.0.1:${port}/validation/performance.html`);
   await page.evaluate(async () => {
     const reference = await import('/validation/reference/musicxml-dom.ts');
-    const streaming = await import('/src/lib/notation/musicxml-source.ts');
-    const navigation = await import('/src/lib/notation/navigation.ts');
+    const streaming = await import('/packages/pepperscore/src/lib/notation/musicxml-source.ts');
+    const navigation = await import('/packages/pepperscore/src/lib/notation/navigation.ts');
     /** First difference between two values (keys in order, undefined-valued keys, Object.is), or ''. */
     const diff = (a, b, path = '$') => {
       if (Object.is(a, b)) return '';
@@ -153,9 +153,9 @@ try {
   const workerCases = [...inputs.filter(([label]) => label.startsWith('fixture ') || label.startsWith('synthetic')), ...cases.filter(([label]) => /timewise|multi-measure|pedals/.test(label)).map(([label, text]) => [`case ${label}`, text])];
   for (const [label, text] of workerCases) {
     const result = await page.evaluate(async ({ text, mxl }) => {
-      const { importScoreFile, importMusicXmlText, parseMusicXml } = await import('/src/lib/import.ts');
-      const { sha256Hex, textSource } = await import('/src/lib/file-state.ts');
-      const { buildBaseTimeline, registeredBaseTimeline } = await import('/src/lib/playback/timeline.ts');
+      const { importScoreFile, importMusicXmlText, parseMusicXml } = await import('/packages/pepperscore/src/lib/import.ts');
+      const { sha256Hex, textSource } = await import('/packages/pepperscore/src/lib/file-state.ts');
+      const { buildBaseTimeline, registeredBaseTimeline } = await import('/packages/pepperscore/src/lib/playback/timeline.ts');
       const problems = [];
       const diff = (a, b, path = '$') => {
         if (Object.is(a, b)) return '';

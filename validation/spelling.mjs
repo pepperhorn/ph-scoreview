@@ -1,4 +1,4 @@
-// Table-driven tests of the enharmonic speller (src/lib/spelling.ts), run in Node (the module is pure TypeScript with
+// Table-driven tests of the enharmonic speller (packages/pepperscore/src/lib/spelling.ts), run in Node (the module is pure TypeScript with
 // type-only imports, so Node's type stripping loads it directly), including a probe that runs every planned Verovio
 // transpose interval through Verovio 6.3.0 and checks the key signature and tonic spelling it produces.
 import assert from 'node:assert/strict';
@@ -7,7 +7,7 @@ import { VerovioToolkit } from 'verovio/esm';
 import {
   chooseKey, enharmonicFlip, keyFromFifths, keyFromTonic, planTranspose, transposeInterval, spellPitch, spellChordSymbol,
   spellingProfileFor, INSTRUMENT_SPELLING, INSTRUMENT_FAMILY, pitchClassOf,
-} from '../src/lib/spelling.ts';
+} from '../packages/pepperscore/src/lib/spelling.ts';
 
 let checks = 0;
 const eq = (actual, expected, message) => { checks++; assert.deepEqual(actual, expected, message); };

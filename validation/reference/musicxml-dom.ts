@@ -1,11 +1,11 @@
 // Frozen copy of the DOM-based MusicXML importer as of 74c121a (before Phase 2 of
 // docs/specs/large-score-performance.md). It is the oracle for validation/parser-diff.mjs: the streaming reader in
-// src/lib/notation/musicxml-source.ts must produce the same Score, an engraving text that parses to the same
+// packages/pepperscore/src/lib/notation/musicxml-source.ts must produce the same Score, an engraving text that parses to the same
 // document, the same feature inventory, navigation and playback marks. Do not "fix" this file; it records the old
 // behaviour. Served by Vite to the validation page (it needs DOMParser).
-import { gmProgramForNumber, gmProgramForVirtualName, instrumentForName, midiPitch, pitch, ucfirst, type BarlineNavigation, type Measure, type MeasureNavigation, type Part, type Score, type ScoreNote, type Transposition } from '../../src/lib/score';
-import { attachNavigation, endingNumbers, navigationWord } from '../../src/lib/notation/navigation';
-import { formatFraction, fraction, fromNumber } from '../../src/lib/playback/fraction';
+import { gmProgramForNumber, gmProgramForVirtualName, instrumentForName, midiPitch, pitch, ucfirst, type BarlineNavigation, type Measure, type MeasureNavigation, type Part, type Score, type ScoreNote, type Transposition } from '../../packages/pepperscore/src/lib/score';
+import { attachNavigation, endingNumbers, navigationWord } from '../../packages/pepperscore/src/lib/notation/navigation';
+import { formatFraction, fraction, fromNumber } from '../../packages/pepperscore/src/lib/playback/fraction';
 
 type SourceDiagnostic = { feature: string; status: 'retained' | 'partial' | 'unsupported'; location: string; message: string };
 

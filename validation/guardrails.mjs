@@ -2,8 +2,8 @@
 // out-of-memory message with its retry, and the large-file notice. Runs against the built app (`npm run build`).
 //
 // The large-file notice is triggered with a small fixture by lowering the byte threshold through
-// localStorage['scoreflow-large-file-bytes'] (see LARGE_FILE_BYTES_OVERRIDE_KEY in src/lib/large-file.ts). The
-// out-of-memory path uses the runtime's test hook localStorage['scoreflow-simulate-oom'] (src/lib/verovio-runtime.ts),
+// localStorage['scoreflow-large-file-bytes'] (see LARGE_FILE_BYTES_OVERRIDE_KEY in packages/pepperscore/src/lib/large-file.ts). The
+// out-of-memory path uses the runtime's test hook localStorage['scoreflow-simulate-oom'] (packages/pepperscore/src/lib/verovio-runtime.ts),
 // which fails the next Verovio probe or render once.
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
@@ -14,11 +14,11 @@ import { fileURLToPath } from 'node:url';
 import { chromium, firefox, webkit } from 'playwright-core';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-const dist = resolve(root, 'dist');
+const dist = resolve(root, 'apps/reader/dist');
 const engine = process.env.BROWSER || 'chromium';
 const launcher = { chromium, firefox, webkit }[engine];
 if (!launcher) throw new Error(`BROWSER must be chromium, firefox or webkit (got "${engine}")`);
-if (!process.env.READER_URL && !existsSync(resolve(dist, 'index.html'))) throw new Error('dist/index.html is missing: run `npm run build` before validation/guardrails.mjs');
+if (!process.env.READER_URL && !existsSync(resolve(dist, 'index.html'))) throw new Error('apps/reader/dist/index.html is missing: run `npm run build` before validation/guardrails.mjs');
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.wasm': 'application/wasm' };
 const server = createServer(async (request, response) => {
   const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);

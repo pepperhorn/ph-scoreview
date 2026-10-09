@@ -1,0 +1,37 @@
+{
+  "name": "pepperscore",
+  "version": "0.1.0",
+  "private": true,
+  "description": "An embeddable, browser-only music score reader for React: MusicXML, MXL, MIDI, MEI and ABC, engraved by Verovio, with playback.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./style.css": "./src/styles.css"
+  },
+  "scripts": {
+    "check": "tsc --noEmit -p ."
+  },
+  "peerDependencies": {
+    "react": ">=19",
+    "react-dom": ">=19"
+  },
+  "dependencies": {
+    "@fontsource/poppins": "^5.3.0",
+    "@tonejs/midi": "^2.0.28",
+    "abcjs": "^6.7.1",
+    "fflate": "^0.8.3",
+    "lucide-react": "^0.468.0",
+    "smplr": "^1.0.0",
+    "soundfont2": "^0.5.0",
+    "verovio": "6.3.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.1"
+  }
+}
