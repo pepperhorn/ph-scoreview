@@ -46,6 +46,8 @@ export default function OpenScoreDialog({ onClose, onOpenFile, onOpenAbc, onBrow
   }, []);
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
+      // Only while focus is in this dialog: another reader on the page keeps its own keys.
+      if (!panelRef.current?.contains(document.activeElement)) return;
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); return; }
       if (event.key !== 'Tab' || !panelRef.current) return;
       // Keep Tab inside the dialog.

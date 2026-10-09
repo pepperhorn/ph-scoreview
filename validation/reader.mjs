@@ -36,7 +36,7 @@ try {
       more: visible(document.querySelector('.header-more-toggle')),
       expanded: document.querySelector('.header-more-toggle')?.getAttribute('aria-expanded') ?? null,
       controls: document.querySelector('.header-more-toggle')?.getAttribute('aria-controls') ?? null,
-      panel: !!document.getElementById('header-secondary-panel'),
+      panel: !!document.getElementById(document.querySelector('.header-more-toggle')?.getAttribute('aria-controls')),
       secondary: Object.fromEntries(controls.filter(id => document.querySelector(`[data-header-control="${id}"]`)).map(id => [id, visible(document.querySelector(`[data-header-control="${id}"] :is(input, select, button)`))])),
       counts: [...document.querySelectorAll('[data-header-control]')].map(element => element.dataset.headerControl).join(','),
       fits: document.querySelector('.topbar').scrollWidth <= document.querySelector('.topbar').clientWidth,
@@ -47,7 +47,7 @@ try {
     const mobile = width <= breakpoint;
     assert.equal(layout.more, mobile, `More toggle is ${mobile ? 'shown' : 'hidden'} at ${width}px`);
     assert.equal(layout.expanded, 'false', `More starts collapsed at ${width}px`);
-    assert.equal(layout.controls, 'header-secondary-panel', 'More toggle controls the secondary panel');
+    assert.ok(layout.controls?.endsWith('-more'), 'More toggle controls the secondary panel');
     assert.equal(layout.panel, true, 'The secondary panel is always in the DOM');
     assert.ok(Object.keys(layout.secondary).length >= 3, `Secondary controls are rendered: ${JSON.stringify(layout.secondary)}`);
     for (const [id, shown] of Object.entries(layout.secondary)) assert.equal(shown, !mobile, `Secondary control ${id} is ${mobile ? 'collapsed' : 'inline'} at ${width}px`);
@@ -873,8 +873,8 @@ try {
   };
   const setOverhang = async value => {
     await pager.getByRole('button', { name: 'Options', exact: true }).click();
-    await pager.locator('#overhang').fill(String(value));
-    const label = await pager.locator('label[for=overhang] span').textContent();
+    await pager.locator('.drawer-panel input.ps-range').fill(String(value));
+    const label = await pager.locator('.drawer-panel .field-label span').textContent();
     await pager.locator('button[aria-label="Close options"]').click();
     return label;
   };
