@@ -6,12 +6,15 @@ export class DrumPlayer {
   private active = new Set<AudioBufferSourceNode>();
   private hats = new Set<AudioBufferSourceNode>();
 
-  constructor(private context: AudioContext, private manifest: DrumManifest) {}
+  constructor(private context: AudioContext, private manifest: DrumManifest, private manifestUrl: string) {}
+
+  /** Whether this kit has a sample for `note` (the GM soundfont plays the rest). */
+  covers(note: number) { return Object.hasOwn(this.manifest.notes, String(note)); }
 
   async loadNotes(notes: number[]) {
-    const needed = [...new Set(notes)].filter(note => this.manifest.notes[note] && !this.decoded.has(note));
+    const needed = [...new Set(notes)].filter(note => this.covers(note) && !this.decoded.has(note));
     await Promise.all(needed.map(async note => {
-      const response = await fetch(`/soundfonts/perfect-drums/${this.manifest.notes[note]}`);
+      const response = await fetch(new URL(this.manifest.notes[note], this.manifestUrl));
       if (!response.ok) throw new Error(`Could not load drum sample ${note}.`);
       this.decoded.set(note, await this.context.decodeAudioData(await response.arrayBuffer()));
     }));
@@ -39,10 +42,14 @@ export class DrumPlayer {
   dispose() { this.stop(); this.decoded.clear(); }
 }
 
-export async function loadDrumPlayer(context: AudioContext) {
-  const response = await fetch('/soundfonts/perfect-drums/manifest.json');
-  if (!response.ok) throw new Error('Could not load the Perfect Drums manifest.');
+/**
+ * A note-file kit: a manifest `{ name, notes: { midi: file } }` with files beside it (Perfect Drums, or a soundSources entry).
+ * Samples are one-shots (note length is ignored) and notes 42/44/46 choke each other like hi-hats, even for a melodic program.
+ */
+export async function loadNoteFilePlayer(context: AudioContext, manifestUrl: string) {
+  const response = await fetch(manifestUrl);
+  if (!response.ok) throw new Error('Could not load the drum kit manifest.');
   const manifest = await response.json() as DrumManifest;
-  if (!manifest.notes || !Object.keys(manifest.notes).length) throw new Error('The Perfect Drums manifest is empty.');
-  return new DrumPlayer(context, manifest);
+  if (!manifest.notes || !Object.keys(manifest.notes).length) throw new Error('The drum kit manifest is empty.');
+  return new DrumPlayer(context, manifest, manifestUrl);
 }

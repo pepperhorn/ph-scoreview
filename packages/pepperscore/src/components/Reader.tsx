@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { ChevronDown, ChevronLeft, ChevronRight, Ellipsis, Eye, EyeOff, FileMusic, Focus, FolderOpen, History, Hourglass, Minus, Pause, Play, Plus, RotateCcw, SlidersHorizontal, Square, Settings2, Trash2, VolumeX, X } from 'lucide-react';
-import { exampleScore, gmSoundfontLabel, GM_FAMILIES, GM_SOUNDS, instrumentDetails, type GmFamily, type GmSound, type Part, type Score } from '../lib/score';
+import { exampleScore, gmProgramForSoundfont, gmSoundfontLabel, GM_FAMILIES, GM_SOUNDS, instrumentDetails, type GmFamily, type GmSound, type Part, type Score } from '../lib/score';
 import { importMusicXmlText, importScoreFile, parseAbc } from '../lib/import';
 import { portraitBarLimit, renderScore, type MeasureGeometry, type RenderResult } from '../lib/render';
 import { partControlMetrics, type PartControlMetrics } from '../lib/part-controls';
@@ -20,6 +20,10 @@ import { SCORE_FILE_ACCEPT } from '../lib/score-files';
 import { PAGE_PAD_PX, pageOfSystem, systemPages, turnTarget, type ReadingPage, type SystemSpan } from '../lib/paging';
 import { fetchScoreFile, scoreUrlFromSearch } from '../lib/remote-score';
 import OpenScoreDialog from './OpenScoreDialog';
+import { loadPackInfo, resolveAssetBase, type SoundPackName } from '../lib/assets';
+import { fallbackSf2Url, planKey, planSound, type SoundPlan, type SoundRequest, type SoundSource } from '../lib/sounds';
+import { addDrumFallback, loadPlayers, type AudioPlayer } from '../lib/sound-players';
+import { ensureMusicFonts } from '../lib/asset-fonts';
 import '@fontsource/poppins/400.css';
 import '@fontsource/poppins/500.css';
 import '@fontsource/poppins/600.css';
@@ -35,7 +39,12 @@ const sampleScore = () => withEngravingDocument(exampleScore());
 const textFonts = { Sans: 'Poppins, Arial, sans-serif', Serif: 'Georgia, serif', Mono: 'ui-monospace, monospace' } as const;
 const sampleAbc = `X:1\nT:A little room to play\nM:4/4\nL:1/4\nQ:1/4=96\nK:C\nC E G c | B A G E | C E G c | d2 c2 | G E D C | E G A G | F E D B, | C4 |`;
 const playbackSound = (part: Part) => part.gmSoundfont || (part.instrument === 'drum-kit' ? 'drum-kit' : instrumentDetails(part.instrument).soundfont!);
-const audioKey = (part: Part) => playbackSound(part) === 'drum-kit' ? `drum-kit:${part.id}` : playbackSound(part);
+const soundRequest = (part: Part): SoundRequest => {
+  const sound = playbackSound(part);
+  return sound === 'drum-kit' ? { drums: true } : { drums: false, program: gmProgramForSoundfont(sound) ?? 1, name: sound };
+};
+/** Sample packs route each note to its part's gain, so parts share them; sf2 and note-file players are bound to one part's gain. */
+const audioKey = (plan: SoundPlan, part: Part) => plan.kind === 'sample-pack' ? planKey(plan) : `${planKey(plan)}|${part.id}`;
 const RESUME_TIMEOUT_MS = 1000;
 const SILENT_PLAYBACK_NOTICE = 'Audio couldn’t start on this device — playing silently.';
 // AudioContext.resume() can stay pending forever (no output device, autoplay policy), so give it a bounded wait.
@@ -47,17 +56,15 @@ const resumeAudio = async (context: AudioContext) => {
   finally { clearTimeout(timer); }
   return (context.state as AudioContextState) === 'running'; // re-read: resume() changes it
 };
-type AudioPlayer = {
-  fallback?: boolean;
-  start(options: { note: number; time: number; duration: number; velocity: number; destination?: AudioNode }): () => void;
-  stop(): void;
-  dispose(): void;
-  loadNotes?(notes: number[]): Promise<void>;
-};
 export type ReaderProps = {
   musicXml?: string;
   /** A public score file (MusicXML, MXL, MIDI, MEI or ABC) to download and open on load; `?score=<url>` on the page does the same. `musicXml` wins when both are given. */
   scoreUrl?: string;
+  /** Root of a pepperscore-sounds-<pack> layout; default: the jsDelivr copy of pepperscore-sounds-<soundPack>. */
+  assetBaseUrl?: string;
+  soundPack?: SoundPackName;
+  /** Sounds that replace the built-in ones for the programs (or drum kit) they claim; the first claiming entry wins. */
+  soundSources?: SoundSource[];
 };
 /** The widest control gutter a viewport can spare. */
 const maxControlGutter = (width: number) => Math.max(120, Math.round(width * .42));
@@ -83,7 +90,7 @@ const scrollBehavior = (): ScrollBehavior => window.matchMedia('(prefers-reduced
 /** Where the viewport centre sits in a measure, so a re-layout can put that point back at the centre. */
 type ZoomAnchor = { index: number; fx: number; fy: number };
 
-export default function Reader({ musicXml, scoreUrl }: ReaderProps) {
+export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = 'core', soundSources }: ReaderProps) {
   const [score, setScore] = useState<Score>(sampleScore);
   const [scoreRevision, setScoreRevision] = useState(0);
   const [prefs, setPrefs] = useState<Prefs>(defaults);
@@ -152,7 +159,7 @@ export default function Reader({ musicXml, scoreUrl }: ReaderProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const renderRef = useRef<RenderResult | null>(null);
-  const audioRef = useRef<{ context: AudioContext; master: DynamicsCompressorNode; players: Map<string, AudioPlayer[]>; trackGains: Map<string, GainNode>; mixScale: number } | null>(null);
+  const audioRef = useRef<{ context: AudioContext; master: DynamicsCompressorNode; players: Map<string, AudioPlayer[]>; partKeys: Map<string, string>; trackGains: Map<string, GainNode>; mixScale: number } | null>(null);
   const playRef = useRef<{ start: number; beat: number; frame: number; interval?: ReturnType<typeof setInterval> } | null>(null);
   const scheduledStopsRef = useRef<Array<{ stop: () => void; end: number }>>([]);
   const playRunRef = useRef(0);
@@ -173,6 +180,8 @@ export default function Reader({ musicXml, scoreUrl }: ReaderProps) {
   /** Destination of the last programmatic smooth scroll, so a turn or follow during it builds on where it lands. */
   const scrollTargetRef = useRef<{ top: number; left: number; at: number } | null>(null);
   const userScrollAtRef = useRef(-Infinity);
+  const assetBase = useMemo(() => resolveAssetBase(assetBaseUrl, soundPack), [assetBaseUrl, soundPack]);
+  useEffect(() => ensureMusicFonts(assetBase), [assetBase]);
   const hiddenSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
   const visibleScore = useMemo(() => {
     const parts = score.parts.filter(part => !hiddenSet.has(part.id));
@@ -795,7 +804,7 @@ export default function Reader({ musicXml, scoreUrl }: ReaderProps) {
       master.attack.value = .003;
       master.release.value = .18;
       master.connect(context.destination);
-      audioRef.current = { context, master, players: new Map(), trackGains: new Map(), mixScale: 1 };
+      audioRef.current = { context, master, players: new Map(), partKeys: new Map(), trackGains: new Map(), mixScale: 1 };
     }
     const audio = audioRef.current;
     if (!await resumeAudio(audio.context)) return null;
@@ -805,32 +814,23 @@ export default function Reader({ musicXml, scoreUrl }: ReaderProps) {
       if (!gain) { gain = audio.context.createGain(); gain.connect(audio.master); audio.trackGains.set(part.id, gain); }
       gain.gain.value = (trackVolumes[part.id] ?? 100) / 100 * audio.mixScale;
     }
-    for (const sound of [...new Set(visibleScore.parts.map(audioKey))]) {
-      const matching = visibleScore.parts.filter(part => audioKey(part) === sound);
-      const matchingIds = new Set(matching.map(part => part.id));
-      const notes = playbackMidis(timeline, matchingIds, prefs.semitones);
-      let players = audio.players.get(sound);
-      if (!players) {
-        if (sound.startsWith('drum-kit:')) {
-          const { loadDrumPlayer } = await import('../lib/drum-player');
-          players = [await loadDrumPlayer(audio.context)];
-        } else {
-          const { loadFluidPlayer } = await import('../lib/fluid-player');
-          players = [await loadFluidPlayer(audio.context, sound)];
-        }
-        audio.players.set(sound, players);
-      }
-      if (sound.startsWith('drum-kit:') && notes.some(note => note < 35 || note > 70) && !players.some(player => player.fallback)) {
-        const [{ Soundfont2 }, { default: soundfont2 }] = await Promise.all([import('smplr'), import('soundfont2')]);
-        const { SoundFont2 } = soundfont2;
-        const drum = Soundfont2(audio.context, { url: '/soundfonts/TimGM6mb.sf2', createSoundfont: data => new SoundFont2(data), destination: audio.trackGains.get(matching[0].id) });
-        await drum.ready;
-        if (!drum.instrumentNames.includes('Standard0')) throw new Error('The fallback drum soundfont has no standard kit.');
-        await drum.loadInstrument('Standard0');
-        players.push({ fallback: true, start: options => options.note < 35 || options.note > 70 ? drum.start(options) : () => {}, stop: () => drum.stop(), dispose: () => drum.dispose() });
-      }
+    const pack = await loadPackInfo(assetBase);
+    const page = document.baseURI;
+    const plans = new Map(visibleScore.parts.map(part => [part.id, planSound(soundRequest(part), { sources: soundSources, fluidr3: pack.fluidr3, base: assetBase, page })]));
+    audio.partKeys = new Map(visibleScore.parts.map(part => [part.id, audioKey(plans.get(part.id)!, part)]));
+    for (const key of new Set(audio.partKeys.values())) {
+      const matching = visibleScore.parts.filter(part => audio.partKeys.get(part.id) === key);
+      const plan = plans.get(matching[0].id)!;
+      const notes = playbackMidis(timeline, new Set(matching.map(part => part.id)), prefs.semitones);
+      const destination = audio.trackGains.get(matching[0].id)!;
+      let players = audio.players.get(key);
+      if (!players) { players = await loadPlayers(audio.context, plan, destination); audio.players.set(key, players); }
+      if (plan.kind === 'note-files' && plan.drums) await addDrumFallback(audio.context, players, notes, fallbackSf2Url(assetBase), destination);
       await Promise.all(players.map(player => player.loadNotes?.(notes)));
     }
+    // Players no visible part uses any more (another score, a changed instrument, a hidden part) are released.
+    const used = new Set(audio.partKeys.values());
+    for (const [key, players] of audio.players) if (!used.has(key)) { players.forEach(player => player.dispose()); audio.players.delete(key); }
     return audio;
   };
   const play = async () => {
@@ -848,7 +848,6 @@ export default function Reader({ musicXml, scoreUrl }: ReaderProps) {
       const now = audio ? () => audio.context.currentTime : () => performance.now() / 1000;
       const secondsStart = position;
       const started = now() + (audio ? .09 : 0);
-      const parts = new Map(visibleScore.parts.map(part => [part.id, part]));
       const bpm = prefs.bpm;
       const events = playbackEventsFrom(timeline, secondsStart, bpm, prefs.semitones);
       const duration = playbackDuration(timeline, bpm);
@@ -861,8 +860,7 @@ export default function Reader({ musicXml, scoreUrl }: ReaderProps) {
           if (time > horizon) break;
           const duration = Math.max(.01, event.soundEndSeconds - event.startSeconds);
           const destination = audio.trackGains.get(event.partId);
-          const part = parts.get(event.partId);
-          for (const player of part ? audio.players.get(audioKey(part)) || [] : []) scheduledStopsRef.current.push({ stop: player.start({ note: event.midi, time: Math.max(time, audio.context.currentTime), duration, velocity: event.velocity, destination }), end: time + duration });
+          for (const player of audio.players.get(audio.partKeys.get(event.partId) ?? '') || []) scheduledStopsRef.current.push({ stop: player.start({ note: event.midi, time: Math.max(time, audio.context.currentTime), duration, velocity: event.velocity, destination }), end: time + duration });
           nextEvent++;
         }
         scheduledStopsRef.current = scheduledStopsRef.current.filter(item => item.end > audio.context.currentTime);

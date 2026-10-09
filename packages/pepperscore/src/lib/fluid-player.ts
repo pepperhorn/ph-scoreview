@@ -45,10 +45,20 @@ export class FluidPlayer {
   dispose() { this.stop(); this.decoded.clear(); }
 }
 
-export async function loadFluidPlayer(context: AudioContext, name: string) {
-  const response = await fetch(`/soundfonts/fluidr3/${name}.json`);
-  if (!response.ok) throw new Error(`Could not load ${name} sound samples.`);
-  const pack = await response.json() as SamplePack;
-  if (pack.name !== name || !pack.samples || !Object.keys(pack.samples).length) throw new Error(`Invalid ${name} sound samples.`);
-  return new FluidPlayer(context, pack);
+const packs = new Map<string, Promise<SamplePack>>();
+
+/** A FluidR3-format sample pack (`{ name, samples: { midi: base64 mp3 } }`), fetched once per URL and shared by instances. */
+export async function loadFluidPlayer(context: AudioContext, url: string, name: string) {
+  let pack = packs.get(url);
+  if (!pack) {
+    pack = fetch(url).then(async response => {
+      if (!response.ok) throw new Error(`Could not load ${name} sound samples.`);
+      const json = await response.json() as SamplePack;
+      if (!json.samples || !Object.keys(json.samples).length) throw new Error(`Invalid ${name} sound samples.`);
+      return json;
+    });
+    pack.catch(() => packs.delete(url));
+    packs.set(url, pack);
+  }
+  return new FluidPlayer(context, await pack);
 }

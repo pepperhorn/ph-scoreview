@@ -59,6 +59,10 @@ export function gmProgramForVirtualName(library: string, name: string) {
 export function gmProgramForNumber(program: number) {
   return Number.isInteger(program) && program >= 1 && program <= 128 ? manifest.programs[program - 1] : undefined;
 }
+/** GM program (1-128) of a FluidR3 sound name. */
+export function gmProgramForSoundfont(name: string): number | undefined {
+  return manifest.programs.find(entry => entry.soundfont === name)?.program;
+}
 export function isGmSoundfont(name: string) {
   return manifest.programs.some(entry => entry.soundfont === name);
 }

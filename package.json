@@ -9,7 +9,8 @@
     "dev": "npm run dev -w pepperscore-reader",
     "build": "npm run build -w pepperscore-reader",
     "check": "npm run check -w pepperscore && npm run check -w pepperscore-reader",
-    "test:manifest": "node scripts/verify-gm-manifest.mjs",
+    "test:manifest": "node scripts/verify-gm-manifest.mjs && node validation/sound-packs.mjs",
+    "sounds:core": "node scripts/sounds-core.mjs",
     "test:example": "npm run test:manifest && npm run build && node tests/cielito-import.mjs",
     "test:spelling": "node validation/spelling.mjs",
     "test:document": "node validation/document.mjs",
@@ -24,7 +25,9 @@
     "test:transpose": "node validation/transpose.mjs",
     "test:guardrails": "node validation/guardrails.mjs",
     "test:guardrails:firefox": "BROWSER=firefox node validation/guardrails.mjs",
-    "test:validation": "npm run test:spelling && npm run test:transpose && npm run test:document && npm run test:parser-diff && npm run test:score-db && npm run test:performance && npm run test:reader && npm run test:chunks && npm run test:large && npm run test:guardrails",
+    "test:assets": "node validation/assets.mjs",
+    "test:sounds": "node validation/sounds.mjs",
+    "test:validation": "npm run test:assets && npm run test:sounds && npm run test:spelling && npm run test:transpose && npm run test:document && npm run test:parser-diff && npm run test:score-db && npm run test:performance && npm run test:reader && npm run test:chunks && npm run test:large && npm run test:guardrails",
     "test:browsers": "playwright-core install chromium firefox webkit"
   },
   "devDependencies": {
