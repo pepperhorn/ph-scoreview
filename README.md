@@ -1,6 +1,6 @@
 # Scoreflow
 
-A quiet, browser-only music reader built with Astro 7, React, and [Verovio](https://www.verovio.org/) 6.3 (bundled WASM, run in a Web Worker).
+Scoreflow is the demo site for the `pepperscore` package (`packages/pepperscore`), a browser-only music score reader for React built on [Verovio](https://www.verovio.org/) 6.3 (bundled WASM, run in a Web Worker). The site (Astro 7 + React) consumes the package like any other host, so it doubles as the playground and as the page the validation suites drive. To embed the reader in your own site, see [packages/pepperscore/README.md](packages/pepperscore/README.md).
 
 ## Run
 
@@ -11,18 +11,33 @@ npm run dev   # binds to 0.0.0.0
 
 Open the URL printed by Astro. To pick a port, run the reader workspace directly: `npm run dev -w pepperscore-reader -- --port 4400` (the root `dev` script does not forward extra arguments).
 
-The repository is an npm workspace: `packages/pepperscore` (the component), `packages/pepperscore-sounds-complete` (assets), `apps/reader` (this site).
+The repository is an npm workspace:
+
+| Workspace | Contents |
+| --- | --- |
+| `packages/pepperscore` | The component library (published; Vite library build to `dist/`: ESM, `.d.ts`, `style.css`, worker chunks) |
+| `packages/pepperscore-sounds-complete` | All assets: music fonts, instrument icons, Perfect Drums, TimGM6mb and all 128 FluidR3 sounds (published; the only copy of the assets in git) |
+| `packages/pepperscore-sounds-core` | The core asset subset, generated from complete by `npm run sounds:core` (published) |
+| `apps/reader` | This site (private). `astro dev` runs on the library sources; `astro build` uses the built `dist/` |
 
 | Script | Purpose |
 | --- | --- |
 | `npm run check` | Astro and TypeScript checks |
-| `npm run build` | Static site in `apps/reader/dist/` |
+| `npm run build` | The library (`packages/pepperscore/dist/`), then the static site (`apps/reader/dist/`) |
+| `npm run sounds:core` | Regenerates `packages/pepperscore-sounds-core` (Git-ignored files) from the complete pack |
+| `npm run pack:local` | Builds and writes `pepperscore-<version>.tgz` and `pepperscore-sounds-core-<version>.tgz` into the Git-ignored `.packs/`, for installing into another project by path (`pnpm add /path/to/.packs/pepperscore-0.1.0.tgz`) |
 | `npm run test:manifest` | Verifies the bundled GM sound packs |
-| `npm run test:validation` | Tracked suites: `test:document` (source retention, formats, identities), `test:parser-diff` (the streaming MusicXML reader against the former DOM importer), `test:score-db`, `test:performance` (playback timeline), `test:reader` (the built reader in Chromium) and `test:large` (a ~5 MB orchestral score). Run `npm run build` first. |
+| `npm run test:api` | Chrome presets, control overrides and settings mapping (Node); also checks the library never reads `window.location` |
+| `npm run test:css` | Every library CSS rule is scoped under `.pepperscore`, with no fixed positioning or viewport units |
+| `npm run test:assets` | Asset base URL resolution (Node) |
+| `npm run test:sounds` | Sound resolution order and `soundSources` plans (Node) |
+| `npm run test:embed` | The `/embed-test` host page in Chromium: style isolation, containment, focused keyboard, shared engine, chrome presets, callbacks, ref, persist, custom asset base and sound sources (`BROWSER=firefox` or `webkit` for the others) |
+| `npm run test:pack` | Packs `pepperscore`, installs the tarball into fresh Vite + React and Astro + React apps, builds both and checks the worker chunks and stylesheet. **Needs the network** (installs from the npm registry); publishes nothing |
+| `npm run test:validation` | Tracked suites (all of the above except `test:pack`, plus): `test:document` (source retention, formats, identities), `test:parser-diff` (the streaming MusicXML reader against the former DOM importer), `test:score-db`, `test:performance` (playback timeline), `test:reader` (the built reader in Chromium) and `test:large` (a ~5 MB orchestral score). Run `npm run build` first. |
 | `npm run test:reader:firefox`, `npm run test:reader:webkit` | Reader suite in Firefox or WebKit (`npm run test:browsers` installs the Playwright engines) |
 | `npm run test:example` | Local-only check of the Cielito Lindo MusicXML in Chromium; needs the Git-ignored `examples/` and `tests/` files |
 
-CI (`.github/workflows/ci.yml`) runs check, build, the manifest check and `test:validation` in Chromium. It also runs the reader suite in Firefox and WebKit. The small original fixtures in `validation/fixtures/` are tracked. Private scores stay in the ignored directories.
+CI (`.github/workflows/ci.yml`) runs check, build, the manifest check, `test:validation` in Chromium and `test:pack`. It also runs the reader, chunked-engraving and embedding suites in Firefox and WebKit. The browser suites make no remote requests (the demo and test pages pass a local `assetBaseUrl`); `test:pack` is the only step that needs the network. The small original fixtures in `validation/fixtures/` are tracked. Private scores stay in the ignored directories.
 
 ## Reading
 
@@ -61,28 +76,15 @@ MusicXML `<transpose>` and concert-score `<for-part>` intervals, and MEI `trans.
 
 When chord symbols are enabled, source symbols from MusicXML, MEI, and ABC appear above the staff. The separate **Infer chord symbols** checkbox is off by default; enabling it also labels recognized pitch stacks that have no source symbol.
 
-To open a song when mounting the React reader, pass MusicXML text directly through the `musicXml` prop. No base64 or URL encoding is needed:
-
-```tsx
-import Reader from 'pepperscore';
-import songXml from './scores/song.musicxml?raw';
-
-<Reader musicXml={songXml} />
-```
-
-For a `File` selected elsewhere in your app, use `await file.text()` and pass that string. Changing the prop loads the new score and resets playback.
-
-To open a publicly hosted score instead, link to the page with `?score=<url>` (URL-encoded), or pass the `scoreUrl` prop, which wins over the query parameter (`musicXml` wins over both):
+The demo page maps a `?score=<url>` query parameter (URL-encoded) to the component's `scoreUrl` prop; the component itself never reads `window.location`:
 
 ```
 https://your-host/?score=https%3A%2F%2Fexample.com%2Fscores%2Fsong.mxl
 ```
 
-```tsx
-<Reader scoreUrl="https://example.com/scores/song.mxl" />
-```
-
 The file is downloaded in the browser and opened like a chosen file, so any supported format works (MusicXML, MXL, MIDI, MEI, ABC). Its format comes from the URL's extension, or from the response's `Content-Type` when the URL has none. The host must allow cross-origin requests (CORS) unless it is the reader's own origin. Site-relative paths such as `?score=/scores/song.musicxml` also work.
+
+Embedding the reader in another React or Astro site (`<PepperScore musicXml={xml} />`, inline snippets, props, assets) is documented in [packages/pepperscore/README.md](packages/pepperscore/README.md).
 
 ### Known limitations
 
@@ -106,6 +108,17 @@ The [GM soundfont manifest](packages/pepperscore/src/lib/gm-soundfont-manifest.j
 The 128 FluidR3 GM programs use local, reduced MP3 sample packs from [gleitz/midi-js-soundfonts](https://github.com/gleitz/midi-js-soundfonts). The packs total about 47 MB on disk, but only sounds used by the current score load in the browser, and only their required samples are decoded. FluidR3 samples are CC BY 3.0; attribution and details of the reduction are in [`packages/pepperscore-sounds-complete/soundfonts/fluidr3/ATTRIBUTION.txt`](packages/pepperscore-sounds-complete/soundfonts/fluidr3/ATTRIBUTION.txt). To regenerate the packs from upstream, run `node scripts/prepare-fluidr3.mjs`.
 
 The gleitz General MIDI set has no drum-kit bank. Drum notes 35–70 use a 2 MB local pack extracted from [Perfect Drums V2](https://musical-artifacts.com/artifacts/8466), the fixed hi-hat successor to the user's [V1 suggestion](https://musical-artifacts.com/artifacts/6554). The source SF2 is 244 MB and is not loaded by the browser. [Attribution and license](packages/pepperscore-sounds-complete/soundfonts/perfect-drums/ATTRIBUTION.txt) and the [preparation script](scripts/prepare-perfect-drums.mjs) are included. Other drum notes fall back to the local `TimGM6mb.sf2` kit through smplr; its GPL-2 license is in `packages/pepperscore-sounds-complete/soundfonts/COPYING.txt`. Pitched parts use Web Audio sample players. Playback schedules a short window ahead, and track gains feed a shared compressor. All playback assets are served from this app's origin.
+
+## Publishing (manual)
+
+```bash
+npm run sounds:core
+npm publish -w pepperscore-sounds-core
+npm publish -w pepperscore-sounds-complete
+npm publish -w pepperscore        # prepack builds dist
+```
+
+Bump `SOUNDS_VERSION` in `packages/pepperscore/src/lib/assets.ts` together with both sounds package versions (`npm run test:manifest` checks it). CI never publishes.
 
 ## License notes
 

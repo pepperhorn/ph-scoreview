@@ -1,5 +1,5 @@
 {
   "extends": "astro/tsconfigs/strict",
-  "compilerOptions": { "jsx": "react-jsx", "jsxImportSource": "react", "types": ["vite/client"] },
+  "compilerOptions": { "jsx": "react-jsx", "jsxImportSource": "react", "types": ["vite/client"], "paths": { "pepperscore": ["../../packages/pepperscore/src/index.ts"] } },
   "include": [".astro/types.d.ts", "src/**/*"]
 }

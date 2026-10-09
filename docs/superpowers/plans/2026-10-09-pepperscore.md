@@ -23,7 +23,7 @@
 - All library CSS is scoped under **`.pepperscore`**; no rules on `:root`, `html`, `body` or bare `*` (`.pepperscore *` is allowed). No `position: fixed`, no `vh/dvh/vw` units, no viewport `@media` width/height queries.
 - Default `assetBaseUrl` is exactly `https://cdn.jsdelivr.net/npm/pepperscore-sounds-${soundPack}@${SOUNDS_VERSION}/`; `soundPack` defaults to `"core"`.
 - Verovio stays pinned at `6.3.0` with its WASM inlined in its worker.
-- Validation never touches the network: the demo and test pages pass a local `assetBaseUrl` (`/` or `/custom-assets`). `validation/reader.mjs` asserts "Scores and resources stay local".
+- The browser suites (`validation/`) make no remote requests: the demo and test pages pass a local `assetBaseUrl` (`/` or `/custom-assets`). `validation/reader.mjs` asserts "Scores and resources stay local". `npm run test:pack` (`scripts/pack-smoke.mjs`) is the exception: it installs react, vite and astro from the npm registry, so it needs the network. It runs in CI and publishes nothing.
 - Tests are **plain node scripts** under `validation/` (playwright-core + `node:assert/strict`), or node-only scripts importing pure `.ts` modules (Node 22 strips types; such modules may only have `import type` imports). No test framework.
 - `tests/` and `examples/` stay gitignored and are never committed. Do not edit them.
 - Each phase is one PR that leaves `main` green: `npm run check`, `npm run build`, `npm run test:manifest`, `npm run test:validation` (Chromium), and the Firefox/WebKit matrix (`test:reader`, `test:chunks`, plus `test:embed` from Phase 3).
