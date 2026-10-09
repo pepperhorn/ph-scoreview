@@ -1,7 +1,8 @@
 /**
  * Per-score memory: a small IndexedDB store of FileState v2 records keyed by source hash.
  *
- * Database `scoreflow`, object store `scores` (key path `source.sha256`, index `lastOpened`).
+ * Database `scoreflow` by default (`dbName`; storage.ts uses the reader's persist namespace), object store `scores`
+ * (key path `source.sha256`, index `lastOpened`). localStorage keys carry `keyPrefix` (default `scoreflow`).
  * The first read of a hash falls back to the localStorage v1 record and imports it; the
  * v1 copy is removed after the next successful IndexedDB write. When IndexedDB is
  * unavailable (private mode, blocked) records go to localStorage instead. All access is
@@ -22,9 +23,6 @@ export const SCORE_DB_NAME = 'scoreflow';
 export const SCORE_STORE = 'scores';
 export const MAX_SCORE_RECORDS = 200;
 export const SCORE_WRITE_DEBOUNCE_MS = 400;
-const fallbackKey = (hash: string) => `scoreflow-file-v2:${hash}`;
-const FALLBACK_PREFIX = 'scoreflow-file-v2:';
-const pendingKey = (hash: string) => `scoreflow-pending-v2:${hash}`;
 
 export type ScoreDbOptions = {
   /** IndexedDB factory; `null` forces the localStorage fallback. Defaults to `globalThis.indexedDB`. */
@@ -32,6 +30,8 @@ export type ScoreDbOptions = {
   /** Fallback and legacy storage; `null` disables it. Defaults to `globalThis.localStorage`. */
   storage?: Storage | null;
   dbName?: string;
+  /** Prefix of the localStorage keys (`<prefix>-file-v2:`, `<prefix>-pending-v2:`, legacy `<prefix>-file-v1:`). Defaults to `scoreflow`. */
+  keyPrefix?: string;
   maxRecords?: number;
   debounceMs?: number;
   /** Device class a migrated v1 zoom is attributed to. */
@@ -57,6 +57,11 @@ export function createScoreDb(options: ScoreDbOptions = {}): ScoreDb {
   const maxRecords = options.maxRecords ?? MAX_SCORE_RECORDS;
   const debounceMs = options.debounceMs ?? SCORE_WRITE_DEBOUNCE_MS;
   const device = options.device ?? deviceClass;
+  const prefix = options.keyPrefix ?? 'scoreflow';
+  const fallbackPrefix = `${prefix}-file-v2:`;
+  const fallbackKey = (hash: string) => `${fallbackPrefix}${hash}`;
+  const pendingKey = (hash: string) => `${prefix}-pending-v2:${hash}`;
+  const legacyKey = (hash: string) => legacyStorageKey(hash, prefix);
   const storage = (): Storage | null => {
     if (options.storage !== undefined) return options.storage;
     try { return globalThis.localStorage ?? null; } catch { return null; }
@@ -86,7 +91,7 @@ export function createScoreDb(options: ScoreDbOptions = {}): ScoreDb {
   };
   const readLegacy = (hash: string): FileState | null => {
     try {
-      const legacy = parseLegacyFileState(storage()?.getItem(legacyStorageKey(hash)), hash);
+      const legacy = parseLegacyFileState(storage()?.getItem(legacyKey(hash)), hash);
       return legacy && migrateFileState(legacy, device());
     } catch { return null; }
   };
@@ -102,7 +107,7 @@ export function createScoreDb(options: ScoreDbOptions = {}): ScoreDb {
   };
   const localKeys = (store: Storage) => {
     const hashes: string[] = [];
-    for (let index = 0; index < store.length; index++) { const key = store.key(index); if (key?.startsWith(FALLBACK_PREFIX)) hashes.push(key.slice(FALLBACK_PREFIX.length)); }
+    for (let index = 0; index < store.length; index++) { const key = store.key(index); if (key?.startsWith(fallbackPrefix)) hashes.push(key.slice(fallbackPrefix.length)); }
     return hashes;
   };
 
@@ -158,7 +163,7 @@ export function createScoreDb(options: ScoreDbOptions = {}): ScoreDb {
         try {
           await writeDb(db, state);
           // The legacy copy (and any fallback copy) is dropped once IndexedDB holds the record.
-          try { storage()?.removeItem(legacyStorageKey(state.source.sha256)); storage()?.removeItem(fallbackKey(state.source.sha256)); } catch { /* ignore */ }
+          try { storage()?.removeItem(legacyKey(state.source.sha256)); storage()?.removeItem(fallbackKey(state.source.sha256)); } catch { /* ignore */ }
           dropPending(state.source.sha256);
           continue;
         } catch { /* fall back below */ }

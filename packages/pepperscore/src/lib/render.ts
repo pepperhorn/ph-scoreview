@@ -2,7 +2,7 @@ import type { Part, Score, ScoreNote } from './score';
 import { inferChordSymbol } from './chords';
 import { spellChordSymbol } from './spelling';
 import { measureKey, scoreForView, spellingSpecFor } from './transpose';
-import { isSuperseded, nextRenderTicket, probeVerovio, renderVerovioPages, VerovioError, verovioBaseline } from './verovio-runtime';
+import { isRestarted, isSuperseded, nextRenderTicket, probeVerovio, renderVerovioPages, VerovioError, verovioBaseline } from './verovio-runtime';
 import { staffDefXmlId, type SourceDocument } from './notation/document';
 import type { BaselineInfo, ViewSpec } from './notation/mei-view';
 import { musicFontOptions } from './music-fonts';
@@ -42,6 +42,8 @@ export type RenderResult = { systemSize: number; staffCenters: number[]; scale: 
 export type RenderOptions = { font?: 'Bravura' | 'Petaluma'; textFont?: 'Sans' | 'Serif' | 'Mono'; transpose?: number; semitones?: number; scorePitch?: 'written' | 'concert';
   /** Spell in the enharmonic key (with `transpose`, applied when `score` is not already a `scoreForView` result). */
   flip?: boolean; generation?: number; hiddenPartIds?: string[];
+  /** The reader's Verovio channel (verovio-runtime openVerovioChannel); every engraving request of this render uses it. */
+  channel?: number;
   /**
    * Control gutter for a rendered staff height and staff pitch (px). The layout reserves the gutter for a
    * staff of `STAFF_UNITS * zoom` px before rendering; the final gutter uses the measured staves.
@@ -272,7 +274,8 @@ export async function renderScore(
   const document_ = score.document;
   if (!document_?.engravingBytes().length) throw new Error('This score has no engraving document.');
   const source: SourceDocument = document_;
-  const info = await verovioBaseline(source);
+  const channel = options.channel ?? 0;
+  const info = await verovioBaseline(source, channel);
   if (!isCurrent()) throw superseded();
   const ticket = nextRenderTicket();
   const viewportWidth = Math.max(240, container.clientWidth);
@@ -335,7 +338,7 @@ export async function renderScore(
       firstWidth: Math.max(least, Math.min(most, usableUnits)), restWidth: Math.max(least, Math.min(most, restUnits)) };
   };
   const probe = async (layout: Layout, natural = false) => {
-    const result = await probeVerovio(source, ticket, layout.view, natural ? verovioOptions(layout.firstWidth, true) : verovioOptions(layout.firstWidth), layout.bars);
+    const result = await probeVerovio(source, channel, ticket, layout.view, natural ? verovioOptions(layout.firstWidth, true) : verovioOptions(layout.firstWidth), layout.bars);
     if (!isCurrent()) throw superseded();
     return result.svg;
   };
@@ -343,7 +346,7 @@ export async function renderScore(
   /** Serialize pages of the whole layout; `pages` are one-based. */
   const fetchPages = async (layout: Layout, pages: number[]) => {
     if (!pages.length) return new Map<number, string>();
-    const result = await renderVerovioPages(source, ticket, layout.view, restOptions(layout), pages);
+    const result = await renderVerovioPages(source, channel, ticket, layout.view, restOptions(layout), pages);
     return new Map(result.pages.map(item => [item.page, item.svg]));
   };
 
@@ -704,7 +707,8 @@ export async function renderScore(
   const SUPERSEDED_RETRIES = 4;
   const load = (wanted: Slot[]) => {
     const promise = draw(wanted).then(() => { supersededDraws = 0; }, error => {
-      if (isSuperseded(error)) { stalled = true; return; }
+      // A renderer restarted twice under the draw (other readers running out of memory) stalls the same way.
+      if (isSuperseded(error) || isRestarted(error)) { stalled = true; return; }
       if (!alive()) return;
       for (const slot of wanted) if (!slot.svg) slot.failed = true;
       console.warn('Could not draw a score system:', error);

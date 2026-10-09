@@ -25,10 +25,8 @@ export const HEADER_CONTROLS = [
   { id: 'mixer', tier: 'secondary' },
 ] as const satisfies readonly HeaderControlConfig[];
 
-/** Viewport width (px) at or below which secondary controls collapse into the "More controls" dropdown. */
+/** Reader root width (px) at or below which secondary controls collapse into the "More controls" dropdown (`@container pepperscore (max-width:760px)` in styles.css). */
 export const MOBILE_HEADER_BREAKPOINT = 760;
-/** Media query matching the collapsed (mobile) header. */
-export const MOBILE_HEADER_QUERY = `(max-width: ${MOBILE_HEADER_BREAKPOINT}px)`;
 
 /** Stave scale (zoom) bounds shared by the header slider and pinch zoom live with the defaults in stave-scale.ts. */
 export { clampStaveScale, STAVE_SCALE_MAX, STAVE_SCALE_MIN, STAVE_SCALE_STEP } from './stave-scale';

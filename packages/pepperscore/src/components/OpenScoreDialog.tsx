@@ -46,6 +46,9 @@ export default function OpenScoreDialog({ onClose, onOpenFile, onOpenAbc, onBrow
   }, []);
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
+      // Only while focus is in this dialog's reader (a click on dialog text can leave it on the reader root):
+      // another reader on the page keeps its own keys.
+      if (!panelRef.current?.closest('.pepperscore')?.contains(document.activeElement)) return;
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); return; }
       if (event.key !== 'Tab' || !panelRef.current) return;
       // Keep Tab inside the dialog.
@@ -95,7 +98,7 @@ export default function OpenScoreDialog({ onClose, onOpenFile, onOpenAbc, onBrow
 
   const messageIsHint = message === NOT_ABC;
   return <div className={`open-dialog-backdrop ${dragging ? 'is-drag-over' : ''}`} onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }} {...dragProps}>
-    <section ref={panelRef} className="open-dialog" role="dialog" aria-modal="true" aria-labelledby={headingId}>
+    <section ref={panelRef} tabIndex={-1} className="open-dialog" role="dialog" aria-modal="true" aria-labelledby={headingId}>
       <div className="open-dialog-heading">
         <div className="open-dialog-title"><FolderOpen className="open-dialog-title-icon" size={18}/><h2 id={headingId} className="open-dialog-title-text">Open a score</h2></div>
         <button className="icon-button open-dialog-close" aria-label="Close open score dialog" onClick={onClose}><X size={19}/></button>

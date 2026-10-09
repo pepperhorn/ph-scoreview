@@ -1,20 +1,23 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { ChevronDown, ChevronLeft, ChevronRight, Ellipsis, Eye, EyeOff, FileMusic, Focus, FolderOpen, History, Hourglass, Minus, Pause, Play, Plus, RotateCcw, SlidersHorizontal, Square, Settings2, Trash2, VolumeX, X } from 'lucide-react';
 import { exampleScore, gmProgramForSoundfont, gmSoundfontLabel, GM_FAMILIES, GM_SOUNDS, instrumentDetails, type GmFamily, type GmSound, type Part, type Score } from '../lib/score';
-import { importMusicXmlText, importScoreFile, parseAbc } from '../lib/import';
+import { cancelImports, importMusicXmlText, importScoreFile, parseAbc } from '../lib/import';
 import { portraitBarLimit, renderScore, type MeasureGeometry, type RenderResult } from '../lib/render';
 import { partControlMetrics, type PartControlMetrics } from '../lib/part-controls';
-import { HEADER_CONTROLS, MOBILE_HEADER_QUERY, type HeaderControlId } from '../lib/header-controls';
+import { HEADER_CONTROLS, MOBILE_HEADER_BREAKPOINT, type HeaderControlId } from '../lib/header-controls';
 import { clampStaveScale, deviceClass, ENDLESS_STAVE_SCALE, minimumDefaultStaveScale, STAVE_SCALE_MAX, STAVE_SCALE_MIN, STAVE_SCALE_STEP } from '../lib/stave-scale';
-import { buildFileState, clampBpm, MAX_BPM, MIN_BPM, textSource, type FileSettings, type FileSource, type FileState, type ScoreView } from '../lib/file-state';
-import { sampleSource, scoreDb } from '../lib/score-db';
+import { buildFileState, clampBpm, MAX_BPM, MIN_BPM, textSource, type FileSource, type FileState, type ScoreView } from '../lib/file-state';
+import { sampleSource, type ScoreDb } from '../lib/score-db';
+import { defaults, sanitizeSavedPrefs, type Prefs } from '../lib/prefs';
+import { readerStorage, type PersistNamespace } from '../lib/storage';
 import { scoreForView, spokenKey, transposeReadout } from '../lib/transpose';
 import type { SpellingKey } from '../lib/spelling';
 import { baseTimelineFor, deriveTimeline, playbackDuration, playbackEventsFrom, playbackMidis, playbackPositionAt, type BaseTimeline } from '../lib/playback/timeline';
-import { disposeVerovio, isOutOfMemory, isSuperseded, prepareVerovio, reduceChunkSize } from '../lib/verovio-runtime';
+import { closeVerovioChannel, isOutOfMemory, isRestarted, isSuperseded, openVerovioChannel, prepareVerovio, reduceChunkSize } from '../lib/verovio-runtime';
+import { claimPlayback, getSharedAudio, releasePlayback, resumeAudio } from '../lib/audio-engine';
 import { isLargeFile, isLargeScore, largeScoreMessage, staffMeasures } from '../lib/large-file';
-import { forgetLastFile, isSameFile, lastFileToFile, readLastFile, readLastFileInfo, rememberLastFile, type LastFileInfo } from '../lib/last-file';
+import { isSameFile, lastFileToFile, type LastFileInfo } from '../lib/last-file';
 import { withEngravingDocument } from '../lib/notation/document';
 import { SCORE_FILE_ACCEPT } from '../lib/score-files';
 import { PAGE_PAD_PX, pageOfSystem, systemPages, turnTarget, type ReadingPage, type SystemSpan } from '../lib/paging';
@@ -29,9 +32,6 @@ import '@fontsource/poppins/500.css';
 import '@fontsource/poppins/600.css';
 import '@fontsource/poppins/700.css';
 
-/** Reader settings; `zoom` is the score's explicit stave scale, or null for the device default (see stave-scale.ts). */
-type Prefs = FileSettings & { zoom: number | null };
-const defaults: Prefs = { mode: 'portrait', notationFont: 'Bravura', barsPerLine: 'auto', overlap: 1, names: false, chordSymbols: false, inferChordSymbols: false, counts: false, subdivisions: false, annotationFont: 'Sans', bpm: 96, zoom: null, semitones: 0, scorePitch: 'written', keyFlip: false };
 /** Short key name for readouts: 'Gb', 'C#m'. */
 const keyName = (key: SpellingKey) => `${key.tonic}${key.mode === 'minor' ? 'm' : ''}`;
 const clampSemitones = (semitones: number) => Math.max(-12, Math.min(12, semitones));
@@ -45,17 +45,7 @@ const soundRequest = (part: Part): SoundRequest => {
 };
 /** Sample packs route each note to its part's gain, so parts share them; sf2 and note-file players are bound to one part's gain. */
 const audioKey = (plan: SoundPlan, part: Part) => plan.kind === 'sample-pack' ? planKey(plan) : `${planKey(plan)}|${part.id}`;
-const RESUME_TIMEOUT_MS = 1000;
 const SILENT_PLAYBACK_NOTICE = 'Audio couldn’t start on this device — playing silently.';
-// AudioContext.resume() can stay pending forever (no output device, autoplay policy), so give it a bounded wait.
-const resumeAudio = async (context: AudioContext) => {
-  if (context.state === 'running') return true;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try { await Promise.race([context.resume(), new Promise(resolve => { timer = setTimeout(resolve, RESUME_TIMEOUT_MS); })]); }
-  catch { /* a rejected resume means no sound; fall through to the state check */ }
-  finally { clearTimeout(timer); }
-  return (context.state as AudioContextState) === 'running'; // re-read: resume() changes it
-};
 export type ReaderProps = {
   musicXml?: string;
   /** A public score file (MusicXML, MXL, MIDI, MEI or ABC) to download and open on load; `?score=<url>` on the page does the same. `musicXml` wins when both are given. */
@@ -65,6 +55,17 @@ export type ReaderProps = {
   soundPack?: SoundPackName;
   /** Sounds that replace the built-in ones for the programs (or drum kit) they claim; the first claiming entry wins. */
   soundSources?: SoundSource[];
+  /** `"fill"` fills the parent's height; any CSS length fixes it; omitted, the reader fills its parent with a 480px floor. */
+  height?: string;
+  /** Extra classes on the `.pepperscore` root. */
+  className?: string;
+  /** Focus the reader on mount so page-turn keys work before any click. */
+  autoFocus?: boolean;
+  /**
+   * Namespace of the saved state (prefs, per-score records, last file; see lib/storage.ts); `false` saves nothing.
+   * Default `"pepperscore"`. `"scoreflow"` keeps the original Scoreflow names.
+   */
+  persist?: PersistNamespace;
 };
 /** The widest control gutter a viewport can spare. */
 const maxControlGutter = (width: number) => Math.max(120, Math.round(width * .42));
@@ -72,7 +73,7 @@ const maxControlGutter = (width: number) => Math.max(120, Math.round(width * .42
 const STAVE_SCALE_COMMIT_MS = 180;
 /** A per-score record read never holds up the first paint for longer than this. */
 const SCORE_RECORD_TIMEOUT_MS = 1200;
-const readScoreRecord = (source: FileSource) => Promise.race([
+const readScoreRecord = (scoreDb: ScoreDb, source: FileSource) => Promise.race([
   scoreDb.read(source).catch(() => null),
   new Promise<null>(resolve => setTimeout(() => resolve(null), SCORE_RECORD_TIMEOUT_MS)),
 ]);
@@ -82,15 +83,20 @@ const FOLLOW_SUSPEND_MS = 2500;
 const SCROLL_SETTLE_MS = 900;
 /** Guidance added to the renderer's out-of-memory message. */
 const OOM_GUIDANCE = 'Close other tabs, or try again with smaller sections.';
-/** "Not now" on the reopen offer lasts for this tab's session. */
-const REOPEN_DISMISSED_KEY = 'scoreflow-reopen-dismissed';
-const reopenDismissed = () => { try { return sessionStorage.getItem(REOPEN_DISMISSED_KEY) === '1'; } catch { return false; } };
+/** Shown when the renderer kept restarting under a draw (other readers on the page running out of memory). */
+const RENDERER_RESTARTED = 'The notation renderer restarted while drawing this score.';
+/** Draws re-run this many times after a renderer restart before the reader reports it. */
+const RESTART_REDRAWS = 2;
 const LAST_FILE_PRIVACY = 'The last opened file is kept only on this device (in this browser), so it can be reopened after a reload. It is never uploaded.';
 const scrollBehavior = (): ScrollBehavior => window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+const flag = (element: HTMLElement, key: 'psShort' | 'psTiny' | 'psWide', on: boolean) => { if (on) element.dataset[key] = ''; else delete element.dataset[key]; };
 /** Where the viewport centre sits in a measure, so a re-layout can put that point back at the centre. */
 type ZoomAnchor = { index: number; fx: number; fy: number };
 
-export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = 'core', soundSources }: ReaderProps) {
+export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = 'core', soundSources, height, className, autoFocus, persist = 'pepperscore' }: ReaderProps) {
+  const storage = useMemo(() => readerStorage(persist), [persist]);
+  const storageRef = useRef(storage);
+  storageRef.current = storage;
   const [score, setScore] = useState<Score>(sampleScore);
   const [scoreRevision, setScoreRevision] = useState(0);
   const [prefs, setPrefs] = useState<Prefs>(defaults);
@@ -154,11 +160,16 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
   const staveScaleInputRef = useRef<HTMLInputElement | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const uid = useId();
+  const panelId = `${uid}-more`;
+  const overhangId = `${uid}-overhang`;
   const [scoreWidth, setScoreWidth] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const renderRef = useRef<RenderResult | null>(null);
+  /** This reader's players and track gains on the page's shared AudioContext and master (audio-engine.ts). */
   const audioRef = useRef<{ context: AudioContext; master: DynamicsCompressorNode; players: Map<string, AudioPlayer[]>; partKeys: Map<string, string>; trackGains: Map<string, GainNode>; mixScale: number } | null>(null);
   const playRef = useRef<{ start: number; beat: number; frame: number; interval?: ReturnType<typeof setInterval> } | null>(null);
   const scheduledStopsRef = useRef<Array<{ stop: () => void; end: number }>>([]);
@@ -181,6 +192,11 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
   const scrollTargetRef = useRef<{ top: number; left: number; at: number } | null>(null);
   const userScrollAtRef = useRef(-Infinity);
   const assetBase = useMemo(() => resolveAssetBase(assetBaseUrl, soundPack), [assetBaseUrl, soundPack]);
+  // This reader's Verovio channel (opened in an effect and closed in its cleanup, so StrictMode's remount gets a new one):
+  // its imports and renders never supersede another reader's on the shared worker.
+  const channelRef = useRef(0);
+  const restartRedrawsRef = useRef(0);
+  useEffect(() => { const channel = openVerovioChannel(); channelRef.current = channel; return () => { cancelImports(channel); closeVerovioChannel(channel); }; }, []);
   useEffect(() => ensureMusicFonts(assetBase), [assetBase]);
   const hiddenSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
   const visibleScore = useMemo(() => {
@@ -219,27 +235,15 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
   }, [timelineOf, score, visibleScore, timelineKey, visibleKey]);
 
   useEffect(() => {
-    try {
-      // Zoom is per score (score-db), so a legacy global zoom is ignored.
-      const { zoom: _legacyZoom, ...saved } = JSON.parse(localStorage.getItem('scoreflow-prefs') || '{}');
-      const next = { ...defaults, ...saved, zoom: null };
-      if (typeof next.barsPerLine === 'number') next.barsPerLine = Math.max(1, Math.min(4, next.barsPerLine));
-      if (!Number.isInteger(next.semitones)) next.semitones = 0;
-      next.semitones = Math.max(-12, Math.min(12, next.semitones));
-      if (!['written', 'concert'].includes(next.scorePitch)) next.scorePitch = 'written';
-      if (typeof next.keyFlip !== 'boolean') next.keyFlip = false;
-      if (!['Sans', 'Serif', 'Mono'].includes(next.annotationFont)) next.annotationFont = 'Sans';
-      setPrefs(next);
-    }
-    catch { /* keep defaults */ }
+    setPrefs(sanitizeSavedPrefs(storage.readPrefs()));
     // A score link in the page URL opens like the scoreUrl prop (which wins when both are given).
     const remoteUrl = scoreUrl || scoreUrlFromSearch(window.location.search);
     // The last opened file is offered (never opened) on start, unless a score was supplied or one is already opening.
     let offerCancelled = false;
-    void readLastFileInfo().then(info => {
+    void storage.lastFile.readInfo().then(info => {
       if (offerCancelled) return;
       setLastFileInfo(info);
-      if (info && !musicXml && !remoteUrl && importRunRef.current === 0 && !reopenDismissed()) setReopenOffer(info);
+      if (info && !musicXml && !remoteUrl && importRunRef.current === 0 && !storage.reopenDismissed()) setReopenOffer(info);
     });
     // The sample's record (saved zoom and settings) is read before the first paint; a supplied score loads its own.
     if (musicXml) { setReady(true); return () => { offerCancelled = true; }; }
@@ -251,34 +255,39 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
     let cancelled = false;
     const sample = score;
     const src = sampleSource(sample);
-    void readScoreRecord(src).then(saved => {
+    void readScoreRecord(storageRef.current.scoreDb, src).then(saved => {
       if (cancelled) return;
       if (importRunRef.current === 0) loadScore(sample, src, saved);
       setReady(true);
     });
     return () => { cancelled = true; offerCancelled = true; };
   }, []);
-  useEffect(() => { if (ready) { const { zoom: _zoom, ...global } = prefs; localStorage.setItem('scoreflow-prefs', JSON.stringify(global)); } }, [prefs, ready]);
+  useEffect(() => { if (ready) { const { zoom: _zoom, ...global } = prefs; storage.writePrefs(global); } }, [prefs, ready, storage]);
   useEffect(() => {
     if (!ready || !source) return;
     const view = prefs.zoom !== null ? { zoom: prefs.zoom, zoomDevice: deviceClass() } : savedViewRef.current;
     savedViewRef.current = view;
-    scoreDb.write(buildFileState(source, prefs, score, hiddenIds, trackVolumes, view));
-  }, [ready, source, prefs, score, hiddenIds, trackVolumes]);
+    storage.scoreDb.write(buildFileState(source, prefs, score, hiddenIds, trackVolumes, view));
+  }, [ready, source, prefs, score, hiddenIds, trackVolumes, storage]);
   // Unload can cut an IndexedDB transaction short, so pending writes are also saved synchronously (write-ahead).
   useEffect(() => {
-    const persist = () => scoreDb.persistPending();
-    const hidden = () => { if (document.visibilityState === 'hidden') persist(); };
-    window.addEventListener('pagehide', persist);
+    const { scoreDb } = storage;
+    const persistPending = () => scoreDb.persistPending();
+    const hidden = () => { if (document.visibilityState === 'hidden') persistPending(); };
+    window.addEventListener('pagehide', persistPending);
     document.addEventListener('visibilitychange', hidden);
-    return () => { window.removeEventListener('pagehide', persist); document.removeEventListener('visibilitychange', hidden); void scoreDb.flush(); };
-  }, []);
+    return () => { window.removeEventListener('pagehide', persistPending); document.removeEventListener('visibilitychange', hidden); void scoreDb.flush(); };
+  }, [storage]);
   const update = (patch: Partial<Prefs>) => {
     if (['mode', 'notationFont', 'annotationFont', 'barsPerLine', 'names', 'chordSymbols', 'inferChordSymbols', 'counts', 'subdivisions', 'semitones', 'scorePitch', 'keyFlip'].some(key => key in patch && patch[key as keyof Prefs] !== prefs[key as keyof Prefs])) setPainting(true);
     if (patch.mode && patch.mode !== prefs.mode) viewportRef.current?.scrollTo({ left: 0, top: 0 });
     setPrefs(prev => ({ ...prev, ...patch }));
   };
+  // Another reader starting playback stops this one through the shared owner slot (audio-engine claimPlayback).
+  const stopRef = useRef<(reset?: boolean) => void>(() => {});
+  const playbackOwner = useMemo(() => ({ stop: () => stopRef.current(true) }), []);
   const stop = useCallback((reset = false) => {
+    releasePlayback(playbackOwner);
     playRunRef.current += 1;
     if (playRef.current) { cancelAnimationFrame(playRef.current.frame); clearInterval(playRef.current.interval); }
     playRef.current = null;
@@ -288,6 +297,7 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
     setLoadingAudio(false);
     if (reset) { setPosition(0); setActive(null); setActiveNotes([]); }
   }, []);
+  stopRef.current = stop;
   const changePitch = (patch: Partial<Prefs>) => { stop(true); update(patch); };
   const transposeBy = (delta: number) => changePitch({ semitones: clampSemitones(prefs.semitones + delta) });
   /** Show a score with its saved record (if any). The saved zoom applies only on the device class it was chosen on. */
@@ -315,27 +325,35 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
     void (async () => {
       try {
         // Read (and identified) in the import worker, like a file.
-        const job = importMusicXmlText(musicXml);
+        const job = importMusicXmlText(musicXml, 'MusicXML', channelRef.current);
         const src = await job.source;
-        const [saved, next] = await Promise.all([readScoreRecord(src), job.score]);
-        if (next.document) await prepareVerovio(next.document);
+        const [saved, next] = await Promise.all([readScoreRecord(storageRef.current.scoreDb, src), job.score]);
+        if (run !== importRunRef.current) return;
+        if (next.document) await prepareEngraving(next.document);
         if (run === importRunRef.current) loadScore(next, src, saved);
       } catch (e) {
-        if (run === importRunRef.current) { setPainting(false); setError(e instanceof Error ? e.message : 'Could not read the supplied MusicXML.'); }
+        if (run === importRunRef.current) { setPainting(false); showError(e, 'Could not read the supplied MusicXML.'); }
       }
     })();
     return () => { importRunRef.current++; };
   }, [musicXml]);
-  /** Show an error; an out-of-memory one gets guidance and a retry with smaller engraving chunks. */
+  /**
+   * Show an error; an out-of-memory one gets guidance and a retry with smaller engraving chunks. So does a renderer that
+   * kept restarting under this reader (other readers running out of memory), which has no raw message to show.
+   */
   const showError = (e: unknown, fallback: string, retry?: 'open' | 'draw') => {
-    if (retry && isOutOfMemory(e)) {
-      const message = `${(e as Error).message} ${OOM_GUIDANCE}`;
+    const restarted = isRestarted(e);
+    if (retry && (isOutOfMemory(e) || restarted)) {
+      const message = `${restarted ? RENDERER_RESTARTED : (e as Error).message} ${OOM_GUIDANCE}`;
       setOomRetry({ message, kind: retry });
       setError(message);
       return;
     }
-    setError(e instanceof Error ? e.message : fallback);
+    setError(restarted ? RENDERER_RESTARTED : e instanceof Error ? e.message : fallback);
   };
+  /** Import a score's engraving on this reader's channel; a renderer restart under it is tried once more. */
+  const prepareEngraving = (doc: NonNullable<Score['document']>) => prepareVerovio(doc, channelRef.current)
+    .catch(error => isRestarted(error) ? prepareVerovio(doc, channelRef.current) : Promise.reject(error));
   /** Opening any score retires the large-score notice and the reopen offer. */
   const startOpening = () => { largeNoticeArmedRef.current = false; setLargeNotice(''); setReopenOffer(null); };
   const readFile = async (file?: File) => {
@@ -352,17 +370,18 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
     try {
       // The import worker reads and hashes the file once and parses it off the main thread; the saved record is read
       // while the score imports, so its zoom is applied before the first paint.
-      const job = importScoreFile(file);
+      const job = importScoreFile(file, channelRef.current);
       const nextSource = await job.source;
-      const [saved, nextScore] = await Promise.all([readScoreRecord(nextSource), job.score]);
+      const [saved, nextScore] = await Promise.all([readScoreRecord(storageRef.current.scoreDb, nextSource), job.score]);
       // A compact file (an .mxl, a dense MIDI) can still be a large score: warn before engraving starts.
       if (!largeBytes && run === importRunRef.current && isLargeScore(nextScore)) setLargeNotice(largeScoreMessage(file.size, { phone, staffMeasures: staffMeasures(nextScore) }));
-      if (nextScore.document) await prepareVerovio(nextScore.document);
+      if (run !== importRunRef.current) return;
+      if (nextScore.document) await prepareEngraving(nextScore.document);
       if (run === importRunRef.current) {
         largeNoticeArmedRef.current = true;
         loadScore(nextScore, nextSource, saved);
         // Remembered after the import succeeds, off the open path; an unchanged file is not written again.
-        if (!isSameFile(lastFileInfo, file)) void rememberLastFile(file).then(info => { if (info) setLastFileInfo(info); });
+        if (!isSameFile(lastFileInfo, file)) void storageRef.current.lastFile.remember(file).then(info => { if (info) setLastFileInfo(info); });
       }
     }
     catch (e) { if (run === importRunRef.current) { setPainting(false); setLargeNotice(''); showError(e, 'Could not open this file.', 'open'); } }
@@ -392,22 +411,22 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
   };
   const reopenLastFile = async () => {
     setReopenOffer(null);
-    const record = await readLastFile();
+    const record = await storage.lastFile.read();
     if (!record) { setLastFileInfo(null); setError('The last opened file is no longer stored on this device.'); return; }
     void readFile(lastFileToFile(record));
   };
   const dismissReopen = () => {
     setReopenOffer(null);
-    try { sessionStorage.setItem(REOPEN_DISMISSED_KEY, '1'); } catch { /* hidden for this page only */ }
+    storage.dismissReopen();
   };
-  const forgetLast = () => { setReopenOffer(null); setLastFileInfo(null); void forgetLastFile(); };
+  const forgetLast = () => { setReopenOffer(null); setLastFileInfo(null); void storage.lastFile.forget(); };
   const readAbc = async (text: string) => {
     const run = ++importRunRef.current;
     startOpening();
     setPainting(true);
     try {
       const src = textSource('abc', text, 'Pasted ABC');
-      const [next, saved] = await Promise.all([parseAbc(text), readScoreRecord(src)]);
+      const [next, saved] = await Promise.all([parseAbc(text), readScoreRecord(storageRef.current.scoreDb, src)]);
       if (run === importRunRef.current) loadScore(next, src, saved);
     } catch (e) { if (run === importRunRef.current) { setPainting(false); setError(e instanceof Error ? e.message : 'Could not read ABC notation.'); } }
   };
@@ -417,7 +436,7 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
     setPainting(true);
     const sample = sampleScore();
     const src = sampleSource(sample);
-    const saved = await readScoreRecord(src);
+    const saved = await readScoreRecord(storageRef.current.scoreDb, src);
     if (run === importRunRef.current) loadScore(sample, src, saved);
   };
   const togglePart = (id: string) => {
@@ -538,16 +557,40 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
   useEffect(() => () => window.clearTimeout(zoomCommitRef.current), []);
   useEffect(() => {
     if (!moreOpen) return;
-    // Layout is CSS-only (styles.css); this listener just closes an open panel once the header widens past the breakpoint.
-    const compact = window.matchMedia(MOBILE_HEADER_QUERY);
-    const widened = () => { if (!compact.matches) setMoreOpen(false); };
-    compact.addEventListener('change', widened);
     const outside = (event: PointerEvent) => { if (!moreRef.current?.contains(event.target as Node)) setMoreOpen(false); };
-    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') { setMoreOpen(false); moreRef.current?.querySelector<HTMLButtonElement>('.header-more-toggle')?.focus(); } };
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape' && rootRef.current?.contains(event.target as Node)) { setMoreOpen(false); moreRef.current?.querySelector<HTMLButtonElement>('.header-more-toggle')?.focus(); } };
     document.addEventListener('pointerdown', outside);
     document.addEventListener('keydown', escape);
-    return () => { compact.removeEventListener('change', widened); document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape); };
+    return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape); };
   }, [moreOpen]);
+  // Sizes come from the root, not the viewport: short/tiny/wide replace the old max-height/orientation media queries,
+  // and a root wider than the header breakpoint closes the More panel.
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const observer = new ResizeObserver(() => {
+      const width = root.clientWidth, height = root.clientHeight, natural = root.dataset.psHeight === 'natural';
+      flag(root, 'psShort', !natural && height <= 500);
+      flag(root, 'psTiny', !natural && height <= 360);
+      flag(root, 'psWide', width >= height);
+      if (width > MOBILE_HEADER_BREAKPOINT) setMoreOpen(false);
+    });
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => { if (autoFocus) rootRef.current?.focus({ preventScroll: true }); }, []);
+  // Keys are handled on the root, so focus has to stay inside it: an overlay takes focus when it opens, and when one
+  // closes with focus lost to <body> (its close button unmounted) focus returns to the overlay still open, or the root.
+  const focusOnMount = useCallback((element: HTMLElement | null) => { element?.focus({ preventScroll: true }); }, []);
+  const overlaysRef = useRef('');
+  useEffect(() => {
+    const overlays = `${mixer}|${pickerPartId ?? ''}`, was = overlaysRef.current;
+    overlaysRef.current = overlays;
+    if (!was || was === overlays) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && active.isConnected) return;
+    rootRef.current?.querySelector<HTMLElement>('.instrument-picker-panel, .mixer-panel')?.focus({ preventScroll: true }) ?? rootRef.current?.focus({ preventScroll: true });
+  }, [mixer, pickerPartId]);
   useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
@@ -588,7 +631,7 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
         const availableHeight = Math.max(120, (viewportRef.current?.clientHeight || 600) - metaHeight - 70);
         // Without a user zoom the default ('fit': four bars in Vertical) is re-resolved for the viewport, so rotation re-fits.
         const requested = prefs.zoom ?? 'fit';
-        const result = await renderScore(canvas, displayScore, prefs.mode, prefs.names, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.chordSymbols, prefs.inferChordSymbols, availableHeight, requested, 0, { gutterFor: (stavePx, staffPitchPx) => metricsFor(stavePx, staffPitchPx).gutter, fitCap: ENDLESS_STAVE_SCALE[deviceClass()], fitFloor: minimumDefaultStaveScale(deviceClass()), font: prefs.notationFont, textFont: prefs.annotationFont, transpose: prefs.semitones, flip: prefs.keyFlip, scorePitch, hiddenPartIds: hiddenIds, generation, focusMeasure: anchor?.index });
+        const result = await renderScore(canvas, displayScore, prefs.mode, prefs.names, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.chordSymbols, prefs.inferChordSymbols, availableHeight, requested, 0, { gutterFor: (stavePx, staffPitchPx) => metricsFor(stavePx, staffPitchPx).gutter, fitCap: ENDLESS_STAVE_SCALE[deviceClass()], fitFloor: minimumDefaultStaveScale(deviceClass()), font: prefs.notationFont, textFont: prefs.annotationFont, transpose: prefs.semitones, flip: prefs.keyFlip, scorePitch, hiddenPartIds: hiddenIds, generation, focusMeasure: anchor?.index, channel: channelRef.current });
         if (disposed || generation !== renderRunRef.current) { result.dispose(); return; }
         renderRef.current = result;
         // Systems drawn later (scrolling, playback) change block sizes: re-page, and let the playhead find new notes.
@@ -616,9 +659,12 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
         clearStaveScalePreview();
         refreshPages();
         if (anchor) restoreZoomAnchor(anchor, result, prefs.mode);
+        restartRedrawsRef.current = 0;
         setError('');
         if (largeNoticeArmedRef.current) { largeNoticeArmedRef.current = false; setLargeNotice(''); }
       } catch (e) {
+        // The renderer restarted under this draw (another reader ran out of memory): draw again, a bounded number of times.
+        if (!disposed && isRestarted(e) && restartRedrawsRef.current < RESTART_REDRAWS) { restartRedrawsRef.current++; setResizeTick(value => value + 1); return; }
         if (!disposed && !isSuperseded(e)) {
           if (largeNoticeArmedRef.current) { largeNoticeArmedRef.current = false; setLargeNotice(''); }
           showError(e, 'Could not draw this score.', 'draw');
@@ -721,18 +767,15 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
     viewport.addEventListener('scroll', landed, { passive: true });
     return () => { viewport.removeEventListener('wheel', manual); viewport.removeEventListener('pointerdown', scrollbar); viewport.removeEventListener('scroll', landed); };
   }, []);
-  useEffect(() => {
-    const key = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && pickerPartId) { setPickerPartId(null); return; }
-      if (event.key === 'Escape' && mixer) { setMixer(false); return; }
-      if (pickerPartId || mixer || openDialog) return;
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes((event.target as HTMLElement).tagName)) return;
-      if (['PageDown', 'ArrowRight', 'ArrowDown', ' '].includes(event.key)) { event.preventDefault(); turn(1); }
-      if (['PageUp', 'ArrowLeft', 'ArrowUp'].includes(event.key)) { event.preventDefault(); turn(-1); }
-    };
-    window.addEventListener('keydown', key);
-    return () => window.removeEventListener('keydown', key);
-  }, [turn, mixer, pickerPartId, openDialog]);
+  // Keys act on the focused reader only: the handler sits on the root, so another instance (or the host page) never turns this one.
+  const onRootKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape' && pickerPartId) { setPickerPartId(null); return; }
+    if (event.key === 'Escape' && mixer) { setMixer(false); return; }
+    if (pickerPartId || mixer || openDialog) return;
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes((event.target as HTMLElement).tagName)) return;
+    if (['PageDown', 'ArrowRight', 'ArrowDown', ' '].includes(event.key)) { event.preventDefault(); turn(1); }
+    if (['PageUp', 'ArrowLeft', 'ArrowUp'].includes(event.key)) { event.preventDefault(); turn(-1); }
+  };
   // Where the playhead is when no engraved note marks it (an empty intro, rest bars, or an unmapped note):
   // the measure and its fraction, quantized to a 32nd of the bar so the effect below re-runs only as the line moves.
   const measureCursor = useMemo(() => {
@@ -795,16 +838,9 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
   // so playback falls back to a silent wall-clock run instead of hanging on a suspended AudioContext.
   const ensureAudio = async (timeline: BaseTimeline) => {
     if (!audioRef.current) {
-      let context: AudioContext;
-      try { context = new AudioContext(); } catch { return null; }
-      const master = context.createDynamicsCompressor();
-      master.threshold.value = -15;
-      master.knee.value = 12;
-      master.ratio.value = 4;
-      master.attack.value = .003;
-      master.release.value = .18;
-      master.connect(context.destination);
-      audioRef.current = { context, master, players: new Map(), partKeys: new Map(), trackGains: new Map(), mixScale: 1 };
+      const sharedAudio = getSharedAudio();
+      if (!sharedAudio) return null;
+      audioRef.current = { ...sharedAudio, players: new Map(), partKeys: new Map(), trackGains: new Map(), mixScale: 1 };
     }
     const audio = audioRef.current;
     if (!await resumeAudio(audio.context)) return null;
@@ -836,6 +872,7 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
   const play = async () => {
     if (playing || loadingAudio) { stop(); return; }
     const run = ++playRunRef.current;
+    claimPlayback(playbackOwner);
     try {
       setLoadingAudio(true);
       const timeline = await loadTimeline();
@@ -878,9 +915,10 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
       };
       playRef.current = { start: started, beat: secondsStart, frame: requestAnimationFrame(tick), interval };
       setPlaying(true);
-    } catch (e) { if (run === playRunRef.current) { setLoadingAudio(false); setError(e instanceof Error ? e.message : 'Audio could not start.'); } }
+    } catch (e) { if (run === playRunRef.current) { setLoadingAudio(false); releasePlayback(playbackOwner); setError(e instanceof Error ? e.message : 'Audio could not start.'); } }
   };
-  useEffect(() => () => { importRunRef.current++; playRunRef.current++; renderRef.current?.dispose(); disposeVerovio(); if (playRef.current) { cancelAnimationFrame(playRef.current.frame); clearInterval(playRef.current.interval); } scheduledStopsRef.current.splice(0).forEach(item => item.stop()); audioRef.current?.players.forEach(players => players.forEach(p => p.dispose())); audioRef.current?.context.close(); }, []);
+  // Unmount: release only this reader's players and track gains; the shared AudioContext and Verovio worker stay for other readers.
+  useEffect(() => () => { importRunRef.current++; playRunRef.current++; renderRef.current?.dispose(); if (playRef.current) { cancelAnimationFrame(playRef.current.frame); clearInterval(playRef.current.interval); } scheduledStopsRef.current.splice(0).forEach(item => item.stop()); audioRef.current?.players.forEach(players => players.forEach(p => p.dispose())); audioRef.current?.trackGains.forEach(gain => gain.disconnect()); audioRef.current = null; releasePlayback(playbackOwner); }, []);
   const openInstrumentPicker = (part: Part) => {
     const currentSound = playbackSound(part);
     const selected = GM_SOUNDS.find(sound => (sound.soundfont || 'drum-kit') === currentSound);
@@ -922,8 +960,8 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
     openFile: <button className="header-open-file" aria-label="Open score file" title="Open score file" aria-haspopup="dialog" aria-expanded={openDialog} onClick={() => { setDrawer(false); setMoreOpen(false); setOpenDialog(true); }}><FolderOpen size={17}/><span className="header-open-file-label">Open</span></button>,
     bpm: <label className="bpm-control"><span>BPM</span><input type="number" min={MIN_BPM} max={MAX_BPM} value={prefs.bpm} onChange={e => { stop(true); update({ bpm: clampBpm(Number(e.target.value) || 96) }); }}/></label>,
     mode: <div className="mode-toggle" role="group" aria-label="Reading mode">
-      <button aria-label="Vertical view" title="Vertical view" className={`mode-toggle-vertical ${prefs.mode === 'portrait' ? 'selected' : ''}`} onClick={() => update({ mode: 'portrait' })}><span className="mode-toggle-label-full">Vertical</span><span className="mode-toggle-label-short" aria-hidden="true">V</span></button>
-      <button aria-label="Endless view" title="Endless view" className={`mode-toggle-endless ${prefs.mode === 'landscape' ? 'selected' : ''}`} onClick={() => update({ mode: 'landscape' })}><span className="mode-toggle-label-full">Endless</span><span className="mode-toggle-label-short" aria-hidden="true">E</span></button>
+      <button aria-label="Vertical view" title="Vertical view" className={`mode-toggle-vertical ${prefs.mode === 'portrait' ? 'is-selected' : ''}`} onClick={() => update({ mode: 'portrait' })}><span className="mode-toggle-label-full">Vertical</span><span className="mode-toggle-label-short" aria-hidden="true">V</span></button>
+      <button aria-label="Endless view" title="Endless view" className={`mode-toggle-endless ${prefs.mode === 'landscape' ? 'is-selected' : ''}`} onClick={() => update({ mode: 'landscape' })}><span className="mode-toggle-label-full">Endless</span><span className="mode-toggle-label-short" aria-hidden="true">E</span></button>
     </div>,
     transpose: <div className="header-transpose" role="group" aria-label="Transpose">
       <span className="header-transpose-label" aria-hidden="true">Transpose</span>
@@ -951,7 +989,10 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
   const primaryControls = renderControls('primary');
   const secondaryControls = renderControls('secondary');
 
-  return <main className="app-shell">
+  const heightMode = height === 'fill' ? 'fill' : height ? 'fixed' : 'auto';
+  return <div ref={rootRef} className={`pepperscore ${className ?? ''}`.trim()} data-ps-height={heightMode} style={heightMode === 'fixed' ? { height } : undefined}
+    tabIndex={0} role="region" aria-label="Score reader" onKeyDown={onRootKeyDown}>
+  <main className="app-shell">
     <header className="topbar" aria-label="Playback transport">
       <input ref={fileRef} type="file" accept={SCORE_FILE_ACCEPT} hidden onChange={e => { readFile(e.target.files?.[0]); e.target.value = ''; }}/>
       <div className="transport">
@@ -959,14 +1000,14 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
         {/* Secondary controls render once. CSS lays them out inline above MOBILE_HEADER_BREAKPOINT and as the
             More dropdown (toggle shown, panel display:none until data-open) at or below it, so SSR paints the right arrangement. */}
         {secondaryControls.length > 0 && <div className="header-more" ref={moreRef} data-open={moreOpen ? 'true' : 'false'}>
-          <button className={`icon-button header-more-toggle ${moreOpen ? 'open' : ''}`} aria-label="More controls" title="More controls" aria-expanded={moreOpen} aria-controls="header-secondary-panel" onClick={() => setMoreOpen(open => !open)}><Ellipsis size={19}/></button>
-          <div id="header-secondary-panel" className="header-secondary-panel" role="group" aria-label="Secondary controls">{secondaryControls}</div>
+          <button className={`icon-button header-more-toggle ${moreOpen ? 'is-open' : ''}`} aria-label="More controls" title="More controls" aria-expanded={moreOpen} aria-controls={panelId} onClick={() => setMoreOpen(open => !open)}><Ellipsis size={19}/></button>
+          <div id={panelId} className="header-secondary-panel" role="group" aria-label="Secondary controls">{secondaryControls}</div>
         </div>}
       </div>
     </header>
 
     {mixer && <div className="mixer-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setMixer(false); }}>
-      <section className="mixer-panel" role="dialog" aria-modal="true" aria-label="Track mixer">
+      <section ref={focusOnMount} tabIndex={-1} className="mixer-panel" role="dialog" aria-modal="true" aria-label="Track mixer">
         <div className="mixer-heading"><div><SlidersHorizontal size={18}/><h2>Track mixer</h2></div><button className="icon-button" aria-label="Close track mixer" onClick={() => setMixer(false)}><X size={19}/></button></div>
         <p>Choose each track’s sound and volume.</p>
         <div className="mixer-tracks">{score.parts.map(part => <div className="mixer-track" key={part.id}><img src={instrumentDetails(part.instrument).icon} alt=""/><span className="mixer-track-name">{part.name}{hiddenSet.has(part.id) && <small>Muted · hidden</small>}</span><button className="icon-button mixer-visibility-button" aria-label={`${hiddenSet.has(part.id) ? 'Show' : 'Hide'} ${part.name}`} title={`${hiddenSet.has(part.id) ? 'Show' : 'Hide'} ${part.name}`} aria-pressed={!hiddenSet.has(part.id)} onClick={() => togglePart(part.id)} disabled={!hiddenSet.has(part.id) && visibleScore.parts.length <= 1}>{hiddenSet.has(part.id) ? <EyeOff size={17}/> : <Eye size={17}/>}</button><button className="mixer-voice-button" aria-label={`Voice for ${part.name}`} onClick={() => openInstrumentPicker(part)}>{part.gmSoundfont ? gmSoundfontLabel(part.gmSoundfont) : instrumentDetails(part.instrument).label}<ChevronDown size={14}/></button><label className="mixer-volume"><span>Volume</span><input type="range" min="0" max="100" value={trackVolumes[part.id] ?? 100} aria-label={`Volume for ${part.name}`} onChange={event => setTrackVolumes(previous => ({ ...previous, [part.id]: Number(event.target.value) }))}/><output>{trackVolumes[part.id] ?? 100}%</output></label></div>)}</div>
@@ -976,15 +1017,15 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
     {openDialog && <OpenScoreDialog onClose={() => setOpenDialog(false)} onOpenFile={file => void readFile(file)} onOpenAbc={text => void readAbc(text)} onBrowse={() => fileRef.current?.click()}/>}
 
     {pickerPart && <div className="instrument-picker-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setPickerPartId(null); }}>
-      <section className="instrument-picker-panel" role="dialog" aria-modal="true" aria-label={`Choose voice for ${pickerPart.name}`}>
+      <section ref={focusOnMount} tabIndex={-1} className="instrument-picker-panel" role="dialog" aria-modal="true" aria-label={`Choose voice for ${pickerPart.name}`}>
         <div className="instrument-picker-heading"><div><h2>{pickerPart.name}</h2><p>Choose a playback sound</p></div><button className="icon-button" aria-label="Close voice picker" onClick={() => setPickerPartId(null)}><X size={19}/></button></div>
-        <div className="instrument-family-filters" role="group" aria-label="Instrument families">{GM_FAMILIES.map(family => <button key={family} className={pickerFamily === family ? 'selected' : ''} aria-pressed={pickerFamily === family} onClick={() => { setPickerFamily(family); setPickerPage(0); }}>{family}</button>)}</div>
-        <div className="instrument-picker-grid">{pickerSounds.map(sound => <button key={sound.program ?? 'drum-kit'} className={playbackSound(pickerPart) === (sound.soundfont || 'drum-kit') ? 'selected' : ''} aria-pressed={playbackSound(pickerPart) === (sound.soundfont || 'drum-kit')} onClick={() => changeInstrument(pickerPart.id, sound)}><img src={sound.icon} alt=""/><span>{sound.label}</span></button>)}</div>
+        <div className="instrument-family-filters" role="group" aria-label="Instrument families">{GM_FAMILIES.map(family => <button key={family} className={pickerFamily === family ? 'is-selected' : ''} aria-pressed={pickerFamily === family} onClick={() => { setPickerFamily(family); setPickerPage(0); }}>{family}</button>)}</div>
+        <div className="instrument-picker-grid">{pickerSounds.map(sound => <button key={sound.program ?? 'drum-kit'} className={playbackSound(pickerPart) === (sound.soundfont || 'drum-kit') ? 'is-selected' : ''} aria-pressed={playbackSound(pickerPart) === (sound.soundfont || 'drum-kit')} onClick={() => changeInstrument(pickerPart.id, sound)}><img src={sound.icon} alt=""/><span>{sound.label}</span></button>)}</div>
         <div className="instrument-picker-pages"><button aria-label="Previous instruments" disabled={pickerPage === 0} onClick={() => setPickerPage(page => page - 1)}><ChevronLeft size={18}/></button><span>Page {pickerPage + 1} of {pickerPages}</span><button aria-label="Next instruments" disabled={pickerPage + 1 >= pickerPages} onClick={() => setPickerPage(page => page + 1)}><ChevronRight size={18}/></button></div>
       </section>
     </div>}
 
-    <section className={`reader-area ${prefs.mode} ${score.parts.length > 4 ? 'has-many-staves' : ''}`}>
+    <section className={`reader-area ps-${prefs.mode} ${score.parts.length > 4 ? 'has-many-staves' : ''}`}>
       <div className="edge-fade edge-start"/><div className="edge-fade edge-end"/>
       <div className="score-viewport" ref={viewportRef} onTouchStart={e => {
         if (score.parts.length > 4 && e.touches.length === 2) {
@@ -1031,17 +1072,17 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
       <div className="page-controls"><button aria-label="Previous view" onClick={() => turn(-1)}><ChevronLeft size={18}/></button><span>{prefs.mode === 'portrait' ? 'SCROLL TO READ' : 'SWIPE TO READ'}</span><button aria-label="Next view" onClick={() => turn(1)}><ChevronRight size={18}/></button></div>
     </section>
 
-    <button className={`drawer-handle ${drawer ? 'open' : ''}`} onClick={() => setDrawer(!drawer)} aria-expanded={drawer}><span className="handle-grip"/><span>{drawer ? 'Close options' : 'Options'}</span><ChevronDown size={16}/></button>
+    <button className={`drawer-handle ${drawer ? 'is-open' : ''}`} onClick={() => setDrawer(!drawer)} aria-expanded={drawer}><span className="handle-grip"/><span>{drawer ? 'Close options' : 'Options'}</span><ChevronDown size={16}/></button>
     {drawer && <div className="drawer-backdrop" onClick={() => setDrawer(false)}/>}
-    <aside className={`bottom-drawer ${drawer ? 'open' : ''}`} aria-hidden={!drawer}>
-      <div className="drawer-top"><div><div className="eyebrow">MAKE IT YOURS</div><h2>Reading options</h2></div><button className="icon-button" aria-label="Close options" onClick={() => setDrawer(false)}><X size={20}/></button></div>
+    <aside className={`bottom-drawer ${drawer ? 'is-open' : ''}`} aria-hidden={!drawer}>
+      <div className="drawer-top"><div><div className="ps-eyebrow">MAKE IT YOURS</div><h2>Reading options</h2></div><button className="icon-button" aria-label="Close options" onClick={() => setDrawer(false)}><X size={20}/></button></div>
       <div className="drawer-grid">
 
-        <div className="drawer-panel"><h3><Settings2 size={17}/> Reading</h3><div className="font-choice"><span>Notation font</span><div className="font-toggle" role="group" aria-label="Notation font"><button className={prefs.notationFont === 'Bravura' ? 'selected' : ''} aria-pressed={prefs.notationFont === 'Bravura'} onClick={() => update({ notationFont: 'Bravura' })}>Bravura</button><button className={prefs.notationFont === 'Petaluma' ? 'selected' : ''} aria-pressed={prefs.notationFont === 'Petaluma'} onClick={() => update({ notationFont: 'Petaluma' })}>Petaluma</button></div></div><div className="font-choice"><span>Stave text font</span><div className="font-toggle" role="group" aria-label="Stave text font">{(['Sans', 'Serif', 'Mono'] as const).map(font => <button key={font} className={prefs.annotationFont === font ? 'selected' : ''} aria-pressed={prefs.annotationFont === font} onClick={() => update({ annotationFont: font })}>{font}</button>)}</div></div><label className="field-label" htmlFor="overhang">Overhang <span>{prefs.overlap === 0 ? 'Off' : `${prefs.overlap} ${prefs.mode === 'portrait' ? (prefs.overlap === 1 ? 'system' : 'systems') : (prefs.overlap === 1 ? 'bar' : 'bars')}`}</span></label><input id="overhang" className="range" type="range" min="0" max="3" step="1" value={prefs.overlap} onChange={e => update({ overlap: Number(e.target.value) })}/><div className="switch-row"><span>Note names</span><button className={`switch ${prefs.names ? 'on' : ''}`} role="switch" aria-label="Note names" aria-checked={prefs.names} onClick={() => update({ names: !prefs.names })}/></div><div className="switch-row"><span>Chord symbols</span><button className={`switch ${prefs.chordSymbols ? 'on' : ''}`} role="switch" aria-label="Chord symbols" aria-checked={prefs.chordSymbols} onClick={() => update({ chordSymbols: !prefs.chordSymbols })}/></div><label className="switch-row inference-row"><span>Infer chord symbols</span><input type="checkbox" checked={prefs.inferChordSymbols} onChange={e => update({ inferChordSymbols: e.target.checked })}/></label><div className="switch-row"><span>Beat counts</span><button className={`switch ${prefs.counts ? 'on' : ''}`} role="switch" aria-label="Beat counts" aria-checked={prefs.counts} onClick={() => update({ counts: !prefs.counts })}/></div><div className="switch-row"><span>Count subdivisions</span><button className={`switch ${prefs.subdivisions ? 'on' : ''}`} role="switch" aria-label="Count subdivisions" aria-checked={prefs.subdivisions} onClick={() => update({ subdivisions: !prefs.subdivisions, counts: true })}/></div>{score.parts.length > 4 && <button className="text-action reset-staves" onClick={resetStaves}><RotateCcw size={15}/> Reset score staves</button>}</div>
+        <div className="drawer-panel"><h3><Settings2 size={17}/> Reading</h3><div className="font-choice"><span>Notation font</span><div className="font-toggle" role="group" aria-label="Notation font"><button className={prefs.notationFont === 'Bravura' ? 'is-selected' : ''} aria-pressed={prefs.notationFont === 'Bravura'} onClick={() => update({ notationFont: 'Bravura' })}>Bravura</button><button className={prefs.notationFont === 'Petaluma' ? 'is-selected' : ''} aria-pressed={prefs.notationFont === 'Petaluma'} onClick={() => update({ notationFont: 'Petaluma' })}>Petaluma</button></div></div><div className="font-choice"><span>Stave text font</span><div className="font-toggle" role="group" aria-label="Stave text font">{(['Sans', 'Serif', 'Mono'] as const).map(font => <button key={font} className={prefs.annotationFont === font ? 'is-selected' : ''} aria-pressed={prefs.annotationFont === font} onClick={() => update({ annotationFont: font })}>{font}</button>)}</div></div><label className="field-label" htmlFor={overhangId}>Overhang <span>{prefs.overlap === 0 ? 'Off' : `${prefs.overlap} ${prefs.mode === 'portrait' ? (prefs.overlap === 1 ? 'system' : 'systems') : (prefs.overlap === 1 ? 'bar' : 'bars')}`}</span></label><input id={overhangId} className="ps-range" type="range" min="0" max="3" step="1" value={prefs.overlap} onChange={e => update({ overlap: Number(e.target.value) })}/><div className="ps-switch-row"><span>Note names</span><button className={`ps-switch ${prefs.names ? 'is-on' : ''}`} role="switch" aria-label="Note names" aria-checked={prefs.names} onClick={() => update({ names: !prefs.names })}/></div><div className="ps-switch-row"><span>Chord symbols</span><button className={`ps-switch ${prefs.chordSymbols ? 'is-on' : ''}`} role="switch" aria-label="Chord symbols" aria-checked={prefs.chordSymbols} onClick={() => update({ chordSymbols: !prefs.chordSymbols })}/></div><label className="ps-switch-row inference-row"><span>Infer chord symbols</span><input type="checkbox" checked={prefs.inferChordSymbols} onChange={e => update({ inferChordSymbols: e.target.checked })}/></label><div className="ps-switch-row"><span>Beat counts</span><button className={`ps-switch ${prefs.counts ? 'is-on' : ''}`} role="switch" aria-label="Beat counts" aria-checked={prefs.counts} onClick={() => update({ counts: !prefs.counts })}/></div><div className="ps-switch-row"><span>Count subdivisions</span><button className={`ps-switch ${prefs.subdivisions ? 'is-on' : ''}`} role="switch" aria-label="Count subdivisions" aria-checked={prefs.subdivisions} onClick={() => update({ subdivisions: !prefs.subdivisions, counts: true })}/></div>{score.parts.length > 4 && <button className="text-action reset-staves" onClick={resetStaves}><RotateCcw size={15}/> Reset score staves</button>}</div>
         <div className="drawer-panel abc-panel"><h3><FileMusic size={17}/> ABC notation</h3><p>Paste ABC text here, or use the open button in the header for files and folders.</p><textarea value={abc} onChange={e => setAbc(e.target.value)} spellCheck={false} aria-label="ABC notation"/><button className="primary-action" onClick={() => void readAbc(abc)}>View notation <ChevronRight size={17}/></button><button className="text-action" onClick={loadSample}><FileMusic size={16}/> Open sample score</button>{lastFileInfo && <button className="text-action forget-last-file" title={LAST_FILE_PRIVACY} onClick={forgetLast}><Trash2 size={15}/> Forget last opened file</button>}</div>
-        <div className="drawer-panel pitch-panel"><h3><Settings2 size={17}/> Pitch</h3><div className="pitch-options"><div><span className="pitch-label">Transpose score</span><div className="semitone-control"><button aria-label="Transpose down a semitone" disabled={prefs.semitones <= -12} onClick={() => transposeBy(-1)}><Minus size={16}/></button><output aria-live={drawer ? 'polite' : 'off'}>{prefs.semitones > 0 ? '+' : ''}{prefs.semitones} semitones</output><button aria-label="Transpose up a semitone" disabled={prefs.semitones >= 12} onClick={() => transposeBy(1)}><Plus size={16}/></button><button className="pitch-reset" aria-label="Reset transposition" title="Reset transposition" disabled={prefs.semitones === 0 && !prefs.keyFlip} onClick={() => changePitch({ semitones: 0, keyFlip: false })}><RotateCcw size={15}/></button></div></div><div className="pitch-key"><span className="pitch-label">Key</span><div className="pitch-key-control"><output className="pitch-key-readout" aria-live={drawer ? 'polite' : 'off'}>{readout.text}</output><button className={`pitch-key-flip ${flipTo ? '' : 'is-disabled'}`} aria-label={flipLabel} title={flipLabel} aria-disabled={!flipTo} onClick={flipKey}><span className="pitch-key-flip-icon" aria-hidden="true">⇄</span><span className="pitch-key-flip-label">{flipText}</span></button></div></div>{!concertBasis && <div><span className="pitch-label">Score view</span><div className="font-toggle pitch-view" role="group" aria-label="Score pitch view"><button className={prefs.scorePitch === 'written' ? 'selected' : ''} aria-pressed={prefs.scorePitch === 'written'} onClick={() => changePitch({ scorePitch: 'written' })}>Transposing</button><button className={prefs.scorePitch === 'concert' ? 'selected' : ''} aria-pressed={prefs.scorePitch === 'concert'} onClick={() => changePitch({ scorePitch: 'concert' })}>Concert</button></div></div>}</div><p className="pitch-hint">{concertBasis ? 'This score is written at concert pitch, so it is shown at concert pitch. Playback stays at concert pitch.' : hasTransposingParts ? 'Transposing shows written parts; Concert shows sounding pitches. Playback stays at concert pitch.' : 'This score has no instrument transposition data, so both views match.'}</p></div>
+        <div className="drawer-panel pitch-panel"><h3><Settings2 size={17}/> Pitch</h3><div className="pitch-options"><div><span className="pitch-label">Transpose score</span><div className="semitone-control"><button aria-label="Transpose down a semitone" disabled={prefs.semitones <= -12} onClick={() => transposeBy(-1)}><Minus size={16}/></button><output aria-live={drawer ? 'polite' : 'off'}>{prefs.semitones > 0 ? '+' : ''}{prefs.semitones} semitones</output><button aria-label="Transpose up a semitone" disabled={prefs.semitones >= 12} onClick={() => transposeBy(1)}><Plus size={16}/></button><button className="pitch-reset" aria-label="Reset transposition" title="Reset transposition" disabled={prefs.semitones === 0 && !prefs.keyFlip} onClick={() => changePitch({ semitones: 0, keyFlip: false })}><RotateCcw size={15}/></button></div></div><div className="pitch-key"><span className="pitch-label">Key</span><div className="pitch-key-control"><output className="pitch-key-readout" aria-live={drawer ? 'polite' : 'off'}>{readout.text}</output><button className={`pitch-key-flip ${flipTo ? '' : 'is-disabled'}`} aria-label={flipLabel} title={flipLabel} aria-disabled={!flipTo} onClick={flipKey}><span className="pitch-key-flip-icon" aria-hidden="true">⇄</span><span className="pitch-key-flip-label">{flipText}</span></button></div></div>{!concertBasis && <div><span className="pitch-label">Score view</span><div className="font-toggle pitch-view" role="group" aria-label="Score pitch view"><button className={prefs.scorePitch === 'written' ? 'is-selected' : ''} aria-pressed={prefs.scorePitch === 'written'} onClick={() => changePitch({ scorePitch: 'written' })}>Transposing</button><button className={prefs.scorePitch === 'concert' ? 'is-selected' : ''} aria-pressed={prefs.scorePitch === 'concert'} onClick={() => changePitch({ scorePitch: 'concert' })}>Concert</button></div></div>}</div><p className="pitch-hint">{concertBasis ? 'This score is written at concert pitch, so it is shown at concert pitch. Playback stays at concert pitch.' : hasTransposingParts ? 'Transposing shows written parts; Concert shows sounding pitches. Playback stays at concert pitch.' : 'This score has no instrument transposition data, so both views match.'}</p></div>
       </div>
-      {error && <div className="error" role="alert"><span className="error-text">{error}</span>{oomButton}</div>}
+      {error && <div className="ps-error" role="alert"><span className="ps-error-text">{error}</span>{oomButton}</div>}
       <div className="drawer-foot">SPACE / PAGE DOWN · next view &nbsp;&nbsp; PAGE UP · previous view <span>FluidR3 GM · CC BY 3.0; TimGM drums · GPL-2</span></div>
     </aside>
     {!drawer && (notice || largeNotice || reopenOffer) && <div className="reader-notices">
@@ -1057,6 +1098,7 @@ export default function Reader({ musicXml, scoreUrl, assetBaseUrl, soundPack = '
       </div>}
       {notice && <div className="playback-notice" role="status"><VolumeX className="playback-notice-icon" size={16}/><span className="playback-notice-text">{notice}</span><button className="playback-notice-dismiss" onClick={() => setNotice('')} aria-label="Dismiss playback notice"><X size={16}/></button></div>}
     </div>}
-    {error && !drawer && <div className={`toast ${oomButton ? 'is-out-of-memory' : ''}`} role="alert"><span className="toast-text">{error}</span>{oomButton}<button className="toast-dismiss" onClick={() => setError('')} aria-label="Dismiss"><X size={16}/></button></div>}
-  </main>;
+    {error && !drawer && <div className={`ps-toast ${oomButton ? 'is-out-of-memory' : ''}`} role="alert"><span className="ps-toast-text">{error}</span>{oomButton}<button className="ps-toast-dismiss" onClick={() => setError('')} aria-label="Dismiss"><X size={16}/></button></div>}
+  </main>
+  </div>;
 }

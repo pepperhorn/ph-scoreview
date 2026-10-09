@@ -28,7 +28,8 @@ export type FileStateV1 = { version: 1; source: FileSource; settings: FileSettin
 export const MIN_BPM = 30, MAX_BPM = 240;
 /** The reader's BPM control range; saved and source tempos outside it are clamped. */
 export const clampBpm = (bpm: number) => Math.max(MIN_BPM, Math.min(MAX_BPM, bpm));
-export const legacyStorageKey = (hash: string) => `scoreflow-file-v1:${hash}`;
+/** The localStorage key of a v1 record; `prefix` is the reader's persist namespace (score-db keyPrefix). */
+export const legacyStorageKey = (hash: string, prefix = 'scoreflow') => `${prefix}-file-v1:${hash}`;
 const instruments = new Set<InstrumentId>(['piano', 'guitar', 'bassguitar', 'double-bass', 'drum-kit', 'alto-saxophone', 'tenor-saxophone', 'bari-saxophone', 'flute', 'clarinet', 'trumpet', 'trombone', 'violin', 'viola', 'cello', 'microphone']);
 const legacyInstruments: Record<string, InstrumentId> = { bass: 'double-bass', drums: 'drum-kit', saxophone: 'alto-saxophone' };
 const roundConstants = [

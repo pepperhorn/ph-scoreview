@@ -421,6 +421,34 @@ try {
   console.log('Document import: ID-less MusicXML identity and multi-measure rest expansion passed');
   console.log('Document import: timewise, MXL source bytes and hash, percussion, voices, ABC adapter and MEI identity passed');
   console.log('Document review regressions: drum kit program, MEI accidentals/key/meter changes, saved BPM clamp, MXL encoded path and size bound, ABC/MEI navigation engraving passed');
+  // Verovio channels (one per reader): an out-of-memory failure fails the rest of its own channel's requests (the same
+  // layout would fail again) while other channels' requests retry on the fresh worker, even when the failure repeats;
+  // a closed channel is never brought back by a late request.
+  const channels = await page.evaluate(async () => {
+    const runtime = await import('/packages/pepperscore/src/lib/verovio-runtime.ts');
+    const { importMusicXmlText } = await import('/packages/pepperscore/src/lib/import.ts');
+    const text = async name => (await fetch(`/validation/fixtures/${name}.musicxml`)).text();
+    const a = runtime.openVerovioChannel(), b = runtime.openVerovioChannel();
+    const docA = (await importMusicXmlText(await text('ensemble'), 'A', a).score).document;
+    const docB = (await importMusicXmlText(await text('expressive'), 'B', b).score).document;
+    await runtime.prepareVerovio(docA, a);
+    await runtime.prepareVerovio(docB, b);
+    const view = { breakEvery: 2, hiddenStaves: [], chordSymbols: false };
+    const options = { breaks: 'encoded', pageWidth: 1600, pageHeight: 60000, adjustPageHeight: true, scale: 100, xmlIdChecksum: true };
+    const outcome = promise => promise.then(() => 'ok', error => error.code || error.message);
+    // A fails three times in a row; its second request is queued behind the first, and so is B's.
+    localStorage.setItem('scoreflow-simulate-oom', '3');
+    const ticketA = runtime.nextRenderTicket();
+    const pending = [runtime.renderVerovioPages(docA, a, ticketA, view, options, [1]), runtime.renderVerovioPages(docA, a, ticketA, view, options, [2]), runtime.renderVerovioPages(docB, b, runtime.nextRenderTicket(), view, options, [1])];
+    const results = await Promise.all(pending.map(outcome));
+    runtime.closeVerovioChannel(b);
+    const late = await outcome(runtime.prepareVerovio(docB, b));
+    const open = globalThis.__pepperscoreVerovioChannels;
+    runtime.closeVerovioChannel(a);
+    return { results, late, open, afterAll: globalThis.__pepperscoreVerovioChannels };
+  });
+  assert.deepEqual(channels, { results: ['oom', 'oom', 'ok'], late: 'superseded', open: 1, afterAll: 0 }, JSON.stringify(channels));
+  console.log('Verovio channels: an out-of-memory failure stays in its channel, other channels retry, closed channels stay closed passed');
 } finally {
   await browser?.close();
   server.kill('SIGTERM');

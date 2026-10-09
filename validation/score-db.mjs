@@ -64,6 +64,11 @@ try {
     noStorage.write(state(hex(5), 1));
     await noStorage.flush();
     out.noStorage = await noStorage.read(source(hex(5)));
+    const prefixed = createScoreDb({ indexedDB: null, keyPrefix: 'nsx', debounceMs: 0 });
+    prefixed.write(state(hex(9), 4000));
+    await prefixed.flush();
+    out.prefixedKeys = Object.keys(localStorage).filter(key => key.includes(hex(9)));
+    out.prefixedExpected = [`nsx-file-v2:${hex(9)}`];
 
     // Eviction keeps the most recently opened records.
     const capped = createScoreDb({ dbName: 'scoreflow-test-evict', debounceMs: 0, maxRecords: 5 });
@@ -117,6 +122,7 @@ try {
   assert.equal(result.fallbackBackend, 'localstorage', 'Throwing IndexedDB falls back to localStorage');
   assert.equal(result.fallback, 1.6, 'Fallback round trip');
   assert.equal(result.noStorage, null, 'No storage at all is silent');
+  assert.deepEqual(result.prefixedKeys, result.prefixedExpected, 'keyPrefix namespaces the localStorage fallback');
   assert.deepEqual(result.cappedKeys, result.expectedKeys, 'IndexedDB evicts the oldest records past the cap');
   assert.deepEqual(result.cappedLocalKeys, result.expectedLocalKeys, 'localStorage fallback evicts past the cap');
   assert.equal(result.beforeFlush, false, 'Writes are debounced');

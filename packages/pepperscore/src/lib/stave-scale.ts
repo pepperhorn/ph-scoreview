@@ -19,6 +19,7 @@ export const clampStaveScale = (value: number, min = STAVE_SCALE_MIN) => Math.ma
 export const STAVE_SCALE_FLOOR = .02;
 
 /** Desktop: a fine pointer and a viewport wider than 850px. Everything else (phones, tablets) is compact. */
+// Known v1 limitation: this still queries the viewport, not the .pepperscore root (layout CSS sizes from the root).
 export const DESKTOP_QUERY = '(pointer: fine) and (min-width: 851px)';
 export const deviceClass = (): DeviceClass => typeof window !== 'undefined' && window.matchMedia?.(DESKTOP_QUERY).matches ? 'desktop' : 'compact';
 

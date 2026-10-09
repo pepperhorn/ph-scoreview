@@ -1,0 +1,16 @@
+---
+import EmbedTest from '../embed/EmbedTest';
+import 'pepperscore/style.css';
+import '../embed/host.css';
+---
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>pepperscore embed test</title></head>
+  <body class="host-page">
+    <h1 class="host-title">Host page</h1>
+    <p class="host-probe" id="host-probe">Host text keeps its own font and margins.</p>
+    <button class="host-button" type="button">Host button</button>
+    <EmbedTest client:load />
+    <p class="host-footer">End of the host page.</p>
+  </body>
+</html>
