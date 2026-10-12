@@ -74,3 +74,8 @@ jobs:
         timeout-minutes: 4
         env:
           BROWSER: ${{ matrix.browser }}
+      - name: Layout (explicit bars per line, no re-engrave loop)
+        run: npm run test:layout
+        timeout-minutes: 4
+        env:
+          BROWSER: ${{ matrix.browser }}

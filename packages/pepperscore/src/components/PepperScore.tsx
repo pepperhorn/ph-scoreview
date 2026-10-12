@@ -10,7 +10,7 @@ import { resolveChrome, type ChromePreset, type PepperScoreControls } from '../l
 import { clampStaveScale, deviceClass, ENDLESS_STAVE_SCALE, minimumDefaultStaveScale, STAVE_SCALE_MAX, STAVE_SCALE_MIN, STAVE_SCALE_STEP } from '../lib/stave-scale';
 import { buildFileState, clampBpm, MAX_BPM, MIN_BPM, textSource, type FileSource, type FileState, type ScoreView } from '../lib/file-state';
 import { sampleSource, type ScoreDb } from '../lib/score-db';
-import { defaults, sanitizeSavedPrefs, settingsToPrefs, viewToMode, type PepperScoreSettings, type Prefs } from '../lib/prefs';
+import { BARS_PER_LINE_MAX, defaults, sanitizeSavedPrefs, settingsToPrefs, viewToMode, type PepperScoreSettings, type Prefs } from '../lib/prefs';
 import { readerStorage, type PersistNamespace } from '../lib/storage';
 import { scoreForView, spokenKey, transposeReadout } from '../lib/transpose';
 import type { SpellingKey } from '../lib/spelling';
@@ -92,8 +92,8 @@ export type PepperScoreProps = {
   autoFocus?: boolean;
   ref?: React.Ref<PepperScoreHandle>;
 };
-/** The widest control gutter a viewport can spare. */
-const maxControlGutter = (width: number) => Math.max(120, Math.round(width * .42));
+/** The widest control gutter a viewport can spare: 42% of it, leaving the first system at least its 180px minimum (render.ts). */
+const maxControlGutter = (width: number) => Math.max(120, Math.min(Math.round(width * .42), width - 180));
 /** Keyboard steps on the stave scale slider commit once they settle; drags and pinches commit on release. */
 const STAVE_SCALE_COMMIT_MS = 180;
 /** A per-score record read never holds up the first paint for longer than this. */
@@ -112,6 +112,12 @@ const OOM_GUIDANCE = 'Close other tabs, or try again with smaller sections.';
 const RENDERER_RESTARTED = 'The notation renderer restarted while drawing this score.';
 /** Draws re-run this many times after a renderer restart before the reader reports it. */
 const RESTART_REDRAWS = 2;
+/**
+ * A draw superseded while it is still this reader's latest (an import of another score on its channel was in flight,
+ * e.g. the built-in sample's when a source prop arrives) is tried again after this delay, up to SUPERSEDED_REDRAWS times.
+ */
+const SUPERSEDED_REDRAW_MS = 250;
+const SUPERSEDED_REDRAWS = 40;
 const LAST_FILE_PRIVACY = 'The last opened file is kept only on this device (in this browser), so it can be reopened after a reload. It is never uploaded.';
 const scrollBehavior = (): ScrollBehavior => window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
 const flag = (element: HTMLElement, key: 'psShort' | 'psTiny' | 'psWide', on: boolean) => { if (on) element.dataset[key] = ''; else delete element.dataset[key]; };
@@ -237,6 +243,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   // its imports and renders never supersede another reader's on the shared worker.
   const channelRef = useRef(0);
   const restartRedrawsRef = useRef(0);
+  const supersededRedrawsRef = useRef(0);
   /** The score revision onReady last fired for. */
   const readyRevisionRef = useRef(-1);
   useEffect(() => { const channel = openVerovioChannel(); channelRef.current = channel; return () => { cancelImports(channel); closeVerovioChannel(channel); }; }, []);
@@ -654,13 +661,15 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport) return;
-    let width = viewport.clientWidth;
+    // Re-engrave on the border-box width: the client width also moves when the viewport's own scrollbar comes or goes,
+    // which a re-engrave can cause (content a few px taller or shorter), so following it could loop.
+    let width = viewport.offsetWidth;
     let height = viewport.clientHeight;
     const observer = new ResizeObserver(() => {
       // A height change keeps the layout but changes how many systems make a page.
       if (Math.abs(viewport.clientHeight - height) >= 1) { height = viewport.clientHeight; refreshPagesRef.current(); }
-      if (Math.abs(viewport.clientWidth - width) < 1) return;
-      width = viewport.clientWidth;
+      if (Math.abs(viewport.offsetWidth - width) < 1) return;
+      width = viewport.offsetWidth;
       setResizeTick(value => value + 1);
     });
     observer.observe(viewport);
@@ -725,6 +734,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
         refreshPages();
         if (anchor) restoreZoomAnchor(anchor, result, prefs.mode);
         restartRedrawsRef.current = 0;
+        supersededRedrawsRef.current = 0;
         setError('');
         if (scoreRevision > 0 && readyRevisionRef.current !== scoreRevision) {
           readyRevisionRef.current = scoreRevision;
@@ -734,6 +744,11 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
       } catch (e) {
         // The renderer restarted under this draw (another reader ran out of memory): draw again, a bounded number of times.
         if (!disposed && isRestarted(e) && restartRedrawsRef.current < RESTART_REDRAWS) { restartRedrawsRef.current++; setResizeTick(value => value + 1); return; }
+        // Superseded but still the latest draw: nothing else will draw this score, so try again once the channel is free.
+        if (!disposed && isSuperseded(e) && generation === renderRunRef.current && supersededRedrawsRef.current < SUPERSEDED_REDRAWS) {
+          supersededRedrawsRef.current++;
+          timer = window.setTimeout(() => { if (!disposed) setResizeTick(value => value + 1); }, SUPERSEDED_REDRAW_MS);
+        }
         if (!disposed && !isSuperseded(e)) {
           if (largeNoticeArmedRef.current) { largeNoticeArmedRef.current = false; setLargeNotice(''); }
           showError(e, 'Could not draw this score.', 'draw');
@@ -1040,7 +1055,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const barsLimit = portraitBarLimit(Math.max(180, (scoreWidth || 800) - controlMetrics.gutter) / renderedZoom, visibleScore);
   // Always rendered (disabled in Endless, same footprint) so a saved mode applied after hydration can't add/remove it and shift the header.
   const barsDisabled = prefs.mode !== 'portrait';
-  const barsSetting = <label className={`header-bars-setting ${barsDisabled ? 'is-disabled' : ''}`} title={barsDisabled ? 'Bars per line applies to Vertical view' : undefined}><span>Bars</span><select aria-label="Bars per line" title={barsDisabled ? 'Bars per line applies to Vertical view' : `Auto fits up to ${barsLimit} bars`} disabled={barsDisabled} aria-disabled={barsDisabled} value={prefs.barsPerLine} onChange={event => update({ barsPerLine: event.target.value === 'auto' ? 'auto' : Number(event.target.value) })}><option value="auto">Auto</option>{[1, 2, 3, 4].map(count => <option value={count} key={count}>{count}</option>)}</select></label>;
+  const barsSetting = <label className={`header-bars-setting ${barsDisabled ? 'is-disabled' : ''}`} title={barsDisabled ? 'Bars per line applies to Vertical view' : undefined}><span>Bars</span><select aria-label="Bars per line" title={barsDisabled ? 'Bars per line applies to Vertical view' : `Auto fits up to ${barsLimit} bars`} disabled={barsDisabled} aria-disabled={barsDisabled} value={prefs.barsPerLine} onChange={event => update({ barsPerLine: event.target.value === 'auto' ? 'auto' : Number(event.target.value) })}><option value="auto">Auto</option>{Array.from({ length: BARS_PER_LINE_MAX }, (_, index) => index + 1).map(count => <option value={count} key={count}>{count}</option>)}</select></label>;
 
   const oomButton = oomRetry && oomRetry.message === error ? <button className="oom-retry-button" onClick={retryOutOfMemory}>Try again with smaller sections</button> : null;
   const staveScale = zoomDraft ?? prefs.zoom ?? renderedZoom;
@@ -1091,6 +1106,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
 
   const heightMode = height === 'fill' ? 'fill' : height ? 'fixed' : natural ? 'natural' : 'auto';
   const compactLabel = playing || loadingAudio ? 'Stop playback' : 'Play score';
+  const compactPlay = chrome.compactPlay && loaded ? <button type="button" className={`ps-compact-play icon-button ${loadingAudio ? 'is-loading' : ''}`} aria-label={compactLabel} title={compactLabel} onClick={() => { if (playing || loadingAudio) stop(true); else void play(); }}>{playing || loadingAudio ? <Square size={15} fill="currentColor"/> : <Play size={15} fill="currentColor"/>}</button> : null;
   return <div ref={rootRef} className={`pepperscore ${className ?? ''}`.trim()} data-ps-height={heightMode} style={heightMode === 'fixed' ? { height } : undefined}
     tabIndex={0} role="region" aria-label={ariaLabel || (loaded && score.title ? `Score: ${score.title}` : 'Score reader')} onKeyDown={onRootKeyDown}>
   <main className={`app-shell ${chrome.drawer ? '' : 'no-drawer'}`}>
@@ -1105,9 +1121,11 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
           <div id={panelId} className="header-secondary-panel" role="group" aria-label="Secondary controls">{secondaryControls}</div>
         </div>}
       </div>
+      {compactPlay}
     </header>}
-    {/* Shown once a score has loaded: an empty or failed snippet has nothing to play. */}
-    {chrome.compactPlay && loaded && <button type="button" className={`ps-compact-play icon-button ${loadingAudio ? 'is-loading' : ''}`} aria-label={compactLabel} title={compactLabel} onClick={() => { if (playing || loadingAudio) stop(true); else void play(); }}>{playing || loadingAudio ? <Square size={15} fill="currentColor"/> : <Play size={15} fill="currentColor"/>}</button>}
+    {/* Shown once a score has loaded: an empty or failed snippet has nothing to play. With a header (minimal + controls)
+        it sits in the header's right end, above the sticky header rather than under it. */}
+    {!chrome.header && compactPlay}
 
     {chrome.mixer && mixer && <div className="mixer-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setMixer(false); }}>
       <section ref={focusOnMount} tabIndex={-1} className="mixer-panel" role="dialog" aria-modal="true" aria-label="Track mixer">

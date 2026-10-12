@@ -20,7 +20,9 @@ assert.equal(resolveChrome('none', { transport: true }).audio, true, 'a host can
 assert.deepEqual(settingsToPrefs({ noteNames: true, chordSymbols: true, inferChords: true, beatCounts: true, subdivisions: false, musicFont: 'Petaluma', staveFont: 'Serif', barsPerLine: 3, zoom: 1.5, semitones: 2, concert: true, overlap: 2 }),
   { names: true, chordSymbols: true, inferChordSymbols: true, counts: true, subdivisions: false, notationFont: 'Petaluma', annotationFont: 'Serif', barsPerLine: 3, zoom: 1.5, semitones: 2, scorePitch: 'concert', overlap: 2 });
 assert.deepEqual(settingsToPrefs({}), {}, 'only given keys are applied');
-assert.deepEqual(settingsToPrefs({ semitones: 40, overlap: 9, barsPerLine: 7, concert: false, zoom: null }), { semitones: 12, overlap: 3, barsPerLine: 4, scorePitch: 'written', zoom: null });
+assert.deepEqual(settingsToPrefs({ semitones: 40, overlap: 9, barsPerLine: 7, concert: false, zoom: null }), { semitones: 12, overlap: 3, barsPerLine: 7, scorePitch: 'written', zoom: null });
+assert.equal(settingsToPrefs({ barsPerLine: 12 }).barsPerLine, 8, 'barsPerLine is clamped to 1-8');
+assert.equal(settingsToPrefs({ barsPerLine: 0 }).barsPerLine, 1, 'barsPerLine is clamped to 1-8');
 assert.equal(viewToMode('vertical'), 'portrait'); assert.equal(viewToMode('endless'), 'landscape');
 assert.equal(defaults.mode, 'portrait');
 

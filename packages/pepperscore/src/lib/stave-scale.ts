@@ -49,4 +49,13 @@ export const HEIGHT_FIT_STAVES = 4;
  * DEFAULT_VERTICAL_BARS bars, Endless uses ENDLESS_STAVE_SCALE, and many staves take min(that, height fit); on compact
  * devices the Vertical result is then raised to minimumDefaultStaveScale (readability wins over fit). The default
  * is re-resolved on every layout (resize, rotation, mode), while a user-chosen zoom stays fixed and is the only one saved.
+ * An explicit bars per line replaces DEFAULT_VERTICAL_BARS in that fit (see BARS_FIT_MAX_STAVE_SCALE).
  */
+
+/**
+ * Without a user zoom, an explicit bars per line in Vertical view sets the stave scale: the largest at which that many
+ * bars fit the first system at their minimum width (render.ts barFitZoom), so N bars fill the width. This caps it: a
+ * single bar on a wide reader stays a large but sane staff, and its bar is stretched to fill the width instead. Busy
+ * bars on a narrow reader go down to STAVE_SCALE_MIN, below which the system is width-fitted.
+ */
+export const BARS_FIT_MAX_STAVE_SCALE = 2.5;
