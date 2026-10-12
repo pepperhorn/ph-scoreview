@@ -83,6 +83,12 @@ try {
   await page.evaluate(() => window.__clockSetViewA('endless'));
   await page.waitForFunction(() => document.querySelector('.clock-a .reader-area.ps-landscape .score-system svg .reader-note') && !document.querySelector('.clock-a .score-loading'), null, { timeout: 60000 });
   await waitPlaying('a', { same: beforeHandle });
+  // 5b. A transpose while the clock is paused re-engraves and keeps the playhead at the clock's time, not at 0.
+  await page.evaluate(() => { window.__oldSvgA = document.querySelector('.clock-a .score-system svg'); window.__clockRefs.a.current.transpose(2); });
+  await page.waitForFunction(() => !window.__oldSvgA.isConnected && document.querySelector('.clock-a .score-system svg .reader-note') && !document.querySelector('.clock-a .score-loading'), null, { timeout: 60000 });
+  await page.waitForTimeout(300);
+  assert.deepEqual(await playingIds('a'), beforeHandle, 'after a transpose the playhead is still on the note for the clock time');
+  assert.equal(await page.evaluate(() => window.__clockRefs.a.current.currentTime()), 7.7, 'the clock time is unchanged by a transpose');
 
   // 6. A new clock object on every host render keeps exactly one subscription (Review Focus 2).
   await page.evaluate(async () => {
@@ -97,6 +103,9 @@ try {
   await page.evaluate(() => { window.__clock.b.play(); window.__clock.b.advance(30); });
   await page.waitForFunction(() => document.querySelector('.clock-b .score-viewport').scrollLeft > 100, null, { timeout: 15000 });
   await page.evaluate(() => window.__clock.b.pause());
+  await page.waitForTimeout(100);
+  assert.deepEqual(await events('b', 'play'), [], 'clock play never fires onPlay');
+  assert.deepEqual(await events('b', 'stop'), [], 'clock pause never fires onStop');
 
   // 8. Self-driven silent reader C: seek/currentTime, onTimeUpdate about 10 Hz, seek while playing (Review Focus 5).
   await page.evaluate(() => window.__clockRefs.c.current.seek(3));
@@ -113,7 +122,6 @@ try {
   assert.ok(afterSeek >= 1 && afterSeek < 1.8, `currentTime() ${afterSeek} after seek(1) while playing`);
   assert.deepEqual(await page.evaluate(() => window.__clockEvents.filter(([w, t]) => w === 'c' && (t === 'play' || t === 'stop')).map(([, t]) => t)), ['play'], 'one play edge and no stop across a seek while playing');
   await page.evaluate(() => window.__clockRefs.c.current.stop());
-  assert.deepEqual(await events('a', 'play'), [], 'clock play/pause never fires onPlay');
 
   // 9. Nothing on the page created an AudioContext or fetched a sound, including clock reader B with audio left on (Review Focus 5).
   assert.equal(await page.evaluate(() => window.__contexts), 0, 'no AudioContext was created');

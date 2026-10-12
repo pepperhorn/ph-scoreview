@@ -385,7 +385,8 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     if (reset) { moveTo(0); setActive(null); setActiveNotes([]); }
   }, []);
   stopRef.current = stop;
-  const changePitch = (patch: Partial<Prefs>) => { stop(true); update(patch); };
+  // A host clock owns the playhead: a transpose keeps it at the clock's time (it does not rebuild the timeline, so nothing would repaint it).
+  const changePitch = (patch: Partial<Prefs>) => { if (!clockRef.current) stop(true); update(patch); };
   const transposeBy = (delta: number) => changePitch({ semitones: clampSemitones(prefs.semitones + delta) });
   /** Show a score with its saved record (if any). The saved zoom applies only on the device class it was chosen on. */
   const loadScore = (next: Score, nextSource: FileSource, saved: FileState | null) => {
