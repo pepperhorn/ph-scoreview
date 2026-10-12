@@ -7,6 +7,7 @@ export default PepperScore;
 export type { PepperScoreProps, PepperScoreHandle, PepperScoreReadyInfo } from './components/PepperScore';
 export type { ChromePreset, PepperScoreControls } from './lib/chrome';
 export type { PepperScoreSettings } from './lib/prefs';
+export type { ExternalClock, ClockEvent } from './lib/clock';
 export type { SoundSource } from './lib/sounds';
 export type { SoundPackName } from './lib/assets';
 export { SOUNDS_VERSION, defaultAssetBaseUrl } from './lib/assets';

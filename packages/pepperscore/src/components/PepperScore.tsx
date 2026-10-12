@@ -28,6 +28,7 @@ import { loadPackInfo, resolveAssetBase, warnAssetBase, type SoundPackName } fro
 import { fallbackSf2Url, planKey, planSound, type SoundPlan, type SoundRequest, type SoundSource } from '../lib/sounds';
 import { addDrumFallback, loadPlayers, type AudioPlayer } from '../lib/sound-players';
 import { ensureMusicFonts } from '../lib/asset-fonts';
+import type { ExternalClock } from '../lib/clock';
 
 /** Short key name for readouts: 'Gb', 'C#m'. */
 const keyName = (key: SpellingKey) => `${key.tonic}${key.mode === 'minor' ? 'm' : ''}`;
@@ -43,13 +44,23 @@ const soundRequest = (part: Part): SoundRequest => {
 /** Sample packs route each note to its part's gain, so parts share them; sf2 and note-file players are bound to one part's gain. */
 const audioKey = (plan: SoundPlan, part: Part) => plan.kind === 'sample-pack' ? planKey(plan) : `${planKey(plan)}|${part.id}`;
 const SILENT_PLAYBACK_NOTICE = 'Audio couldn’t start on this device — playing silently.';
+/** onTimeUpdate fires at most this often during self-driven playback (about 10 Hz). */
+const TIME_UPDATE_MS = 100;
 export type PepperScoreReadyInfo = { title: string; composer?: string; parts: Array<{ id: string; name: string }>; measures: number };
 export type PepperScoreHandle = {
-  /** Start playback (no-op while playing, or when the chrome loads no audio). */
+  /** Start playback (no-op while playing, when the chrome loads no audio, or with a `clock`). */
   play(): Promise<void>;
+  /** Stop and rewind (no-op with a `clock`: the host owns time). */
   stop(): void;
   /** Set the absolute transposition in semitones (clamped to -12…12), like `settings.semitones`. */
   transpose(semitones: number): void;
+  /**
+   * Self-driven: move the playhead to `seconds` (playback seconds at the current BPM); while playing, playback continues
+   * from there. With a `clock`: report `seconds` through `onSeek` (the host seeks its clock).
+   */
+  seek(seconds: number): void;
+  /** Seconds of the playhead: `clock.now()` with a `clock`, else the self-driven position. */
+  currentTime(): number;
 };
 export type PepperScoreProps = {
   /** Score sources; the first present wins, in this order. */
@@ -88,6 +99,18 @@ export type PepperScoreProps = {
   onPlay?(): void;
   onStop?(): void;
   onError?(error: Error): void;
+  /**
+   * A host clock that drives the playhead (seconds from score beat 0, at the score's own tempo; the BPM setting is ignored).
+   * With a clock, the reader never plays sound or runs its own transport, and the playhead shows for every chrome preset.
+   * Pass a stable object (a new object re-subscribes).
+   */
+  clock?: ExternalClock;
+  /** `false` never loads or schedules sound: self-driven playback runs silently on wall-clock time. Default `true`. */
+  audio?: boolean;
+  /** With a `clock`: a click on a note or measure (or `handle.seek`) reports its time here instead of seeking. */
+  onSeek?(seconds: number): void;
+  /** Self-driven playback time, about 10 times a second while playing. */
+  onTimeUpdate?(seconds: number): void;
   /** Focus the reader on mount so page-turn keys work before any click. */
   autoFocus?: boolean;
   ref?: React.Ref<PepperScoreHandle>;
@@ -124,7 +147,7 @@ const flag = (element: HTMLElement, key: 'psShort' | 'psTiny' | 'psWide', on: bo
 /** Where the viewport centre sits in a measure, so a re-layout can put that point back at the centre. */
 type ZoomAnchor = { index: number; fx: number; fy: number };
 
-export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: preset = 'full', controls, view, height, className, ariaLabel, settings, persist, assetBaseUrl, soundPack = 'core', soundSources, onReady, onPlay, onStop, onError, autoFocus, ref }: PepperScoreProps) {
+export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: preset = 'full', controls, view, height, className, ariaLabel, settings, persist, assetBaseUrl, soundPack = 'core', soundSources, onReady, onPlay, onStop, onError, clock, audio: withAudio = true, onSeek, onTimeUpdate, autoFocus, ref }: PepperScoreProps) {
   const chrome = useMemo(() => resolveChrome(preset, controls), [preset, controls?.mixer, controls?.openFile, controls?.drawer, controls?.transport, controls?.viewToggle, controls?.zoom]);
   const storage = useMemo(() => readerStorage(persist ?? (preset === 'full' ? 'pepperscore' : false)), [persist, preset]);
   // Host settings and view as prefs; only keys the host gives are applied (on mount, on each score load, and when they change).
@@ -135,8 +158,10 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     return { ...mapped, ...(view ? { mode: viewToMode(view) } : {}) };
   }, [settingsKey, view]);
   const hostPrefsRef = useRef(hostPrefs);
-  const callbacks = useRef({ onReady, onPlay, onStop, onError });
-  callbacks.current = { onReady, onPlay, onStop, onError };
+  const callbacks = useRef({ onReady, onPlay, onStop, onError, onSeek, onTimeUpdate });
+  callbacks.current = { onReady, onPlay, onStop, onError, onSeek, onTimeUpdate };
+  const clockRef = useRef(clock);
+  clockRef.current = clock;
   const natural = !height && preset !== 'full';
   const storageRef = useRef(storage);
   storageRef.current = storage;
@@ -177,6 +202,9 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const [active, setActive] = useState<string | null>(null);
   const [activeNotes, setActiveNotes] = useState<string[]>([]);
   const [position, setPosition] = useState(0);
+  /** The playhead seconds as of the last move (state lags a render; the handle's currentTime() reads this). */
+  const positionRef = useRef(0);
+  const moveTo = useCallback((seconds: number) => { positionRef.current = seconds; setPosition(seconds); }, []);
   const [ready, setReady] = useState(false);
   // Whether a score has loaded. Full chrome starts with the sample; the others show an empty frame until their source
   // loads. The first render depends only on the chrome, never on source props, so a client-only source (the demo's
@@ -334,16 +362,20 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   // Another reader starting playback stops this one through the shared owner slot (audio-engine claimPlayback).
   const stopRef = useRef<(reset?: boolean) => void>(() => {});
   const playbackOwner = useMemo(() => ({ stop: () => stopRef.current(true) }), []);
-  const stop = useCallback((reset = false) => {
+  /** End the running playback (loop, scheduling, sounding notes) without changing the playing/loading state. */
+  const halt = useCallback(() => {
     releasePlayback(playbackOwner);
     playRunRef.current += 1;
     if (playRef.current) { cancelAnimationFrame(playRef.current.frame); clearInterval(playRef.current.interval); }
     playRef.current = null;
     scheduledStopsRef.current.splice(0).forEach(item => item.stop());
     audioRef.current?.players.forEach(players => players.forEach(player => player.stop()));
+  }, []);
+  const stop = useCallback((reset = false) => {
+    halt();
     setPlaying(false);
     setLoadingAudio(false);
-    if (reset) { setPosition(0); setActive(null); setActiveNotes([]); }
+    if (reset) { moveTo(0); setActive(null); setActiveNotes([]); }
   }, []);
   stopRef.current = stop;
   const changePitch = (patch: Partial<Prefs>) => { stop(true); update(patch); };
@@ -963,27 +995,31 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     for (const [key, players] of audio.players) if (!used.has(key)) { players.forEach(player => player.dispose()); audio.players.delete(key); }
     return audio;
   };
-  const play = async () => {
+  /** Start playback, or toggle it off. `from` (seconds) restarts from there without a stop/play edge: a seek. */
+  const play = async (from?: number) => {
     // Nothing to play until a supplied score has loaded: an unloaded, loading or failed snippet never plays the hidden sample.
-    if (!chrome.audio || !loaded) return;
-    if (playing || loadingAudio) { stop(); return; }
+    // A host clock owns time: the reader never runs its own transport then.
+    if (clockRef.current || !chrome.audio || !loaded) return;
+    if (from === undefined && (playing || loadingAudio)) { stop(); return; }
+    if (from !== undefined) halt();
     const run = ++playRunRef.current;
-    claimPlayback(playbackOwner);
+    // A silent reader (audio={false}) has nothing to stop on another reader, so it never claims the page's playback slot.
+    if (withAudio) claimPlayback(playbackOwner);
     try {
       setLoadingAudio(true);
       const timeline = await loadTimeline();
       if (run !== playRunRef.current) return;
-      const audio = await ensureAudio(timeline);
+      const audio = withAudio ? await ensureAudio(timeline) : null;
       if (run !== playRunRef.current) return;
       setLoadingAudio(false);
-      setNotice(audio ? '' : SILENT_PLAYBACK_NOTICE);
+      setNotice(audio || !withAudio ? '' : SILENT_PLAYBACK_NOTICE);
       // One clock drives scheduling and the cursor: audio time when sound works, wall time when playing silently.
       const now = audio ? () => audio.context.currentTime : () => performance.now() / 1000;
-      const secondsStart = position;
-      const started = now() + (audio ? .09 : 0);
       const bpm = prefs.bpm;
-      const events = playbackEventsFrom(timeline, secondsStart, bpm, prefs.semitones);
       const duration = playbackDuration(timeline, bpm);
+      const secondsStart = Math.max(0, Math.min(from ?? positionRef.current, duration));
+      const started = now() + (audio ? .09 : 0);
+      const events = playbackEventsFrom(timeline, secondsStart, bpm, prefs.semitones);
       let nextEvent = 0;
       const schedule = audio && (() => {
         const horizon = audio.context.currentTime + .5;
@@ -1000,13 +1036,16 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
       });
       schedule?.();
       const interval = schedule ? setInterval(schedule, 50) : undefined;
+      let lastTimeUpdate = -Infinity;
       const tick = () => {
         const seconds = secondsStart + Math.max(0, now() - started);
         if (seconds >= duration) { stop(true); return; }
         const current = playbackPositionAt(timeline, seconds, bpm);
         setActive(current.noteId);
         setActiveNotes(previous => previous.join('|') === current.activeNoteIds.join('|') ? previous : current.activeNoteIds);
-        setPosition(seconds);
+        moveTo(seconds);
+        const wall = performance.now();
+        if (wall - lastTimeUpdate >= TIME_UPDATE_MS) { lastTimeUpdate = wall; callbacks.current.onTimeUpdate?.(seconds); }
         if (playRef.current) playRef.current.frame = requestAnimationFrame(tick);
       };
       playRef.current = { start: started, beat: secondsStart, frame: requestAnimationFrame(tick), interval };
@@ -1027,10 +1066,31 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   latestPlayRef.current = play;
   const changePitchRef = useRef(changePitch);
   changePitchRef.current = changePitch;
+  /** handle.seek: with a clock, report to the host; else move the playhead (and keep playing from there when playing). */
+  const seekTo = (seconds: number) => {
+    const target = Math.max(0, Number.isFinite(seconds) ? seconds : 0);
+    if (clockRef.current) { callbacks.current.onSeek?.(target); return; }
+    if (!loaded) return;
+    positionRef.current = target;
+    if (busyRef.current) { void play(target); return; }
+    void loadTimeline().then(timeline => {
+      if (busyRef.current || clockRef.current) return;
+      const bpm = prefs.bpm;
+      const clamped = Math.min(target, playbackDuration(timeline, bpm));
+      const current = playbackPositionAt(timeline, clamped, bpm);
+      moveTo(clamped);
+      setActive(current.noteId);
+      setActiveNotes(current.activeNoteIds);
+    }).catch(e => showError(e, 'Could not build the playback timeline.'));
+  };
+  const seekRef = useRef(seekTo);
+  seekRef.current = seekTo;
   useImperativeHandle(ref, () => ({
-    play: async () => { if (chrome.audio && !busyRef.current) await latestPlayRef.current(); },
-    stop: () => stopRef.current(true),
+    play: async () => { if (chrome.audio && !clockRef.current && !busyRef.current) await latestPlayRef.current(); },
+    stop: () => { if (!clockRef.current) stopRef.current(true); },
     transpose: semitones => changePitchRef.current({ semitones: clampSemitones(Math.round(Number(semitones) || 0)) }),
+    seek: seconds => seekRef.current(Number(seconds)),
+    currentTime: () => { const host = clockRef.current; return host ? host.now() : positionRef.current; },
   }), [chrome.audio]);
   // Unmount: release only this reader's players and track gains; the shared AudioContext and Verovio worker stay for other readers.
   useEffect(() => () => { importRunRef.current++; playRunRef.current++; renderRef.current?.dispose(); if (playRef.current) { cancelAnimationFrame(playRef.current.frame); clearInterval(playRef.current.interval); } scheduledStopsRef.current.splice(0).forEach(item => item.stop()); audioRef.current?.players.forEach(players => players.forEach(p => p.dispose())); audioRef.current?.trackGains.forEach(gain => gain.disconnect()); audioRef.current = null; releasePlayback(playbackOwner); }, []);
@@ -1071,7 +1131,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const transposeTitle = `Transposition ${prefs.semitones > 0 ? '+' : ''}${prefs.semitones} semitone${Math.abs(prefs.semitones) === 1 ? '' : 's'}, key ${spokenKey(readout.key)}`;
   const headerElements: Record<HeaderControlId, React.ReactNode> = {
     stop: <button className="icon-button stop-button" aria-label="Stop playback" title="Stop playback" onClick={() => { stop(true); viewportRef.current?.scrollTo({ top: 0, left: 0, behavior: 'smooth' }); }}><Square size={17} fill="currentColor"/></button>,
-    play: <button className={`play-button ${loadingAudio ? 'is-loading' : ''}`} aria-label={playing || loadingAudio ? 'Pause playback' : 'Play score'} onClick={play}>{playing || loadingAudio ? <Pause size={17} fill="currentColor"/> : <Play size={17} fill="currentColor"/>}<span className="play-button-label">{loadingAudio ? 'Loading' : playing ? 'Pause' : 'Play'}</span></button>,
+    play: <button className={`play-button ${loadingAudio ? 'is-loading' : ''}`} aria-label={playing || loadingAudio ? 'Pause playback' : 'Play score'} onClick={() => void play()}>{playing || loadingAudio ? <Pause size={17} fill="currentColor"/> : <Play size={17} fill="currentColor"/>}<span className="play-button-label">{loadingAudio ? 'Loading' : playing ? 'Pause' : 'Play'}</span></button>,
     openFile: <button className="header-open-file" aria-label="Open score file" title="Open score file" aria-haspopup="dialog" aria-expanded={openDialog} onClick={() => { setDrawer(false); setMoreOpen(false); setOpenDialog(true); }}><FolderOpen size={17}/><span className="header-open-file-label">Open</span></button>,
     bpm: <label className="bpm-control"><span>BPM</span><input type="number" min={MIN_BPM} max={MAX_BPM} value={prefs.bpm} onChange={e => { stop(true); update({ bpm: clampBpm(Number(e.target.value) || 96) }); }}/></label>,
     mode: <div className="mode-toggle" role="group" aria-label="Reading mode">
