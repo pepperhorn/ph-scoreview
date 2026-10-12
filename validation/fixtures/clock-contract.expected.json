@@ -1,0 +1,17 @@
+{
+  "description": "pepperscore/ivories clock contract: note onsets of clock-contract.musicxml in seconds from score beat 0 (the pickup's first beat) at the score's own tempo map (120, then 60 from bar 2, then 180 from beat 1 of bar 3). Both repos assert these within the tolerance.",
+  "tolerance": 0.001,
+  "onsets": [
+    { "measureIndex": 0, "midi": 67, "seconds": 0 },
+    { "measureIndex": 1, "midi": 60, "seconds": 0.5 },
+    { "measureIndex": 1, "midi": 62, "seconds": 1 },
+    { "measureIndex": 1, "midi": 64, "seconds": 1.5 },
+    { "measureIndex": 1, "midi": 65, "seconds": 2 },
+    { "measureIndex": 2, "midi": 67, "seconds": 2.5 },
+    { "measureIndex": 2, "midi": 69, "seconds": 4.5 },
+    { "measureIndex": 3, "midi": 71, "seconds": 6.5 },
+    { "measureIndex": 3, "midi": 72, "seconds": 7.5 },
+    { "measureIndex": 3, "midi": 74, "seconds": 7.666667 },
+    { "measureIndex": 3, "midi": 76, "seconds": 7.833333 }
+  ]
+}
