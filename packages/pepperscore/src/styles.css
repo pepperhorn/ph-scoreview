@@ -314,13 +314,18 @@
 .pepperscore .ps-error .oom-retry-button{margin-top:8px}
 .pepperscore .ps-error{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .pepperscore .forget-last-file{color:#8a6a5e}
-/* Endless fits the score to the viewport height, so a vertical scrollbar can come and go as it re-engraves; its space is
-   reserved, or the width change re-engraves again and loops. */
-.pepperscore .ps-landscape .score-viewport{scrollbar-gutter:stable}
+/* The layout width must not depend on whether the viewport's own vertical scrollbar is showing: with space-taking
+   scrollbars (Windows, Linux) a scrollbar that appears narrows the score, the re-engraved score fits, the scrollbar goes,
+   and it loops. A fixed-height viewport (Vertical and Endless) always reserves the scrollbar's space. A natural-height
+   viewport follows its content's height, so it never scrolls vertically (Endless still scrolls sideways). */
+.pepperscore .score-viewport{scrollbar-gutter:stable}
+.pepperscore[data-ps-height=natural] .score-viewport{overflow-y:hidden;scrollbar-gutter:auto}
 /* Overlay panels take focus when they open (PepperScore.tsx focusOnMount) so Escape reaches the root's key handler. */
 .pepperscore .mixer-panel:focus:not(:focus-visible),.pepperscore .instrument-picker-panel:focus:not(:focus-visible){outline:none}
 /* Compact play/stop button of chrome="minimal", overlaid on the score's top right corner. */
 .pepperscore .ps-compact-play{position:absolute;top:8px;right:8px;z-index:9;width:36px;height:36px;border-radius:50%;background:#345642;color:#fff;box-shadow:0 3px 8px #34564233}
+/* With a header (chrome="minimal" plus controls) the button sits in the header's right end, vertically centred. */
+.pepperscore .topbar .ps-compact-play{top:50%;transform:translateY(-50%)}
 .pepperscore .ps-compact-play:hover{background:#254633}
 .pepperscore .ps-compact-play.is-loading{opacity:.75}
 /* Without the page-controls row (controls.zoom off) the edge fades end at the viewport's bottom edge. */

@@ -163,6 +163,13 @@ try {
     await page.locator('.embed-b .topbar .mode-toggle').waitFor({ timeout: 5000 });
     assert.equal(await page.locator('.embed-b .header-more-toggle, .embed-b .header-secondary-panel, .embed-b .play-button').count(), 0, 'no More toggle without secondary controls');
     assert.equal(await page.locator('.embed-b .ps-compact-play').count(), 1, 'a view toggle keeps the compact play button');
+    // The button is not hidden under the sticky header: it is what a click at its centre hits, and it plays and stops.
+    const hit = await page.evaluate(() => { const button = document.querySelector('.embed-b .ps-compact-play'); button.scrollIntoView({ block: 'center' }); const r = button.getBoundingClientRect(); const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return { onTop: !!top && button.contains(top), top: top?.className?.baseVal ?? top?.className }; });
+    assert.ok(hit.onTop, `the compact play button is on top with a header (hit ${JSON.stringify(hit.top)})`);
+    await page.locator('.embed-b .ps-compact-play').click();
+    await playingIn(page, '.embed-b .ps-compact-play', 'Stop playback');
+    await page.locator('.embed-b .ps-compact-play').click();
+    await page.waitForFunction(() => document.querySelector('.embed-b .ps-compact-play').getAttribute('aria-label') === 'Play score', null, { timeout: 5000 });
     const fade = await page.evaluate(() => { const root = document.querySelector('.embed-b'); return { fade: root.querySelector('.edge-end').getBoundingClientRect().bottom, viewport: root.querySelector('.score-viewport').getBoundingClientRect().bottom }; });
     assert.ok(Math.abs(fade.fade - fade.viewport) <= 1, `the edge fade ends at the viewport bottom: ${JSON.stringify(fade)}`);
     await page.locator('.embed-b .mode-toggle-endless').click();

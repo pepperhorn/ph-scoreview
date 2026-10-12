@@ -1,5 +1,6 @@
 import { isGmSoundfont, type InstrumentId, type Score } from './score';
 import { STAVE_SCALE_FLOOR, STAVE_SCALE_MAX, type DeviceClass } from './stave-scale';
+import { BARS_PER_LINE_MAX, BARS_PER_LINE_MIN } from './prefs';
 
 export type FileSource = { name: string; size: number; sha256: string; format: string };
 export type FileSettings = {
@@ -136,7 +137,7 @@ function validSettingsAndParts(state: { settings: FileSettings; parts: Record<st
   const settings = state.settings;
   if (!settings || !state.parts || typeof state.parts !== 'object') return false;
   if (!['portrait', 'landscape'].includes(settings.mode) || !['Bravura', 'Petaluma'].includes(settings.notationFont)) return false;
-  if (settings.barsPerLine !== 'auto' && (!Number.isInteger(settings.barsPerLine) || settings.barsPerLine < 1 || settings.barsPerLine > 4)) return false;
+  if (settings.barsPerLine !== 'auto' && (!Number.isInteger(settings.barsPerLine) || settings.barsPerLine < BARS_PER_LINE_MIN || settings.barsPerLine > BARS_PER_LINE_MAX)) return false;
   if (!Number.isInteger(settings.overlap) || settings.overlap < 0 || settings.overlap > 3) return false;
   // Out-of-range tempos (e.g. cut-time 160 → 320 quarter BPM) are clamped, not a reason to drop the state.
   if (!Number.isFinite(settings.bpm)) return false;

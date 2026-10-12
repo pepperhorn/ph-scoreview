@@ -46,7 +46,7 @@ Revised 2026-09-30 (`feat/four-bar-default`): the fixed Vertical device defaults
 - **Short scores:** a score shorter than a full Auto line keeps the same stave size. It is drawn as one centred system at Verovio's natural width, not stretched to fill the viewport. If that natural width does not fit, it fills the line as usual.
 - **No wrapped lines:** the bar-width model is an estimate. If Verovio still wraps an Auto line inside its page, the layout drops one bar per line and renders again, keeping the zoom. That extra render happens only when a line wraps.
 - **Balancing:** Auto balances lines, so a score whose count leaves a short last line (for example 5 or 6 bars) shows 3 per line at the four-bar zoom.
-- **Explicit bar counts** (1–4) keep the four-bar default zoom, and their systems are centred as before.
+- **Explicit bar counts** (1–8): without a user zoom, the stave scale is the largest at which that many bars fit the width (capped at 2.5), and systems fill it; with a user zoom they keep that zoom, and their systems are centred as before.
 - **Re-resolving:** the reader requests `'fit'` whenever there is no user zoom, and `renderScore` resolves it on every layout (resize, rotation, mode switch).
 - **Where it lives:** the constants are in `src/lib/stave-scale.ts`: `DEFAULT_VERTICAL_BARS`, `COMPACT_MIN_DEFAULT_STAVE_PX`, `ENDLESS_STAVE_SCALE` and `HEIGHT_FIT_STAVES`, next to the slider range and step.
 - **Slider minimum:** the effective minimum is `min(STAVE_SCALE_MIN, current default)`, so a default below the usual minimum is shown as is and never clamped up.
