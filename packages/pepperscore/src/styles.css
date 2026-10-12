@@ -336,3 +336,4 @@
 .pepperscore[data-ps-height=natural]{min-height:120px}
 /* A natural-height Endless snippet has no viewport height to centre the score in: no balancing row below it. */
 .pepperscore[data-ps-height=natural] .ps-landscape .score-content{grid-template-rows:auto auto}
+.pepperscore[data-ps-clock] .score-system svg .reader-note,.pepperscore[data-ps-clock] .score-system svg .measure{cursor:pointer}
