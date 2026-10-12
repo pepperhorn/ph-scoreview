@@ -340,6 +340,31 @@ try {
     await context.close();
   }
 
+  // A seek while playing whose sound load fails ends playback: the reader returns to not-playing and onStop fires once.
+  {
+    const { context } = await hostContext();
+    await context.route('**/embed-broken/*.json', route => route.fulfill({ status: 500, body: 'broken' }));
+    const { page, errors } = await openPage(context);
+    await renderedAll(page);
+    await page.locator('.embed-a .ps-compact-play').click();
+    await playingIn(page, '.embed-a .ps-compact-play', 'Stop playback');
+    if (await page.evaluate(() => !!document.querySelector('.embed-a .playback-notice'))) console.log(`${engine}: audio unavailable, seek-failure check skipped`);
+    else {
+      await page.evaluate(() => { window.__events.length = 0; window.__embed.breakSourceA(); });
+      await page.waitForTimeout(100);
+      await page.evaluate(() => window.__embed.refs.a.current.seek(1));
+      await page.waitForFunction(() => document.querySelector('.embed-a .ps-compact-play').getAttribute('aria-label') === 'Play score', null, { timeout: 10000 });
+      await eventFired(page, 'a', 'stop');
+      await page.waitForTimeout(300);
+      const kinds = (await events(page)).filter(([who]) => who === 'a').map(([, kind]) => kind);
+      assert.equal(kinds.filter(kind => kind === 'stop').length, 1, `a failed seek-while-playing fires onStop once: ${kinds}`);
+      assert.ok(kinds.includes('error'), `the failure is reported through onError: ${kinds}`);
+      assert.equal(await page.locator('.embed-a .ps-compact-play.is-loading').count(), 0, 'the play button is not left loading');
+    }
+    assert.deepEqual(errors.filter(message => !/500|broken/i.test(message)), []);
+    await context.close();
+  }
+
   // 9. A worker restart (out of memory in one reader) does not blank the others. The failure is armed once every reader
   // has drawn, then all of them re-engrave at once (the full reader's view toggle, the snippets' view prop), so the
   // failing request and the other readers' requests are in flight together.

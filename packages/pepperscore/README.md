@@ -245,8 +245,9 @@ const clock: ExternalClock = {
 - **No sound, no transport.** With a clock the reader never loads sound, whatever `audio` says. It also hides its own play, stop and BPM controls. The playhead, note highlight and Vertical/Endless follow work for every `chrome`, including `"none"`.
 - **Seeking.** A click on a note reports that note's time (its performed occurrence nearest the clock), and a click elsewhere in a measure reports the measure's start. Both go through `onSeek`, and so does `ref.seek(seconds)`. Seek your clock there. The reader follows on the next `seek` event.
 - `onPlay`/`onStop` are not called for clock play/pause.
-- `validation/fixtures/clock-contract.musicxml` with `clock-contract.expected.json` (in the repository) pins the onset seconds within 1 ms (a pickup bar, and tempo 120 → 60 → 180 mid-bar). Use them to check your own tempo map against the reader's.
+- **Count-in.** A negative clock time shows no playhead and no highlighted note.
 - Transposing while a `clock` is set does not move the playhead; it stays at `clock.now()`.
+- `validation/fixtures/clock-contract.musicxml` with `clock-contract.expected.json` (in the repository) pins the onset seconds within 1 ms (a pickup bar, and tempo 120 → 60 → 180 mid-bar). Use them to check your own tempo map against the reader's.
 
 ### Chrome presets and `controls`
 

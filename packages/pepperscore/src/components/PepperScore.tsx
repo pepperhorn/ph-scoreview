@@ -1062,7 +1062,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
       };
       playRef.current = { start: started, beat: secondsStart, frame: requestAnimationFrame(tick), interval };
       setPlaying(true);
-    } catch (e) { if (run === playRunRef.current) { setLoadingAudio(false); releasePlayback(playbackOwner); setError(e instanceof Error ? e.message : 'Audio could not start.'); } }
+    } catch (e) { if (run === playRunRef.current) { setLoadingAudio(false); if (from !== undefined) setPlaying(false); releasePlayback(playbackOwner); setError(e instanceof Error ? e.message : 'Audio could not start.'); } }
   };
   // Host callbacks: onError for each shown error, onPlay/onStop on the playing edges (stop-others included).
   useEffect(() => { if (error) callbacks.current.onError?.(new Error(error)); }, [error]);
