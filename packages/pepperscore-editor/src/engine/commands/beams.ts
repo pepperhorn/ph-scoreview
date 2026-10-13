@@ -42,7 +42,7 @@ export const setBeamGroup: Command<{ measureId: string; staff: number; voice: nu
       else flush();
     }
     flush();
-    replaceSequenceBeams(ctx.pm, ctx.seq, beams);
+    replaceSequenceBeams(ctx.pm, ctx.seq, beams, ctx.barTicks);
   },
 };
 

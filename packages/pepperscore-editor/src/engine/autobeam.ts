@@ -63,8 +63,8 @@ export function autoBeam(seq: Sequence, time: Time): Beam[] {
  * Replaces the beams of `pm` that touch `seq` with `beams`, keeping other sequences' beams.
  * A new beam over the same events as an old one keeps the old one (and its id).
  */
-export function replaceSequenceBeams(pm: PartMeasure, seq: Sequence, beams: Beam[]): void {
-  const ids = new Set(eventStarts(seq).map((s) => s.event.id));
+export function replaceSequenceBeams(pm: PartMeasure, seq: Sequence, beams: Beam[], barTicks: number): void {
+  const ids = new Set(eventStarts(seq, barTicks).map((s) => s.event.id));
   const touching = pm.beams.filter((b) => b.events.some((id) => ids.has(id)));
   const same = (a: Beam, b: Beam) => a.events.length === b.events.length && a.events.every((id, i) => id === b.events[i]);
   if (touching.length === beams.length && touching.every((b, i) => same(b, beams[i]))) return;
@@ -72,11 +72,11 @@ export function replaceSequenceBeams(pm: PartMeasure, seq: Sequence, beams: Beam
   pm.beams = [...kept, ...beams.map((b) => touching.find((old) => same(old, b)) ?? b)];
 }
 
-export const applyAutoBeam = (pm: PartMeasure, seq: Sequence, time: Time): void => replaceSequenceBeams(pm, seq, autoBeam(seq, time));
+export const applyAutoBeam = (pm: PartMeasure, seq: Sequence, time: Time): void => replaceSequenceBeams(pm, seq, autoBeam(seq, time), measureTicks(time));
 
 /** Splits the beams of `pm` that touch `seq` at its rests, dropping pieces of fewer than two events. */
-export function splitBeamsAtRests(pm: PartMeasure, seq: Sequence): void {
-  const rests = new Set(eventStarts(seq).filter((s) => s.event.rest).map((s) => s.event.id));
+export function splitBeamsAtRests(pm: PartMeasure, seq: Sequence, barTicks: number): void {
+  const rests = new Set(eventStarts(seq, barTicks).filter((s) => s.event.rest).map((s) => s.event.id));
   if (!pm.beams.some((b) => b.events.some((id) => rests.has(id)))) return;
   const out: Beam[] = [];
   for (const beam of pm.beams) {

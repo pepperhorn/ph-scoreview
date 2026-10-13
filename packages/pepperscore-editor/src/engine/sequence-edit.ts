@@ -43,7 +43,7 @@ export function findNote(doc: Document, noteId: string): (EventAt & { note: Note
   for (const part of doc.parts)
     for (let mi = 0; mi < part.measures.length; mi++)
       for (const seq of part.measures[mi].sequences)
-        for (const { event } of eventStarts(seq)) {
+        for (const { event } of eventStarts(seq, measureTicks(effectiveTime(doc, mi)))) {
           const note = event.notes?.find((n) => n.id === noteId);
           if (note) return { ...findEvent(doc, event.id)!, note };
         }
@@ -51,12 +51,12 @@ export function findNote(doc: Document, noteId: string): (EventAt & { note: Note
 }
 
 /** The event after `at` in its voice: next in the bar, else the first of the next bar's (staff, voice) sequence. */
-export function nextEvent(at: EventAt): Event | undefined {
+export function nextEvent(doc: Document, at: EventAt): Event | undefined {
   const starts = eventStarts(at.seq, at.barTicks);
   if (at.position + 1 < starts.length) return starts[at.position + 1].event;
   const following = at.part.measures[at.measureIndex + 1];
   const seq = following && sequenceFor(following, at.seq.staff, at.seq.voice);
-  return seq ? eventStarts(seq)[0]?.event : undefined;
+  return seq ? eventStarts(seq, measureTicks(effectiveTime(doc, at.measureIndex + 1)))[0]?.event : undefined;
 }
 
 export const restsFor = (ticks: number): Event[] => ticksToDurations(Math.round(ticks)).map(restEvent);
@@ -81,6 +81,14 @@ export function copyEvent(event: Event, freshIds: boolean): Event {
   return copy;
 }
 
+/** The sounding continuation of a note cut off at its front: notes (new ids, original ties), no attack marks. */
+function continuation(event: Event): Event {
+  const copy = copyEvent(event, true);
+  delete copy.slurs;
+  delete copy.articulations;
+  return copy;
+}
+
 function itemTicks(item: Event | Tuplet, barTicks: number): number {
   if (item.type === 'tuplet') return item.inner.multiple * BASE_TICKS[item.inner.base];
   return item.fullMeasure ? barTicks : durationTicks(item.duration);
@@ -89,9 +97,10 @@ function itemTicks(item: Event | Tuplet, barTicks: number): number {
 /**
  * Overwrites `[tick, tick + length)` of `seq` with `inserted`. Items inside the range go; a note
  * starting before it keeps its head (tied pieces, ids kept), one running past it keeps its tail
- * (a note that spans the whole range keeps both, the tail with new ids). Overlapped tuplets and
- * rests leave plain rests. Returns false, changing nothing, when a remainder cannot be written
- * as durations (e.g. a cut inside a tuplet).
+ * (a note that spans the whole range keeps both; the tail gets new ids and no slurs or
+ * articulations). Overlapped rests, and tuplets of rests, leave plain rests. Returns false,
+ * changing nothing, when a tuplet holding notes is only partly covered or a remainder cannot
+ * be written as durations.
  */
 export function replaceRange(seq: Sequence, barTicks: number, tick: number, length: number, inserted: Event[]): boolean {
   const end = tick + length;
@@ -103,6 +112,8 @@ export function replaceRange(seq: Sequence, barTicks: number, tick: number, leng
   });
   const overlapping = spans.filter((s) => s.to > tick + TICK_EPSILON && s.from < end - TICK_EPSILON);
   for (const s of overlapping) {
+    const partly = s.from < tick - TICK_EPSILON || s.to > end + TICK_EPSILON;
+    if (partly && s.item.type === 'tuplet' && s.item.content.some((e) => !e.rest)) return false;
     if (s.from < tick - TICK_EPSILON && !expressible(tick - s.from)) return false;
     if (s.to > end + TICK_EPSILON && !expressible(s.to - end)) return false;
   }
@@ -114,7 +125,7 @@ export function replaceRange(seq: Sequence, barTicks: number, tick: number, leng
     const plainNote = item.type === 'event' && !item.rest;
     if (to > end + TICK_EPSILON) {
       if (!plainNote) tails.push(...restsFor(to - end));
-      else tails.push(...splitEvent(from < tick - TICK_EPSILON ? copyEvent(item, true) : item, to - end, true));
+      else tails.push(...splitEvent(from < tick - TICK_EPSILON ? continuation(item) : item, to - end, true));
     }
     if (from < tick - TICK_EPSILON) {
       if (!plainNote) heads.push(...restsFor(tick - from));

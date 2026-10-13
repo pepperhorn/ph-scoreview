@@ -163,10 +163,11 @@ test('makeTuplet 5 uses sixteenths in the time of four; dotted events are refuse
   store.dispatch(makeTuplet, { eventId: 'e2', multiple: 5 });
   expect(seqOf(store).content[1]).toMatchObject({ outer: { multiple: 5, base: '16th' }, inner: { multiple: 4, base: '16th' } });
   expect(sequenceTicks(seqOf(store))).toBe(3840);
-  store.dispatch(toggleDot, { eventId: 'e1' });
-  const before = store.getState().document;
-  store.dispatch(makeTuplet, { eventId: 'e1', multiple: 3 });
-  expect(store.getState().document).toBe(before);
+  const dotted = createEditorStore(helloDoc());
+  dotted.dispatch(toggleDot, { eventId: 'e2' });
+  const before = dotted.getState().document;
+  dotted.dispatch(makeTuplet, { eventId: 'e2', multiple: 3 });
+  expect(dotted.getState().document).toBe(before);
 });
 
 test('toggleArticulation adds and removes', () => {
@@ -201,4 +202,53 @@ test('addSlur orders its ends; removeSlur removes it', () => {
   expect(store.getState().invariantErrors).toEqual([]);
   store.dispatch(removeSlur, { slurId: slurs[0].id });
   expect((seqOf(store).content[1] as Event).slurs).toBeUndefined();
+});
+
+test('a note overwritten in its middle keeps one slur and one articulation, on the head', () => {
+  const doc = quartersDoc();
+  doc.parts[0].measures[0].sequences[0].content = [
+    { id: 'h', type: 'event', duration: { base: 'half', dots: 0 }, notes: [{ id: 'hn', pitch: P('C', 5) }], articulations: ['accent'], slurs: [{ id: 's1', target: 'x' }] },
+    q('x', P('E', 5)), q('y', P('F', 5)),
+  ];
+  const store = createEditorStore(doc);
+  store.dispatch(setCursor, { tick: 480, duration: { base: 'eighth', dots: 0 } }, { record: false });
+  store.dispatch(enterEvent, { pitch: P('G', 4) });
+  const events = eventStarts(seqOf(store), 3840).map((s) => s.event);
+  expect(events.map((e) => e.notes![0].pitch.step)).toEqual(['C', 'G', 'C', 'E', 'F']);
+  expect(events.flatMap((e) => e.slurs ?? []).map((s) => s.id)).toEqual(['s1']);
+  expect(events.flatMap((e) => e.articulations ?? [])).toEqual(['accent']);
+  expect(events[0].id).toBe('h');
+  expect(events[0].slurs).toEqual([{ id: 's1', target: 'x' }]);
+  expect(store.getState().invariantErrors).toEqual([]);
+});
+
+test('enterEvent refuses to overwrite part of a tuplet holding notes, but replaces a fully covered one', () => {
+  const doc = quartersDoc();
+  doc.parts[0].measures[0].sequences[0].content = [
+    { id: 't', type: 'tuplet', outer: { multiple: 3, base: 'quarter' }, inner: { multiple: 2, base: 'quarter' }, content: [q('tc', P('C', 4)), q('td', P('D', 4)), q('te', P('E', 4))] },
+    { id: 'f', type: 'event', duration: { base: 'half', dots: 0 }, notes: [{ id: 'fn', pitch: P('F', 4) }] },
+  ];
+  const store = createEditorStore(doc);
+  const before = store.getState().document;
+  store.dispatch(setCursor, { tick: 0, duration: { base: 'quarter', dots: 0 } }, { record: false });
+  store.dispatch(enterEvent, { pitch: P('G', 4) });
+  expect(store.getState().document).toBe(before);
+  expect(store.getState().history.past).toHaveLength(0);
+  store.dispatch(setCursor, { tick: 0, duration: { base: 'half', dots: 0 } }, { record: false });
+  store.dispatch(enterEvent, { pitch: P('G', 4) });
+  expect((seqOf(store).content as Event[]).map((e) => e.notes![0].pitch.step)).toEqual(['G', 'F']);
+  expect(store.getState().invariantErrors).toEqual([]);
+});
+
+test('enterEvent in a new voice creates it; an infeasible entry there records nothing', () => {
+  const store = createEditorStore(helloDoc());
+  store.dispatch(setCursor, { voice: 2, tick: 320, duration: { base: 'quarter', dots: 0 } }, { record: false });
+  store.dispatch(enterEvent, { pitch: P('G', 4) });
+  expect(store.getState().history.past).toHaveLength(0);
+  expect(store.getState().document.parts[0].measures[0].sequences).toHaveLength(1);
+  store.dispatch(setCursor, { tick: 960 }, { record: false });
+  store.dispatch(enterEvent, { pitch: P('G', 4) });
+  const v2 = store.getState().document.parts[0].measures[0].sequences.find((s) => s.voice === 2)!;
+  expect(eventStarts(v2, 3840).map((s) => [s.tick, s.event.rest ?? false])).toEqual([[0, true], [960, false], [1920, true]]);
+  expect(store.getState().invariantErrors).toEqual([]);
 });

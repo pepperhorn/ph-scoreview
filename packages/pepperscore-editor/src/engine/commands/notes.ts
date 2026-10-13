@@ -1,10 +1,10 @@
 import { BASE_TICKS, DURATION_BASES, durationTicks, measureTicks, type Duration } from '../../model/durations';
 import { restEvent } from '../../model/create';
 import { newId } from '../../model/ids';
-import { effectiveClef, effectiveTime, ensureSequence, eventStarts, measureIndex, sequenceFor } from '../../model/query';
+import { effectiveClef, effectiveTime, eventStarts, measureIndex, sequenceFor } from '../../model/query';
 import type { Articulation, Clef, Event, Pitch, Sequence, Tuplet } from '../../model/schema';
 import { applyAutoBeam, splitBeamsAtRests } from '../autobeam';
-import { refillMeasure, splitEvent } from '../refill';
+import { splitEvent } from '../refill';
 import {
   contextAt, copyEvent, findEvent, findNote, mergeRests, nextEvent, replaceRange, restsFor, settle, TICK_EPSILON, type EventAt, type SeqContext,
 } from '../sequence-edit';
@@ -42,15 +42,16 @@ export const enterEvent: Command<{ pitch?: Pitch; rest?: boolean }> = {
     if (!part || index < 0 || (!rest && !pitch)) return;
     const length = Math.min(durationTicks(cursor.duration), measureTicks(effectiveTime(doc, index)) - cursor.tick);
     if (length <= TICK_EPSILON || cursor.tick < 0) return;
-    const pm = part.measures[index];
-    const existed = sequenceFor(pm, cursor.staff, cursor.voice) !== undefined;
-    const ctx = contextAt(doc, part, index, ensureSequence(pm, cursor.staff, cursor.voice));
-    if (!existed) refillMeasure(doc, index);
-
     const event: Event = rest
       ? { id: newId(), type: 'event', duration: { ...cursor.duration }, rest: true }
       : { id: newId(), type: 'event', duration: { ...cursor.duration }, notes: [{ id: newId(), pitch: { ...pitch! } }] };
-    if (!replaceRange(ctx.seq, ctx.barTicks, cursor.tick, length, fitted(event, length))) return;
+    const pm = part.measures[index];
+    const existing = sequenceFor(pm, cursor.staff, cursor.voice);
+    // A new voice is built on a scratch bar of rests so an infeasible entry creates nothing.
+    const target = existing ?? { id: newId(), staff: cursor.staff, voice: cursor.voice, content: restsFor(measureTicks(effectiveTime(doc, index))) };
+    if (!replaceRange(target, measureTicks(effectiveTime(doc, index)), cursor.tick, length, fitted(event, length))) return;
+    if (!existing) pm.sequences.push(target);
+    const ctx = contextAt(doc, part, index, sequenceFor(pm, cursor.staff, cursor.voice)!);
     settle(draft, ctx);
     applyAutoBeam(ctx.pm, ctx.seq, ctx.time);
 
@@ -102,7 +103,7 @@ export const toggleRest: Command<{ eventId: string }> = {
     if (!event.rest) {
       for (const key of ['notes', 'slurs', 'articulations', 'stem'] as const) delete event[key];
       event.rest = true;
-      splitBeamsAtRests(at.pm, at.seq);
+      splitBeamsAtRests(at.pm, at.seq, at.barTicks);
       settle(draft, at);
       return;
     }
@@ -137,7 +138,7 @@ export const deleteEvents: Command<{ ids: string[] }> = {
     for (const ctx of touched.values()) {
       ctx.seq.content = ctx.seq.content.flatMap((item) =>
         item.type === 'tuplet' && item.content.every((e) => e.rest || e.grace) ? restsFor(item.inner.multiple * BASE_TICKS[item.inner.base]) : [item]);
-      splitBeamsAtRests(ctx.pm, ctx.seq);
+      splitBeamsAtRests(ctx.pm, ctx.seq, ctx.barTicks);
       mergeRests(ctx.seq, ctx.barTicks);
       settle(draft, ctx);
     }
@@ -196,7 +197,7 @@ export const toggleTie: Command<{ noteId: string }> = {
       return;
     }
     const { step, octave, alter } = at.note.pitch;
-    const target = nextEvent(at)?.notes?.find((n) => n.pitch.step === step && n.pitch.octave === octave && n.pitch.alter === alter);
+    const target = nextEvent(draft.document, at)?.notes?.find((n) => n.pitch.step === step && n.pitch.octave === octave && n.pitch.alter === alter);
     if (target) at.note.tie = { target: target.id };
   },
 };
@@ -218,9 +219,9 @@ export const removeSlur: Command<{ slurId: string }> = {
   label: 'Remove slur',
   run: (draft, { slurId }) => {
     for (const part of draft.document.parts)
-      for (const pm of part.measures)
+      for (const [mi, pm] of part.measures.entries())
         for (const seq of pm.sequences)
-          for (const { event } of eventStarts(seq)) {
+          for (const { event } of eventStarts(seq, measureTicks(effectiveTime(draft.document, mi)))) {
             if (!event.slurs?.some((s) => s.id === slurId)) continue;
             if (event.slurs.length > 1) event.slurs = event.slurs.filter((s) => s.id !== slurId);
             else delete event.slurs;
