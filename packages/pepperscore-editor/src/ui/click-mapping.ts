@@ -24,8 +24,8 @@ export function staffAt(doc: Document, viewerStaff: number): { partId: string; s
 /**
  * Where a click on the engraving puts the cursor. A hit note's `sourceId` is the MusicXML id of its
  * first pitch, which is a model note id (a rest's is its event id): the cursor moves onto that
- * event and selects it. Otherwise a click in a measure moves the cursor to the nearest event start
- * at or before the click in that staff's voice 1, and clears the selection.
+ * event and selects it. Otherwise a click in a measure moves the cursor to the event start nearest
+ * the click in that staff's voice 1, and clears the selection.
  */
 export function clickTarget(doc: Document, info: PepperScoreClickInfo): ClickTarget | undefined {
   if (info.sourceId) {
@@ -49,6 +49,6 @@ export function clickTarget(doc: Document, info: PepperScoreClickInfo): ClickTar
   const target = (info.fraction ?? 0) * barTicks;
   const seq = pm && sequenceFor(pm, where.staff, 1);
   let tick = 0;
-  for (const start of seq ? eventStarts(seq, barTicks) : []) if (start.tick <= target + 1e-6) tick = start.tick;
+  for (const start of seq ? eventStarts(seq, barTicks) : []) if (Math.abs(start.tick - target) < Math.abs(tick - target)) tick = start.tick;
   return { cursor: { partId: where.partId, staff: where.staff, voice: 1, measureId: doc.global.measures[index].id, tick }, selection: [] };
 }

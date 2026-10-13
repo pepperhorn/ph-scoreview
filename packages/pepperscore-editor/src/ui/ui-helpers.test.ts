@@ -19,9 +19,11 @@ describe('clickTarget', () => {
   it('resolves a rest by its event id', () => {
     expect(clickTarget(helloDoc(), { sourceId: 'e3', clientX: 0, clientY: 0 })?.cursor.tick).toBe(1920);
   });
-  it('maps a click in a measure to the nearest event start at or before it', () => {
+  it('maps a click in a measure to the nearest event start', () => {
     const doc = helloDoc();
-    expect(clickTarget(doc, { measureIndex: 0, fraction: 0.4, staff: 1, clientX: 0, clientY: 0 })).toMatchObject({ cursor: { tick: 960 }, selection: [] });
+    expect(clickTarget(doc, { measureIndex: 0, fraction: 0.2, staff: 1, clientX: 0, clientY: 0 })).toMatchObject({ cursor: { tick: 960 }, selection: [] }); // 768: nearer 960 than 0
+    expect(clickTarget(doc, { measureIndex: 0, fraction: 0.4, staff: 1, clientX: 0, clientY: 0 })?.cursor.tick).toBe(1920); // 1536
+    expect(clickTarget(doc, { measureIndex: 0, fraction: 0.05, staff: 1, clientX: 0, clientY: 0 })?.cursor.tick).toBe(0);
     expect(clickTarget(doc, { measureIndex: 0, fraction: 0.9, staff: 1, clientX: 0, clientY: 0 })?.cursor.tick).toBe(1920);
     expect(clickTarget(doc, { sourceId: 'unknown', clientX: 0, clientY: 0 })).toBeUndefined();
   });

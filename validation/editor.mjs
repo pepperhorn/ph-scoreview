@@ -3,7 +3,8 @@
 // change-to-redraw latency. Runs against the build (npm run build first). BROWSER=chromium|firefox|webkit.
 import assert from 'node:assert/strict';
 import { chromium, firefox, webkit } from 'playwright-core';
-import { serveDist } from './serve-dist.mjs';
+import { join } from 'node:path';
+import { root, serveDist } from './serve-dist.mjs';
 
 const engine = process.env.BROWSER || 'chromium';
 const launcher = { chromium, firefox, webkit }[engine];
@@ -66,21 +67,26 @@ try {
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('.ps-btn-export')]);
   assert.equal(download.suggestedFilename(), 'score.musicxml');
 
-  // 6. Phone width: the palette shows, and its quarter and C buttons enter a note (in bar 2, so it adds one).
-  await page.locator('.ps-editor').focus();
-  await page.keyboard.press('Control+ArrowRight');
-  await page.setViewportSize({ width: 390, height: 800 });
-  const palette = page.locator('.ps-palette');
-  await palette.waitFor({ state: 'visible' });
-  const button = await palette.locator('.ps-palette-btn').first().boundingBox();
-  assert.ok(button.width >= 44 && button.height >= 44, `palette buttons are 44px targets (${button.width}x${button.height})`);
-  await palette.locator('button[aria-label="Quarter note"]').click();
-  await palette.locator('button[aria-label="Note C"]').click();
-  await waitForNotes(page, 4);
-  await page.setViewportSize({ width: 1280, height: 900 });
-  assert.equal(await palette.isVisible(), false, 'the palette hides on a wide container');
+  // 6. The palette hides on a wide container (the phone-width palette is tested on a touch device below).
+  assert.equal(await page.locator('.ps-palette').isVisible(), false, 'the palette hides on a wide container');
 
-  // 7. The ensemble fixture has 5 staves: refused, with nothing else rendered.
+  // 6b. A popover's own toolbar button toggles it.
+  const keyButton = page.locator('.ps-toolbar .ps-btn[aria-label="Key signature"]');
+  await keyButton.click();
+  await page.locator('.ps-popover-key').waitFor();
+  await keyButton.click();
+  await page.locator('.ps-popover').waitFor({ state: 'detached' });
+
+  // 7a. Opening a 5-staff file through Open is refused in a banner and keeps the open score.
+  const xmlBefore = await musicXml(page);
+  await page.setInputFiles('.ps-open-input', join(root, 'validation/fixtures/ensemble.musicxml'));
+  await page.locator('.ps-editor-banner.ps-editor-notice').waitFor();
+  assert.match(await page.locator('.ps-editor-banner.ps-editor-notice').textContent(), /Editing is limited to 4 staves\./);
+  assert.equal(await page.locator('.ps-editor .ps-toolbar').count(), 1, 'the toolbar is still there');
+  assert.equal(await musicXml(page), xmlBefore, 'the open score is kept');
+  await page.click('.ps-editor-banner-close');
+
+  // 7b. As the initial score (the demo's fixture button), the 5-staff ensemble shows only the refusal.
   await page.click('.editor-demo-ensemble');
   await page.locator('.ps-editor-error').waitFor();
   assert.equal(await page.locator('.ps-editor-error').textContent(), 'Editing is limited to 4 staves.');
@@ -98,10 +104,30 @@ try {
   assert.equal(await page.locator('.ps-editor').getAttribute('data-ps-mode'), 'select', 'n does not enter entry mode');
   assert.doesNotMatch(await musicXml(page), /<step>/, 'c entered nothing');
 
+  await context.close();
+
+  // 9. Phone width on a touch device: the palette shows, and tapping its quarter and C buttons enters a note.
+  {
+    const phone = await browser.newContext({ viewport: { width: 390, height: 800 }, hasTouch: true, isMobile: engine === 'chromium' });
+    const page = await phone.newPage();
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto(`${server.url}/editor`);
+    await page.waitForSelector('.ps-editor .score-system svg', { timeout: 60000 });
+    const palette = page.locator('.ps-palette');
+    await palette.waitFor({ state: 'visible' });
+    const button = await palette.locator('.ps-palette-btn').first().boundingBox();
+    assert.ok(button.width >= 44 && button.height >= 44, `palette buttons are 44px targets (${button.width}x${button.height})`);
+    assert.equal(await noteCount(page), 0);
+    await palette.locator('button[aria-label="Quarter note"]').tap();
+    await palette.locator('button[aria-label="Note C"]').tap();
+    await waitForNotes(page, 1);
+    assert.match(await musicXml(page), /<step>C<\/step>/, 'the tapped C is in the score');
+    await phone.close();
+  }
+
   assert.ok(renderTimes.length > 0, 'the editor reported its change-to-redraw time');
   assert.deepEqual(errors, [], 'no page or console errors');
-  console.log(`Editor: entry, undo, click cursor, key popover, export, palette, staff cap and read-only pass (render ms: ${renderTimes.join(', ')})`);
-  await context.close();
+  console.log(`Editor: entry, undo, click cursor, key popover, export, staff cap (open and initial), read-only and touch palette pass (render ms: ${renderTimes.join(', ')})`);
 } finally {
   await browser.close();
   await server.close();

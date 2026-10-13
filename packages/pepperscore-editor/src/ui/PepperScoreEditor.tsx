@@ -161,8 +161,8 @@ function EditorSession({ store, dropped, onOpened, className, ref, ...props }: S
         callbacks.current.onChange?.(opened.document);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        if (/limited to \d+ staves/.test(message)) onOpened({ kind: 'error', message });
-        else setBanner(`Could not open ${file.name}: ${message}`);
+        // A refused file (the staff cap included) keeps the open score; only the initial props show the error-only view.
+        setBanner(`Could not open ${file.name}: ${message}`);
       }
     },
     [onOpened],

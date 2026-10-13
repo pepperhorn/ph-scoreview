@@ -41,16 +41,19 @@ const TITLES: Record<PopoverName, string> = {
 
 type Props = { name: PopoverName; store: EditorStore; onClose(): void };
 
-/** Absolutely positioned panel with native controls; Escape or a click outside closes it. */
+/** Absolutely positioned panel with native controls; Escape or a click outside (other than its opener button) closes it. */
 export function Popover({ name, store, onClose }: Props) {
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const outside = (event: PointerEvent) => {
-      if (root.current && !root.current.contains(event.target as Node)) onClose();
+      const target = event.target as Element | null;
+      // The popover's own toolbar button toggles it in its click handler; closing here first would reopen it.
+      if (target?.closest?.(`[data-ps-popover-for="${name}"]`)) return;
+      if (root.current && !root.current.contains(target)) onClose();
     };
     window.document.addEventListener('pointerdown', outside, true);
     return () => window.document.removeEventListener('pointerdown', outside, true);
-  }, [onClose]);
+  }, [onClose, name]);
   useEffect(() => {
     root.current?.querySelector<HTMLElement>('select, input')?.focus();
   }, [name]);

@@ -48,7 +48,7 @@ type ButtonContext = { editable: boolean; run(label: string): void };
 const ButtonCtx = createContext<ButtonContext>({ editable: false, run: () => {} });
 
 /** A toolbar button; without `onClick` it runs the keymap binding labelled `label`. */
-function Btn({ label, title, active, disabled, children, onClick }: { label: string; title?: string; active?: boolean; disabled?: boolean; children: ReactNode; onClick?(): void }) {
+function Btn({ label, title, active, disabled, popoverFor, children, onClick }: { label: string; title?: string; active?: boolean; disabled?: boolean; popoverFor?: PopoverName; children: ReactNode; onClick?(): void }) {
   const { editable, run } = useContext(ButtonCtx);
   return (
     <button
@@ -56,6 +56,7 @@ function Btn({ label, title, active, disabled, children, onClick }: { label: str
       className={`ps-btn ${active ? 'ps-btn-active' : ''}`.trim()}
       aria-label={label}
       aria-pressed={active === undefined ? undefined : active}
+      data-ps-popover-for={popoverFor}
       title={title ?? tip(label, label)}
       disabled={!editable || disabled}
       onClick={onClick ?? (() => run(label))}
@@ -85,7 +86,7 @@ export function Toolbar(props: ToolbarProps) {
     </select>
   );
   const popover = (name: PopoverName, label: string, text: string) => (
-    <Btn label={label} title={tip(label, label)} onClick={() => props.onPopover(name)}>{text}</Btn>
+    <Btn label={label} title={tip(label, label)} popoverFor={name} onClick={() => props.onPopover(name)}>{text}</Btn>
   );
 
   return (
