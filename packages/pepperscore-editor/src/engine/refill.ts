@@ -23,7 +23,7 @@ const rests = (ticks: number): Event[] => ticksToDurations(ticks).map(restEvent)
  * kept, so references to it survive); the others copy its notes or rest, and each note is tied
  * to its copy in the next piece. The last piece keeps the original ties only when `keepTies`.
  */
-function splitEvent(event: Event, room: number, keepTies: boolean): Event[] {
+export function splitEvent(event: Event, room: number, keepTies: boolean): Event[] {
   if (event.fullMeasure) return rests(room);
   const [first, ...more] = ticksToDurations(room);
   event.duration = first;
