@@ -1,5 +1,5 @@
 import {
-  addSlur, breakBeam, deleteEvents, enterEvent, extendSelection, makeTuplet, moveCursor, setBeamGroup, setCursorDuration,
+  addSlur, breakBeam, deleteEvents, enterEvent, entryDot, entryDotChangesScore, extendSelection, makeTuplet, moveCursor, setBeamGroup, setCursorDuration,
   setEntryMode, shiftOctave, stepPitch, toggleArticulation, toggleDot, toggleTie,
 } from '../engine/commands/index';
 import { findEvent } from '../engine/sequence-edit';
@@ -94,7 +94,14 @@ export const KEYMAP: KeyBinding[] = [
   ...DURATION_KEYS.map(duration),
   ...(['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const).map(letter),
   { keys: ['0'], label: 'Rest', group: 'entry', mode: 'enter', action: (ctx) => record(ctx, enterEvent, { rest: true }) },
-  { keys: ['.'], label: 'Toggle dot', group: 'duration', action: (ctx) => onEvent(ctx, (eventId) => record(ctx, toggleDot, { eventId })) },
+  {
+    keys: ['.'], label: 'Toggle dot', group: 'duration',
+    action: (ctx) => {
+      if (state(ctx).cursor.mode !== 'enter') onEvent(ctx, (eventId) => record(ctx, toggleDot, { eventId }));
+      else if (entryDotChangesScore(state(ctx))) record(ctx, entryDot, {});
+      else move(ctx, entryDot, {});
+    },
+  },
   { keys: ['ArrowUp'], label: 'Pitch up', group: 'pitch', action: (ctx) => onNote(ctx, (noteId) => record(ctx, stepPitch, { noteId, steps: 1 })) },
   { keys: ['ArrowDown'], label: 'Pitch down', group: 'pitch', action: (ctx) => onNote(ctx, (noteId) => record(ctx, stepPitch, { noteId, steps: -1 })) },
   { keys: ['Ctrl+ArrowUp'], label: 'Octave up', group: 'pitch', action: (ctx) => onNote(ctx, (noteId) => record(ctx, shiftOctave, { noteId, octaves: 1 })) },

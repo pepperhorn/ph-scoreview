@@ -26,6 +26,7 @@ const CursorSchema = z.object({
   duration: DurationSchema,
   mode: z.enum(['select', 'enter']),
   lastPitch: PitchSchema.optional(),
+  entered: z.string().optional(),
 });
 
 /** The wrapper; `document` is checked separately by `parseDocument`. */

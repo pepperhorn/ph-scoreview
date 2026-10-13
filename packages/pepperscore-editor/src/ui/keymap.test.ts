@@ -296,3 +296,53 @@ test('every binding has keys, a label and a description', () => {
   const redo = KEYMAP.find((b) => b.label === 'Redo')!;
   expect(describeKey(redo)).toBe('Ctrl+Shift+Z / Ctrl+Y');
 });
+
+const ticksOf = (store: EditorStore) => eventStarts(store.getState().document.parts[0].measures[0].sequences[0], 3840).map((s) => [s.tick, s.event.duration, s.event.notes?.[0]?.pitch.step ?? 'rest']);
+
+test('n 4 c . d: the dot lengthens the C and D follows it at 1440', () => {
+  const { store, press } = setup(createDocument({ parts: [{ name: 'Flute', clef: 'treble', gmProgram: 74 }], measures: 2 }));
+  for (const k of ['n', '4', 'c', '.', 'd']) press(k);
+  expect(ticksOf(store).slice(0, 2)).toEqual([[0, { base: 'quarter', dots: 1 }, 'C'], [1440, { base: 'quarter', dots: 0 }, 'D']]);
+  expect(store.getState().cursor).toMatchObject({ tick: 2400, duration: { base: 'quarter', dots: 0 } });
+});
+
+test('n 4 . c: the dot applies to the entry duration', () => {
+  const { store, press } = setup(createDocument({ parts: [{ name: 'Flute', clef: 'treble', gmProgram: 74 }], measures: 2 }));
+  for (const k of ['n', '4', '.']) press(k);
+  expect(store.getState().cursor.duration).toEqual({ base: 'quarter', dots: 1 });
+  press('c');
+  expect(ticksOf(store)[0]).toEqual([0, { base: 'quarter', dots: 1 }, 'C']);
+  expect(store.getState().cursor.tick).toBe(1440);
+  press('.'); // the entry duration is dotted: . turns that off, the C keeps its dot
+  expect(store.getState().cursor.duration).toEqual({ base: 'quarter', dots: 0 });
+  expect(ticksOf(store)[0]).toEqual([0, { base: 'quarter', dots: 1 }, 'C']);
+});
+
+test('after moving the cursor, . in entry mode dots the entry duration, not the event before', () => {
+  const { store, press } = setup(twoBars());
+  press('n');
+  store.dispatch(setCursor, { tick: 960 }, { record: false });
+  press('.');
+  expect(store.getState().cursor.duration).toEqual({ base: 'quarter', dots: 1 });
+  expect(bar(store)[0].duration).toEqual({ base: 'quarter', dots: 0 });
+});
+
+test('. in select mode toggles the selected event dot', () => {
+  const { store, press } = setup(twoBars());
+  store.dispatch(setSelection, { ids: ['a1'] }, { record: false });
+  press('.');
+  expect(bar(store)[0].duration).toEqual({ base: 'quarter', dots: 1 });
+  expect(store.getState().cursor.duration).toEqual({ base: 'quarter', dots: 0 });
+});
+
+test('entry-mode . on the entry duration is not an undo step', () => {
+  const { store, press } = setup();
+  for (const k of ['n', '4', '.']) press(k);
+  expect(store.getState().history.past).toEqual([]);
+  press('c'); // a dotted C
+  press('.'); // entry duration back to a quarter: cursor-only
+  press('.'); // right after the C: removes its dot, recorded
+  expect(store.getState().history.past.map((e) => e.label)).toEqual(['Enter note', 'Toggle dot']);
+  expect(bar(store)[0].duration).toEqual({ base: 'quarter', dots: 0 });
+  expect(store.getState().cursor.tick).toBe(960);
+});

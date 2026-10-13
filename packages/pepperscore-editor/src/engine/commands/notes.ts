@@ -56,6 +56,7 @@ export const enterEvent: Command<{ pitch?: Pitch; rest?: boolean }> = {
     applyAutoBeam(ctx.pm, ctx.seq, ctx.time);
 
     if (!rest) cursor.lastPitch = { ...pitch! };
+    cursor.entered = event.id;
     const next = cursor.tick + length;
     if (next < ctx.barTicks - TICK_EPSILON) cursor.tick = next;
     else if (index + 1 < doc.global.measures.length) {
@@ -91,6 +92,54 @@ export const setDuration: Command<{ eventId: string; duration: Duration }> = {
 export const toggleDot: Command<{ eventId: string }> = {
   label: 'Toggle dot',
   run: (draft, { eventId }) => resize(draft, eventId, (d) => ({ base: d.base, dots: d.dots ? 0 : 1 })),
+};
+
+/** The event entry mode just entered, while the cursor sits right after it (across a barline too). */
+export function justEntered(draft: Editable): EventAt | undefined {
+  const { cursor, document: doc } = draft;
+  const at = cursor.entered ? findEvent(doc, cursor.entered) : undefined;
+  if (!at || at.part.id !== cursor.partId || at.seq.staff !== cursor.staff || at.seq.voice !== cursor.voice) return undefined;
+  const end = at.tick + at.ticks;
+  const here = measureIndex(doc, cursor.measureId);
+  if (here === at.measureIndex) return Math.abs(end - cursor.tick) < TICK_EPSILON ? at : undefined;
+  return here === at.measureIndex + 1 && cursor.tick < TICK_EPSILON && end >= at.barTicks - TICK_EPSILON ? at : undefined;
+}
+
+/**
+ * Entry-mode `.`: with a dotted entry duration, turns its dot off. Otherwise, right after entering an
+ * event, toggles that event's dot and moves the cursor to its new end (the entry duration is unchanged,
+ * so `4 c . d` is a dotted C then a quarter D); anywhere else, dots the entry duration. Record it only when
+ * it dots an event (`entryDotChangesScore`); the other cases are cursor-only.
+ */
+export const entryDotChangesScore = (state: Editable): boolean => !state.cursor.duration.dots && justEntered(state) !== undefined;
+
+export const entryDot: Command<Record<string, never>> = {
+  label: 'Toggle dot',
+  run: (draft) => {
+    const cursor = draft.cursor;
+    if (cursor.duration.dots) {
+      cursor.duration = { base: cursor.duration.base, dots: 0 };
+      return;
+    }
+    const entered = justEntered(draft);
+    if (!entered) {
+      cursor.duration = { base: cursor.duration.base, dots: 1 };
+      return;
+    }
+    const id = entered.event.id;
+    resize(draft, id, (d) => ({ base: d.base, dots: d.dots ? 0 : 1 }));
+    const at = findEvent(draft.document, id);
+    if (!at) return;
+    const end = at.tick + at.ticks;
+    const next = draft.document.global.measures[at.measureIndex + 1];
+    if (end >= at.barTicks - TICK_EPSILON && next) {
+      cursor.measureId = next.id;
+      cursor.tick = 0;
+    } else {
+      cursor.measureId = draft.document.global.measures[at.measureIndex].id;
+      cursor.tick = Math.min(end, at.barTicks);
+    }
+  },
 };
 
 /** Note → rest (its notes, slurs and articulations go); rest → note at the last entered pitch or the middle line. */

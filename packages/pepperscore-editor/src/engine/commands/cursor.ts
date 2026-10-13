@@ -42,6 +42,7 @@ function move(draft: Editable, by: 'event' | 'measure', delta: number): void {
   cursor = clampCursor(doc, cursor);
   if (cursor.measureId !== draft.cursor.measureId) draft.cursor.measureId = cursor.measureId;
   if (cursor.tick !== draft.cursor.tick) draft.cursor.tick = cursor.tick;
+  if (draft.cursor.entered !== undefined) delete draft.cursor.entered;
 }
 
 /** The id of the event starting at the cursor in its sequence, if any. */

@@ -180,6 +180,7 @@ export const deleteMeasure: Command<{ measureId: string }> = {
 export const setCursor: Command<Partial<Cursor>> = {
   label: 'Move cursor',
   run: (draft, cursor) => {
+    if (draft.cursor.entered !== undefined && !('entered' in cursor)) delete draft.cursor.entered;
     Object.assign(draft.cursor, cursor);
   },
 };

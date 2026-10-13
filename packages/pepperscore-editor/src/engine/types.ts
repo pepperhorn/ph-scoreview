@@ -11,6 +11,8 @@ export type Cursor = {
   duration: Duration;
   mode: 'select' | 'enter';
   lastPitch?: Pitch;
+  /** The event entry mode just entered; cleared when the cursor moves. Entry-mode `.` dots it while the cursor sits right after it. */
+  entered?: string;
 };
 
 /** Event, note, direction or measure ids. */
