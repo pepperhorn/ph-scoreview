@@ -244,3 +244,36 @@ test('rapid setTime on one bar coalesces into one undo step that restores the or
   store.undo();
   expect(store.getState().document).toEqual(before);
 });
+
+test('deleteMeasure carries a tick-0 clef change and a tempo to the next bar unless it has its own', () => {
+  const doc = createDocument({ parts: [{ name: 'Piano', clef: 'treble', gmProgram: 1 }], measures: 4 });
+  doc.parts[0].measures[1].clefs = [{ staff: 1, clef: 'bass' }];
+  doc.global.measures[1].tempo = { bpm: 90, unit: 'quarter' };
+  doc.parts[0].measures[2].clefs = [{ staff: 1, clef: 'alto', tick: 0 }];
+  doc.global.measures[2].tempo = { bpm: 120, unit: 'quarter' };
+  const store = createEditorStore(doc);
+  const [, m2, m3] = ids(doc);
+  store.dispatch(deleteMeasure, { measureId: m3 }); // bar 3 has nothing to lose to bar 4: carried
+  let next = store.getState().document;
+  expect(next.parts[0].measures[2].clefs).toEqual([{ staff: 1, clef: 'alto', tick: 0 }]);
+  expect(next.global.measures[2].tempo).toEqual({ bpm: 120, unit: 'quarter' });
+  store.dispatch(deleteMeasure, { measureId: m2 }); // the next bar has its own clef and tempo: kept
+  next = store.getState().document;
+  expect(next.parts[0].measures[1].clefs).toEqual([{ staff: 1, clef: 'alto', tick: 0 }]);
+  expect(next.global.measures[1].tempo).toEqual({ bpm: 120, unit: 'quarter' });
+  expect(effectiveClef(next.parts[0], 1, 1)).toBe('alto');
+  expect(store.getState().invariantErrors).toEqual([]);
+});
+
+test('deleting bar 1 makes its clef change the next bar’s initial clef', () => {
+  const doc = createDocument({ parts: [{ name: 'Cello', clef: 'treble', gmProgram: 43 }], measures: 3 });
+  doc.parts[0].measures[1].clefs = [{ staff: 1, clef: 'bass' }];
+  doc.global.measures[0].tempo = { bpm: 72, unit: 'quarter' };
+  const store = createEditorStore(doc);
+  store.dispatch(deleteMeasure, { measureId: doc.global.measures[0].id });
+  const next = store.getState().document;
+  expect(next.parts[0].clefs).toEqual(['bass']);
+  expect(next.parts[0].measures[0].clefs).toBeUndefined();
+  expect(next.global.measures[0].tempo).toEqual({ bpm: 72, unit: 'quarter' });
+  expect(store.getState().invariantErrors).toEqual([]);
+});

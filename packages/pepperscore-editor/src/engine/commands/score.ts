@@ -153,8 +153,9 @@ export const insertMeasure: Command<{ afterMeasureId: string | null }> = {
 };
 
 /**
- * Deletes a measure in every part; refused when it is the only one. A time or key change in
- * it moves to the next bar unless that bar has its own. A cursor in it moves to the previous bar.
+ * Deletes a measure in every part; refused when it is the only one. A time, key or tempo change, and
+ * a clef change at its start, move to the next bar unless that bar has its own. When bar 1 goes, the
+ * new bar 1's starting clef changes become the parts' initial clefs. A cursor in it moves to the previous bar.
  */
 export const deleteMeasure: Command<{ measureId: string }> = {
   label: 'Delete measure',
@@ -163,10 +164,24 @@ export const deleteMeasure: Command<{ measureId: string }> = {
     const index = measureIndex(doc, measureId);
     if (index < 0 || doc.global.measures.length <= 1) return;
     const [removed] = doc.global.measures.splice(index, 1);
-    for (const part of doc.parts) part.measures.splice(index, 1);
     const next = doc.global.measures[index];
+    for (const part of doc.parts) {
+      const [gone] = part.measures.splice(index, 1);
+      const following = part.measures[index];
+      if (!following) continue;
+      const atStart = (c: { tick?: number }) => (c.tick ?? 0) === 0;
+      const carried = (gone.clefs ?? []).filter((c) => atStart(c) && !following.clefs?.some((f) => f.staff === c.staff && atStart(f)));
+      if (carried.length) following.clefs = [...(following.clefs ?? []), ...carried.map((c) => ({ ...c }))];
+      if (index === 0 && following.clefs) {
+        for (const c of following.clefs.filter(atStart)) part.clefs[c.staff - 1] = c.clef;
+        const rest = following.clefs.filter((c) => !atStart(c));
+        if (rest.length) following.clefs = rest;
+        else delete following.clefs;
+      }
+    }
     if (next && removed.time && !next.time) next.time = { ...removed.time };
     if (next && removed.key && !next.key) next.key = { ...removed.key };
+    if (next && removed.tempo && !next.tempo) next.tempo = { ...removed.tempo };
     for (const layout of doc.layouts) {
       if (layout.breaks?.some((b) => b.measureId === measureId)) layout.breaks = layout.breaks.filter((b) => b.measureId !== measureId);
     }
