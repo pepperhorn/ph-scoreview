@@ -49,9 +49,12 @@ export function ensureSequence(pm: PartMeasure, staff: number, voice: number): S
 
 type Start = { event: Event; tick: number; ticks: number; contentIndex: number };
 
-/** Ticks of an event outside a tuplet; a full-measure rest spans the bar. */
+/** Written ticks of an event, ignoring tuplet scaling; a grace event takes no time. */
+const writtenTicks = (event: Event): number => (event.grace ? 0 : durationTicks(event.duration));
+
+/** Ticks of an event outside a tuplet; a full-measure rest spans the bar, a grace event takes none. */
 function plainTicks(event: Event, barTicks: number | undefined): number {
-  return event.fullMeasure ? (barTicks ?? 3840) : durationTicks(event.duration);
+  return event.fullMeasure ? (barTicks ?? 3840) : writtenTicks(event);
 }
 
 function walk(seq: Sequence, barTicks?: number): Start[] {
@@ -66,7 +69,7 @@ function walk(seq: Sequence, barTicks?: number): Start[] {
       let cumulative = 0;
       for (const event of item.content) {
         const from = start + (cumulative * span) / written;
-        cumulative += durationTicks(event.duration);
+        cumulative += writtenTicks(event);
         const to = start + (cumulative * span) / written;
         out.push({ event, tick: from, ticks: to - from, contentIndex });
         tick = to;
@@ -82,13 +85,14 @@ function walk(seq: Sequence, barTicks?: number): Start[] {
 
 /**
  * Events in order, flattened out of tuplets, with tuplet-scaled start ticks and lengths.
- * A full-measure rest spans `barTicks` (default 3840).
+ * A full-measure rest spans `barTicks` (default 3840); a grace event takes 0 ticks
+ * and starts at the tick of the event after it.
  */
 export function eventStarts(seq: Sequence, barTicks?: number): { event: Event; tick: number; ticks: number }[] {
   return walk(seq, barTicks).map(({ event, tick, ticks }) => ({ event, tick, ticks }));
 }
 
-/** Total ticks of a sequence; a full-measure rest spans `barTicks` (default 3840). */
+/** Total ticks of a sequence; a full-measure rest spans `barTicks` (default 3840), grace events count 0. */
 export function sequenceTicks(seq: Sequence, barTicks?: number): number {
   const starts = walk(seq, barTicks);
   const last = starts[starts.length - 1];

@@ -65,3 +65,22 @@ test('a full-measure rest spans the bar it is in', () => {
   expect(locateEvent(doc, rest.id)).toMatchObject({ measureIndex: 1, tick: 0 });
   expect(checkInvariants(doc)).toEqual([]);
 });
+
+test('grace events take no time and start at the following event', () => {
+  const doc = createDocument({ parts: [{ name: 'Fl', clef: 'treble', gmProgram: 74 }], measures: 1 });
+  const seq = doc.parts[0].measures[0].sequences[0];
+  const ev = (id: string, base: 'quarter' | 'eighth' | 'half', grace = false) => ({
+    id, type: 'event' as const, duration: { base, dots: 0 as const }, notes: [{ id: `${id}n`, pitch: { step: 'C' as const, octave: 5, alter: 0 } }],
+    ...(grace ? { grace: { slash: true } } : {}),
+  });
+  seq.content = [
+    ev('g1', 'eighth', true), ev('a', 'quarter'),
+    { id: 't1', type: 'tuplet', outer: { multiple: 3, base: 'eighth' }, inner: { multiple: 2, base: 'eighth' }, content: [ev('b', 'eighth'), ev('g2', 'eighth', true), ev('c', 'eighth'), ev('d', 'eighth')] },
+    ev('h', 'half'),
+  ];
+  expect(eventStarts(seq, 3840).map(s => [s.event.id, s.tick, s.ticks])).toEqual([
+    ['g1', 0, 0], ['a', 0, 960], ['b', 960, 320], ['g2', 1280, 0], ['c', 1280, 320], ['d', 1600, 320], ['h', 1920, 1920],
+  ]);
+  expect(sequenceTicks(seq, 3840)).toBe(3840);
+  expect(checkInvariants(doc)).toEqual([]);
+});
