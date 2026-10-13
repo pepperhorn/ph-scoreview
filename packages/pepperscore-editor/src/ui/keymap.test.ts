@@ -1,5 +1,5 @@
 import { createEditorStore, type EditorStore } from '../engine/store';
-import { extendSelection, moveCursor, setCursor, setSelection } from '../engine/commands/index';
+import { extendSelection, moveCursor, setChordMode, setCursor, setKey, setSelection } from '../engine/commands/index';
 import { createDocument } from '../model/create';
 import { eventStarts } from '../model/query';
 import type { Event, Pitch } from '../model/schema';
@@ -7,12 +7,12 @@ import { helloDoc } from '../test-helpers';
 import { describeKey, handleKey, KEYMAP, type KeyContext } from './keymap';
 import { pitchForLetter } from './pitch-entry';
 
-type Mods = { ctrl?: boolean; meta?: boolean; shift?: boolean; composing?: boolean };
+type Mods = { ctrl?: boolean; meta?: boolean; shift?: boolean; alt?: boolean; composing?: boolean };
 type FakeEvent = KeyboardEvent & { prevented: boolean };
 
 function keyEvent(key: string, mods: Mods = {}, target: unknown = null): FakeEvent {
   const event = {
-    key, ctrlKey: !!mods.ctrl, metaKey: !!mods.meta, shiftKey: !!mods.shift, altKey: false, isComposing: !!mods.composing, target, prevented: false,
+    key, ctrlKey: !!mods.ctrl, metaKey: !!mods.meta, shiftKey: !!mods.shift, altKey: !!mods.alt, isComposing: !!mods.composing, target, prevented: false,
     preventDefault() { event.prevented = true; },
   };
   return event as unknown as FakeEvent;
@@ -345,4 +345,71 @@ test('entry-mode . on the entry duration is not an undo step', () => {
   expect(store.getState().history.past.map((e) => e.label)).toEqual(['Enter note', 'Toggle dot']);
   expect(bar(store)[0].duration).toEqual({ base: 'quarter', dots: 0 });
   expect(store.getState().cursor.tick).toBe(960);
+});
+
+const pitches = (e: Event) => e.notes!.map((n) => n.pitch);
+
+test('+ sharpens, _ flattens (to double accidentals at most), = restores the natural', () => {
+  const { store, press } = setup();
+  for (const k of ['n', '4', 'c']) press(k);
+  expect(press('+', { shift: true })).toBe(true);
+  expect(pitches(bar(store)[0])).toEqual([P('C', 4, 1)]);
+  press('+');
+  press('+');
+  expect(pitches(bar(store)[0])).toEqual([P('C', 4, 2)]);
+  press('=');
+  expect(pitches(bar(store)[0])).toEqual([P('C', 4)]);
+  press('_', { shift: true });
+  press('_');
+  press('_');
+  expect(pitches(bar(store)[0])).toEqual([P('C', 4, -2)]);
+  expect(press('-')).toBe(true); // still tenuto
+  expect(bar(store)[0].articulations).toEqual(['tenuto']);
+});
+
+test('accidentals and semitone steps work on the selected note in select mode', () => {
+  const { store, press } = setup(twoBars());
+  store.dispatch(setSelection, { ids: ['a3'] }, { record: false });
+  expect(press('ArrowUp', { alt: true })).toBe(true);
+  expect(pitches(bar(store)[2])).toEqual([P('F', 4)]);
+  press('ArrowUp', { alt: true });
+  expect(pitches(bar(store)[2])).toEqual([P('F', 4, 1)]);
+  press('ArrowDown', { alt: true });
+  press('ArrowDown', { alt: true });
+  press('ArrowDown', { alt: true });
+  expect(pitches(bar(store)[2])).toEqual([P('E', 4, -1)]);
+  press('+');
+  expect(pitches(bar(store)[2])).toEqual([P('E', 4)]);
+});
+
+test('Shift+letter adds that letter to the target event chord, near its top note, in the key; the cursor stays', () => {
+  const { store, press } = setup();
+  const m1 = store.getState().document.global.measures[0].id;
+  store.dispatch(setKey, { measureId: m1, key: { fifths: 2 } });
+  for (const k of ['n', '4', 'd']) press(k);
+  const cursor = store.getState().cursor;
+  expect(press('F', { shift: true })).toBe(true);
+  expect(press('A', { shift: true })).toBe(true);
+  expect(pitches(bar(store)[0])).toEqual([P('D', 4), P('F', 4, 1), P('A', 4)]);
+  press('D', { shift: true }); // nearest the top note A4
+  expect(pitches(bar(store)[0])).toEqual([P('D', 4), P('F', 4, 1), P('A', 4), P('D', 5)]);
+  press('A', { shift: true }); // A4 is already there: an octave above
+  expect(pitches(bar(store)[0])).toEqual([P('D', 4), P('F', 4, 1), P('A', 4), P('D', 5), P('A', 5)]);
+  expect(store.getState().cursor).toEqual(cursor);
+  expect(press('S', { shift: true })).toBe(true); // Shift+S stays staccato
+  expect(bar(store)[0].articulations).toEqual(['staccato']);
+});
+
+test('with "Add to chord" on, plain letters add to the chord instead of entering', () => {
+  const { store, press } = setup();
+  for (const k of ['n', '4', 'c']) press(k);
+  store.dispatch(setChordMode, { on: true }, { record: false });
+  const cursor = store.getState().cursor;
+  press('e');
+  press('g');
+  expect(pitches(bar(store)[0])).toEqual([P('C', 4), P('E', 4), P('G', 4)]);
+  expect(store.getState().cursor.tick).toBe(cursor.tick);
+  store.dispatch(setChordMode, { on: false }, { record: false });
+  press('d');
+  expect(pitches(bar(store)[1])).toEqual([P('D', 4)]);
 });

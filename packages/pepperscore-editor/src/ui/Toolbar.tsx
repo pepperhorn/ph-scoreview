@@ -1,6 +1,6 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import {
-  addDynamic, deleteMeasure, insertMeasure, setBarline, setBeamGroup, setCursorDuration, setEnding, setJump, setRepeatEnd, toggleMark, toggleRepeatStart,
+  addDynamic, deleteMeasure, insertMeasure, setBarline, setBeamGroup, setChordMode, setCursorDuration, setEnding, setJump, setRepeatEnd, toggleMark, toggleRepeatStart,
   type Mark,
 } from '../engine/commands/index';
 import type { EditorStore } from '../engine/store';
@@ -107,6 +107,12 @@ export function Toolbar(props: ToolbarProps) {
         ))}
         <Btn label="Toggle dot">.</Btn>
         <Btn label="Rest">Rest</Btn>
+      </Group>
+      <Group name="accidentals">
+        <Btn label="Sharp">♯</Btn>
+        <Btn label="Flat">♭</Btn>
+        <Btn label="Natural">♮</Btn>
+        <Btn label="Add to chord" title="Add to chord: note letters add to the chord (Shift+letter adds one note)" active={!!cursor.chord} onClick={() => { store.dispatch(setChordMode, { on: !cursor.chord }, { record: false }); refocus(); }}>+ Chord</Btn>
       </Group>
       <Group name="edit">
         <Btn label="Tie">Tie</Btn>

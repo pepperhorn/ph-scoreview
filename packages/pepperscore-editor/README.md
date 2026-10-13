@@ -74,6 +74,18 @@ whatever Shift state produced it. Some keys only act in note entry mode (`N` tog
 | ArrowDown | Pitch down | Any |
 | Ctrl+ArrowUp | Octave up | Any |
 | Ctrl+ArrowDown | Octave down | Any |
+| Alt+ArrowUp | Semitone up | Any |
+| Alt+ArrowDown | Semitone down | Any |
+| + | Sharp | Any |
+| _ | Flat | Any |
+| = | Natural | Any |
+| Shift+A | Add A to chord | Any |
+| Shift+B | Add B to chord | Any |
+| Shift+C | Add C to chord | Any |
+| Shift+D | Add D to chord | Any |
+| Shift+E | Add E to chord | Any |
+| Shift+F | Add F to chord | Any |
+| Shift+G | Add G to chord | Any |
 | ArrowLeft | Previous event | Any |
 | ArrowRight | Next event | Any |
 | Ctrl+ArrowLeft | Previous bar | Any |

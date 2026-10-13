@@ -90,6 +90,15 @@ export const setEntryMode: Command<{ mode: Cursor['mode'] }> = {
   },
 };
 
+/** "Add to chord" on or off. Cursor-only; dispatch with `{ record: false }`. */
+export const setChordMode: Command<{ on: boolean }> = {
+  label: 'Add to chord',
+  run: (draft, { on }) => {
+    if (on) draft.cursor.chord = true;
+    else if (draft.cursor.chord !== undefined) delete draft.cursor.chord;
+  },
+};
+
 /** Cursor-only; dispatch with `{ record: false }`. */
 export const setCursorDuration: Command<{ duration: Duration }> = {
   label: 'Set entry duration',

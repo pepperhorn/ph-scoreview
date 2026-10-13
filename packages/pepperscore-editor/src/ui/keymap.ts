@@ -1,8 +1,8 @@
 import {
-  addSlur, breakBeam, deleteEvents, enterEvent, entryDot, entryDotChangesScore, extendSelection, makeTuplet, moveCursor, setBeamGroup, setCursorDuration,
+  addChordNote, addSlur, breakBeam, deleteEvents, enterEvent, entryDot, entryDotChangesScore, setAccidental, stepSemitone, extendSelection, makeTuplet, moveCursor, setBeamGroup, setCursorDuration,
   setEntryMode, shiftOctave, stepPitch, toggleArticulation, toggleDot, toggleTie,
 } from '../engine/commands/index';
-import { findEvent } from '../engine/sequence-edit';
+import { findEvent, findNote } from '../engine/sequence-edit';
 import type { EditorStore } from '../engine/store';
 import type { Command, EditorState } from '../engine/types';
 import type { DurationBase } from '../model/durations';
@@ -15,13 +15,13 @@ export type PopoverName = 'key' | 'time' | 'clef' | 'dynamic' | 'jump' | 'ending
 export type KeyContext = { store: EditorStore; openPopover(name: PopoverName): void; play(): void };
 /**
  * `keys` are readable combos (`'Ctrl+Shift+Z'`, `'ArrowUp'`, `'Shift+S'`), modifiers in the order
- * Ctrl, Alt, Shift; Cmd counts as Ctrl. Digit and symbol keys (`'>'`, `'4'`) match the typed
+ * Ctrl, Alt, Shift; Cmd counts as Ctrl. Digit and symbol keys (`'>'`, `'+'`, `'4'`) match the typed
  * character whatever Shift state produced it. `mode` limits a binding to entry or select mode.
  */
 export type KeyBinding = {
   keys: string[];
   label: string;
-  group: 'entry' | 'duration' | 'pitch' | 'edit' | 'navigate' | 'score';
+  group: 'entry' | 'duration' | 'pitch' | 'chord' | 'edit' | 'navigate' | 'score';
   mode?: 'enter' | 'select';
   action: (ctx: KeyContext) => void;
 };
@@ -41,9 +41,33 @@ function onNote(ctx: KeyContext, run: (noteId: string) => void): void {
 }
 
 function enterLetter(ctx: KeyContext, step: Pitch['step']): void {
+  if (state(ctx).cursor.chord) return chordLetter(ctx, step);
   const { document, cursor } = state(ctx);
   const fifths = effectiveKey(document, Math.max(measureIndex(document, cursor.measureId), 0)).fifths;
   record(ctx, enterEvent, { pitch: pitchForLetter(step, cursor.lastPitch, fifths) });
+}
+
+/**
+ * Adds `step` to the target event's chord, in the octave nearest its top note (an octave higher when
+ * that pitch is already there) with the key signature's alteration; the cursor stays.
+ */
+function chordLetter(ctx: KeyContext, step: Pitch['step']): void {
+  onEvent(ctx, (eventId) => {
+    const at = findEvent(state(ctx).document, eventId);
+    const top = at?.event.notes?.at(-1)?.pitch;
+    if (!at || !top) return;
+    const pitch = pitchForLetter(step, top, effectiveKey(state(ctx).document, at.measureIndex).fifths);
+    const taken = at.event.notes!.some((n) => n.pitch.step === pitch.step && n.pitch.octave === pitch.octave && n.pitch.alter === pitch.alter);
+    record(ctx, addChordNote, { eventId, pitch: taken ? { ...pitch, octave: pitch.octave + 1 } : pitch });
+  });
+}
+
+/** Sets the target note's alteration from its current one (clamped to double sharp/flat). */
+function accidental(ctx: KeyContext, alter: (current: number) => number): void {
+  onNote(ctx, (noteId) => {
+    const note = findNote(state(ctx).document, noteId)?.note;
+    if (note) record(ctx, setAccidental, { noteId, alter: Math.max(-2, Math.min(2, alter(note.pitch.alter))) });
+  });
 }
 
 const BEAM_CYCLE = [2, 3, 4, 0] as const; // 0 = automatic
@@ -68,6 +92,7 @@ function cycleBeams(ctx: KeyContext): void {
 }
 
 const letter = (step: Pitch['step']): KeyBinding => ({ keys: [step], label: `Note ${step}`, group: 'pitch', mode: 'enter', action: (ctx) => enterLetter(ctx, step) });
+const chordKey = (step: Pitch['step']): KeyBinding => ({ keys: [`Shift+${step}`], label: `Add ${step} to chord`, group: 'chord', action: (ctx) => chordLetter(ctx, step) });
 
 const DURATION_KEYS: DurationBase[] = ['32nd', '16th', 'eighth', 'quarter', 'half', 'whole'];
 const duration = (base: DurationBase, i: number): KeyBinding => ({
@@ -106,6 +131,12 @@ export const KEYMAP: KeyBinding[] = [
   { keys: ['ArrowDown'], label: 'Pitch down', group: 'pitch', action: (ctx) => onNote(ctx, (noteId) => record(ctx, stepPitch, { noteId, steps: -1 })) },
   { keys: ['Ctrl+ArrowUp'], label: 'Octave up', group: 'pitch', action: (ctx) => onNote(ctx, (noteId) => record(ctx, shiftOctave, { noteId, octaves: 1 })) },
   { keys: ['Ctrl+ArrowDown'], label: 'Octave down', group: 'pitch', action: (ctx) => onNote(ctx, (noteId) => record(ctx, shiftOctave, { noteId, octaves: -1 })) },
+  { keys: ['Alt+ArrowUp'], label: 'Semitone up', group: 'pitch', action: (ctx) => onNote(ctx, (noteId) => record(ctx, stepSemitone, { noteId, delta: 1 })) },
+  { keys: ['Alt+ArrowDown'], label: 'Semitone down', group: 'pitch', action: (ctx) => onNote(ctx, (noteId) => record(ctx, stepSemitone, { noteId, delta: -1 })) },
+  { keys: ['+'], label: 'Sharp', group: 'pitch', action: (ctx) => accidental(ctx, (a) => a + 1) },
+  { keys: ['_'], label: 'Flat', group: 'pitch', action: (ctx) => accidental(ctx, (a) => a - 1) },
+  { keys: ['='], label: 'Natural', group: 'pitch', action: (ctx) => accidental(ctx, () => 0) },
+  ...(['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const).map(chordKey),
   { keys: ['ArrowLeft'], label: 'Previous event', group: 'navigate', action: (ctx) => move(ctx, moveCursor, { by: 'event', delta: -1 }) },
   { keys: ['ArrowRight'], label: 'Next event', group: 'navigate', action: (ctx) => move(ctx, moveCursor, { by: 'event', delta: 1 }) },
   { keys: ['Ctrl+ArrowLeft'], label: 'Previous bar', group: 'navigate', action: (ctx) => move(ctx, moveCursor, { by: 'measure', delta: -1 }) },

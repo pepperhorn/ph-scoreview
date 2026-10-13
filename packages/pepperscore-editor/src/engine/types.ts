@@ -13,6 +13,8 @@ export type Cursor = {
   lastPitch?: Pitch;
   /** The event entry mode just entered; cleared when the cursor moves. Entry-mode `.` dots it while the cursor sits right after it. */
   entered?: string;
+  /** "Add to chord": entry-mode letters add to the target event's chord instead of entering. */
+  chord?: boolean;
 };
 
 /** Event, note, direction or measure ids. */

@@ -27,6 +27,7 @@ const CursorSchema = z.object({
   mode: z.enum(['select', 'enter']),
   lastPitch: PitchSchema.optional(),
   entered: z.string().optional(),
+  chord: z.boolean().optional(),
 });
 
 /** The wrapper; `document` is checked separately by `parseDocument`. */
