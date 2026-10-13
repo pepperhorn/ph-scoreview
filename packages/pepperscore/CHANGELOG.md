@@ -9,6 +9,10 @@
 - Handle: `scrollToMeasure(index)` and `seekToMeasure(index)`.
 - Type exports `PepperScoreClickInfo` and `PepperScoreHighlight`.
 
+### Changed
+
+- A new score source draws immediately; the redraw fade only applies to setting changes.
+
 ## 0.2.0
 
 ### Added

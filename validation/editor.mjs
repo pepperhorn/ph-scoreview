@@ -1,6 +1,6 @@
 // The score editor demo (apps/reader /editor): keyboard entry engraves, undo, a click puts the cursor on a note, the touch
-// palette enters notes on a phone-sized viewport, the ensemble fixture (5 staves) is refused, and the editor logs its
-// change-to-redraw latency. Runs against the build (npm run build first). BROWSER=chromium|firefox|webkit.
+// palette enters notes on a phone-sized viewport, the ensemble fixture (5 staves) is refused, and every
+// change-to-redraw latency the editor logs is under 250 ms. Runs against the build (npm run build first). BROWSER=chromium|firefox|webkit.
 import assert from 'node:assert/strict';
 import { chromium, firefox, webkit } from 'playwright-core';
 import { readFile } from 'node:fs/promises';
@@ -142,6 +142,8 @@ try {
   }
 
   assert.ok(renderTimes.length > 0, 'the editor reported its change-to-redraw time');
+  // A new score source skips the viewer's redraw fade, so an edit engraves well inside a quarter second.
+  assert.ok(renderTimes.every(ms => ms < 250), `every change-to-redraw time is under 250 ms (got ${renderTimes.join(', ')})`);
   assert.deepEqual(errors, [], 'no page or console errors');
   console.log(`Editor: entry, undo, click cursor, key popover, export, save and reopen, staff cap (open and initial), read-only and touch palette pass (render ms: ${renderTimes.join(', ')})`);
 } finally {

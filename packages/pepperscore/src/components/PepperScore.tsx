@@ -307,6 +307,8 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const supersededRedrawsRef = useRef(0);
   /** The score revision onReady last fired for. */
   const readyRevisionRef = useRef(-1);
+  /** The score revision last drawn: a new source draws at once, only setting changes wait for the redraw fade. */
+  const drawnRevisionRef = useRef(-1);
   useEffect(() => { const channel = openVerovioChannel(); channelRef.current = channel; return () => { cancelImports(channel); closeVerovioChannel(channel); }; }, []);
   useEffect(() => ensureMusicFonts(assetBase, failed => warnAssetBase(assetBase, failed)), [assetBase]);
   const hiddenSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
@@ -803,6 +805,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
         restartRedrawsRef.current = 0;
         supersededRedrawsRef.current = 0;
         setError('');
+        drawnRevisionRef.current = scoreRevision;
         if (scoreRevision > 0 && readyRevisionRef.current !== scoreRevision) {
           readyRevisionRef.current = scoreRevision;
           callbacks.current.onReady?.({ title: score.title, composer: score.composer || undefined, parts: score.parts.map(part => ({ id: part.id, name: part.name })), measures: score.parts[0]?.measures.length ?? 0 });
@@ -830,7 +833,9 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
       }
     };
     setLoadingFont(false);
-    const delay = !quiet && hasPaintedRef.current && !window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 260 : 0;
+    // The fade covers a settings re-layout (mode, zoom, font, transposition); a new score source draws without waiting.
+    const newSource = scoreRevision !== drawnRevisionRef.current;
+    const delay = !quiet && !newSource && hasPaintedRef.current && !window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 260 : 0;
     timer = window.setTimeout(() => void draw(), delay);
     return () => { disposed = true; window.clearTimeout(timer); cancelAnimationFrame(frame); };
   }, [ready, resizeTick, scoreRevision, chrome.partControls, hiddenIds, prefs.mode, prefs.notationFont, prefs.annotationFont, prefs.names, prefs.chordSymbols, prefs.inferChordSymbols, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.zoom, prefs.semitones, prefs.keyFlip, scorePitch]);
