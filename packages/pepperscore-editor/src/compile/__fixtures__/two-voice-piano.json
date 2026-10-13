@@ -1,0 +1,349 @@
+{
+  "global": {
+    "measures": [
+      {
+        "id": "m1",
+        "time": {
+          "count": 4,
+          "unit": 4
+        },
+        "key": {
+          "fifths": 0
+        }
+      },
+      {
+        "id": "m2"
+      }
+    ]
+  },
+  "parts": [
+    {
+      "id": "p1",
+      "name": "Piano",
+      "instrument": {
+        "gmProgram": 1
+      },
+      "staves": 2,
+      "clefs": [
+        "treble",
+        "bass"
+      ],
+      "measures": [
+        {
+          "id": "p1m1",
+          "sequences": [
+            {
+              "id": "s1",
+              "staff": 1,
+              "voice": 1,
+              "content": [
+                {
+                  "id": "e1",
+                  "type": "event",
+                  "duration": {
+                    "base": "eighth",
+                    "dots": 0
+                  },
+                  "notes": [
+                    {
+                      "id": "n1",
+                      "pitch": {
+                        "step": "C",
+                        "octave": 5,
+                        "alter": 0
+                      }
+                    }
+                  ],
+                  "stem": "up"
+                },
+                {
+                  "id": "e2",
+                  "type": "event",
+                  "duration": {
+                    "base": "eighth",
+                    "dots": 0
+                  },
+                  "notes": [
+                    {
+                      "id": "n2",
+                      "pitch": {
+                        "step": "D",
+                        "octave": 5,
+                        "alter": 0
+                      }
+                    }
+                  ],
+                  "stem": "up"
+                },
+                {
+                  "id": "e3",
+                  "type": "event",
+                  "duration": {
+                    "base": "eighth",
+                    "dots": 0
+                  },
+                  "notes": [
+                    {
+                      "id": "n3",
+                      "pitch": {
+                        "step": "E",
+                        "octave": 5,
+                        "alter": 0
+                      }
+                    }
+                  ],
+                  "stem": "up"
+                },
+                {
+                  "id": "e4",
+                  "type": "event",
+                  "duration": {
+                    "base": "eighth",
+                    "dots": 0
+                  },
+                  "notes": [
+                    {
+                      "id": "n4",
+                      "pitch": {
+                        "step": "F",
+                        "octave": 5,
+                        "alter": 0
+                      }
+                    }
+                  ],
+                  "stem": "up"
+                },
+                {
+                  "id": "e5",
+                  "type": "event",
+                  "duration": {
+                    "base": "half",
+                    "dots": 0
+                  },
+                  "notes": [
+                    {
+                      "id": "n5",
+                      "pitch": {
+                        "step": "G",
+                        "octave": 5,
+                        "alter": 0
+                      },
+                      "tie": {
+                        "target": "n6"
+                      }
+                    }
+                  ],
+                  "stem": "up"
+                }
+              ]
+            },
+            {
+              "id": "s2",
+              "staff": 1,
+              "voice": 2,
+              "content": [
+                {
+                  "id": "e10",
+                  "type": "event",
+                  "duration": {
+                    "base": "whole",
+                    "dots": 0
+                  },
+                  "notes": [
+                    {
+                      "id": "n10",
+                      "pitch": {
+                        "step": "E",
+                        "octave": 4,
+                        "alter": 0
+                      }
+                    }
+                  ],
+                  "stem": "down"
+                }
+              ]
+            },
+            {
+              "id": "s3",
+              "staff": 2,
+              "voice": 1,
+              "content": [
+                {
+                  "id": "e20",
+                  "type": "event",
+                  "duration": {
+                    "base": "half",
+                    "dots": 0
+                  },
+                  "notes": [
+                    {
+                      "id": "n20",
+                      "pitch": {
+                        "step": "C",
+                        "octave": 3,
+                        "alter": 0
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "e21",
+                  "type": "event",
+                  "duration": {
+                    "base": "half",
+                    "dots": 0
+                  },
+                  "notes": [
+                    {
+                      "id": "n21",
+                      "pitch": {
+                        "step": "G",
+                        "octave": 2,
+                        "alter": 0
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "beams": [
+            {
+              "id": "b1",
+              "events": [
+                "e1",
+                "e2",
+                "e3",
+                "e4"
+              ]
+            }
+          ],
+          "directions": [
+            {
+              "kind": "wedge",
+              "id": "w1",
+              "anchor": {
+                "measureId": "m1",
+                "tick": 0,
+                "staff": 1
+              },
+              "placement": "below",
+              "shape": "cresc",
+              "endTick": 1920
+            }
+          ]
+        },
+        {
+          "id": "p1m2",
+          "sequences": [
+            {
+              "id": "s4",
+              "staff": 1,
+              "voice": 1,
+              "content": [
+                {
+                  "id": "e6",
+                  "type": "event",
+                  "duration": {
+                    "base": "half",
+                    "dots": 0
+                  },
+                  "notes": [
+                    {
+                      "id": "n6",
+                      "pitch": {
+                        "step": "G",
+                        "octave": 5,
+                        "alter": 0
+                      }
+                    }
+                  ],
+                  "stem": "up"
+                },
+                {
+                  "id": "e7",
+                  "type": "event",
+                  "duration": {
+                    "base": "half",
+                    "dots": 0
+                  },
+                  "rest": true
+                }
+              ]
+            },
+            {
+              "id": "s5",
+              "staff": 1,
+              "voice": 2,
+              "content": [
+                {
+                  "id": "e11",
+                  "type": "event",
+                  "duration": {
+                    "base": "whole",
+                    "dots": 0
+                  },
+                  "notes": [
+                    {
+                      "id": "n11",
+                      "pitch": {
+                        "step": "D",
+                        "octave": 4,
+                        "alter": 0
+                      }
+                    }
+                  ],
+                  "stem": "down"
+                }
+              ]
+            },
+            {
+              "id": "s6",
+              "staff": 2,
+              "voice": 1,
+              "content": [
+                {
+                  "id": "e22",
+                  "type": "event",
+                  "duration": {
+                    "base": "whole",
+                    "dots": 0
+                  },
+                  "notes": [
+                    {
+                      "id": "n22",
+                      "pitch": {
+                        "step": "C",
+                        "octave": 3,
+                        "alter": 0
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "beams": [],
+          "directions": []
+        }
+      ]
+    }
+  ],
+  "layouts": [
+    {
+      "id": "layout1",
+      "name": "Score",
+      "kind": "score",
+      "parts": [
+        {
+          "partId": "p1"
+        }
+      ],
+      "overrides": {}
+    }
+  ],
+  "style": {},
+  "meta": {
+    "title": "Two Voices"
+  }
+}

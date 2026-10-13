@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="4.0">
+  <work>
+    <work-title>Roadmap</work-title>
+  </work>
+  <part-list>
+    <score-part id="P1">
+      <part-name>Fl</part-name>
+      <score-instrument id="P1-I1">
+        <instrument-name>Fl</instrument-name>
+      </score-instrument>
+      <midi-instrument id="P1-I1">
+        <midi-program>74</midi-program>
+      </midi-instrument>
+    </score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>960</divisions>
+        <key>
+          <fifths>0</fifths>
+        </key>
+        <time>
+          <beats>4</beats>
+          <beat-type>4</beat-type>
+        </time>
+        <clef number="1">
+          <sign>G</sign>
+          <line>2</line>
+        </clef>
+      </attributes>
+      <direction placement="above">
+        <direction-type>
+          <rehearsal>A</rehearsal>
+        </direction-type>
+      </direction>
+      <direction placement="above">
+        <direction-type>
+          <segno/>
+        </direction-type>
+        <sound segno="segno0"/>
+      </direction>
+      <direction placement="above">
+        <direction-type>
+          <words font-weight="bold">Andante</words>
+        </direction-type>
+        <direction-type>
+          <metronome>
+            <beat-unit>quarter</beat-unit>
+            <per-minute>96</per-minute>
+          </metronome>
+        </direction-type>
+        <sound tempo="96"/>
+      </direction>
+      <note id="p1m1s1v1r1">
+        <rest measure="yes"/>
+        <duration>3840</duration>
+        <voice>1</voice>
+      </note>
+    </measure>
+    <measure number="2">
+      <barline location="left">
+        <bar-style>heavy-light</bar-style>
+        <repeat direction="forward"/>
+      </barline>
+      <note id="p1m2s1v1r1">
+        <rest measure="yes"/>
+        <duration>3840</duration>
+        <voice>1</voice>
+      </note>
+    </measure>
+    <measure number="3">
+      <barline location="left">
+        <ending number="1" type="start"/>
+      </barline>
+      <note id="p1m3s1v1r1">
+        <rest measure="yes"/>
+        <duration>3840</duration>
+        <voice>1</voice>
+      </note>
+      <barline location="right">
+        <bar-style>light-heavy</bar-style>
+        <ending number="1" type="stop"/>
+        <repeat direction="backward"/>
+      </barline>
+    </measure>
+    <measure number="4">
+      <barline location="left">
+        <ending number="2" type="start"/>
+      </barline>
+      <note id="p1m4s1v1r1">
+        <rest measure="yes"/>
+        <duration>3840</duration>
+        <voice>1</voice>
+      </note>
+      <direction placement="above">
+        <direction-type>
+          <words>To Coda</words>
+        </direction-type>
+        <sound tocoda="coda5"/>
+      </direction>
+      <barline location="right">
+        <ending number="2" type="stop"/>
+      </barline>
+    </measure>
+    <measure number="5">
+      <note id="p1m5s1v1r1">
+        <rest measure="yes"/>
+        <duration>3840</duration>
+        <voice>1</voice>
+      </note>
+      <direction placement="above">
+        <direction-type>
+          <words>D.S. al Coda</words>
+        </direction-type>
+        <sound dalsegno="segno0"/>
+      </direction>
+      <barline location="right">
+        <bar-style>light-light</bar-style>
+      </barline>
+    </measure>
+    <measure number="6">
+      <direction placement="above">
+        <direction-type>
+          <coda/>
+        </direction-type>
+        <sound coda="coda5"/>
+      </direction>
+      <note id="p1m6s1v1r1">
+        <rest measure="yes"/>
+        <duration>3840</duration>
+        <voice>1</voice>
+      </note>
+      <barline location="right">
+        <bar-style>light-heavy</bar-style>
+      </barline>
+    </measure>
+  </part>
+</score-partwise>
