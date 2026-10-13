@@ -2,7 +2,9 @@ import { applyPatches, enablePatches, produceWithPatches, type Patch } from 'imm
 import { createStore } from 'zustand/vanilla';
 import { checkInvariants } from '../model/invariants';
 import type { Document } from '../model/schema';
+import { clampCursor } from './cursor-clamp';
 import { record, takeRedo, takeUndo } from './history';
+import { liveSelection } from './prune';
 import type { Command, Cursor, Editable, EditorState, HistoryEntry } from './types';
 
 enablePatches();
@@ -32,10 +34,22 @@ export function createEditorStore(document: Document) {
     invariantErrors: checkInvariants(document),
   }));
 
-  /** Applies history patches to the editable state and refreshes the invariant report. */
+  /**
+   * Applies history patches to the editable state and refreshes the invariant report. Cursor and
+   * selection moves are not recorded, so after the patches they may point at bars, ticks or ids
+   * the patches removed; they are repaired here, outside history.
+   */
   const applyEntry = (patches: Patch[], history: EditorState['history']) => {
+    const previous = store.getState().document;
     const next = applyPatches(editableOf(store.getState()), patches);
-    store.setState({ ...next, history, dirty: true, invariantErrors: checkInvariants(next.document) });
+    store.setState({
+      document: next.document,
+      cursor: clampCursor(next.document, next.cursor, previous),
+      selection: liveSelection(next.document, next.selection),
+      history,
+      dirty: true,
+      invariantErrors: checkInvariants(next.document),
+    });
   };
 
   return Object.assign(store, {

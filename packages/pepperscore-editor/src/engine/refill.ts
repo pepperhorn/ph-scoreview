@@ -1,8 +1,9 @@
 import { BASE_TICKS, durationTicks, measureTicks, ticksToDurations } from '../model/durations';
 import { newId } from '../model/ids';
 import { restEvent } from '../model/create';
-import { effectiveTime, eventStarts } from '../model/query';
-import type { Beam, Document, Event, Note, PartMeasure, Sequence, Tuplet } from '../model/schema';
+import { beamIsValid } from '../model/invariants';
+import { effectiveTime } from '../model/query';
+import type { Document, Event, Note, Sequence, Tuplet } from '../model/schema';
 
 /** Tuplet-scaled ticks can be fractional; compare positions within this tolerance. */
 const TICK_EPSILON = 1e-6;
@@ -75,16 +76,6 @@ function refillSequence(seq: Sequence, barTicks: number): void {
     changed = true;
   }
   if (changed) seq.content = kept;
-}
-
-function beamIsValid(pm: PartMeasure, beam: Beam, barTicks: number): boolean {
-  if (beam.events.length < 2) return false;
-  const seq = pm.sequences.find((s) => eventStarts(s, barTicks).some((e) => e.event.id === beam.events[0]));
-  if (!seq) return false;
-  const starts = eventStarts(seq, barTicks);
-  const positions = beam.events.map((id) => starts.findIndex((s) => s.event.id === id));
-  if (positions.some((p, i) => p < 0 || (i > 0 && p !== positions[i - 1] + 1))) return false;
-  return positions.every((p) => starts[p].ticks < 960 - TICK_EPSILON);
 }
 
 /**

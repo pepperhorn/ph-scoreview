@@ -1,8 +1,8 @@
 import { emptyPartMeasure } from '../../model/create';
-import { measureTicks } from '../../model/durations';
 import { newId } from '../../model/ids';
 import { effectiveKey, effectiveTime, measureIndex } from '../../model/query';
 import type { Clef, GlobalMeasure, Jump, Key, Time } from '../../model/schema';
+import { clampCursor } from '../cursor-clamp';
 import { pruneDanglingReferences, pruneSelection } from '../prune';
 import { refillMeasure } from '../refill';
 import type { Command, Cursor, Editable } from '../types';
@@ -23,14 +23,15 @@ function refillFrom(draft: Editable, from: number): void {
   for (let i = Math.max(from, 0); i < doc.global.measures.length; i++) refillMeasure(doc, i);
   pruneDanglingReferences(doc);
   pruneSelection(draft);
-  const cursorIndex = measureIndex(doc, draft.cursor.measureId);
-  if (cursorIndex >= 0 && draft.cursor.tick >= measureTicks(effectiveTime(doc, cursorIndex))) draft.cursor.tick = 0;
+  const cursor = clampCursor(doc, draft.cursor);
+  if (cursor !== draft.cursor) Object.assign(draft.cursor, cursor);
 }
 
 export const setTime: Command<{ measureId: string; time: Time }> = {
   label: 'Set time signature',
   run: (draft, { measureId, time }) =>
     withMeasure(draft, measureId, (g, index) => {
+      if (g.time?.count === time.count && g.time.unit === time.unit) return;
       g.time = { count: time.count, unit: time.unit };
       refillFrom(draft, index);
     }),
@@ -40,6 +41,7 @@ export const setKey: Command<{ measureId: string; key: Key }> = {
   label: 'Set key signature',
   run: (draft, { measureId, key }) =>
     withMeasure(draft, measureId, (g) => {
+      if (g.key && g.key.fifths === key.fifths && g.key.mode === key.mode) return;
       g.key = { ...key };
     }),
 };
@@ -125,7 +127,7 @@ export const setTempo: Command<{ measureId: string; tempo: Tempo | null }> = {
   run: (draft, { measureId, tempo }) =>
     withMeasure(draft, measureId, (g) => {
       if (tempo === null) delete g.tempo;
-      else g.tempo = { ...tempo };
+      else if (!(g.tempo && g.tempo.bpm === tempo.bpm && g.tempo.unit === tempo.unit && g.tempo.text === tempo.text)) g.tempo = { ...tempo };
     }),
 };
 

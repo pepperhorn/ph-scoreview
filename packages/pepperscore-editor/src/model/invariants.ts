@@ -1,5 +1,5 @@
 import { measureTicks } from './durations';
-import type { Document, Event, Pitch, Sequence } from './schema';
+import type { Beam, Document, Event, PartMeasure, Pitch, Sequence } from './schema';
 import { effectiveTime, eventStarts, sequenceFor, sequenceTicks, staffCount } from './query';
 
 const STAFF_LIMIT = 4;
@@ -12,6 +12,24 @@ function isFullMeasureRestOnly(seq: Sequence): boolean {
   const [only] = seq.content;
   return seq.content.length === 1 && only.type === 'event' && only.fullMeasure === true;
 }
+
+export type BeamIssue = { kind: 'outside' } | { kind: 'non-consecutive' } | { kind: 'long'; eventId: string };
+
+/**
+ * Why `beam` breaks the beam invariant in `pm` (bar of `barTicks`): its events must be
+ * consecutive events of one sequence, each shorter than a quarter. Undefined when valid.
+ */
+export function beamIssue(pm: PartMeasure, beam: Beam, barTicks: number): BeamIssue | undefined {
+  const seq = pm.sequences.find((s) => eventStarts(s, barTicks).some((e) => e.event.id === beam.events[0]));
+  const starts = seq ? eventStarts(seq, barTicks) : [];
+  const positions = beam.events.map((id) => starts.findIndex((s) => s.event.id === id));
+  if (beam.events.length < 2 || positions.some((p) => p < 0)) return { kind: 'outside' };
+  if (positions.some((p, i) => i > 0 && p !== positions[i - 1] + 1)) return { kind: 'non-consecutive' };
+  const long = positions.map((p) => starts[p]).find((s) => s.ticks >= 960 - TICK_EPSILON);
+  return long ? { kind: 'long', eventId: long.event.id } : undefined;
+}
+
+export const beamIsValid = (pm: PartMeasure, beam: Beam, barTicks: number): boolean => beamIssue(pm, beam, barTicks) === undefined;
 
 /** Structural checks the editor relies on; each message is `"<code>: <detail>"`. Returns [] when valid. */
 export function checkInvariants(doc: Document): string[] {
@@ -39,19 +57,10 @@ export function checkInvariants(doc: Document): string[] {
       }
 
       for (const beam of pm.beams) {
-        const seq = pm.sequences.find((s) => eventStarts(s).some((e) => e.event.id === beam.events[0]));
-        const starts = seq ? eventStarts(seq, expected) : [];
-        const positions = beam.events.map((id) => starts.findIndex((s) => s.event.id === id));
-        if (positions.some((p) => p < 0)) {
-          errors.push(`beam-events: beam ${beam.id} in ${where} references events outside one sequence`);
-          continue;
-        }
-        if (positions.some((p, i) => i > 0 && p !== positions[i - 1] + 1)) {
-          errors.push(`beam-events: beam ${beam.id} in ${where} has non-consecutive events`);
-          continue;
-        }
-        const long = positions.map((p) => starts[p]).find((s) => s.ticks >= 960 - TICK_EPSILON);
-        if (long) errors.push(`beam-events: beam ${beam.id} includes event ${long.event.id} of a quarter or longer`);
+        const issue = beamIssue(pm, beam, expected);
+        if (issue?.kind === 'outside') errors.push(`beam-events: beam ${beam.id} in ${where} references events outside one sequence`);
+        else if (issue?.kind === 'non-consecutive') errors.push(`beam-events: beam ${beam.id} in ${where} has non-consecutive events`);
+        else if (issue?.kind === 'long') errors.push(`beam-events: beam ${beam.id} includes event ${issue.eventId} of a quarter or longer`);
       }
 
       for (const seq of pm.sequences) {

@@ -1,8 +1,9 @@
 import { createEditorStore } from './store';
 import { coalesceOrPush, COALESCE_MS } from './history';
 import type { Command, HistoryEntry } from './types';
-import { setCursor, setSelection } from './commands';
-import { helloDoc } from '../test-helpers';
+import { deleteMeasure, setCursor, setSelection, setTime } from './commands';
+import { createDocument } from '../model/create';
+import { helloDoc, threeQuarterNotesDoc } from '../test-helpers';
 
 const setTitle: Command<{ v: string }> = { label: 'title', coalesceKey: () => 'title', run: (d, a) => { d.document.meta.title = a.v; } };
 const setComposer: Command<{ v: string }> = { label: 'composer', run: (d, a) => { d.document.meta.composer = a.v; } };
@@ -125,4 +126,33 @@ test('invariant errors follow dispatch, undo and redo', () => {
   expect(store.getState().invariantErrors).toEqual([]);
   store.redo();
   expect(store.getState().invariantErrors).toHaveLength(1);
+});
+
+test('redo after a delete repairs a cursor moved into the deleted bar since', () => {
+  const doc = createDocument({ parts: [{ name: 'Flute', clef: 'treble', gmProgram: 74 }], measures: 3 });
+  const [m0, m1] = doc.global.measures.map((m) => m.id);
+  const store = createEditorStore(doc);
+  store.dispatch(deleteMeasure, { measureId: m1 });
+  store.undo();
+  store.dispatch(setCursor, { measureId: m1, tick: 960 }, { record: false });
+  store.dispatch(setSelection, { ids: [m1] }, { record: false });
+  store.redo();
+  const s = store.getState();
+  expect(s.document.global.measures.map((m) => m.id)).not.toContain(m1);
+  expect(s.cursor).toMatchObject({ measureId: m0, tick: 0 });
+  expect(s.selection.ids).toEqual([]);
+});
+
+test('undo of a longer time signature pulls the cursor and selection back inside the bar', () => {
+  const store = createEditorStore(threeQuarterNotesDoc());
+  const [m0] = store.getState().document.global.measures.map((m) => m.id);
+  store.dispatch(setTime, { measureId: m0, time: { count: 6, unit: 4 } });
+  const added = store.getState().document.parts[0].measures[0].sequences[0].content[4].id;
+  store.dispatch(setCursor, { tick: 4800 }, { record: false });
+  store.dispatch(setSelection, { ids: ['e1', added] }, { record: false });
+  store.undo();
+  expect(store.getState().cursor.tick).toBe(2880);
+  expect(store.getState().selection.ids).toEqual(['e1']);
+  store.redo();
+  expect(store.getState().cursor.tick).toBe(2880);
 });
