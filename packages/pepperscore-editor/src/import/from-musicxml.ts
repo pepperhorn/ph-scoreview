@@ -15,9 +15,9 @@ const STAFF_LIMIT = 4;
  * Reads partwise MusicXML into an editor document. Features the model cannot hold
  * are counted in `dropped` per `P<part>/m<measure>`. The result is normalized so
  * that importing its compiled MusicXML gives the same document again (ids are
- * assigned from positions).
+ * assigned from positions). Scores over `maxStaves` (default 4) are refused.
  */
-export function importMusicXml(text: string): { document: Document; dropped: Dropped[] } {
+export function importMusicXml(text: string, { maxStaves = STAFF_LIMIT }: { maxStaves?: number } = {}): { document: Document; dropped: Dropped[] } {
   const root = parseXmlTree(text);
   if (root.localName === 'score-timewise') throw new Error('Only partwise MusicXML is supported.');
   if (root.localName !== 'score-partwise') throw new Error('This is not a MusicXML score.');
@@ -28,7 +28,7 @@ export function importMusicXml(text: string): { document: Document; dropped: Dro
   const partEls = root.children.filter((c) => c.localName === 'part');
   const staves = partEls.map((p) => Math.max(1, ...p.descendants().filter((e) => e.localName === 'staves').map((e) => Number(e.textContent) || 1)));
   if (staves.some((s) => s > 2)) throw new Error('Parts with more than 2 staves are not supported.');
-  if (staves.reduce((a, b) => a + b, 0) > STAFF_LIMIT) throw new Error('Editing is limited to 4 staves.');
+  if (staves.reduce((a, b) => a + b, 0) > maxStaves) throw new Error(`Editing is limited to ${maxStaves} staves.`);
 
   const title = childText(child(root, 'work') ?? root, 'work-title') ?? childText(root, 'movement-title');
   const composer = child(root, 'identification')?.children.find((c) => c.localName === 'creator' && c.getAttribute('type') === 'composer')?.textContent;
@@ -60,7 +60,7 @@ export function importMusicXml(text: string): { document: Document; dropped: Dro
   normalize(doc, drop);
   const parsed = DocumentSchema.safeParse(doc);
   if (!parsed.success) throw new Error(`Import produced an invalid document: ${parsed.error.issues[0].path.join('.')} ${parsed.error.issues[0].message}`);
-  const errors = checkInvariants(doc);
+  const errors = checkInvariants(doc, { maxStaves });
   if (errors.length) throw new Error(`Import produced an invalid document: ${errors[0]}`);
   return { document: doc, dropped: drop.list() };
 }

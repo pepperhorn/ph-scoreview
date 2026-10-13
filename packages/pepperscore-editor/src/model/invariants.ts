@@ -32,7 +32,8 @@ export function beamIssue(pm: PartMeasure, beam: Beam, barTicks: number): BeamIs
 export const beamIsValid = (pm: PartMeasure, beam: Beam, barTicks: number): boolean => beamIssue(pm, beam, barTicks) === undefined;
 
 /** Structural checks the editor relies on; each message is `"<code>: <detail>"`. Returns [] when valid. */
-export function checkInvariants(doc: Document): string[] {
+/** `maxStaves` is the staff cap (default 4; a licence may raise it). */
+export function checkInvariants(doc: Document, { maxStaves = STAFF_LIMIT }: { maxStaves?: number } = {}): string[] {
   const errors: string[] = [];
   const globals = doc.global.measures;
 
@@ -110,7 +111,7 @@ export function checkInvariants(doc: Document): string[] {
   }
 
   const staves = staffCount(doc);
-  if (staves > STAFF_LIMIT) errors.push(`staff-cap: ${staves} staves, limit ${STAFF_LIMIT}`);
+  if (staves > maxStaves) errors.push(`staff-cap: ${staves} staves, limit ${maxStaves}`);
 
   return errors;
 }

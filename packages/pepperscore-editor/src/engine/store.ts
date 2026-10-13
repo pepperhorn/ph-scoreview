@@ -23,15 +23,23 @@ function initialCursor(document: Document): Cursor {
 
 const editableOf = (s: EditorState): Editable => ({ document: s.document, cursor: s.cursor, selection: s.selection });
 
-export function createEditorStore(document: Document) {
+/**
+ * `maxStaves` is the staff cap the invariant report checks (default 4); `cursor` and `activeLayoutId`
+ * restore a saved editor position (a stale cursor is clamped, an unknown layout ignored).
+ */
+export type EditorStoreOptions = { maxStaves?: number; cursor?: Cursor; activeLayoutId?: string };
+
+export function createEditorStore(document: Document, options: EditorStoreOptions = {}) {
+  const check = (doc: Document) => checkInvariants(doc, { maxStaves: options.maxStaves });
+  const layoutId = document.layouts.some((l) => l.id === options.activeLayoutId) ? options.activeLayoutId : undefined;
   const store = createStore<EditorState>()(() => ({
     document,
-    cursor: initialCursor(document),
+    cursor: options.cursor ? clampCursor(document, options.cursor) : initialCursor(document),
     selection: { ids: [] },
     history: { past: [], future: [] },
     dirty: false,
-    activeLayoutId: document.layouts[0]?.id ?? '',
-    invariantErrors: checkInvariants(document),
+    activeLayoutId: layoutId ?? document.layouts[0]?.id ?? '',
+    invariantErrors: check(document),
   }));
 
   /**
@@ -48,7 +56,7 @@ export function createEditorStore(document: Document) {
       selection: liveSelection(next.document, next.selection),
       history,
       dirty: true,
-      invariantErrors: checkInvariants(next.document),
+      invariantErrors: check(next.document),
     });
   };
 
@@ -58,7 +66,7 @@ export function createEditorStore(document: Document) {
       const state = store.getState();
       const [next, patches, inverse] = produceWithPatches(editableOf(state), (draft) => command.run(draft, args));
       if (patches.length === 0) return;
-      const update: Partial<EditorState> = { ...next, invariantErrors: checkInvariants(next.document) };
+      const update: Partial<EditorState> = { ...next, invariantErrors: check(next.document) };
       if (options?.record ?? true) {
         const entry: HistoryEntry = { label: command.label, patches, inverse, coalesceKey: command.coalesceKey?.(args), at: Date.now() };
         update.history = record(state.history, entry);

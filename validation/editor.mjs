@@ -3,6 +3,7 @@
 // change-to-redraw latency. Runs against the build (npm run build first). BROWSER=chromium|firefox|webkit.
 import assert from 'node:assert/strict';
 import { chromium, firefox, webkit } from 'playwright-core';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { root, serveDist } from './serve-dist.mjs';
 
@@ -67,6 +68,21 @@ try {
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('.ps-btn-export')]);
   assert.equal(download.suggestedFilename(), 'score.musicxml');
 
+  // 5b. Save downloads a .pepperscore file; opening it again restores the same score.
+  const [saved] = await Promise.all([page.waitForEvent('download'), page.click('.ps-btn-save')]);
+  assert.equal(saved.suggestedFilename(), 'score.pepperscore');
+  const savedPath = await saved.path();
+  const savedFile = JSON.parse(await readFile(savedPath, 'utf8'));
+  assert.deepEqual(savedFile.pepperscore, { version: 1 }, 'the file has the version header');
+  assert.ok(savedFile.editor?.cursor, 'the file records the cursor');
+  const xmlSaved = await musicXml(page);
+  await page.evaluate(() => window.__editor.ref.current.undo()); // drop the D major key, so the reopen visibly restores it
+  assert.doesNotMatch(await musicXml(page), /<fifths>2<\/fifths>/);
+  await page.setInputFiles('.ps-open-input', { name: 'score.pepperscore', mimeType: 'application/vnd.pepperscore+json', buffer: await readFile(savedPath) });
+  await page.waitForFunction(() => /<fifths>2<\/fifths>/.test(window.__editor.ref.current?.getMusicXml() ?? ''), null, { timeout: 10000 });
+  assert.equal(await musicXml(page), xmlSaved, 'the reopened .pepperscore compiles to the same MusicXML');
+  await page.locator('.ps-editor').focus();
+
   // 6. The palette hides on a wide container (the phone-width palette is tested on a touch device below).
   assert.equal(await page.locator('.ps-palette').isVisible(), false, 'the palette hides on a wide container');
 
@@ -127,7 +143,7 @@ try {
 
   assert.ok(renderTimes.length > 0, 'the editor reported its change-to-redraw time');
   assert.deepEqual(errors, [], 'no page or console errors');
-  console.log(`Editor: entry, undo, click cursor, key popover, export, staff cap (open and initial), read-only and touch palette pass (render ms: ${renderTimes.join(', ')})`);
+  console.log(`Editor: entry, undo, click cursor, key popover, export, save and reopen, staff cap (open and initial), read-only and touch palette pass (render ms: ${renderTimes.join(', ')})`);
 } finally {
   await browser.close();
   await server.close();

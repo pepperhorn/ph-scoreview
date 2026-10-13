@@ -156,3 +156,17 @@ test('undo of a longer time signature pulls the cursor and selection back inside
   store.redo();
   expect(store.getState().cursor.tick).toBe(2880);
 });
+
+test('createEditorStore takes a staff cap for its invariant report and restores a saved cursor and layout', () => {
+  const doc = createDocument({ parts: [1, 2, 3].map((n) => ({ name: `P${n}`, clef: 'treble' as const, gmProgram: 1, staves: 2 as const })), measures: 2 });
+  expect(createEditorStore(doc).getState().invariantErrors).toContain('staff-cap: 6 staves, limit 4');
+  expect(createEditorStore(doc, { maxStaves: 6 }).getState().invariantErrors).toEqual([]);
+  const cursor = { partId: doc.parts[1].id, staff: 2, voice: 1 as const, measureId: doc.global.measures[1].id, tick: 0, duration: { base: 'half' as const, dots: 0 as const }, mode: 'enter' as const };
+  const store = createEditorStore(doc, { maxStaves: 6, cursor, activeLayoutId: doc.layouts[0].id });
+  expect(store.getState().cursor).toEqual(cursor);
+  expect(store.getState().activeLayoutId).toBe(doc.layouts[0].id);
+  // A stale cursor (unknown part and bar) is clamped; an unknown layout falls back to the first.
+  const stale = createEditorStore(doc, { maxStaves: 6, cursor: { ...cursor, partId: 'gone', measureId: 'gone' }, activeLayoutId: 'gone' }).getState();
+  expect(stale.cursor).toMatchObject({ partId: doc.parts[0].id, measureId: doc.global.measures[0].id });
+  expect(stale.activeLayoutId).toBe(doc.layouts[0].id);
+});

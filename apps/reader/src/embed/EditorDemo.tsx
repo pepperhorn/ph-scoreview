@@ -5,8 +5,10 @@ import ensemble from '../../../../validation/fixtures/ensemble.musicxml?raw';
 declare global { interface Window { __editor: { ref: React.RefObject<PepperScoreEditorHandle | null> } } }
 
 type Source = { key: number; musicXml?: string };
-/** `?licence=<key>` overrides the demo's dev licence (`?licence=` shows the read-only editor). */
-const licenceKey = () => new URLSearchParams(window.location.search).get('licence') ?? 'dev';
+/** The demo's signed licence (4 staves, expires 2028-01-01); `'dev'` would only work in development builds. */
+const DEMO_LICENCE = 'eyJzdWIiOiJwZXBwZXJzY29yZS1kZW1vIiwiZXhwIjoxODMwMjk3NjAwLCJtYXhTdGF2ZXMiOjR9.htvTu3iKMVooELSmmTmArtBQpsDE9tcvtuebGyZZ3BGbvuxBAZ1ip25IGtfNJCuE0_OlRTvGM6v1NcLsaL04Bg';
+/** `?licence=<key>` overrides the demo licence (`?licence=` shows the read-only editor). */
+const licenceKey = () => new URLSearchParams(window.location.search).get('licence') ?? DEMO_LICENCE;
 
 /**
  * The editor demo (/editor): a licensed editor in Endless view with a collapsible live-MusicXML sidebar.

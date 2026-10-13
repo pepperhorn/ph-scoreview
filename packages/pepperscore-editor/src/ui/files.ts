@@ -1,52 +1,60 @@
 import { compileToMusicXml } from '../compile/to-musicxml';
 import { importMusicXml, type Dropped } from '../import/from-musicxml';
+import { PEPPERSCORE_EXTENSION, PEPPERSCORE_MIME, readPepperScoreFile, writePepperScoreFile, type PepperScoreFile } from '../format/pepperscore-file';
+import { DEFAULT_MAX_STAVES } from '../licence';
 import { createDocument } from '../model/create';
 import { staffCount } from '../model/query';
-import { parseDocument, type Document } from '../model/schema';
+import type { Document } from '../model/schema';
 
-/** The MVP staff cap (Task 9 takes it from the licence). */
-export const MAX_STAVES = 4;
-export const STAFF_LIMIT_MESSAGE = 'Editing is limited to 4 staves.';
-export const OPEN_ACCEPT = '.pepperscore,.musicxml,.xml';
+export const OPEN_ACCEPT = `${PEPPERSCORE_EXTENSION},.musicxml,.xml`;
 
-export type Opened = { document: Document; dropped: Dropped[] };
-
-/** Licence stub (Task 9 replaces it with the Ed25519 check): `'dev'`, or JSON whose `exp` (seconds) is in the future. */
-export function isLicensed(key: string | undefined): boolean {
-  if (!key) return false;
-  if (key === 'dev') return true;
-  try {
-    const exp = (JSON.parse(key) as { exp?: unknown }).exp;
-    return typeof exp === 'number' && exp > Date.now() / 1000;
-  } catch {
-    return false;
-  }
-}
+/** An opened score; a `.pepperscore` file also brings its import source, editor state and creation time. */
+export type Opened = { document: Document; dropped: Dropped[]; source?: PepperScoreFile['source']; editor?: PepperScoreFile['editor']; created?: string };
 
 export const newScore = (): Document => createDocument({ parts: [{ name: 'Treble', clef: 'treble', gmProgram: 1 }], measures: 8 });
 
-/** Refuses documents over the staff cap with the message the editor shows. */
-export function checkStaffCap(document: Document): Document {
-  if (staffCount(document) > MAX_STAVES) throw new Error(STAFF_LIMIT_MESSAGE);
+export const staffLimitMessage = (maxStaves: number): string => `Editing is limited to ${maxStaves} staves.`;
+
+/** Refuses documents over the staff cap (the licence's, default 4) with the message the editor shows. */
+export function checkStaffCap(document: Document, maxStaves = DEFAULT_MAX_STAVES): Document {
+  if (staffCount(document) > maxStaves) throw new Error(staffLimitMessage(maxStaves));
   return document;
 }
 
-/** Reads a `.pepperscore` (JSON with a `document`) or MusicXML text. */
+/** Reads a `.pepperscore` file or MusicXML text. The staff cap is left to the editor, which knows the licence. */
 export function readScoreText(text: string, filename: string): Opened {
-  if (/\.pepperscore$/i.test(filename)) {
-    let parsed: { document?: unknown };
-    try {
-      parsed = JSON.parse(text) as { document?: unknown };
-    } catch {
-      throw new Error('Not a .pepperscore file');
-    }
-    return { document: checkStaffCap(parseDocument(parsed.document)), dropped: [] };
+  if (filename.toLowerCase().endsWith(PEPPERSCORE_EXTENSION)) {
+    const { document, source, editor, meta } = readPepperScoreFile(text);
+    return { document, dropped: [], source, editor, created: meta.created };
   }
-  const opened = importMusicXml(text);
-  return { document: checkStaffCap(opened.document), dropped: opened.dropped };
+  return importMusicXml(text, { maxStaves: Infinity });
 }
 
-export const readScoreFile = async (file: File): Promise<Opened> => readScoreText(await file.text(), file.name);
+/** Lowercase hex SHA-256 of the UTF-8 text. */
+export async function sha256Hex(text: string): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * The `source` record of imported MusicXML: its SHA-256, file name and what the import dropped. Undefined
+ * where Web Crypto is unavailable (pages served over plain HTTP from a non-localhost address).
+ */
+export async function importSource(text: string, dropped: Dropped[], filename?: string): Promise<PepperScoreFile['source']> {
+  try {
+    return { format: 'musicxml', sha256: await sha256Hex(text), ...(filename !== undefined ? { filename } : {}), dropped };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Opens a file; imported MusicXML gets a `source` record. */
+export async function readScoreFile(file: File): Promise<Opened> {
+  const text = await file.text();
+  const opened = readScoreText(text, file.name);
+  if (file.name.toLowerCase().endsWith(PEPPERSCORE_EXTENSION)) return opened;
+  return { ...opened, source: await importSource(text, opened.dropped, file.name) };
+}
 
 const baseName = (doc: Document): string => (doc.meta.title?.trim() || 'score').replace(/[\\/:*?"<>|]+/g, '-');
 
@@ -62,11 +70,9 @@ export function download(text: string, filename: string, type: string): void {
 export const exportMusicXml = (doc: Document): void =>
   download(compileToMusicXml(doc), `${baseName(doc)}.musicxml`, 'application/vnd.recordare.musicxml+xml');
 
-/** Placeholder writer until Task 9's `writePepperScoreFile`. */
-export function savePepperScore(doc: Document): void {
-  const now = new Date().toISOString();
-  const file = { pepperscore: { version: 1 }, meta: { ...doc.meta, created: now, modified: now }, document: doc };
-  download(JSON.stringify(file, null, 2), `${baseName(doc)}.pepperscore`, 'application/json');
+/** Downloads `<title or score>.pepperscore`. */
+export function savePepperScore(args: Parameters<typeof writePepperScoreFile>[0]): void {
+  download(writePepperScoreFile(args), `${baseName(args.document)}${PEPPERSCORE_EXTENSION}`, PEPPERSCORE_MIME);
 }
 
 /** A one-line summary of what an import left out, e.g. `lyric ×3, harmony ×1`. */

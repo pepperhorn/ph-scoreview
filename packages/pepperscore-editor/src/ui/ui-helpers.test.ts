@@ -2,7 +2,9 @@ import { createDocument } from '../model/create';
 import type { Cursor } from '../engine/types';
 import { helloDoc } from '../test-helpers';
 import { clickTarget, staffAt } from './click-mapping';
-import { checkStaffCap, isLicensed, readScoreText, STAFF_LIMIT_MESSAGE } from './files';
+import { compileToMusicXml } from '../compile/to-musicxml';
+import { writePepperScoreFile } from '../format/pepperscore-file';
+import { checkStaffCap, readScoreText, sha256Hex } from './files';
 import { editorHighlights } from './highlights';
 import { KEYMAP } from './keymap';
 
@@ -50,18 +52,22 @@ describe('editorHighlights', () => {
 });
 
 describe('files', () => {
-  it('accepts the dev key and unexpired JSON keys only', () => {
-    expect(isLicensed('dev')).toBe(true);
-    expect(isLicensed(JSON.stringify({ exp: Date.now() / 1000 + 60 }))).toBe(true);
-    expect(isLicensed(JSON.stringify({ exp: Date.now() / 1000 - 60 }))).toBe(false);
-    expect(isLicensed('nonsense')).toBe(false);
-    expect(isLicensed(undefined)).toBe(false);
-  });
-  it('round-trips a .pepperscore document and refuses more than 4 staves', () => {
+  it('opens a .pepperscore file with its source and editor state', () => {
     const doc = helloDoc();
-    expect(readScoreText(JSON.stringify({ pepperscore: { version: 1 }, document: doc }), 'a.pepperscore').document).toEqual(doc);
+    const source = { format: 'musicxml' as const, sha256: '0'.repeat(64), dropped: [] };
+    const text = writePepperScoreFile({ document: doc, source, editor: { activeLayoutId: doc.layouts[0].id }, created: '2026-01-01T00:00:00.000Z' });
+    expect(readScoreText(text, 'a.pepperscore')).toEqual({ document: doc, dropped: [], source, editor: { activeLayoutId: doc.layouts[0].id }, created: '2026-01-01T00:00:00.000Z' });
+    expect(() => readScoreText('{"document":{}}', 'a.PepperScore')).toThrow('Not a .pepperscore file');
+  });
+  it('opens MusicXML of any size (the editor applies the licence staff cap) and refuses scores over a cap', () => {
     const big = createDocument({ parts: [1, 2, 3].map(() => ({ name: 'Piano', clef: 'treble' as const, gmProgram: 1, staves: 2 as const })), measures: 1 });
-    expect(() => checkStaffCap(big)).toThrow(STAFF_LIMIT_MESSAGE);
+    expect(readScoreText(compileToMusicXml(big), 'big.musicxml').document.parts).toHaveLength(3);
+    expect(() => checkStaffCap(big)).toThrow('Editing is limited to 4 staves.');
+    expect(() => checkStaffCap(big, 5)).toThrow('Editing is limited to 5 staves.');
+    expect(checkStaffCap(big, 6)).toBe(big);
+  });
+  it('hashes text as lowercase SHA-256 hex', async () => {
+    expect(await sha256Hex('abc')).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
   });
 });
 

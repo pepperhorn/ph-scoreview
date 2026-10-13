@@ -44,6 +44,8 @@ test('refuses timewise and >4 staves', () => {
   expect(() => importMusicXml('<score-timewise version="4.0"><part-list/></score-timewise>')).toThrow('Only partwise MusicXML is supported.');
   const five = createDocument({ parts: Array.from({ length: 5 }, (_, i) => ({ name: `P${i}`, clef: 'treble' as const, gmProgram: 1 })), measures: 1 });
   expect(() => importMusicXml(compileToMusicXml(five))).toThrow('Editing is limited to 4 staves.');
+  expect(importMusicXml(compileToMusicXml(five), { maxStaves: 5 }).document.parts).toHaveLength(5);
+  expect(() => importMusicXml(compileToMusicXml(five), { maxStaves: 3 })).toThrow('Editing is limited to 3 staves.');
   const three = compileToMusicXml(helloDoc()).replace('<divisions>960</divisions>', '<divisions>960</divisions><staves>3</staves>');
   expect(() => importMusicXml(three)).toThrow('Parts with more than 2 staves are not supported.');
 });

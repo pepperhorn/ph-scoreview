@@ -3,12 +3,14 @@ import { PepperScore, type PepperScoreClickInfo, type PepperScoreHandle } from '
 import { compileToMusicXml } from '../compile/to-musicxml';
 import { setCursor, setSelection } from '../engine/commands/index';
 import { createEditorStore, type EditorStore } from '../engine/store';
+import type { PepperScoreFile } from '../format/pepperscore-file';
 import type { Dropped } from '../import/from-musicxml';
 import { importMusicXml } from '../import/from-musicxml';
-import { measureIndex } from '../model/query';
+import { DEFAULT_MAX_STAVES, verifyLicence, type Licence } from '../licence';
+import { measureIndex, staffCount } from '../model/query';
 import type { Document } from '../model/schema';
 import { clickTarget } from './click-mapping';
-import { checkStaffCap, describeDropped, download, exportMusicXml, isLicensed, newScore, readScoreFile, savePepperScore, type Opened } from './files';
+import { checkStaffCap, describeDropped, download, exportMusicXml, importSource, newScore, readScoreFile, savePepperScore, staffLimitMessage, type Opened } from './files';
 import { editorHighlights } from './highlights';
 import { handleKey, type KeyContext, type PopoverName } from './keymap';
 import { Palette } from './Palette';
@@ -20,7 +22,10 @@ export type PepperScoreEditorProps = {
   /** The score to edit; `musicXml` is imported instead when given; neither opens a new 8-bar treble score. */
   document?: Document;
   musicXml?: string;
-  /** Absent or invalid: read-only (banner, disabled toolbar, no keyboard editing). */
+  /**
+   * A signed licence key (see README); its `maxStaves` caps the score size (default 4). Absent, invalid or
+   * expired: read-only (banner, disabled toolbar, no keyboard editing). Read-only while it is being checked.
+   */
   licenceKey?: string;
   /** After every change to the document (commands, undo, redo). */
   onChange?(document: Document): void;
@@ -39,36 +44,72 @@ export type PepperScoreEditorHandle = { getDocument(): Document; getMusicXml(): 
 /** The viewer redraws this long after the last change, so fast typing engraves once. */
 const RENDER_DEBOUNCE_MS = 80;
 
-type Session = { kind: 'ok'; id: number; store: EditorStore; dropped: Dropped[] } | { kind: 'error'; message: string };
+type Source = PepperScoreFile['source'];
+/** `source` and `created` are written back when the score is saved as `.pepperscore`. */
+type Session = { kind: 'ok'; id: number; store: EditorStore; dropped: Dropped[]; source: Promise<Source>; created: string } | { kind: 'error'; message: string };
 let sessionIds = 0;
 
-function openSession(load: () => Opened): Session {
+function openSession(load: () => Opened, musicXml?: string): Session {
   try {
-    const { document, dropped } = load();
-    return { kind: 'ok', id: ++sessionIds, store: createEditorStore(document), dropped };
+    const { document, dropped, source, editor, created } = load();
+    // The staff cap comes from the licence and is checked by the editor (no command changes the staff count).
+    const store = createEditorStore(document, { maxStaves: Infinity, cursor: editor?.cursor, activeLayoutId: editor?.activeLayoutId });
+    const imported = source ? Promise.resolve(source) : musicXml ? importSource(musicXml, dropped) : Promise.resolve(undefined);
+    return { kind: 'ok', id: ++sessionIds, store, dropped, source: imported, created: created ?? new Date().toISOString() };
   } catch (error) {
     return { kind: 'error', message: error instanceof Error ? error.message : String(error) };
   }
+}
+
+/** The verified licence for `key`: `undefined` while it is checked, `null` when absent, invalid or expired. */
+function useLicence(key: string | undefined): Licence | null | undefined {
+  const [checked, setChecked] = useState<{ key: string | undefined; licence: Licence | null }>();
+  useEffect(() => {
+    let live = true;
+    void verifyLicence(key ?? '').then((licence) => {
+      if (live) setChecked({ key, licence });
+    });
+    return () => {
+      live = false;
+    };
+  }, [key]);
+  return checked && checked.key === key ? checked.licence : undefined;
 }
 
 /** A score editor around the PepperScore viewer: toolbar, keyboard entry, touch palette, popovers. */
 export function PepperScoreEditor(props: PepperScoreEditorProps & { ref?: Ref<PepperScoreEditorHandle> }) {
   const [session, setSession] = useState<Session>(() =>
     openSession(() => {
-      if (props.document) return { document: checkStaffCap(props.document), dropped: [] };
-      if (props.musicXml) return importMusicXml(props.musicXml);
+      if (props.document) return { document: props.document, dropped: [] };
+      if (props.musicXml) return importMusicXml(props.musicXml, { maxStaves: Infinity });
       return { document: newScore(), dropped: [] };
-    }),
+    }, props.musicXml),
   );
+  const licence = useLicence(props.licenceKey);
+  const maxStaves = licence?.maxStaves ?? DEFAULT_MAX_STAVES;
   const className = `ps-editor ${props.className ?? ''}`.trim();
-  if (session.kind === 'error') return <div className={className}><div className="ps-editor-error" role="alert">{session.message}</div></div>;
-  return <EditorSession key={session.id} {...props} className={className} store={session.store} dropped={session.dropped} onOpened={setSession} />;
+  const refusal = (message: string) => <div className={className}><div className="ps-editor-error" role="alert">{message}</div></div>;
+  if (session.kind === 'error') return refusal(session.message);
+  if (staffCount(session.store.getState().document) > maxStaves) {
+    // Over the default cap: wait for the licence before refusing the score.
+    return licence === undefined ? <div className={className} aria-busy="true" /> : refusal(staffLimitMessage(maxStaves));
+  }
+  return <EditorSession key={session.id} {...props} className={className} editable={Boolean(licence)} checking={licence === undefined} maxStaves={maxStaves} session={session} onOpened={setSession} />;
 }
 
-type SessionProps = PepperScoreEditorProps & { ref?: Ref<PepperScoreEditorHandle>; className: string; store: EditorStore; dropped: Dropped[]; onOpened(session: Session): void };
+type SessionProps = PepperScoreEditorProps & {
+  ref?: Ref<PepperScoreEditorHandle>;
+  className: string;
+  editable: boolean;
+  /** The licence is still being verified: read-only, without the no-licence banner. */
+  checking: boolean;
+  maxStaves: number;
+  session: Extract<Session, { kind: 'ok' }>;
+  onOpened(session: Session): void;
+};
 
-function EditorSession({ store, dropped, onOpened, className, ref, ...props }: SessionProps) {
-  const editable = isLicensed(props.licenceKey);
+function EditorSession({ session, editable, checking, maxStaves, onOpened, className, ref, ...props }: SessionProps) {
+  const { store, dropped } = session;
   const document = useEditorStore(store, (s) => s.document);
   const cursor = useEditorStore(store, (s) => s.cursor);
   const selection = useEditorStore(store, (s) => s.selection);
@@ -157,6 +198,7 @@ function EditorSession({ store, dropped, onOpened, className, ref, ...props }: S
     async (file: File) => {
       try {
         const opened = await readScoreFile(file);
+        checkStaffCap(opened.document, maxStaves);
         onOpened(openSession(() => opened));
         callbacks.current.onChange?.(opened.document);
       } catch (error) {
@@ -165,8 +207,14 @@ function EditorSession({ store, dropped, onOpened, className, ref, ...props }: S
         setBanner(`Could not open ${file.name}: ${message}`);
       }
     },
-    [onOpened],
+    [onOpened, maxStaves],
   );
+
+  const save = () =>
+    void session.source.then((source) => {
+      const { document, cursor, activeLayoutId } = store.getState();
+      savePepperScore({ document, source, editor: { cursor, activeLayoutId }, created: session.created });
+    });
 
   const reportErrors = () =>
     download(JSON.stringify({ errors: invariantErrors, document: store.getState().document }, null, 2), 'pepperscore-report.json', 'application/json');
@@ -200,11 +248,11 @@ function EditorSession({ store, dropped, onOpened, className, ref, ...props }: S
         onPopover={(name) => setPopover((current) => (current === name ? null : name))}
         onPlay={togglePlay}
         onExport={() => exportMusicXml(store.getState().document)}
-        onSave={() => savePepperScore(store.getState().document)}
+        onSave={save}
         onOpen={(file) => void open(file)}
         refocus={refocus}
       />
-      {!editable && <div className="ps-editor-banner ps-editor-readonly" role="status">Editing requires a licence.</div>}
+      {!editable && !checking && <div className="ps-editor-banner ps-editor-readonly" role="status">Editing requires a licence.</div>}
       {banner && (
         <div className="ps-editor-banner ps-editor-notice" role="status">
           <span className="ps-editor-banner-text">{banner}</span>

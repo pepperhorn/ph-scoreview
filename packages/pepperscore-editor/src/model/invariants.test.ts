@@ -16,6 +16,8 @@ test('staff cap', () => {
   const doc = createDocument({ parts: [1,2,3].map(n => ({ name: `P${n}`, clef: 'treble' as const, gmProgram: 1, staves: 2 as const })), measures: 1 });
   expect(staffCount(doc)).toBe(6);
   expect(checkInvariants(doc)).toContain('staff-cap: 6 staves, limit 4');
+  expect(checkInvariants(doc, { maxStaves: 8 }).some(m => m.startsWith('staff-cap:'))).toBe(false);
+  expect(checkInvariants(doc, { maxStaves: 5 })).toContain('staff-cap: 6 staves, limit 5');
 });
 
 test('measure-count', () => {
