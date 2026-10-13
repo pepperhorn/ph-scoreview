@@ -14,7 +14,17 @@
     "strict": true,
     "jsx": "react-jsx",
     "jsxImportSource": "react",
-    "types": ["vite/client", "vitest/globals"]
+    "types": [
+      "vite/client",
+      "vitest/globals"
+    ],
+    "paths": {
+      "pepperscore": [
+        "../pepperscore/src/index.ts"
+      ]
+    }
   },
-  "include": ["src/**/*"]
+  "include": [
+    "src/**/*"
+  ]
 }
