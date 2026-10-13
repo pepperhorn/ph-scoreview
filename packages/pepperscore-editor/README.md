@@ -45,12 +45,28 @@ export function App() {
 | `assetBaseUrl` | `string` | Where the viewer loads its fonts and sounds from. |
 | `soundPack` | `'core' \| 'complete'` | The playback sound pack. |
 
-The `ref` handle has `getDocument()`, `getMusicXml()`, `undo()` and `redo()`.
+The `ref` handle has `getDocument()`, `getMusicXml()`, `undo()`, `redo()`, `isDirty()` (changed since it was opened
+or last saved; undoing back to the save is clean) and `confirmDiscard()` (true when clean, else `window.confirm('Discard
+unsaved changes?')`). Open asks the same before replacing a dirty score, and a `beforeunload` guard warns before leaving
+the page with unsaved changes. Hosts that replace the score themselves (a New button) should call `confirmDiscard()` first.
 
 ## Keyboard
 
 Letter keys are case-insensitive; Cmd counts as Ctrl. Digit and symbol keys match the typed character,
 whatever Shift state produced it. Some keys only act in note entry mode (`N` toggles it) or in select mode.
+
+Edits act on the target: the single selected event or note, else (in entry mode) the event just before the cursor.
+
+- `.` in entry mode, right after entering a note, dots that note and moves the cursor to its new end, so `4 C . D`
+  enters a dotted C and then a quarter D. Anywhere else it toggles the dot of the entry duration (`4 . C` enters a
+  dotted C). In select mode it toggles the selected event's dot. Double dots are set from the toolbar only.
+- `+`, `_` and `=` sharpen, flatten and naturalise the target note (up to double sharps and flats);
+  `Alt+ArrowUp/Down` move it a semitone, spelled as in the key, else natural, else with sharps going up and flats
+  going down.
+- `Shift+A`–`Shift+G` add that letter to the target event's chord, in the octave nearest its top note and with the key
+  signature's accidental, without moving the cursor. The toolbar's "Add to chord" toggle makes plain letters do the same.
+- Arrows, `Ctrl`+arrows and `Escape` select the event at the new cursor in select mode (entry mode clears the
+  selection); `Shift`+arrows extend the selection from its first event, and moving back shrinks it.
 
 | Keys | Action | Mode |
 | --- | --- | --- |
