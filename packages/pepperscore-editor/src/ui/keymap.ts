@@ -1,5 +1,5 @@
 import {
-  addChordNote, addSlur, breakBeam, deleteEvents, enterEvent, entryDot, entryDotChangesScore, setAccidental, stepSemitone, extendSelection, makeTuplet, moveCursor, setBeamGroup, setCursorDuration,
+  addChordNote, addSlur, breakBeam, deleteEvents, enterEvent, entryDot, entryDotChangesScore, setAccidental, stepSemitone, extendSelection, makeTuplet, moveCursor, selectCursorEvent, setBeamGroup, setCursorDuration,
   setEntryMode, shiftOctave, stepPitch, toggleArticulation, toggleDot, toggleTie,
 } from '../engine/commands/index';
 import { findEvent, findNote } from '../engine/sequence-edit';
@@ -115,7 +115,13 @@ const popover = (key: string, label: string, name: PopoverName, mode?: 'select')
 
 export const KEYMAP: KeyBinding[] = [
   { keys: ['N'], label: 'Toggle note entry', group: 'entry', action: (ctx) => move(ctx, setEntryMode, { mode: state(ctx).cursor.mode === 'enter' ? 'select' : 'enter' }) },
-  { keys: ['Escape'], label: 'Select mode', group: 'entry', action: (ctx) => move(ctx, setEntryMode, { mode: 'select' }) },
+  {
+    keys: ['Escape'], label: 'Select mode', group: 'entry',
+    action: (ctx) => {
+      move(ctx, setEntryMode, { mode: 'select' });
+      move(ctx, selectCursorEvent, {});
+    },
+  },
   ...DURATION_KEYS.map(duration),
   ...(['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const).map(letter),
   { keys: ['0'], label: 'Rest', group: 'entry', mode: 'enter', action: (ctx) => record(ctx, enterEvent, { rest: true }) },

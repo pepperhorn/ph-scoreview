@@ -231,8 +231,9 @@ test('arrows move by event across bars; Ctrl by measure; Shift extends the selec
   press('ArrowRight', { shift: true });
   expect(store.getState().selection.ids).toEqual(['a1', 'a2', 'a3']);
   expect(store.getState().cursor.tick).toBe(1920);
-  store.dispatch(moveCursor, { by: 'event', delta: 2 }, { record: false });
+  store.dispatch(extendSelection, { delta: 2 }, { record: false });
   expect(store.getState().cursor).toMatchObject({ measureId: m2, tick: 0 });
+  expect(store.getState().selection.ids).toEqual(['a1', 'a2', 'a3', 'a4', 'b1']);
   store.dispatch(extendSelection, { delta: -1 }, { record: false });
   expect(store.getState().selection.ids).toEqual(['a1', 'a2', 'a3', 'a4']);
   expect(store.getState().history.past).toEqual([]);
@@ -412,4 +413,59 @@ test('with "Add to chord" on, plain letters add to the chord instead of entering
   store.dispatch(setChordMode, { on: false }, { record: false });
   press('d');
   expect(pitches(bar(store)[1])).toEqual([P('D', 4)]);
+});
+
+test('plain arrows replace the selection with the event at the cursor: click C, three rights, Delete deletes F', () => {
+  const { store, press } = setup(twoBars());
+  store.dispatch(setCursor, { tick: 0 }, { record: false });
+  store.dispatch(setSelection, { ids: ['a1'] }, { record: false }); // a click on the C
+  press('ArrowRight');
+  expect(store.getState().selection.ids).toEqual(['a2']);
+  press('ArrowRight');
+  press('ArrowRight');
+  expect(store.getState().selection.ids).toEqual(['a4']);
+  press('Delete');
+  expect(bar(store).map((e) => (e.rest ? 'rest' : e.notes![0].pitch.step))).toEqual(['C', 'D', 'E', 'rest']);
+});
+
+test('Ctrl+arrows select the event at the new cursor; Escape selects the cursor event', () => {
+  const { store, press } = setup(twoBars());
+  store.dispatch(setSelection, { ids: ['a1', 'a2'] }, { record: false });
+  press('ArrowRight', { ctrl: true });
+  expect(store.getState().selection.ids).toEqual(['b1']);
+  store.dispatch(setSelection, { ids: ['a3'] }, { record: false });
+  press('Escape');
+  expect(store.getState().selection.ids).toEqual(['b1']);
+});
+
+test('in entry mode arrows clear the selection so the target stays the event before the cursor', () => {
+  const { store, press } = setup(twoBars());
+  press('n');
+  store.dispatch(setSelection, { ids: ['a1'] }, { record: false });
+  press('ArrowRight');
+  expect(store.getState().selection.ids).toEqual([]);
+});
+
+test('Shift+Left after Shift+Right shrinks the selection back to the anchor, then extends left', () => {
+  const { store, press } = setup(twoBars());
+  store.dispatch(setCursor, { tick: 960 }, { record: false });
+  store.dispatch(setSelection, { ids: ['a2'] }, { record: false });
+  press('ArrowRight', { shift: true });
+  press('ArrowRight', { shift: true });
+  expect(store.getState().selection.ids).toEqual(['a2', 'a3', 'a4']);
+  press('ArrowLeft', { shift: true });
+  expect(store.getState().selection.ids).toEqual(['a2', 'a3']);
+  press('ArrowLeft', { shift: true });
+  expect(store.getState().selection.ids).toEqual(['a2']);
+  press('ArrowLeft', { shift: true });
+  expect([...store.getState().selection.ids].sort()).toEqual(['a1', 'a2']);
+  press('ArrowRight', { shift: true });
+  expect(store.getState().selection.ids).toEqual(['a2']);
+});
+
+test('Shift+arrow with no selection anchors on the cursor event', () => {
+  const { store, press } = setup(twoBars());
+  store.dispatch(setCursor, { tick: 1920 }, { record: false });
+  press('ArrowLeft', { shift: true });
+  expect([...store.getState().selection.ids].sort()).toEqual(['a2', 'a3']);
 });

@@ -2,7 +2,7 @@ import { measureTicks, type Duration } from '../../model/durations';
 import { effectiveTime, eventStarts, measureIndex, sequenceFor } from '../../model/query';
 import type { Document } from '../../model/schema';
 import { clampCursor } from '../cursor-clamp';
-import { TICK_EPSILON } from '../sequence-edit';
+import { findNote, TICK_EPSILON } from '../sequence-edit';
 import type { Command, Cursor, Editable } from '../types';
 
 type Place = Pick<Cursor, 'measureId' | 'tick'>;
@@ -66,19 +66,57 @@ export function eventsBeforeCursor(doc: Document, cursor: Cursor, count: number)
   return out;
 }
 
-/** Cursor-only; dispatch with `{ record: false }`. By event: to the previous/next event start; by measure: tick 0 of the adjacent bar. */
+/**
+ * Replaces the selection with the event at the cursor (none: empty) in select mode; clears it in entry
+ * mode, where commands target the event before the cursor. Arrows and Escape use it so a selection
+ * never outlives the cursor leaving it.
+ */
+function selectAtCursor(draft: Editable): void {
+  const id = draft.cursor.mode === 'select' ? eventAtCursor(draft.document, draft.cursor) : undefined;
+  const ids = id ? [id] : [];
+  if (ids.length !== draft.selection.ids.length || ids.some((x, i) => x !== draft.selection.ids[i])) draft.selection.ids = ids;
+}
+
+/** Cursor and selection only; dispatch with `{ record: false }`. By event: to the previous/next event start; by measure: tick 0 of the adjacent bar. The selection becomes the event at the new cursor (see `selectAtCursor`). */
 export const moveCursor: Command<{ by: 'event' | 'measure'; delta: number }> = {
   label: 'Move cursor',
-  run: (draft, { by, delta }) => move(draft, by, delta),
+  run: (draft, { by, delta }) => {
+    move(draft, by, delta);
+    selectAtCursor(draft);
+  },
 };
 
-/** Moves the cursor by event and adds the event it lands on to the selection; dispatch with `{ record: false }`. */
+/** Selection only; dispatch with `{ record: false }`. Selects the event at the cursor (entry mode: clears the selection). */
+export const selectCursorEvent: Command<Record<string, never>> = {
+  label: 'Select',
+  run: (draft) => selectAtCursor(draft),
+};
+
+/** Event ids of the cursor's (part, staff, voice) in score order, across bars. */
+function voiceEvents(doc: Document, cursor: Cursor): string[] {
+  return doc.global.measures.flatMap((_, index) => startsIn(doc, cursor, index).map((s) => s.id));
+}
+
+/**
+ * Shift+arrow: moves the cursor by event and selects the contiguous run from the anchor to the event it
+ * lands on (the head). The anchor is the first selected event (a selected note counts as its event)
+ * when it is in the cursor's voice, else the event at the cursor before the move; it stays first in
+ * `selection.ids`, so moving back towards it shrinks the run. Dispatch with `{ record: false }`.
+ */
 export const extendSelection: Command<{ delta: number }> = {
   label: 'Extend selection',
   run: (draft, { delta }) => {
+    const doc = draft.document;
+    const order = voiceEvents(doc, draft.cursor);
+    const first = draft.selection.ids[0];
+    const firstEvent = first === undefined ? undefined : order.includes(first) ? first : findNote(doc, first)?.event.id;
+    const anchor = firstEvent && order.includes(firstEvent) ? firstEvent : eventAtCursor(doc, draft.cursor);
     move(draft, 'event', delta);
-    const id = eventAtCursor(draft.document, draft.cursor);
-    if (id && !draft.selection.ids.includes(id)) draft.selection.ids.push(id);
+    const head = eventAtCursor(doc, draft.cursor);
+    if (!anchor || !head) return;
+    const [a, h] = [order.indexOf(anchor), order.indexOf(head)];
+    const run = a <= h ? order.slice(a, h + 1) : [anchor, ...order.slice(h, a)];
+    if (run.length !== draft.selection.ids.length || run.some((x, i) => x !== draft.selection.ids[i])) draft.selection.ids = run;
   },
 };
 
