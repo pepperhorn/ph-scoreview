@@ -116,24 +116,8 @@ function PopoverBody({ name, store, onClose }: Props) {
         </>
       );
     }
-    case 'time': {
-      const time = effectiveTime(document, index);
-      const apply = (count: number, unit: number) => {
-        if (Number.isInteger(count) && count >= 1 && count <= 32) store.dispatch(setTime, { measureId, time: { count, unit: unit as (typeof TIME_UNITS)[number] } });
-      };
-      return (
-        <>
-          <Field label="Beats">
-            <input className="ps-input ps-input-count" type="number" min={1} max={32} value={time.count} onChange={(e) => apply(Number(e.target.value), time.unit)} onKeyDown={(e) => e.key === 'Enter' && onClose()} />
-          </Field>
-          <Field label="Beat unit">
-            <select className="ps-select ps-select-unit" value={time.unit} onChange={(e) => apply(time.count, Number(e.target.value))}>
-              {TIME_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
-            </select>
-          </Field>
-        </>
-      );
-    }
+    case 'time':
+      return <TimeFields key={measureId} store={store} measureId={measureId} index={index} onClose={onClose} />;
     case 'clef': {
       const part = document.parts.find((p) => p.id === cursor.partId);
       if (!part) return null;
@@ -197,4 +181,51 @@ function PopoverBody({ name, store, onClose }: Props) {
         </>
       );
   }
+}
+
+/**
+ * Beats and beat unit. The beats field is a draft applied on Enter, blur or Apply, never per keystroke:
+ * typing "12" must not pass through 1/4, whose refill would cut the bar's notes. A unit choice applies at once.
+ */
+function TimeFields({ store, measureId, index, onClose }: { store: EditorStore; measureId: string; index: number; onClose(): void }) {
+  const document = useEditorStore(store, (s) => s.document);
+  const time = effectiveTime(document, index);
+  const [count, setCount] = useState(String(time.count));
+  const apply = (unit: number = time.unit): boolean => {
+    const beats = Number(count);
+    if (!Number.isInteger(beats) || beats < 1 || beats > 32) {
+      setCount(String(time.count));
+      return false;
+    }
+    store.dispatch(setTime, { measureId, time: { count: beats, unit: unit as (typeof TIME_UNITS)[number] } });
+    return true;
+  };
+  return (
+    <>
+      <Field label="Beats">
+        <input
+          className="ps-input ps-input-count"
+          type="number"
+          min={1}
+          max={32}
+          step={1}
+          value={count}
+          onFocus={(e) => e.target.select()}
+          onChange={(e) => setCount(e.target.value)}
+          onBlur={() => apply()}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            if (apply()) onClose();
+          }}
+        />
+      </Field>
+      <Field label="Beat unit">
+        <select className="ps-select ps-select-unit" value={time.unit} onChange={(e) => apply(Number(e.target.value))}>
+          {TIME_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+        </select>
+      </Field>
+      <button type="button" className="ps-btn ps-popover-apply" onClick={() => { if (apply()) onClose(); }}>Apply</button>
+    </>
+  );
 }

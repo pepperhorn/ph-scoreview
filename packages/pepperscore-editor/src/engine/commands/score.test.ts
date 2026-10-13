@@ -233,3 +233,14 @@ test('commands on an unknown measure are a no-op and record nothing', () => {
   store.dispatch(toggleMark, { measureId: 'nope', mark: 'coda' });
   expect(store.canUndo()).toBe(false);
 });
+
+test('rapid setTime on one bar coalesces into one undo step that restores the original notes', () => {
+  const store = createEditorStore(threeQuarterNotesDoc());
+  const before = store.getState().document;
+  const m = before.global.measures[0].id;
+  store.dispatch(setTime, { measureId: m, time: { count: 1, unit: 4 } });
+  store.dispatch(setTime, { measureId: m, time: { count: 12, unit: 4 } });
+  expect(store.getState().history.past).toHaveLength(1);
+  store.undo();
+  expect(store.getState().document).toEqual(before);
+});

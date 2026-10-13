@@ -27,8 +27,10 @@ function refillFrom(draft: Editable, from: number): void {
   if (cursor !== draft.cursor) Object.assign(draft.cursor, cursor);
 }
 
+/** Rapid changes to one bar's time signature are one undo step (the refill of a passing value is undone with it). */
 export const setTime: Command<{ measureId: string; time: Time }> = {
   label: 'Set time signature',
+  coalesceKey: ({ measureId }) => `time:${measureId}`,
   run: (draft, { measureId, time }) =>
     withMeasure(draft, measureId, (g, index) => {
       if (g.time?.count === time.count && g.time.unit === time.unit) return;
