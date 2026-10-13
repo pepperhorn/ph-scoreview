@@ -1,0 +1,14 @@
+{
+  "name": "pepperscore-editor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": { "types": "./src/index.ts", "import": "./src/index.ts" },
+    "./style.css": "./src/style.css"
+  },
+  "scripts": { "test": "vitest run", "check": "tsc --noEmit -p ." },
+  "peerDependencies": { "react": ">=19", "react-dom": ">=19", "pepperscore": "*" },
+  "dependencies": { "immer": "^10.1.1", "zustand": "^5.0.0", "zod": "^4.0.0", "nanoid": "^3.3.0" },
+  "devDependencies": { "vitest": "^3.0.0", "typescript": "^5.9.3", "@types/react": "^19.2.0", "verovio": "6.3.0" }
+}
