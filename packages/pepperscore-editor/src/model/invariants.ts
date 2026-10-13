@@ -3,6 +3,8 @@ import type { Document, Event, Pitch, Sequence } from './schema';
 import { effectiveTime, eventStarts, sequenceFor, sequenceTicks, staffCount } from './query';
 
 const STAFF_LIMIT = 4;
+/** Tuplet-scaled ticks can be fractional; compare bar lengths within this tolerance. */
+const TICK_EPSILON = 1e-6;
 
 const samePitch = (a: Pitch, b: Pitch) => a.step === b.step && a.octave === b.octave && a.alter === b.alter;
 
@@ -30,15 +32,15 @@ export function checkInvariants(doc: Document): string[] {
 
       for (const seq of pm.sequences) {
         if (isFullMeasureRestOnly(seq)) continue;
-        const actual = sequenceTicks(seq);
-        if (actual !== expected) {
+        const actual = sequenceTicks(seq, expected);
+        if (Math.abs(actual - expected) > TICK_EPSILON) {
           errors.push(`bar-length: ${where} staff ${seq.staff} voice ${seq.voice} has ${actual} ticks, expected ${expected}`);
         }
       }
 
       for (const beam of pm.beams) {
         const seq = pm.sequences.find((s) => eventStarts(s).some((e) => e.event.id === beam.events[0]));
-        const starts = seq ? eventStarts(seq) : [];
+        const starts = seq ? eventStarts(seq, expected) : [];
         const positions = beam.events.map((id) => starts.findIndex((s) => s.event.id === id));
         if (positions.some((p) => p < 0)) {
           errors.push(`beam-events: beam ${beam.id} in ${where} references events outside one sequence`);
@@ -48,7 +50,7 @@ export function checkInvariants(doc: Document): string[] {
           errors.push(`beam-events: beam ${beam.id} in ${where} has non-consecutive events`);
           continue;
         }
-        const long = positions.map((p) => starts[p]).find((s) => s.ticks >= 960);
+        const long = positions.map((p) => starts[p]).find((s) => s.ticks >= 960 - TICK_EPSILON);
         if (long) errors.push(`beam-events: beam ${beam.id} includes event ${long.event.id} of a quarter or longer`);
       }
 

@@ -54,3 +54,14 @@ test('measureIndex, sequenceFor, ensureSequence, noteToEvent, staffCount', () =>
   expect(map.size).toBe(2);
   expect(staffCount(doc)).toBe(1);
 });
+
+test('a full-measure rest spans the bar it is in', () => {
+  const doc = createDocument({ parts: [{ name: 'Fl', clef: 'treble', gmProgram: 74 }], measures: 2, time: { count: 3, unit: 4 } });
+  const seq = doc.parts[0].measures[1].sequences[0];
+  const rest = seq.content[0];
+  expect(sequenceTicks(seq)).toBe(3840);
+  expect(sequenceTicks(seq, 2880)).toBe(2880);
+  expect(eventStarts(seq, 2880)).toEqual([{ event: rest, tick: 0, ticks: 2880 }]);
+  expect(locateEvent(doc, rest.id)).toMatchObject({ measureIndex: 1, tick: 0 });
+  expect(checkInvariants(doc)).toEqual([]);
+});

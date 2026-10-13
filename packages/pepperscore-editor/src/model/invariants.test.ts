@@ -1,6 +1,6 @@
 import { createDocument } from './create';
 import { checkInvariants } from './invariants';
-import { staffCount } from './query';
+import { eventStarts, sequenceTicks, staffCount } from './query';
 import type { Document, Event } from './schema';
 import { threeQuarterNotesDoc } from '../test-helpers';
 
@@ -93,4 +93,38 @@ test('jump-targets', () => {
   g[1].toCoda = undefined;
   g[2].coda = undefined;
   expect(checkInvariants(doc)).toEqual([]);
+});
+
+const sixteenth = (id: string): Event => ({ id, type: 'event', duration: { base: '16th', dots: 0 }, rest: true });
+
+test('septuplet: seven 16ths in the time of four fill the beat exactly', () => {
+  const doc = createDocument({ parts: [{ name: 'Fl', clef: 'treble', gmProgram: 74 }], measures: 1 });
+  const seq = doc.parts[0].measures[0].sequences[0];
+  seq.content = [
+    { id: 't7', type: 'tuplet', outer: { multiple: 7, base: '16th' }, inner: { multiple: 4, base: '16th' }, content: [1, 2, 3, 4, 5, 6, 7].map(n => sixteenth(`s${n}`)) },
+    { id: 'r', type: 'event', duration: { base: 'half', dots: 1 }, rest: true },
+  ];
+  const starts = eventStarts(seq);
+  expect(starts[6].tick + starts[6].ticks).toBe(960);
+  expect(starts[7].tick).toBe(960);
+  expect(sequenceTicks(seq)).toBe(3840);
+  expect(checkInvariants(doc)).toEqual([]);
+});
+
+test('quintuplet: five 16ths in the time of four', () => {
+  const doc = createDocument({ parts: [{ name: 'Fl', clef: 'treble', gmProgram: 74 }], measures: 1 });
+  const seq = doc.parts[0].measures[0].sequences[0];
+  seq.content = [
+    { id: 't5', type: 'tuplet', outer: { multiple: 5, base: '16th' }, inner: { multiple: 4, base: '16th' }, content: [1, 2, 3, 4, 5].map(n => sixteenth(`q${n}`)) },
+    { id: 'r', type: 'event', duration: { base: 'half', dots: 1 }, rest: true },
+  ];
+  expect(eventStarts(seq).map(s => s.ticks).slice(0, 5)).toEqual([192, 192, 192, 192, 192]);
+  expect(checkInvariants(doc)).toEqual([]);
+});
+
+test('bar-length accepts a full-measure rest in 3/4 and rejects a whole rest there', () => {
+  const doc = createDocument({ parts: [{ name: 'Fl', clef: 'treble', gmProgram: 74 }], measures: 1, time: { count: 3, unit: 4 } });
+  expect(checkInvariants(doc)).toEqual([]);
+  doc.parts[0].measures[0].sequences[0].content = [{ id: 'w', type: 'event', duration: { base: 'whole', dots: 0 }, rest: true }];
+  expect(checkInvariants(doc)).toEqual(['bar-length: part Fl measure 1 staff 1 voice 1 has 3840 ticks, expected 2880']);
 });
