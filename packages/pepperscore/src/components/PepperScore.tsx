@@ -48,6 +48,22 @@ const SILENT_PLAYBACK_NOTICE = 'Audio couldn’t start on this device — playin
 /** onTimeUpdate fires at most this often during self-driven playback (about 10 Hz). */
 const TIME_UPDATE_MS = 100;
 export type PepperScoreReadyInfo = { title: string; composer?: string; parts: Array<{ id: string; name: string }>; measures: number };
+/** What a click on the engraving hit (`onElementClick`). */
+export type PepperScoreClickInfo = {
+  /** Viewer note id (data-note-id) when a note or rest was hit. */
+  noteId?: string;
+  /** Source element id (the MusicXML `id` attribute) of the first pitch of that note, when known. */
+  sourceId?: string;
+  /** Zero-based measure index, when a measure box was hit. */
+  measureIndex?: number;
+  /** 0..1 position of the click across the measure's width. */
+  fraction?: number;
+  /** 1-based index of the nearest visible staff in the system. */
+  staff?: number;
+  clientX: number; clientY: number;
+};
+/** Adds `className` to the drawn notes (`ids`: note or source ids) and measures (`measures`: zero-based indexes); re-applied after every draw. */
+export type PepperScoreHighlight = { ids?: string[]; measures?: number[]; className: string };
 export type PepperScoreHandle = {
   /** Start playback (no-op while playing, when the chrome loads no audio, or with a `clock`). */
   play(): Promise<void>;
@@ -62,6 +78,10 @@ export type PepperScoreHandle = {
   seek(seconds: number): void;
   /** Seconds of the playhead: `clock.now()` with a `clock`, else the self-driven position. */
   currentTime(): number;
+  /** Draw the measure's system if needed and scroll the measure into view. */
+  scrollToMeasure(index: number): Promise<void>;
+  /** `seek` to the start of a measure (its first performed occurrence). */
+  seekToMeasure(index: number): void;
 };
 export type PepperScoreProps = {
   /** Score sources; the first present wins, in this order. */
@@ -112,6 +132,10 @@ export type PepperScoreProps = {
   onSeek?(seconds: number): void;
   /** Self-driven playback time, about 10 times a second while playing. */
   onTimeUpdate?(seconds: number): void;
+  /** Any click on the engraving (every chrome, with or without a clock): the note, measure and staff it hit. */
+  onElementClick?(info: PepperScoreClickInfo): void;
+  /** Classes to add to notes and measures (for a host's selection or cursor; see the `ps-*` classes in styles.css). */
+  highlights?: PepperScoreHighlight[];
   /** Focus the reader on mount so page-turn keys work before any click. */
   autoFocus?: boolean;
   ref?: React.Ref<PepperScoreHandle>;
@@ -148,7 +172,7 @@ const flag = (element: HTMLElement, key: 'psShort' | 'psTiny' | 'psWide', on: bo
 /** Where the viewport centre sits in a measure, so a re-layout can put that point back at the centre. */
 type ZoomAnchor = { index: number; fx: number; fy: number };
 
-export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: preset = 'full', controls, view, height, className, ariaLabel, settings, persist, assetBaseUrl, soundPack = 'core', soundSources, onReady, onPlay, onStop, onError, clock, audio: withAudio = true, onSeek, onTimeUpdate, autoFocus, ref }: PepperScoreProps) {
+export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: preset = 'full', controls, view, height, className, ariaLabel, settings, persist, assetBaseUrl, soundPack = 'core', soundSources, onReady, onPlay, onStop, onError, clock, audio: withAudio = true, onSeek, onTimeUpdate, onElementClick, highlights, autoFocus, ref }: PepperScoreProps) {
   const chrome = useMemo(() => resolveChrome(preset, controls), [preset, controls?.mixer, controls?.openFile, controls?.drawer, controls?.transport, controls?.viewToggle, controls?.zoom]);
   /** A host clock always shows the playhead (ivories uses chrome="none" with a clock). */
   const playhead = chrome.playhead || Boolean(clock);
@@ -161,8 +185,8 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     return { ...mapped, ...(view ? { mode: viewToMode(view) } : {}) };
   }, [settingsKey, view]);
   const hostPrefsRef = useRef(hostPrefs);
-  const callbacks = useRef({ onReady, onPlay, onStop, onError, onSeek, onTimeUpdate });
-  callbacks.current = { onReady, onPlay, onStop, onError, onSeek, onTimeUpdate };
+  const callbacks = useRef({ onReady, onPlay, onStop, onError, onSeek, onTimeUpdate, onElementClick });
+  callbacks.current = { onReady, onPlay, onStop, onError, onSeek, onTimeUpdate, onElementClick };
   const clockRef = useRef(clock);
   clockRef.current = clock;
   const natural = !height && preset !== 'full';
@@ -202,6 +226,8 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const [resizeTick, setResizeTick] = useState(0);
   /** Bumped when systems are drawn, released or resized after the first paint (large scores draw on demand). */
   const [layoutTick, setLayoutTick] = useState(0);
+  /** Counts completed draws (a new RenderResult), so effects that decorate the engraving re-run on it. */
+  const [drawTick, setDrawTick] = useState(0);
   const [active, setActive] = useState<string | null>(null);
   const [activeNotes, setActiveNotes] = useState<string[]>([]);
   const [position, setPosition] = useState(0);
@@ -761,6 +787,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
           setStaffCenters(Object.fromEntries(result.visiblePartIds.map((id, index) => [id, result.staffCenters[index]])));
           setControlMetrics(metrics);
           setRenderedZoom(result.zoom);
+          setDrawTick(value => value + 1);
         });
         const content = canvas.closest<HTMLElement>('.score-content');
         // Staff controls size from the rendered stave, so their ratio to it holds at every zoom and fit.
@@ -1095,24 +1122,64 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
       .catch(e => { if (!cancelled) showError(e, 'Could not build the playback timeline.'); });
     return () => { cancelled = true; cancelAnimationFrame(frame); unsubscribe(); };
   }, [clock, loaded, loadTimeline]);
-  /** Clock mode: a click on a note (or anywhere in a measure) reports its time to the host instead of seeking. */
+  /** A click on the engraving: `onElementClick` gets what it hit; with a clock, the note's (or measure's) time goes to `onSeek`. */
   const onScoreClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    const result = renderRef.current;
+    const noteId = (event.target as Element).closest?.('[data-note-id]')?.getAttribute('data-note-id') ?? undefined;
+    const hit = result?.measures.find(measure => {
+      const rect = measure.element?.getBoundingClientRect();
+      return Boolean(rect && rect.width && event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom);
+    });
+    if (callbacks.current.onElementClick) {
+      const rect = hit?.element?.getBoundingClientRect();
+      const system = hit && result ? result.systems[hit.system] : undefined;
+      const block = hit?.element?.closest('.score-system')?.getBoundingClientRect();
+      let staff: number | undefined;
+      // Staff centres are px from the top of the system block.
+      if (system?.staffCenters.length && block) {
+        const y = event.clientY - block.top;
+        staff = system.staffCenters.reduce((best, centre, i) => Math.abs(centre - y) < Math.abs(system.staffCenters[best] - y) ? i : best, 0) + 1;
+      }
+      callbacks.current.onElementClick({
+        noteId, sourceId: noteId ? score.document?.identity?.noteIdToSourceId?.[noteId] ?? noteId : undefined,
+        measureIndex: hit?.index, fraction: rect?.width ? Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)) : undefined,
+        staff, clientX: event.clientX, clientY: event.clientY,
+      });
+    }
     if (!clock) return;
-    const timeline = timelineOf(), result = renderRef.current;
+    const timeline = timelineOf();
     if (!timeline || !result) return;
     const bpm = timeline.initialBpm;
     const now = Math.max(0, Number.isFinite(clock.now()) ? clock.now() : 0);
-    const noteId = (event.target as Element).closest?.('[data-note-id]')?.getAttribute('data-note-id');
     let seconds = noteId ? noteSeekSeconds(timeline, noteId, now, bpm) : null;
-    if (seconds === null) {
-      const hit = result.measures.find(measure => {
-        const rect = measure.element?.getBoundingClientRect();
-        return Boolean(rect && rect.width && event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom);
-      });
-      if (hit) seconds = measureSeekSeconds(timeline, hit.index, now, bpm);
-    }
+    if (seconds === null && hit) seconds = measureSeekSeconds(timeline, hit.index, now, bpm);
     if (seconds !== null) callbacks.current.onSeek?.(seconds);
   };
+  // Host highlights: re-applied after every draw (systems drawn later included); elements a draw replaced lose them with it.
+  useEffect(() => {
+    const result = renderRef.current, canvas = canvasRef.current;
+    if (!canvas) return;
+    const apply = () => {
+      canvas.querySelectorAll('[data-ps-highlight]').forEach(element => {
+        for (const name of (element.getAttribute('data-ps-highlight') || '').split(' ')) if (name) element.classList.remove(name);
+        element.removeAttribute('data-ps-highlight');
+      });
+      for (const item of highlights ?? []) {
+        const targets: Element[] = [];
+        for (const id of item.ids ?? []) {
+          const element = result?.point(id)?.element ?? canvas.querySelector(`[data-note-id="${CSS.escape(id)}"]`) ?? canvas.querySelector(`#${CSS.escape(id)}`);
+          if (element) targets.push(element.closest('.chord') ?? element);
+        }
+        for (const index of item.measures ?? []) { const element = result?.measure(index)?.element; if (element) targets.push(element); }
+        for (const element of targets) {
+          element.classList.add(item.className);
+          element.setAttribute('data-ps-highlight', `${element.getAttribute('data-ps-highlight') ?? ''} ${item.className}`.trim());
+        }
+      }
+    };
+    apply();
+    return result?.onChange(apply);
+  }, [highlights, loaded, drawTick]);
   const wasPlayingRef = useRef(false);
   useEffect(() => {
     if (playing && !wasPlayingRef.current) callbacks.current.onPlay?.();
@@ -1144,12 +1211,28 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   };
   const seekRef = useRef(seekTo);
   seekRef.current = seekTo;
+  /** handle.seekToMeasure: seek to the measure's first performed occurrence (at the clock's score tempo, else the BPM setting). */
+  const seekToMeasure = (index: number) => {
+    void loadTimeline().then(timeline => {
+      const seconds = measureSeekSeconds(timeline, index, 0, clockRef.current ? timeline.initialBpm : prefs.bpm);
+      if (seconds !== null) seekRef.current(seconds);
+    }).catch(e => showError(e, 'Could not build the playback timeline.'));
+  };
+  const seekToMeasureRef = useRef(seekToMeasure);
+  seekToMeasureRef.current = seekToMeasure;
   useImperativeHandle(ref, () => ({
     play: async () => { if (chrome.audio && !clockRef.current && !busyRef.current) await latestPlayRef.current(); },
     stop: () => { if (!clockRef.current) stopRef.current(true); },
     transpose: semitones => changePitchRef.current({ semitones: clampSemitones(Math.round(Number(semitones) || 0)) }),
     seek: seconds => seekRef.current(Number(seconds)),
     currentTime: () => { const host = clockRef.current; return host ? host.now() : positionRef.current; },
+    scrollToMeasure: async index => {
+      const result = renderRef.current;
+      if (!result) return;
+      await result.ensureSystem(result.systemOfMeasure(index));
+      result.measure(index)?.element?.scrollIntoView({ block: 'center', inline: 'center', behavior: scrollBehavior() });
+    },
+    seekToMeasure: index => seekToMeasureRef.current(Number(index)),
   }), [chrome.audio]);
   // Unmount: release only this reader's players and track gains; the shared AudioContext and Verovio worker stay for other readers.
   useEffect(() => () => { importRunRef.current++; playRunRef.current++; renderRef.current?.dispose(); if (playRef.current) { cancelAnimationFrame(playRef.current.frame); clearInterval(playRef.current.interval); } scheduledStopsRef.current.splice(0).forEach(item => item.stop()); audioRef.current?.players.forEach(players => players.forEach(p => p.dispose())); audioRef.current?.trackGains.forEach(gain => gain.disconnect()); audioRef.current = null; releasePlayback(playbackOwner); }, []);
@@ -1226,7 +1309,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const heightMode = height === 'fill' ? 'fill' : height ? 'fixed' : natural ? 'natural' : 'auto';
   const compactLabel = playing || loadingAudio ? 'Stop playback' : 'Play score';
   const compactPlay = chrome.compactPlay && loaded && !clock ? <button type="button" className={`ps-compact-play icon-button ${loadingAudio ? 'is-loading' : ''}`} aria-label={compactLabel} title={compactLabel} onClick={() => { if (playing || loadingAudio) stop(true); else void play(); }}>{playing || loadingAudio ? <Square size={15} fill="currentColor"/> : <Play size={15} fill="currentColor"/>}</button> : null;
-  return <div ref={rootRef} className={`pepperscore ${className ?? ''}`.trim()} data-ps-height={heightMode} data-ps-clock={clock ? '' : undefined} style={heightMode === 'fixed' ? { height } : undefined}
+  return <div ref={rootRef} className={`pepperscore ${className ?? ''}`.trim()} data-ps-height={heightMode} data-ps-clock={clock ? '' : undefined} data-ps-clickable={onElementClick ? '' : undefined} style={heightMode === 'fixed' ? { height } : undefined}
     tabIndex={0} role="region" aria-label={ariaLabel || (loaded && score.title ? `Score: ${score.title}` : 'Score reader')} onKeyDown={onRootKeyDown}>
   <main className={`app-shell ${chrome.drawer ? '' : 'no-drawer'}`}>
     {chrome.header && <header className="topbar" aria-label="Playback transport">
@@ -1304,7 +1387,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
             {hiddenIds.length > 0 && <div className="hidden-staves" aria-label="Hidden staves">{score.parts.filter(part => hiddenSet.has(part.id)).map(part => <button key={part.id} onClick={() => togglePart(part.id)} title={`Show ${part.name}`} aria-label={`Show ${part.name}`}><img src={instrumentDetails(part.instrument).icon} alt=""/><EyeOff size={15}/><span>{part.name}</span></button>)}</div>}
           </div>}
           <div className="score-stage">
-            <div className="score-staves" ref={canvasRef} onClick={clock ? onScoreClick : undefined}/>
+            <div className="score-staves" ref={canvasRef} onClick={onScoreClick}/>
             {chrome.partControls && <div className="part-controls" style={{ '--part-icon': `${controlMetrics.icon}px`, '--part-font': `${controlMetrics.font}px`, '--part-eye': `${controlMetrics.eye}px`, '--part-control-height': `${controlMetrics.height}px` } as React.CSSProperties}>{visibleScore.parts.map((part, index) => <div key={part.id} className="part-control" style={{ top: `${staffCenters[part.id] ?? 86 + index * ((prefs.names || prefs.counts) ? 125 : 100)}px` }} title={`Sound for ${part.name}`}><button className="instrument-control" aria-label={`Instrument for ${part.name}`} aria-haspopup="dialog" onClick={() => openInstrumentPicker(part)}><img className="part-icon" src={instrumentDetails(part.instrument).icon} alt=""/></button><span className="part-name" title={part.name}>{part.name}</span>{score.parts.length > 1 && <button className={`staff-eye staff-focus ${focusedId === part.id ? 'is-focused' : ''}`} aria-label={focusedId === part.id ? 'Show all staves' : `Focus on ${part.name}`} title={focusedId === part.id ? 'Show all staves' : `Focus on ${part.name}`} aria-pressed={focusedId === part.id} onClick={() => focusPart(part.id)}><Focus size={17}/></button>}{score.parts.length > 4 && <button className="staff-eye" aria-label={`Hide ${part.name}`} title={`Hide ${part.name}`} onClick={() => togglePart(part.id)} disabled={visibleScore.parts.length <= 1}><Eye size={17}/></button>}</div>)}</div>}
           </div>
         </div>}

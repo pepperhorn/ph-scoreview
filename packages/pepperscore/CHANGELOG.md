@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `onElementClick(info)` (`PepperScoreClickInfo`): every click on the engraving, with every chrome, reports the note (`noteId`, `sourceId`), measure, position across it (`fraction`) and nearest staff.
+- `highlights` prop (`PepperScoreHighlight[]`): host classes on notes and measures, re-applied after every draw. New styles `ps-cursor`, `ps-selection` and `ps-cursor-measure` (`--ps-cursor`, `--ps-selection`).
+- Handle: `scrollToMeasure(index)` and `seekToMeasure(index)`.
+- Type exports `PepperScoreClickInfo` and `PepperScoreHighlight`.
+
 ## 0.2.0
 
 ### Added
