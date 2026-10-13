@@ -1129,6 +1129,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   }, [clock, loaded, loadTimeline]);
   /** A click on the engraving: `onElementClick` gets what it hit; with a clock, the note's (or measure's) time goes to `onSeek`. */
   const onScoreClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!clock && !callbacks.current.onElementClick) return; // nothing listens: skip the hit testing (layout reads)
     const result = renderRef.current;
     const noteId = (event.target as Element).closest?.('[data-note-id]')?.getAttribute('data-note-id') ?? undefined;
     const hit = result?.measures.find(measure => {

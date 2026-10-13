@@ -547,6 +547,17 @@ try {
     }, [fullChrome, noteId], { timeout: 5000 });
     await page.evaluate(() => window.__embed.setHighlights([]));
     await page.waitForFunction(root => !document.querySelector(`${root} .ps-selection`), fullChrome, { timeout: 5000 });
+    // A reader with neither a clock nor onElementClick does no work on a click (no layout reads).
+    await page.locator('.embed-a .score-staves svg').first().waitFor({ timeout: 30000 });
+    const layoutReads = await page.evaluate(() => {
+      const original = Element.prototype.getBoundingClientRect;
+      let reads = 0;
+      Element.prototype.getBoundingClientRect = function () { reads++; return original.call(this); };
+      try { document.querySelector('.embed-a .score-staves').dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 10, clientY: 10 })); }
+      finally { Element.prototype.getBoundingClientRect = original; }
+      return reads;
+    });
+    assert.equal(layoutReads, 0, 'a click on a reader without a clock or onElementClick reads no layout');
     await page.evaluate(() => window.__embed.refs.full.current.scrollToMeasure(3));
     // Self-driven seekToMeasure moves the playhead to the measure's start (after measure 0, so past 0 seconds).
     await page.evaluate(() => window.__embed.refs.full.current.seekToMeasure(2));
