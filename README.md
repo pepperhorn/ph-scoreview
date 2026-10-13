@@ -18,7 +18,8 @@ The repository is an npm workspace:
 | `packages/pepperscore` | The component library (published; Vite library build to `dist/`: ESM, `.d.ts`, `style.css`, worker chunks) |
 | `packages/pepperscore-sounds-complete` | All assets: music fonts, instrument icons, Perfect Drums, TimGM6mb and all 128 FluidR3 sounds (published; the only copy of the assets in git) |
 | `packages/pepperscore-sounds-core` | The core asset subset, generated from complete by `npm run sounds:core` (published) |
-| `apps/reader` | This site (private). `astro dev` runs on the library sources; `astro build` uses the built `dist/` |
+| `packages/pepperscore-editor` | The score editor (private, not published; licence-gated to 4 staves): a JSON score model compiled to MusicXML and engraved by `pepperscore`, a MusicXML importer, an undoable command engine, keyboard and touch entry and the `.pepperscore` file format. See [packages/pepperscore-editor/README.md](packages/pepperscore-editor/README.md) and [docs/specs/score-editor.md](docs/specs/score-editor.md) |
+| `apps/reader` | This site (private), including the editor demo at `/editor`. `astro dev` runs on the library sources; `astro build` uses the built `dist/` |
 
 | Script | Purpose |
 | --- | --- |
@@ -32,6 +33,8 @@ The repository is an npm workspace:
 | `npm run test:assets` | Asset base URL resolution (Node) |
 | `npm run test:sounds` | Sound resolution order and `soundSources` plans (Node) |
 | `npm run test:embed` | The `/embed-test` host page in Chromium: style isolation, containment, focused keyboard, shared engine, chrome presets, callbacks, ref, persist, custom asset base and sound sources (`BROWSER=firefox` or `webkit` for the others) |
+| `npm run test:editor` | Editor unit tests (`vitest`, Node): model, compiler, importer, commands, keymap, `.pepperscore` format, licence |
+| `npm run test:editor-browser` | The `/editor` demo in Chromium: keyboard entry, undo, click to cursor, popovers, export, save and reopen, staff cap, read-only and the touch palette; each edit must engrave in under 250 ms. Run `npm run build` first |
 | `npm run test:pack` | Packs `pepperscore`, checks the tarball (build output, licence files, `MIT AND LGPL-3.0-or-later`), installs it into fresh Vite + React, Astro static (`client:only`) and Astro SSR (`output: 'server'`, `@astrojs/node`, `client:visible`) apps and builds them, checking the worker chunks and stylesheet. It imports pepperscore in plain Node (no `window`, `document`, storage or location reads), then starts the built SSR server on 127.0.0.1 and asserts a 200 page with the server-rendered island. `PACK_SMOKE_HOSTS=vite,astro,astro-ssr` picks hosts. **Needs the network** (installs from the npm registry); publishes nothing |
 | `npm run test:validation` | Tracked suites (all of the above except `test:pack`, plus): `test:document` (source retention, formats, identities), `test:parser-diff` (the streaming MusicXML reader against the former DOM importer), `test:score-db`, `test:performance` (playback timeline), `test:reader` (the built reader in Chromium) and `test:large` (a ~5 MB orchestral score). Run `npm run build` first. |
 | `npm run test:reader:firefox`, `npm run test:reader:webkit` | Reader suite in Firefox or WebKit (`npm run test:browsers` installs the Playwright engines) |
