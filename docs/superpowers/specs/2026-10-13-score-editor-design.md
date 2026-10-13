@@ -6,7 +6,9 @@ Status: draft for review, 2026-10-13. Branch `feat/score-editor`.
 
 A score editor layered on the public `pepperscore` viewer and playback, shipped as a separate, licence-gated package (`pepperscore-editor`, max 4 staves). The editor owns a JSON score model that compiles to MusicXML; the viewer engraves and plays that MusicXML exactly as it does any other file. MusicXML is the only interchange export in v1. A `.pepperscore` JSON wrapper is the native save format and is what makes a score editable again later.
 
-Not a goal in v1: lyrics, tablature, percussion kits, chord symbols as editable objects, parts/layout editing, real-time collaboration, MEI export.
+The same model and pipeline are the foundation of PepperHorn's engraving factory: import a score from Sibelius, Dorico or MuseScore, apply a house-style template (rules plus engraving options) and get the conductor score and the parts about 95% publish-ready, iterating on templates over time, with LLM-assisted review of rendered pages later. The editor is for in-browser educational users; the factory runs the same code headless. Both are served by the layouts, styles and rules sections below, which are modelled in v1 even where the UI comes later.
+
+Not a goal in v1: lyrics, tablature, percussion kits, chord symbols as editable objects, a layout-editing UI (the model carries layouts from day one), real-time collaboration, MEI export, LLM integration.
 
 ## Decisions already made
 
@@ -56,6 +58,8 @@ Zod schema in `src/model/schema.ts`. Naming follows MNX (global measures vs part
 type Document = {
   global: { measures: GlobalMeasure[] };          // one per bar, shared by all parts
   parts: Part[];                                  // max 4 staves in total (licence)
+  layouts: Layout[];                              // at least one 'score' layout; see Layouts
+  style: StyleSheet;                              // house style; see Styles and templates
 };
 type GlobalMeasure = {
   id: string;
@@ -99,12 +103,16 @@ type Event = {
 };
 type Tuplet = { id: string; type: 'tuplet'; outer: {multiple: number; base: DurationBase}; inner: {multiple: number; base: DurationBase}; content: Event[]; bracket?: boolean };
 type Note = { id: string; pitch: { step: 'A'..'G'; octave: number; alter: -2..2 }; tie?: { target: string }; accidental?: 'auto'|'show'|'hide'|'cautionary' };
-type Direction = { id: string; tick: Tick; staff: number; placement?: 'above'|'below' }
+type Direction = { id: string; anchor: Anchor; placement?: 'above'|'below'; offset?: Offset }
   & ({ kind: 'dynamic'; value: 'ppp'|'pp'|'p'|'mp'|'mf'|'f'|'ff'|'fff'|'sfz'|'fp' }
    | { kind: 'wedge'; shape: 'cresc'|'dim'; endTick: Tick; endMeasureId?: string }
    | { kind: 'text'; text: string; style?: 'plain'|'expression'|'tempo' });
 type Tick = number;  // divisions per quarter = 960, position from bar start
+type Anchor = { measureId: string; tick: Tick; staff: number; eventId?: string }; // semantic position; eventId pins to a note when present
+type Offset = { x: number; y: number };          // staff spaces, relative to the engraver's default position; x along time, y up
 ```
+
+Anchors and offsets: every text, symbol, dynamic and wedge endpoint is tied to a semantic `Anchor` (bar, tick, staff, optionally an event id), never to a pixel. Manual nudges are stored as `Offset` in staff spaces, which survive zoom, stave scale, page size and view changes, and compile to MusicXML `relative-x/relative-y` in tenths (1 space = 10 tenths) and to MEI `@ho/@vo`. Offsets live on the object for the score layout and in `Layout.overrides` for any other layout, so a nudge made in a part does not move the score.
 
 Invariants (checked by `invariants.ts`, run after every command in dev and in tests):
 - each sequence's content sums to exactly the bar length (rests are filled in automatically);
@@ -112,6 +120,50 @@ Invariants (checked by `invariants.ts`, run after every command in dev and in te
 - ties connect notes of equal pitch in consecutive events; slurs reference events in the same part;
 - endings only follow a `repeatStart`; `jump` to `coda` requires a `toCoda` and a `coda`; `fine` requires a `jump` targeting it;
 - staff count across parts ≤ 4.
+
+## Layouts (score and part views)
+
+Today's single-part view is achieved by soloing or hiding staves. The model makes that explicit, following Dorico and MNX:
+
+```ts
+type Layout = {
+  id: string; name: string; kind: 'score' | 'part';
+  parts: { partId: string; staves?: number[] }[];   // ordered; omitted staves = all
+  breaks?: { measureId: string; type: 'system' | 'page' }[];
+  style?: Partial<StyleSheet>;                      // per-layout overrides (staff size, margins, multirests)
+  overrides: Record<string, LayoutOverride>;        // keyed by object id (direction, event, measure)
+};
+type LayoutOverride = { offset?: Offset; hidden?: boolean; text?: string; cue?: boolean };
+```
+
+`layouts[0]` is the conductor score. Creating a part layout per part is one command (`createPartLayouts`). The editor has an **active layout**; the viewer renders it through the existing hidden-staff view mechanism (`mei-view.ts`), with breaks and style passed as Verovio options or view MEI. Edits to content (pitches, rhythms, barlines) are global and apply everywhere; edits to position, visibility, cue size and text wording made while a part layout is active are stored as overrides for that layout only. Part-specific state (multirests, cue notes, break positions) is what the factory tunes most, which is why it is modelled now even though the v1 UI only exposes switching between layouts.
+
+The `.pepperscore` file stores all layouts; MusicXML export writes the score layout, and optionally one file per part layout.
+
+## Styles and templates (house style)
+
+`StyleSheet` is a flat, versioned set of named values with three kinds of consumer:
+
+- **Engraving options** passed to Verovio (page size, margins, staff size, spacing, music and text fonts, slur/beam thickness, justification). The existing settings such as `musicFont`, `staveFont`, `barsPerLine` and `zoom` fold into this.
+- **Compile rules** applied when writing MusicXML (default placement of dynamics, rehearsal mark style, measure numbering, multirest threshold, whether to show cautionary accidentals, courtesy clefs and key signatures).
+- **CSS hooks** (below).
+
+A **template** is a named `StyleSheet` plus an ordered list of **rules**. A rule is a pure, idempotent transform `(document, context) => commands[]` run through the same command engine as user edits, so its results are undoable, inspectable and testable. Examples: rehearsal marks at double barlines, dynamics below the staff for instruments and above for voices, cue size for cue notes, system breaks every n bars in parts, multirests in parts, normalise text to the house vocabulary (rit., a tempo, D.S. al Coda). Templates are JSON files, versioned with the model.
+
+Applying a template is `applyTemplate(document, template)`: set style, run rules, record one history entry. The factory is this function run headless (Node, Verovio WASM) over an imported score and then exported per layout; the editor exposes the same function in the toolbar. Both start in phase 2 with a minimal `StyleSheet` and no rules UI; rule authoring and template management are a later product.
+
+**LLM assistance** (later): the headless pipeline already yields a page PNG plus `RenderGeometry` JSON per page, which is exactly the pair a vision model needs to critique spacing, collisions and placement and to propose fixes as commands. The command API is the integration contract; nothing else is needed in v1.
+
+## Styling hooks
+
+- Every SVG element keeps its Verovio id, and notes keep `data-note-id` (model id). The viewer gains a `highlights` prop: `{ ids: string[]; className: string }[]`, applied as classes on those elements after each draw. The editor uses it for selection, cursor, invariant errors and search hits; the factory uses it for rule diagnostics.
+- Stable class names on all editor and viewer chrome (`ps-cursor`, `ps-selection`, `ps-anchor`, `ps-palette`, `ps-toolbar-*`), alongside utility classes, so hosts can restyle without forking.
+- CSS custom properties for colours and strokes (`--ps-selection`, `--ps-cursor`, `--ps-highlight-error`, `--ps-anchor-handle`) with defaults in `style.css`.
+- Offsets are edited by dragging an anchor handle rendered in the `overlay` layer; the drag delta is converted from pixels to staff spaces using the geometry's staff-space size, so the stored value is view-independent.
+
+## View modes
+
+The editor works in both viewer modes. **Endless** (continuous) is the comfortable editing mode; **vertical** (paged) shows the active layout's breaks and page style, so it is the publishing check. The cursor, selection overlay and anchor handles are positioned from `RenderGeometry`, which the viewer already supplies for both modes with system virtualisation. Switching mode preserves the cursor by id. Breaks are editable only in vertical mode (they have no meaning in endless).
 
 ## Compiler: model → MusicXML
 
@@ -130,6 +182,7 @@ Exported MusicXML is the same compiler output, so "what you hear is what you exp
 **Commands.** Every edit is a pure function `(state, args) => void` under Immer `produceWithPatches`. The command's forward and inverse patches, plus a label, are pushed on the history stack. Consecutive commands with the same `coalesceKey` within 500 ms merge (typing a pitch, nudging). Checkpoint snapshot of the document every 50 entries for cheap persistence. Undo applies inverse patches; patches are over id-keyed objects wherever possible so later concurrent-edit work can reuse them.
 
 Score level: `setTime`, `setKey`, `setClef`, `setBarline`, `toggleRepeatStart`, `setRepeatEnd`, `setEnding`, `setJump`, `toggleSegno/Coda/ToCoda/Fine`, `insertMeasure`, `deleteMeasure`, `setTempo`.
+Layout and style: `setActiveLayout`, `createPartLayouts`, `setBreak`, `setOverride`, `nudge` (offset in staff spaces), `setStyle`, `applyTemplate`.
 Stave level: `enterEvent` (at cursor, duration from the active value), `setPitch`, `addChordNote`, `toggleRest`, `setDuration`, `toggleDot`, `makeTuplet`, `setBeamGroup` (groups of n), `breakBeam`, `joinBeam`, `toggleTie`, `addSlur`, `toggleArticulation`, `addDynamic`, `addWedge`, `addText`, `deleteSelection`, `moveSelection` (cut/paste).
 
 Bar-length discipline follows MuseScore: entering an event at the cursor overwrites the duration to its right and refills the remainder with rests; it never pushes content into the next bar.
@@ -154,7 +207,9 @@ Small and generic, nothing editor-specific:
 - `onElementClick?(info: { noteId?: string; measureIndex: number; partId: string; staff: number; tick: number; staffLine: number; clientX, clientY })`, fired in addition to seek; when the host returns `false` the viewer does not seek.
 - `overlay?: (geometry: RenderGeometry) => ReactNode`, rendered in a positioned layer over the SVG; `RenderGeometry` is the existing `RenderResult` points/measures/systems subset, in CSS pixels, plus `onChange`.
 - `interactive?: boolean` to disable the built-in click-to-seek when a host takes over.
-- `PepperScoreHandle.scrollToMeasure(index)`, `getGeometry()`.
+- `highlights?: { ids: string[]; className: string }[]`, applied to SVG elements by id after every draw.
+- `layout?: { parts: { partId: string; staves?: number[] }[]; breaks?: …; style?: … }` as the explicit form of today's stave soloing; the existing solo/hide UI is expressed in these terms internally.
+- `PepperScoreHandle.scrollToMeasure(index)`, `getGeometry()`, `renderPage(n): Promise<Blob>` (PNG, for the factory and later LLM review).
 
 Documented in the README as the plugin surface. No licence logic in the public package.
 
@@ -171,11 +226,12 @@ Documented in the README as the plugin surface. No licence logic in the public p
 
 ## Phases
 
-1. Viewer extension surface (public package): `onElementClick`, `overlay`, `interactive`, handle additions. Changelog, docs.
-2. Model, schema, invariants, compiler, importer, `.pepperscore` wrapper, round-trip fixtures, performance measurement.
+1. Viewer extension surface (public package): `onElementClick`, `overlay`, `interactive`, `highlights`, `layout`, handle additions. Changelog, docs.
+2. Model (including layouts, anchors/offsets, minimal `StyleSheet`), schema, invariants, compiler, importer, `.pepperscore` wrapper, `applyTemplate` with a headless Node entry point, round-trip fixtures, performance measurement.
 3. Score-level editing: toolbar + popovers for key, time, clef, barlines, endings, jumps, measure insert/delete; undo/redo; keymap skeleton.
 4. Stave-level editing: cursor, entry mode, durations, pitches, chords, rests, dots, tuplets, beam groups, ties, slurs, articulations, dynamics, wedges, text; touch palette.
-5. Persistence, licence gating, open/save `.pepperscore`, export MusicXML, demo page polish.
+5. Persistence, licence gating, open/save `.pepperscore`, export MusicXML per layout, layout switching, nudge handles, demo page polish.
+6. (later products) Rule authoring and template management UI; LLM-assisted engraving review.
 
 Each phase is its own plan and PR.
 
