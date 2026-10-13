@@ -14,8 +14,9 @@ import { pitchForLetter } from './pitch-entry';
 export type PopoverName = 'key' | 'time' | 'clef' | 'dynamic' | 'jump' | 'ending' | 'text';
 export type KeyContext = { store: EditorStore; openPopover(name: PopoverName): void; play(): void };
 /**
- * `keys` are readable combos (`'Ctrl+Shift+Z'`, `'ArrowUp'`, `'Shift+.'`), modifiers in the order
- * Ctrl, Alt, Shift; Cmd counts as Ctrl. `mode` limits a binding to entry or select mode.
+ * `keys` are readable combos (`'Ctrl+Shift+Z'`, `'ArrowUp'`, `'Shift+S'`), modifiers in the order
+ * Ctrl, Alt, Shift; Cmd counts as Ctrl. Digit and symbol keys (`'>'`, `'4'`) match the typed
+ * character whatever Shift state produced it. `mode` limits a binding to entry or select mode.
  */
 export type KeyBinding = {
   keys: string[];
@@ -23,12 +24,6 @@ export type KeyBinding = {
   group: 'entry' | 'duration' | 'pitch' | 'edit' | 'navigate' | 'score';
   mode?: 'enter' | 'select';
   action: (ctx: KeyContext) => void;
-};
-
-/** Characters a US keyboard types with Shift, mapped to the unshifted key, so `>` matches `Shift+.`. */
-const SHIFTED: Record<string, string> = {
-  '>': '.', '<': ',', '^': '6', '?': '/', '_': '-', '!': '1', '@': '2', '#': '3', '$': '4', '%': '5', '&': '7', '*': '8',
-  '(': '9', ')': '0', '+': '=', ':': ';', '"': "'", '~': '`', '{': '[', '}': ']', '|': '\\',
 };
 
 const record = <A>(ctx: KeyContext, command: Command<A>, args: A) => ctx.store.dispatch(command, args);
@@ -81,11 +76,11 @@ const duration = (base: DurationBase, i: number): KeyBinding => ({
 });
 
 const articulation = (keys: string[], label: string, value: Articulation): KeyBinding => ({
-  keys, label, group: 'edit', mode: 'enter', action: (ctx) => onEvent(ctx, (eventId) => record(ctx, toggleArticulation, { eventId, articulation: value })),
+  keys, label, group: 'edit', action: (ctx) => onEvent(ctx, (eventId) => record(ctx, toggleArticulation, { eventId, articulation: value })),
 });
 
 const tuplet = (multiple: 3 | 5 | 6 | 7): KeyBinding => ({
-  keys: [`Ctrl+${multiple}`], label: `Tuplet (${multiple})`, group: 'edit', mode: 'enter',
+  keys: [`Ctrl+${multiple}`], label: `Tuplet (${multiple})`, group: 'edit',
   action: (ctx) => onEvent(ctx, (eventId) => record(ctx, makeTuplet, { eventId, multiple })),
 });
 
@@ -118,10 +113,10 @@ export const KEYMAP: KeyBinding[] = [
       if (pair) record(ctx, addSlur, { fromEventId: pair[0], toEventId: pair[1] });
     },
   },
-  articulation(['Shift+.'], 'Staccato', 'staccato'),
+  articulation(['Shift+S'], 'Staccato', 'staccato'),
   articulation(['-'], 'Tenuto', 'tenuto'),
-  articulation(['Shift+,'], 'Accent (>)', 'accent'),
-  articulation(['Shift+6'], 'Marcato (^)', 'marcato'),
+  articulation(['>'], 'Accent', 'accent'),
+  articulation(['^'], 'Marcato', 'marcato'),
   ...([3, 5, 6, 7] as const).map(tuplet),
   { keys: ['B'], label: 'Beam grouping 2/3/4/auto', group: 'edit', mode: 'select', action: cycleBeams },
   { keys: ['/'], label: 'Break beam', group: 'edit', action: (ctx) => onEvent(ctx, (eventId) => record(ctx, breakBeam, { eventId })) },
@@ -145,28 +140,27 @@ export const KEYMAP: KeyBinding[] = [
   { keys: ['Space'], label: 'Play', group: 'navigate', action: (ctx) => ctx.play() },
 ];
 
-/** The normalized combo of a key event, e.g. `ctrl+shift+z`, `shift+.`, `space`. */
+/**
+ * The normalized combo of a key event, e.g. `ctrl+shift+z`, `shift+s`, `space`. Digits and symbols
+ * match as typed, ignoring Shift (`>` is the accent whatever produces it; AZERTY digits need Shift).
+ */
 function comboOf(event: KeyboardEvent): string {
-  let key = event.key;
-  let shift = event.shiftKey;
-  if (key in SHIFTED) {
-    key = SHIFTED[key];
-    shift = true;
-  }
-  if (key === ' ') key = 'Space';
-  const parts = [event.ctrlKey || event.metaKey ? 'Ctrl' : '', event.altKey ? 'Alt' : '', shift ? 'Shift' : '', key];
+  const key = event.key === ' ' ? 'Space' : event.key;
+  const typed = key.length === 1 && !/[a-z]/i.test(key);
+  const parts = [event.ctrlKey || event.metaKey ? 'Ctrl' : '', event.altKey ? 'Alt' : '', event.shiftKey && !typed ? 'Shift' : '', key];
   return parts.filter(Boolean).join('+').toLowerCase();
 }
 
+const tagOf = (target: EventTarget | null): string => ((target as { tagName?: string } | null)?.tagName ?? '').toUpperCase();
+
 function isTextTarget(target: EventTarget | null): boolean {
-  const el = target as { tagName?: string; isContentEditable?: boolean } | null;
-  if (!el) return false;
-  return el.isContentEditable === true || ['INPUT', 'TEXTAREA', 'SELECT'].includes((el.tagName ?? '').toUpperCase());
+  return (target as { isContentEditable?: boolean } | null)?.isContentEditable === true || ['INPUT', 'TEXTAREA', 'SELECT'].includes(tagOf(target));
 }
 
 /** Runs the binding for `event`; true (and default prevented) when one consumed it. */
 export function handleKey(event: KeyboardEvent, ctx: KeyContext): boolean {
-  if (isTextTarget(event.target)) return false;
+  if (event.isComposing || isTextTarget(event.target)) return false;
+  if (event.key === ' ' && tagOf(event.target) === 'BUTTON') return false; // let Space press the button
   const combo = comboOf(event);
   const mode = ctx.store.getState().cursor.mode;
   const binding = KEYMAP.find((b) => (!b.mode || b.mode === mode) && b.keys.some((k) => k.toLowerCase() === combo));

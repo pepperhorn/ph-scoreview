@@ -7,12 +7,12 @@ import { helloDoc } from '../test-helpers';
 import { describeKey, handleKey, KEYMAP, type KeyContext } from './keymap';
 import { pitchForLetter } from './pitch-entry';
 
-type Mods = { ctrl?: boolean; meta?: boolean; shift?: boolean };
+type Mods = { ctrl?: boolean; meta?: boolean; shift?: boolean; composing?: boolean };
 type FakeEvent = KeyboardEvent & { prevented: boolean };
 
 function keyEvent(key: string, mods: Mods = {}, target: unknown = null): FakeEvent {
   const event = {
-    key, ctrlKey: !!mods.ctrl, metaKey: !!mods.meta, shiftKey: !!mods.shift, altKey: false, target, prevented: false,
+    key, ctrlKey: !!mods.ctrl, metaKey: !!mods.meta, shiftKey: !!mods.shift, altKey: false, isComposing: !!mods.composing, target, prevented: false,
     preventDefault() { event.prevented = true; },
   };
   return event as unknown as FakeEvent;
@@ -135,25 +135,56 @@ test('in enter mode c and d enter notes; 0 enters a rest; . dots the last event'
   expect(popovers).toEqual([]);
 });
 
-test('articulation keys toggle on the last entered event', () => {
+test('articulation keys match the typed character and toggle on the last entered event', () => {
   const { store, press } = setup();
   press('n');
   press('e');
-  press('>', { shift: true }); // Shift+. on a US layout
+  press('S', { shift: true });
   press('-');
-  press('<', { shift: true }); // Shift+,
-  press('^', { shift: true }); // Shift+6
+  press('>', { shift: true }); // Shift+. on a US layout
+  press('^', { shift: true }); // Shift+6 on a US layout
   expect(bar(store)[0].articulations).toEqual(['staccato', 'tenuto', 'accent', 'marcato']);
-  press('.', { shift: true }); // layouts that report the unshifted key
-  expect(bar(store)[0].articulations).toEqual(['tenuto', 'accent', 'marcato']);
+  press('>'); // a layout that types > without Shift
+  expect(bar(store)[0].articulations).toEqual(['staccato', 'tenuto', 'marcato']);
+  expect(press('<', { shift: true })).toBe(false);
+  expect(press('s')).toBe(true); // plain s is the slur, not staccato
+  expect(bar(store)[0].articulations).toEqual(['staccato', 'tenuto', 'marcato']);
 });
 
-test('Ctrl+3 makes a triplet of the last event', () => {
+test('articulations and tuplets work on the selected event in select mode', () => {
+  const { store, press } = setup();
+  store.dispatch(setSelection, { ids: ['e2'] }, { record: false });
+  expect(press('>', { shift: true })).toBe(true);
+  expect(press('S', { shift: true })).toBe(true);
+  expect(bar(store)[1].articulations).toEqual(['accent', 'staccato']);
+  expect(press('3', { ctrl: true })).toBe(true);
+  expect(store.getState().document.parts[0].measures[0].sequences[0].content[1]).toMatchObject({ type: 'tuplet', outer: { multiple: 3 } });
+});
+
+test('Ctrl+3 makes a triplet of the last event, with or without Shift (AZERTY)', () => {
   const { store, press } = setup();
   press('n');
   press('c');
-  expect(press('3', { ctrl: true })).toBe(true);
+  expect(press('3', { ctrl: true, shift: true })).toBe(true);
   expect(store.getState().document.parts[0].measures[0].sequences[0].content[0]).toMatchObject({ type: 'tuplet', outer: { multiple: 3 } });
+});
+
+test('digit durations ignore Shift (AZERTY)', () => {
+  const { store, press } = setup();
+  press('n');
+  expect(press('5', { shift: true })).toBe(true);
+  expect(store.getState().cursor.duration).toEqual({ base: 'half', dots: 0 });
+});
+
+test('Space on a focused button and IME composition are not consumed', () => {
+  const { ctx, plays } = setup();
+  const onButton = keyEvent(' ', {}, { tagName: 'BUTTON' });
+  expect(handleKey(onButton, ctx)).toBe(false);
+  expect(onButton.prevented).toBe(false);
+  expect(plays()).toBe(0);
+  expect(handleKey(keyEvent('n', { composing: true }), ctx)).toBe(false);
+  expect(ctx.store.getState().cursor.mode).toBe('select');
+  expect(handleKey(keyEvent('n', {}, { tagName: 'BUTTON' }), ctx)).toBe(true);
 });
 
 test('t ties the last note to the next equal pitch; s slurs the last two entered', () => {
