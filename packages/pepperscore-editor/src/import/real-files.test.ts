@@ -71,3 +71,23 @@ test('a whole rest filling a 3/4 bar without measure="yes" is a bar rest', () =>
   const { document } = importMusicXml(xml);
   expect(document.parts[0].measures[0].sequences[0].content).toEqual([expect.objectContaining({ rest: true, fullMeasure: true })]);
 });
+
+const oneBar = (divisions: number, time: string, body: string) => `<?xml version="1.0"?><score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Flute</part-name></score-part></part-list>
+<part id="P1"><measure number="1"><attributes><divisions>${divisions}</divisions>${time}</attributes>${body}</measure></part></score-partwise>`;
+const FOUR_FOUR = '<time><beats>4</beats><beat-type>4</beat-type></time>';
+const shape = (xml: string) => importMusicXml(xml).document.parts[0].measures[0].sequences.map((s) => s.content.map((e) => (e.type === 'event' ? `${e.rest ? 'r' : e.notes![0].pitch.step}:${e.duration.base}` : 'tuplet')));
+
+test('a one-division <forward> gap is a real gap at divisions 1 and 2, not rounding', () => {
+  // divisions 1: voice 2 skips one quarter, then a C half and a quarter rest.
+  const d1 = oneBar(1, FOUR_FOUR, `<note><rest measure="yes"/><duration>4</duration><voice>1</voice></note><backup><duration>4</duration></backup>
+<forward><duration>1</duration><voice>2</voice></forward><note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration><voice>2</voice><type>half</type></note>`);
+  expect(shape(d1)[1].slice(0, 2)).toEqual(['r:quarter', 'C:half']);
+  // divisions 2: one division is an eighth.
+  const d2 = oneBar(2, FOUR_FOUR, `<forward><duration>1</duration></forward><note><pitch><step>D</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>quarter</type></note>`);
+  expect(shape(d2)[0].slice(0, 2)).toEqual(['r:eighth', 'D:quarter']);
+});
+
+test('a 3/4 whole rest at divisions 1 is a bar rest', () => {
+  const xml = oneBar(1, '<time><beats>3</beats><beat-type>4</beat-type></time>', '<note><rest/><duration>3</duration><voice>1</voice><type>whole</type></note>');
+  expect(importMusicXml(xml).document.parts[0].measures[0].sequences[0].content).toEqual([expect.objectContaining({ rest: true, fullMeasure: true })]);
+});

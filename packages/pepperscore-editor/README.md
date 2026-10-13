@@ -65,8 +65,10 @@ Edits act on the target: the single selected event or note, else (in entry mode)
   going down.
 - `Shift+A`–`Shift+G` add that letter to the target event's chord, in the octave nearest its top note and with the key
   signature's accidental, without moving the cursor. The toolbar's "Add to chord" toggle makes plain letters do the same.
-- Arrows, `Ctrl`+arrows and `Escape` select the event at the new cursor in select mode (entry mode clears the
-  selection); `Shift`+arrows extend the selection from its first event, and moving back shrinks it.
+- Arrows and `Ctrl`+arrows select the event at the new cursor in select mode (entry mode clears the selection);
+  `Shift`+arrows extend the selection from its first event (or the event before the cursor), and moving back shrinks it.
+- `Escape` right after entering a note leaves entry mode with that note selected, so `C D E Esc Delete` deletes the E;
+  otherwise it clears the selection.
 
 | Keys | Action | Mode |
 | --- | --- | --- |

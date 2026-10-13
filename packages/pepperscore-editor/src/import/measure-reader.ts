@@ -289,9 +289,10 @@ function readNote(ctx: MeasureContext, el: XmlElement): void {
 
   const barTicks = barTicksAt(reader.doc, ctx.index);
   const end = sequenceTicks(state.seq, barTicks);
-  // Durations rounded to whole divisions (a triplet eighth at 256 divisions is 85 or 86) put a note up to one
-  // division off the model's exact end; that is rounding, not an overlap or a gap.
-  const slack = Math.max(0.5, toTicks(reader, 1));
+  // Durations rounded to whole divisions (a triplet eighth at 256 divisions is 85 or 86) put a note less than one
+  // division off the model's exact end; that is rounding. A whole division (a real <forward>, at divisions 1 a
+  // quarter) is a gap or an overlap, so the bound is strictly under one division.
+  const slack = Math.max(0.5, toTicks(reader, 1) - 0.5);
   if (start < end - slack) {
     reader.drop.add('overlapping note', ctx.location);
     return;

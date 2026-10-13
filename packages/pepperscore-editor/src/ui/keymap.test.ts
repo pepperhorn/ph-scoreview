@@ -428,14 +428,14 @@ test('plain arrows replace the selection with the event at the cursor: click C, 
   expect(bar(store).map((e) => (e.rest ? 'rest' : e.notes![0].pitch.step))).toEqual(['C', 'D', 'E', 'rest']);
 });
 
-test('Ctrl+arrows select the event at the new cursor; Escape selects the cursor event', () => {
+test('Ctrl+arrows select the event at the new cursor; Escape in select mode clears the selection', () => {
   const { store, press } = setup(twoBars());
   store.dispatch(setSelection, { ids: ['a1', 'a2'] }, { record: false });
   press('ArrowRight', { ctrl: true });
   expect(store.getState().selection.ids).toEqual(['b1']);
   store.dispatch(setSelection, { ids: ['a3'] }, { record: false });
   press('Escape');
-  expect(store.getState().selection.ids).toEqual(['b1']);
+  expect(store.getState().selection.ids).toEqual([]);
 });
 
 test('in entry mode arrows clear the selection so the target stays the event before the cursor', () => {
@@ -468,4 +468,38 @@ test('Shift+arrow with no selection anchors on the cursor event', () => {
   store.dispatch(setCursor, { tick: 1920 }, { record: false });
   press('ArrowLeft', { shift: true });
   expect([...store.getState().selection.ids].sort()).toEqual(['a2', 'a3']);
+});
+
+test('n 4 c d e Escape Delete deletes the E (the last entered note), not the rest after it', () => {
+  const { store, press } = setup(createDocument({ parts: [{ name: 'Flute', clef: 'treble', gmProgram: 74 }], measures: 2 }));
+  for (const k of ['n', '4', 'c', 'd', 'e', 'Escape']) press(k);
+  const e = bar(store)[2];
+  expect(store.getState().selection.ids).toEqual([e.id]);
+  press('Delete');
+  expect(bar(store).map((x) => (x.rest ? 'rest' : x.notes![0].pitch.step))).toEqual(['C', 'D', 'rest']);
+  expect(bar(store)[2].duration).toEqual({ base: 'half', dots: 0 }); // the E's rest merged with the rest that followed
+});
+
+test('Escape in select mode clears the selection', () => {
+  const { store, press } = setup(twoBars());
+  store.dispatch(setSelection, { ids: ['a2'] }, { record: false });
+  press('Escape');
+  expect(store.getState().selection.ids).toEqual([]);
+});
+
+test('after Escape and n again, . toggles the entry duration, not the old note', () => {
+  const { store, press } = setup(createDocument({ parts: [{ name: 'Flute', clef: 'treble', gmProgram: 74 }], measures: 2 }));
+  for (const k of ['n', '4', 'c', 'Escape', 'n', '.']) press(k);
+  expect(store.getState().cursor.duration).toEqual({ base: 'quarter', dots: 1 });
+  expect(bar(store)[0].duration).toEqual({ base: 'quarter', dots: 0 });
+  expect(store.getState().cursor.entered).toBeUndefined();
+});
+
+test('Shift+Left from a cursor past the last event start anchors on the event before the cursor', () => {
+  const { store, press } = setup(twoBars());
+  store.dispatch(setCursor, { tick: 1000 }, { record: false });
+  press('ArrowLeft', { shift: true });
+  expect(store.getState().selection.ids).toEqual(['a2']);
+  press('ArrowLeft', { shift: true });
+  expect(store.getState().selection.ids).toEqual(['a2', 'a1']);
 });
