@@ -6,7 +6,7 @@ import { createEditorStore, type EditorStore } from '../engine/store';
 import type { PepperScoreFile } from '../format/pepperscore-file';
 import type { Dropped } from '../import/from-musicxml';
 import { importMusicXml } from '../import/from-musicxml';
-import { DEFAULT_MAX_STAVES, verifyLicence, type Licence } from '../licence';
+import { DEFAULT_MAX_STAVES, readOnlyMessage, verifyLicence, type Licence } from '../licence';
 import { measureIndex, staffCount } from '../model/query';
 import type { Document } from '../model/schema';
 import { clickTarget } from './click-mapping';
@@ -285,7 +285,7 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
         onOpen={(file) => void open(file)}
         refocus={refocus}
       />
-      {!editable && !checking && <div className="ps-editor-banner ps-editor-readonly" role="status">Editing requires a licence.</div>}
+      {!editable && !checking && <div className="ps-editor-banner ps-editor-readonly" role="status">{readOnlyMessage(props.licenceKey)}</div>}
       {banner && (
         <div className="ps-editor-banner ps-editor-notice" role="status">
           <span className="ps-editor-banner-text">{banner}</span>

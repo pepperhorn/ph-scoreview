@@ -22,11 +22,25 @@ export function base64UrlEncode(bytes: Uint8Array): string {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-/** Decodes base64url (padding optional); throws on characters outside the alphabet. */
+/** Decodes base64url; trailing `=` padding is stripped first, so it is optional. Throws on any other character outside the alphabet. */
 export function base64UrlDecode(text: string): Uint8Array<ArrayBuffer> {
-  if (!/^[A-Za-z0-9_-]*$/.test(text)) throw new Error('Not base64url');
-  const binary = atob(text.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(text.length / 4) * 4, '='));
+  const bare = text.replace(/=+$/, '');
+  if (!/^[A-Za-z0-9_-]*$/.test(bare)) throw new Error('Not base64url');
+  const binary = atob(bare.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(bare.length / 4) * 4, '='));
   return Uint8Array.from(binary, (c) => c.charCodeAt(0));
+}
+
+/** Web Crypto (`crypto.subtle`) exists: browsers only provide it in secure contexts (HTTPS or localhost). */
+export const licenceCanBeVerified = (): boolean => Boolean(globalThis.crypto?.subtle);
+
+/**
+ * The read-only banner: a key that could not be checked because the page lacks Web Crypto (plain HTTP on a LAN
+ * address) says so; otherwise the licence is missing, invalid or expired.
+ */
+export function readOnlyMessage(key: string | undefined, canVerify: boolean = licenceCanBeVerified()): string {
+  return key && key !== 'dev' && !canVerify
+    ? 'Licence could not be verified on this connection (needs HTTPS or localhost).'
+    : 'Editing requires a licence.';
 }
 
 const isDevBuild = (): boolean => typeof import.meta.env !== 'undefined' && Boolean(import.meta.env.DEV);

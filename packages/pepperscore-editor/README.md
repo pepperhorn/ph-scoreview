@@ -7,6 +7,7 @@ document model, compiles it to MusicXML for engraving and playback, imports Musi
 ## Usage
 
 ```tsx
+import { useRef } from 'react';
 import { PepperScoreEditor, type PepperScoreEditorHandle } from 'pepperscore-editor';
 import 'pepperscore/style.css';
 import 'pepperscore-editor/style.css';
@@ -137,7 +138,7 @@ version header around the editor document.
 
 `writePepperScoreFile({ document, source?, editor?, created? })` and `readPepperScoreFile(text)` are exported.
 Reading validates the wrapper and the document (Zod) and throws `Not a .pepperscore file` for anything that is
-not JSON with a `pepperscore` header, or `Unsupported .pepperscore version N` for other versions. Open accepts
+not JSON with a `pepperscore` header holding a numeric `version`, or `Unsupported .pepperscore version N` for other versions. Open accepts
 `.pepperscore`, `.musicxml` and `.xml`; Export downloads MusicXML.
 
 ## Licence
@@ -151,7 +152,8 @@ given) and the expiry, and returns the licence or `null`. `maxStaves` caps the s
 The key `'dev'` is accepted in development builds only (`import.meta.env.DEV`), as a 4-staff licence.
 
 Verification uses Web Crypto, which browsers only provide in secure contexts (HTTPS or `localhost`); elsewhere a
-signed key does not verify and the editor stays read-only.
+signed key cannot be checked, the editor stays read-only and its banner says `Licence could not be verified on this
+connection (needs HTTPS or localhost).` instead of `Editing requires a licence.`
 
 Signing a key needs the private key, which is kept outside this repository:
 

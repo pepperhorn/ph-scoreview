@@ -1,4 +1,4 @@
-import { base64UrlEncode, DEFAULT_LICENCE_PUBLIC_KEY_JWK, verifyLicence } from './licence';
+import { base64UrlDecode, base64UrlEncode, DEFAULT_LICENCE_PUBLIC_KEY_JWK, licenceCanBeVerified, readOnlyMessage, verifyLicence } from './licence';
 
 const subtle = globalThis.crypto.subtle;
 const now = () => Math.floor(Date.now() / 1000);
@@ -58,5 +58,28 @@ describe('verifyLicence', () => {
   it("accepts 'dev' in development builds (vitest runs with import.meta.env.DEV)", async () => {
     expect(import.meta.env.DEV).toBe(true);
     expect(await verifyLicence('dev')).toEqual({ sub: 'dev', exp: Infinity, maxStaves: 4 });
+  });
+});
+
+describe('base64UrlDecode', () => {
+  it('accepts trailing padding and rejects characters outside the alphabet', () => {
+    const bytes = new TextEncoder().encode('ab');
+    expect(base64UrlDecode('YWI')).toEqual(bytes);
+    expect(base64UrlDecode('YWI=')).toEqual(bytes);
+    expect(() => base64UrlDecode('Y=WI')).toThrow('Not base64url');
+    expect(() => base64UrlDecode('YW+I')).toThrow('Not base64url');
+  });
+});
+
+describe('readOnlyMessage', () => {
+  it('names the connection when a key cannot be verified without Web Crypto', () => {
+    expect(readOnlyMessage('some.key', false)).toBe('Licence could not be verified on this connection (needs HTTPS or localhost).');
+    expect(readOnlyMessage('some.key', true)).toBe('Editing requires a licence.');
+    expect(readOnlyMessage(undefined, false)).toBe('Editing requires a licence.');
+    expect(readOnlyMessage('', false)).toBe('Editing requires a licence.');
+  });
+
+  it('Web Crypto is available here', () => {
+    expect(licenceCanBeVerified()).toBe(true);
   });
 });

@@ -44,6 +44,14 @@ describe('.pepperscore files', () => {
     expect(() => readPepperScoreFile(JSON.stringify(file))).toThrow('Unsupported .pepperscore version 2');
   });
 
+  it('a header without a numeric version is not a .pepperscore file', () => {
+    for (const version of [undefined, '1', null, {}]) {
+      const file = JSON.parse(writePepperScoreFile({ document: helloDoc() }));
+      file.pepperscore = version === undefined ? {} : { version };
+      expect(() => readPepperScoreFile(JSON.stringify(file))).toThrow('Not a .pepperscore file');
+    }
+  });
+
   it('validates the document and the wrapper', () => {
     const file = JSON.parse(writePepperScoreFile({ document: helloDoc() }));
     expect(() => readPepperScoreFile(JSON.stringify({ ...file, document: { ...file.document, layouts: [] } }))).toThrow();

@@ -58,7 +58,10 @@ export function writePepperScoreFile(args: { document: Document; source?: Pepper
   return JSON.stringify(file, null, 2);
 }
 
-/** Parses and validates a `.pepperscore` file; throws `Not a .pepperscore file` or `Unsupported .pepperscore version N`. */
+/**
+ * Parses and validates a `.pepperscore` file; throws `Not a .pepperscore file` (not JSON, or no header with a
+ * numeric version) or `Unsupported .pepperscore version N`.
+ */
 export function readPepperScoreFile(text: string): PepperScoreFile {
   let json: unknown;
   try {
@@ -69,6 +72,7 @@ export function readPepperScoreFile(text: string): PepperScoreFile {
   const header = typeof json === 'object' && json !== null ? (json as { pepperscore?: unknown }).pepperscore : undefined;
   if (typeof header !== 'object' || header === null) throw new Error('Not a .pepperscore file');
   const version = (header as { version?: unknown }).version;
+  if (typeof version !== 'number') throw new Error('Not a .pepperscore file');
   if (version !== 1) throw new Error(`Unsupported .pepperscore version ${String(version)}`);
   const file = PepperScoreFileSchema.parse(json);
   return { ...file, document: parseDocument(file.document) } as PepperScoreFile;
