@@ -289,11 +289,14 @@ function readNote(ctx: MeasureContext, el: XmlElement): void {
 
   const barTicks = barTicksAt(reader.doc, ctx.index);
   const end = sequenceTicks(state.seq, barTicks);
-  if (start < end - 0.5) {
+  // Durations rounded to whole divisions (a triplet eighth at 256 divisions is 85 or 86) put a note up to one
+  // division off the model's exact end; that is rounding, not an overlap or a gap.
+  const slack = Math.max(0.5, toTicks(reader, 1));
+  if (start < end - slack) {
     reader.drop.add('overlapping note', ctx.location);
     return;
   }
-  if (start > end + 0.5) {
+  if (start > end + slack) {
     state.tuplet = undefined;
     finishBeam(ctx, state);
     const gap = Math.floor((start - end + 0.5) / BASE_TICKS['32nd']) * BASE_TICKS['32nd'];
@@ -304,7 +307,9 @@ function readNote(ctx: MeasureContext, el: XmlElement): void {
   if (grace) event.grace = { slash: grace.getAttribute('slash') === 'yes' };
   if (restEl) {
     event.rest = true;
-    if (restEl.getAttribute('measure') === 'yes') {
+    // A whole rest filling a bar of another length (3/4, 2/4…) is a bar rest even without measure="yes".
+    const barRest = type === 'whole' && !dots && Math.abs(ticks - barTicks) <= slack && Math.abs(ticks - durationTicks(duration)) > slack;
+    if (restEl.getAttribute('measure') === 'yes' || barRest) {
       event.fullMeasure = true;
       event.duration = { base: 'whole', dots: 0 };
     }
@@ -444,7 +449,8 @@ function readDirection(ctx: MeasureContext, el: XmlElement): void {
   const placementAttr = el.getAttribute('placement');
   const placement = placementAttr === 'above' || placementAttr === 'below' ? placementAttr : undefined;
   const staff = Math.min(Math.max(int(childText(el, 'staff')) ?? 1, 1), reader.part.staves);
-  const tick = Math.max(0, ctx.cursor + toTicks(reader, Number(childText(el, 'offset') ?? 0) || 0));
+  // Divisions that do not divide 960, and tuplets, leave fractional ticks; anchors are whole ticks.
+  const tick = Math.max(0, Math.round(ctx.cursor + toTicks(reader, Number(childText(el, 'offset') ?? 0) || 0)));
   const anchor = { measureId: global.id, tick, staff };
   const base: { anchor: Direction['anchor']; placement?: 'above' | 'below' } = { anchor, ...(placement ? { placement } : {}) };
   const words: XmlElement[] = [];
@@ -502,7 +508,7 @@ function readWedge(ctx: MeasureContext, el: XmlElement, base: { anchor: Directio
     const open = reader.wedges.get(number);
     if (!open) return;
     reader.wedges.delete(number);
-    open.wedge.endTick = base.anchor.tick;
+    open.wedge.endTick = Math.min(Math.round(base.anchor.tick), barTicksAt(reader.doc, ctx.index));
     if (open.measureIndex !== ctx.index) open.wedge.endMeasureId = ctx.global.id;
   }
 }
