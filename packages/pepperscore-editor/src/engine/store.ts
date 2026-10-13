@@ -42,6 +42,10 @@ export function createEditorStore(document: Document, options: EditorStoreOption
     invariantErrors: check(document),
   }));
 
+  /** The history position last saved (or opened): the past stack's length and its top entry. */
+  let saved: { length: number; top: HistoryEntry | undefined } = { length: 0, top: undefined };
+  const dirtyAt = (history: EditorState['history']): boolean => history.past.length !== saved.length || history.past.at(-1) !== saved.top;
+
   /**
    * Applies history patches to the editable state and refreshes the invariant report. Cursor and
    * selection moves are not recorded, so after the patches they may point at bars, ticks or ids
@@ -55,7 +59,7 @@ export function createEditorStore(document: Document, options: EditorStoreOption
       cursor: clampCursor(next.document, next.cursor, previous),
       selection: liveSelection(next.document, next.selection),
       history,
-      dirty: true,
+      dirty: dirtyAt(history),
       invariantErrors: check(next.document),
     });
   };
@@ -70,7 +74,7 @@ export function createEditorStore(document: Document, options: EditorStoreOption
       if (options?.record ?? true) {
         const entry: HistoryEntry = { label: command.label, patches, inverse, coalesceKey: command.coalesceKey?.(args), at: Date.now() };
         update.history = record(state.history, entry);
-        update.dirty = true;
+        update.dirty = dirtyAt(update.history);
       }
       store.setState(update);
     },
@@ -82,6 +86,14 @@ export function createEditorStore(document: Document, options: EditorStoreOption
       const taken = takeRedo(store.getState().history);
       if (taken) applyEntry(taken.entry.patches, taken.history);
     },
+    /** Marks the current history position as saved: `dirty` is false until the score moves away from it. */
+    markSaved(): void {
+      const { past } = store.getState().history;
+      saved = { length: past.length, top: past.at(-1) };
+      if (store.getState().dirty) store.setState({ dirty: false });
+    },
+    /** True when the score differs from the last save (or the opened score); undo back to it is clean. */
+    isDirty: (): boolean => store.getState().dirty,
     canUndo: (): boolean => store.getState().history.past.length > 0,
     canRedo: (): boolean => store.getState().history.future.length > 0,
   });

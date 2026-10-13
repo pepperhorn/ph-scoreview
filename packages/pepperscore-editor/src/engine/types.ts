@@ -27,6 +27,7 @@ export type HistoryEntry = { label: string; patches: Patch[]; inverse: Patch[]; 
 
 export type History = { past: HistoryEntry[]; future: HistoryEntry[] };
 
+/** `dirty`: the history is not at the last saved (or opened) position. */
 export type EditorState = Editable & { history: History; dirty: boolean; activeLayoutId: string; invariantErrors: string[] };
 
 export type Command<A> = { label: string; coalesceKey?: (args: A) => string | undefined; run: (draft: Editable, args: A) => void };

@@ -170,3 +170,36 @@ test('createEditorStore takes a staff cap for its invariant report and restores 
   expect(stale.cursor).toMatchObject({ partId: doc.parts[0].id, measureId: doc.global.measures[0].id });
   expect(stale.activeLayoutId).toBe(doc.layouts[0].id);
 });
+
+test('dirty tracks the saved history position: markSaved clears it, undo back to the save clears it', () => {
+  const store = createEditorStore(helloDoc());
+  expect(store.isDirty()).toBe(false);
+  store.dispatch(setComposer, { v: 'a' });
+  expect(store.isDirty()).toBe(true);
+  store.undo();
+  expect(store.isDirty()).toBe(false); // back at the opened state
+  store.redo();
+  expect(store.isDirty()).toBe(true);
+  store.markSaved();
+  expect(store.isDirty()).toBe(false);
+  expect(store.getState().dirty).toBe(false);
+  store.dispatch(setComposer, { v: 'b' });
+  expect(store.isDirty()).toBe(true);
+  store.undo();
+  expect(store.isDirty()).toBe(false); // undo back to the saved state
+  store.undo();
+  expect(store.isDirty()).toBe(true); // before the save
+  store.redo();
+  expect(store.isDirty()).toBe(false);
+});
+
+test('a coalesced edit after saving is dirty; cursor moves are not', () => {
+  const store = createEditorStore(helloDoc());
+  store.dispatch(setTitle, { v: 'a' });
+  store.markSaved();
+  store.dispatch(setTitle, { v: 'ab' }); // merges into the saved entry
+  expect(store.isDirty()).toBe(true);
+  store.markSaved();
+  store.dispatch(setCursor, { tick: 960 }, { record: false });
+  expect(store.isDirty()).toBe(false);
+});

@@ -20,6 +20,11 @@ export default function EditorDemo() {
   const [showXml, setShowXml] = useState(true);
   const [xml, setXml] = useState('');
   window.__editor = { ref };
+  /** New and the fixture replace the score: with unsaved changes, only after the editor's discard prompt. */
+  const replace = (next: Omit<Source, 'key'>) => {
+    if (ref.current && !ref.current.confirmDiscard()) return;
+    setSource(s => ({ key: s.key + 1, ...next }));
+  };
   const refreshXml = (document: Document) => { if (showXml) setXml(compileToMusicXml(document)); };
   // A new or opened score: show its MusicXML (the editor handle is set before this effect runs).
   useEffect(() => { const doc = ref.current?.getDocument(); setXml(doc ? compileToMusicXml(doc) : ''); }, [source.key]);
@@ -27,8 +32,8 @@ export default function EditorDemo() {
     <header className="editor-demo-header">
       <h1 className="editor-demo-title">pepperscore editor</h1>
       <div className="editor-demo-actions">
-        <button type="button" className="editor-demo-btn editor-demo-new" onClick={() => { setSource(s => ({ key: s.key + 1 })); }}>New</button>
-        <button type="button" className="editor-demo-btn editor-demo-ensemble" onClick={() => { setSource(s => ({ key: s.key + 1, musicXml: ensemble })); }}>Open ensemble fixture</button>
+        <button type="button" className="editor-demo-btn editor-demo-new" onClick={() => replace({})}>New</button>
+        <button type="button" className="editor-demo-btn editor-demo-ensemble" onClick={() => replace({ musicXml: ensemble })}>Open ensemble fixture</button>
         <button type="button" className="editor-demo-btn editor-demo-toggle-xml" aria-pressed={showXml} onClick={() => { setShowXml(v => !v); const doc = ref.current?.getDocument(); if (!showXml && doc) setXml(compileToMusicXml(doc)); }}>{showXml ? 'Hide' : 'Show'} MusicXML</button>
       </div>
     </header>

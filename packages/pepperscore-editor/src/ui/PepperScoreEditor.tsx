@@ -39,7 +39,24 @@ export type PepperScoreEditorProps = {
   assetBaseUrl?: string;
   soundPack?: 'core' | 'complete';
 };
-export type PepperScoreEditorHandle = { getDocument(): Document; getMusicXml(): string; undo(): void; redo(): void; applyTemplate?: never };
+export type PepperScoreEditorHandle = {
+  getDocument(): Document;
+  getMusicXml(): string;
+  undo(): void;
+  redo(): void;
+  /** True when the score has changed since it was opened or last saved (undo back to that point is clean). */
+  isDirty(): boolean;
+  /** Before replacing the score: true when it is clean or the user confirms discarding the unsaved changes. */
+  confirmDiscard(): boolean;
+  applyTemplate?: never;
+};
+
+export const DISCARD_PROMPT = 'Discard unsaved changes?';
+
+/** True when `store` is clean or the user agrees to lose its changes (`window.confirm`). */
+export function confirmDiscard(store: EditorStore): boolean {
+  return !store.isDirty() || window.confirm(DISCARD_PROMPT);
+}
 
 /** The viewer redraws this long after the last change, so fast typing engraves once. */
 const RENDER_DEBOUNCE_MS = 80;
@@ -161,7 +178,21 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
     getMusicXml: () => compileToMusicXml(store.getState().document),
     undo: () => store.undo(),
     redo: () => store.redo(),
+    isDirty: () => store.isDirty(),
+    confirmDiscard: () => confirmDiscard(store),
   }), [store]);
+
+  // Leaving the page with unsaved changes asks first.
+  const dirty = useEditorStore(store, (s) => s.dirty);
+  useEffect(() => {
+    if (!dirty) return;
+    const guard = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', guard);
+    return () => window.removeEventListener('beforeunload', guard);
+  }, [dirty]);
 
   const highlights = useMemo(() => (editable ? editorHighlights(document, cursor, selection) : []), [editable, document, cursor, selection]);
 
@@ -199,6 +230,7 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
       try {
         const opened = await readScoreFile(file);
         checkStaffCap(opened.document, maxStaves);
+        if (!confirmDiscard(store)) return;
         onOpened(openSession(() => opened));
         callbacks.current.onChange?.(opened.document);
       } catch (error) {
@@ -207,13 +239,14 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
         setBanner(`Could not open ${file.name}: ${message}`);
       }
     },
-    [onOpened, maxStaves],
+    [onOpened, maxStaves, store],
   );
 
   const save = () =>
     void session.source.then((source) => {
       const { document, cursor, activeLayoutId } = store.getState();
       savePepperScore({ document, source, editor: { cursor, activeLayoutId }, created: session.created });
+      store.markSaved();
     });
 
   const reportErrors = () =>
