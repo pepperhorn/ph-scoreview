@@ -13,6 +13,8 @@ export type Transposition = { semitones: number; diatonic: number };
 export type Instrument = {
   id: InstrumentId;
   label: string;
+  /** The name the editor's controls and status line use when shorter than `label` ("Alto Sax"). */
+  short?: string;
   /** 1-based GM program (the viewer's voice program); the drum kit plays on channel 10, not a program. */
   gmProgram: number;
   clef: Clef;
@@ -38,9 +40,9 @@ export const INSTRUMENTS: Record<InstrumentId, Instrument> = {
   bassguitar: { id: 'bassguitar', label: 'Bass Guitar', gmProgram: 34, clef: 'bass', transposition: OCTAVE, ranges: ranges([28, 48], [28, 55], [28, 60]) },
   'double-bass': { id: 'double-bass', label: 'Double Bass', gmProgram: 33, clef: 'bass', transposition: OCTAVE, ranges: ranges([28, 48], [28, 55], [28, 64]) },
   'drum-kit': { id: 'drum-kit', label: 'Drum Kit', gmProgram: 1, clef: 'percussion', transposition: CONCERT },
-  'alto-saxophone': { id: 'alto-saxophone', label: 'Alto Saxophone', gmProgram: 66, clef: 'treble', transposition: { semitones: 9, diatonic: 5 }, ranges: ranges([49, 69], [49, 77], [49, 81]) },
-  'tenor-saxophone': { id: 'tenor-saxophone', label: 'Tenor Saxophone', gmProgram: 67, clef: 'treble', transposition: { semitones: 14, diatonic: 8 }, ranges: ranges([44, 64], [44, 72], [44, 76]) },
-  'bari-saxophone': { id: 'bari-saxophone', label: 'Baritone Saxophone', gmProgram: 68, clef: 'treble', transposition: { semitones: 21, diatonic: 12 }, ranges: ranges([37, 57], [37, 65], [36, 69]) },
+  'alto-saxophone': { id: 'alto-saxophone', label: 'Alto Saxophone', short: 'Alto Sax', gmProgram: 66, clef: 'treble', transposition: { semitones: 9, diatonic: 5 }, ranges: ranges([49, 69], [49, 77], [49, 81]) },
+  'tenor-saxophone': { id: 'tenor-saxophone', label: 'Tenor Saxophone', short: 'Tenor Sax', gmProgram: 67, clef: 'treble', transposition: { semitones: 14, diatonic: 8 }, ranges: ranges([44, 64], [44, 72], [44, 76]) },
+  'bari-saxophone': { id: 'bari-saxophone', label: 'Baritone Saxophone', short: 'Bari Sax', gmProgram: 68, clef: 'treble', transposition: { semitones: 21, diatonic: 12 }, ranges: ranges([37, 57], [37, 65], [36, 69]) },
   flute: { id: 'flute', label: 'Flute', gmProgram: 74, clef: 'treble', transposition: CONCERT, ranges: ranges([60, 84], [60, 91], [59, 96]) },
   clarinet: { id: 'clarinet', label: 'Clarinet', gmProgram: 72, clef: 'treble', transposition: B_FLAT, ranges: ranges([50, 74], [50, 82], [50, 91]) },
   trumpet: { id: 'trumpet', label: 'Trumpet', gmProgram: 57, clef: 'treble', transposition: B_FLAT, ranges: ranges([55, 72], [54, 79], [52, 86]) },
@@ -50,6 +52,9 @@ export const INSTRUMENTS: Record<InstrumentId, Instrument> = {
   cello: { id: 'cello', label: 'Cello', gmProgram: 43, clef: 'bass', transposition: CONCERT, ranges: ranges([36, 64], [36, 76], [36, 88]) },
   microphone: { id: 'microphone', label: 'Voice', gmProgram: 54, clef: 'treble', transposition: CONCERT, ranges: ranges([48, 72], [45, 76], [40, 81]) },
 };
+
+/** The instrument's short name for controls and the status line (`short`, else `label`). */
+export const instrumentName = (id: InstrumentId): string => INSTRUMENTS[id].short ?? INSTRUMENTS[id].label;
 
 /**
  * GM program blocks (1-based, inclusive) and the instrument nearest each, after the viewer's

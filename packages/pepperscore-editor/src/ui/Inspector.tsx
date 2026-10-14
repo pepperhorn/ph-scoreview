@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { usePosition, useUi } from './controls';
+import { LayoutTab } from './LayoutTab';
 import { ScoreTab } from './ScoreTab';
 import { StaveTab } from './StaveTab';
 import { useEditorStore } from './useEditorStore';
@@ -23,7 +24,7 @@ export function Inspector({ open = false }: { open?: boolean }) {
       </div>
       <div className="ps-insp-context"><span className="ps-eyebrow">{context}</span></div>
       <div className="ps-insp-body" role="tabpanel" aria-labelledby={`ps-tab-${tab}`}>
-        {tab === 'score' ? <ScoreTab /> : tab === 'stave' ? <StaveTab /> : <p className="ps-insp-note ps-layout-placeholder">Layout controls arrive in Task 6 · {layoutName}</p>}
+        {tab === 'score' ? <ScoreTab /> : tab === 'stave' ? <StaveTab /> : <LayoutTab />}
       </div>
     </aside>
   );

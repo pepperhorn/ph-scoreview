@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { compileToMusicXml, PepperScoreEditor, type Document, type PepperScoreEditorHandle } from 'pepperscore-editor';
 import ensemble from '../../../../validation/fixtures/ensemble.musicxml?raw';
+import { tenorPianoDocument } from './editor-fixtures';
 
 declare global { interface Window { __editor: { ref: React.RefObject<PepperScoreEditorHandle | null> } } }
 
-type Source = { key: number; musicXml?: string };
+type Source = { key: number; musicXml?: string; document?: Document };
 /** The demo's signed licence (4 staves, expires 2028-01-01); `'dev'` would only work in development builds. */
 const DEMO_LICENCE = 'eyJzdWIiOiJwZXBwZXJzY29yZS1kZW1vIiwiZXhwIjoxODMwMjk3NjAwLCJtYXhTdGF2ZXMiOjR9.htvTu3iKMVooELSmmTmArtBQpsDE9tcvtuebGyZZ3BGbvuxBAZ1ip25IGtfNJCuE0_OlRTvGM6v1NcLsaL04Bg';
 /** `?licence=<key>` overrides the demo licence (`?licence=` shows the read-only editor). */
@@ -14,7 +15,8 @@ const forcePhone = () => (new URLSearchParams(window.location.search).get('phone
 
 /**
  * The editor demo (/editor): a licensed editor in Endless view with an optional live-MusicXML sidebar (hidden at first).
- * validation/editor.mjs drives it through `window.__editor.ref` (the editor handle).
+ * validation/editor.mjs drives it through `window.__editor.ref` (the editor handle) and the fixture buttons (the tenor
+ * sax + piano fixture is the instrument swap's).
  */
 export default function EditorDemo() {
   const ref = useRef<PepperScoreEditorHandle>(null);
@@ -36,6 +38,7 @@ export default function EditorDemo() {
       <div className="editor-demo-actions">
         <button type="button" className="editor-demo-btn editor-demo-new" onClick={() => replace({})}>New</button>
         <button type="button" className="editor-demo-btn editor-demo-ensemble" onClick={() => replace({ musicXml: ensemble })}>Open ensemble fixture</button>
+        <button type="button" className="editor-demo-btn editor-demo-tenor" onClick={() => replace({ document: tenorPianoDocument() })}>Open tenor sax + piano fixture</button>
         <button type="button" className="editor-demo-btn editor-demo-toggle-xml" aria-pressed={showXml} onClick={() => { setShowXml(v => !v); const doc = ref.current?.getDocument(); if (!showXml && doc) setXml(compileToMusicXml(doc)); }}>{showXml ? 'Hide' : 'Show'} MusicXML</button>
       </div>
     </header>
@@ -45,6 +48,7 @@ export default function EditorDemo() {
         ref={ref}
         className="editor-demo-editor"
         musicXml={source.musicXml}
+        document={source.document}
         licenceKey={licenceKey()}
         forcePhone={forcePhone()}
         view="endless"

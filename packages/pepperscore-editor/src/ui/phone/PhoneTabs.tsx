@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { deleteMeasure, insertMeasure, setActiveLayout, setBarline, setChordMode, setClef, setEnding, setJump, setRepeatEnd, setTime, toggleMark, toggleRepeatStart } from '../../engine/commands/index';
+import { deleteMeasure, insertMeasure, setBarline, setChordMode, setClef, setEnding, setJump, setRepeatEnd, setTime, toggleMark, toggleRepeatStart } from '../../engine/commands/index';
 import { findEvent } from '../../engine/sequence-edit';
 import { effectiveClef, effectiveKey, effectiveTime } from '../../model/query';
 import { binding, usePosition, useRun, useUi, useDispatch } from '../controls';
@@ -9,6 +9,7 @@ import type { PopoverName } from '../keymap';
 import { ENDINGS, JUMPS, jumpValue, keyName } from '../Popover';
 import { BARLINES, CLEF_BUTTONS, MARKS, TIMES } from '../ScoreTab';
 import { tempoAt } from '../TempoFields';
+import { LayoutStrip } from './LayoutStrip';
 import { useEditorStore } from '../useEditorStore';
 
 /** The Rail's note values (the Rail keeps its own list while the desktop shell is in review). */
@@ -180,21 +181,6 @@ function ScoreRows() {
   );
 }
 
-/** Task 6 fills this tab; for now the layout selector. */
-function LayoutRows() {
-  const { store, refocus } = useUi();
-  const layouts = useEditorStore(store, (s) => s.document.layouts);
-  const activeLayoutId = useEditorStore(store, (s) => s.activeLayoutId);
-  return (
-    <PRow label="Layout">
-      <select className="ps-select ps-pselect ps-pselect-layout" aria-label="Layout" value={activeLayoutId} onChange={(e) => { store.dispatch(setActiveLayout, { layoutId: e.target.value }); refocus(); }}>
-        {layouts.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-      </select>
-      <span className="ps-pnote ps-layout-placeholder">Layout controls arrive in Task 6</span>
-    </PRow>
-  );
-}
-
 /** The button rows (at most two) of toolbar tab `tab`. */
 export function PhoneTabRows({ tab }: { tab: PhoneTab }) {
   switch (tab) {
@@ -202,6 +188,6 @@ export function PhoneTabRows({ tab }: { tab: PhoneTab }) {
     case 'pitch': return <PitchRows />;
     case 'bar': return <BarRows />;
     case 'score': return <ScoreRows />;
-    case 'layout': return <LayoutRows />;
+    case 'layout': return <LayoutStrip />;
   }
 }

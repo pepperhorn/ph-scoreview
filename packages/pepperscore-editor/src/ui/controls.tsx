@@ -17,6 +17,8 @@ export type EditorUi = {
   refocus(): void;
   /** Opens popover `name`, or closes it when it is open. */
   togglePopover(name: PopoverName): void;
+  /** Scrolls the engraving to measure `index` (0-based); absent where there is no viewer. */
+  scrollToMeasure?(index: number): void;
 };
 const UiContext = createContext<EditorUi | null>(null);
 export const UiProvider = UiContext.Provider;

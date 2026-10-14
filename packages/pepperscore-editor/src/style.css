@@ -365,3 +365,72 @@
 .ps-editor .ps-pstrip .ps-popover-apply { align-self: center; flex: none; height: 40px; }
 .ps-editor .ps-pstrip-close { display: grid; flex: none; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 10px; background: transparent; color: var(--ps-ink-3); }
 .ps-editor:not([data-ps-editable]) .ps-pbtn { filter: saturate(.3); }
+
+/* ---------- Layout tab: staves, layouts, instrument swap (desktop inspector and the phone's swap strip) ---------- */
+.ps-editor .ps-btn-primary { display: inline-flex; align-items: center; justify-content: center; height: 34px; padding: 0 15px; border: 0; border-radius: 9px; background: var(--ps-accent); color: #fff; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.ps-editor .ps-btn-primary:not(:disabled):hover { background: var(--ps-accent-deep); box-shadow: 0 5px 12px rgba(52, 86, 66, .24); }
+.ps-editor .ps-check { display: grid; flex: none; place-items: center; width: 16px; height: 16px; border-radius: 5px; border: 1px solid var(--ps-line-2); background: #fff; color: #fff; }
+.ps-editor .ps-check.is-on { background: var(--ps-accent); border-color: var(--ps-accent); }
+.ps-editor .ps-stave-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.ps-editor .ps-stave-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 34px; padding: 0 8px; border-radius: 8px; }
+.ps-editor .ps-stave-item:hover { background: #f1f1ec; }
+.ps-editor .ps-stave-label { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 0; border: 0; background: transparent; font: 500 12.5px var(--ps-sans); color: var(--ps-ink); cursor: pointer; }
+.ps-editor .ps-stave-label:disabled { cursor: default; }
+.ps-editor .ps-stave-label:focus-visible { outline: 2px solid var(--ps-accent); outline-offset: 2px; border-radius: 4px; }
+.ps-editor .ps-stave-item:not(.is-on) .ps-stave-name { color: var(--ps-ink-4); }
+.ps-editor .ps-stave-meta { flex: none; font-size: 10.5px; color: var(--ps-ink-4); }
+.ps-editor .ps-pitch-mode { margin-top: 10px; }
+.ps-editor .ps-pitch-mode .ps-seg { display: flex; }
+.ps-editor .ps-pitch-mode .ps-seg-item { flex: 1; }
+.ps-editor .ps-profile-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.ps-editor .ps-profile-chip { height: 28px; padding: 0 11px; border: 1px solid var(--ps-line-2); border-radius: 999px; background: #fff; font: 600 11.5px var(--ps-sans); color: var(--ps-ink-2); }
+.ps-editor .ps-profile-chip.is-on { background: var(--ps-accent-soft); border-color: rgba(52, 86, 66, .4); color: var(--ps-accent); }
+.ps-editor .ps-profile-parts { border-style: dashed; color: var(--ps-ink-3); }
+.ps-editor .ps-profile-kind { font-weight: 500; opacity: .7; }
+.ps-editor .ps-save-view { display: flex; flex-wrap: wrap; gap: 6px; }
+.ps-editor .ps-save-view-input { flex: 1 1 90px; min-width: 0; }
+.ps-editor .ps-save-view .ps-btn-primary { height: 34px; }
+.ps-editor .ps-swap-card { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--ps-line); border-radius: 12px; background: #fff; box-shadow: 0 1px 2px rgba(40, 46, 40, .04); }
+.ps-editor .ps-swap-card .ps-insp-row { grid-template-columns: 44px minmax(0, 1fr); min-height: 34px; margin-top: 0; }
+.ps-editor .ps-swap-head { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 6px; }
+.ps-editor .ps-swap-head .ps-select { grid-column: 1 / -1; }
+.ps-editor .ps-override-source { font-size: 12px; font-weight: 600; color: var(--ps-ink-2); }
+.ps-editor .ps-override-arrow { color: var(--ps-ink-4); text-align: center; }
+.ps-editor .ps-swap-shown { font-size: 11px; color: var(--ps-ink-4); }
+.ps-editor .ps-swap-card .ps-seg { display: flex; }
+.ps-editor .ps-swap-card .ps-seg-item { flex: 1 1 auto; min-width: 0; padding: 0 6px; }
+.ps-editor .ps-swap-toggle { display: flex; align-items: center; gap: 9px; padding: 0; border: 0; background: transparent; font: 400 12px var(--ps-sans); color: var(--ps-ink-2); text-align: left; cursor: pointer; }
+.ps-editor .ps-swap-toggle:disabled { opacity: .45; cursor: default; }
+.ps-editor .ps-toggle { position: relative; display: inline-block; flex: none; width: 29px; height: 17px; border-radius: 15px; background: #d9dfd8; }
+.ps-editor .ps-toggle::after { content: ''; position: absolute; left: 2px; top: 2px; width: 13px; height: 13px; border-radius: 50%; background: #fff; transition: transform .15s; }
+.ps-editor .ps-toggle.is-on { background: #5d8164; }
+.ps-editor .ps-toggle.is-on::after { transform: translateX(12px); }
+.ps-editor .ps-swap-link { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; padding-top: 9px; border-top: 1px solid #f0efea; }
+.ps-editor .ps-swap-link-text { display: inline-flex; align-items: baseline; gap: 7px; font-size: 11px; color: var(--ps-ink-3); }
+.ps-editor .ps-swap-link-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.ps-editor .ps-link-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--ps-accent); }
+.ps-editor .ps-moved-legend { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px 9px; margin-top: 10px; padding: 9px 10px; border-radius: 10px; background: #fdf3ea; border: 1px solid #f2dcc6; }
+.ps-editor .ps-moved-swatch { display: grid; place-items: center; width: 24px; height: 22px; overflow: hidden; color: var(--ps-transposed); }
+.ps-editor .ps-moved-head { width: 13px; height: 9px; border-radius: 50%; background: var(--ps-transposed); transform: rotate(-22deg); }
+.ps-editor .ps-moved-text { font-size: 11.5px; font-weight: 500; color: #8a4a12; }
+.ps-editor .ps-moved-actions { grid-column: 1 / -1; display: flex; gap: 6px; }
+.ps-editor .ps-moved-actions .ps-btn-ghost { height: 28px; }
+/* Phone: stave chips and the swap chip; the swap card laid out as one scrolling strip. */
+.ps-editor .ps-pchip-stave .ps-check { width: 14px; height: 14px; }
+.ps-editor .ps-pchip-swap .ps-moved-dot { margin-right: 2px; }
+.ps-editor .ps-swap.is-compact, .ps-editor .ps-swap.is-compact .ps-swap-card { display: flex; flex-direction: row; align-items: center; gap: 8px; padding: 0; border: 0; background: none; box-shadow: none; }
+.ps-editor .ps-swap.is-compact :is(.ps-swap-head, .ps-insp-row, .ps-insp-control, .ps-swap-link, .ps-swap-link-actions, .ps-moved-actions) { display: contents; }
+.ps-editor .ps-swap.is-compact :is(.ps-insp-label, .ps-swap-shown, .ps-override-arrow, .ps-moved-swatch) { display: none; }
+.ps-editor .ps-swap.is-compact .ps-override-source { flex: none; }
+.ps-editor .ps-swap.is-compact .ps-seg { flex: none; }
+.ps-editor .ps-swap.is-compact :is(.ps-swap-toggle, .ps-swap-link-text, .ps-moved-text) { flex: none; white-space: nowrap; }
+.ps-editor .ps-swap.is-compact .ps-moved-legend { display: flex; align-items: center; gap: 8px; margin: 0; padding: 4px 8px; }
+.ps-editor .ps-swap.is-compact .ps-btn-ghost { height: 40px; }
+/* The swap strip takes both toolbar rows and wraps its fields onto the second. */
+.ps-editor .ps-pstrip-swap { align-items: flex-start; height: 94px; overflow-y: auto; }
+.ps-editor .ps-pstrip-swap .ps-pstrip-label { padding-top: 12px; }
+.ps-editor .ps-pstrip-swap .ps-pstrip-fields { flex: 1 1 0; min-width: 0; }
+.ps-editor .ps-pstrip-swap .ps-swap.is-compact, .ps-editor .ps-pstrip-swap .ps-swap.is-compact .ps-swap-card { flex-wrap: wrap; row-gap: 6px; }
+.ps-editor .ps-pstrip-swap .ps-swap-link-text { display: none; }
+.ps-editor .ps-shell-phone .ps-status-check { flex: none; }
+.ps-editor .ps-shell-phone .ps-status-moved { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

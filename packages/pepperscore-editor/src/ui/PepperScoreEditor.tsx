@@ -164,7 +164,7 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
   useLeaveGuard(store);
   const phone = useIsPhone(rootRef, props.forcePhone);
 
-  const highlights = useMemo(() => (editable ? editorHighlights(document, cursor, selection) : []), [editable, document, cursor, selection]);
+  const highlights = useMemo(() => (editable ? editorHighlights(document, cursor, selection, view) : []), [editable, document, cursor, selection, view]);
 
   const refocus = useCallback(() => rootRef.current?.focus({ preventScroll: true }), []);
   const closePopover = useCallback(() => {
@@ -184,12 +184,14 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
   }, [playing, store]);
   const ctx = useMemo<KeyContext>(() => ({ store, openPopover: setPopover, play: togglePlay }), [store, togglePlay]);
   const togglePopover = useCallback((name: PopoverName) => setPopover((current) => (current === name ? null : name)), []);
-  const ui = useMemo<EditorUi>(() => ({ store, ctx, editable, refocus, togglePopover }), [store, ctx, editable, refocus, togglePopover]);
+  const scrollToMeasure = useCallback((index: number) => void viewerRef.current?.scrollToMeasure(index), []);
+  const ui = useMemo<EditorUi>(() => ({ store, ctx, editable, refocus, togglePopover, scrollToMeasure }), [store, ctx, editable, refocus, togglePopover, scrollToMeasure]);
 
   const onElementClick = useCallback(
     (info: PepperScoreClickInfo) => {
-      // The engraving is the active layout's view: its staves are the view's, its ids the document's.
-      const target = clickTarget(store.getState().view.document, info);
+      // The engraving is the active layout's view: its ids are the document's, its staves the layout's visible ones.
+      const { document, activeLayoutId } = store.getState();
+      const target = clickTarget(document, info, activeLayoutId);
       if (!target) return;
       store.dispatch(setCursor, target.cursor, { record: false });
       store.dispatch(setSelection, { ids: target.selection }, { record: false });

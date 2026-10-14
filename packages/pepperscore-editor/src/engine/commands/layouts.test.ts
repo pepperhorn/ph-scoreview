@@ -156,6 +156,20 @@ test('makeCopy bakes the swap into a new unlinked part, adds it to the full scor
   expect(store.getState().history.past).toHaveLength(past);
 });
 
+test('makeCopy in the full score keeps the source (unswapped) and puts the copy on its own stave after it', () => {
+  const store = createEditorStore(duo());
+  store.dispatch(setSwap, { layoutId: 'layout1', partId: 'p1', swap: altoBeginner });
+  store.dispatch(makeCopy, { layoutId: 'layout1', partId: 'p1' });
+  const { document, view, invariantErrors } = store.getState();
+  const copy = document.parts[2];
+  expect(document.layouts[0].parts).toEqual([{ partId: 'p1' }, { partId: copy.id }, { partId: 'p2' }]);
+  expect(view.moved).toEqual({});
+  expect(view.document.parts.map((p) => p.id)).toEqual(['p1', copy.id, 'p2']);
+  expect(invariantErrors).toEqual([]);
+  store.undo();
+  expect(store.getState().document.layouts[0].parts).toEqual([{ partId: 'p1', swap: altoBeginner }, { partId: 'p2' }]);
+});
+
 test('makeCopy keeps references inside the copy consistent', () => {
   const doc = duo();
   const [a, b] = doc.parts[0].measures[0].sequences[0].content as Event[];

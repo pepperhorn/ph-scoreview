@@ -129,7 +129,8 @@ function renewIds(part: Part): Map<string, string> {
 /**
  * Unlinks a swapped layout part into a new part of its own: the pitches as the layout shows them (written
  * for the target when the layout is transposing), named "<Target> (from <Source>)", appended to the parts,
- * replacing the source in this layout and added to the end of the full score (`layouts[0]`) so it exports.
+ * replacing the source in this layout and added to the end of the full score (`layouts[0]`) so it exports. Made in
+ * the full score itself, the copy goes right after the source, which loses its swap (both parts stay in the score).
  * A part without a swap is a no-op.
  */
 export const makeCopy: Command<{ layoutId: string; partId: string }> = {
@@ -151,9 +152,15 @@ export const makeCopy: Command<{ layoutId: string; partId: string }> = {
     for (const [old, id] of ids) if (overrides[old]) layout.overrides[id] = structuredClone(overrides[old]);
     const replacement: LayoutPart = { partId: copy.id };
     if (lp.staves) replacement.staves = [...lp.staves];
+    const score = draft.document.layouts[0];
+    if (layout === score) {
+      // In the full score the copy gets its own stave beside the source, which shows as itself again (both export).
+      delete lp.swap;
+      layout.parts.splice(layout.parts.indexOf(lp) + 1, 0, replacement);
+      return;
+    }
     layout.parts[layout.parts.indexOf(lp)] = replacement;
     // The full score lists the copy too, so it is exported.
-    const score = draft.document.layouts[0];
     if (!score.parts.some((p) => p.partId === copy.id)) score.parts.push({ partId: copy.id });
   },
 };

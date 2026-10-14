@@ -1,7 +1,8 @@
 // The score editor's phone shell (apps/reader /editor at 390x844 on a touch device): the two-row header collapses to a
 // 28px strip after 4 s idle and a canvas scroll restores it; tapping Value -> quarter -> C enters a note and the header
 // stays expanded while typing (each dispatch restarts the idle timer); the Bar tab's repeat start adds a forward repeat;
-// the Key chip opens an inline strip inside the toolbar; the toolbar stays put while the canvas scrolls. Screenshots go to
+// the Key chip opens an inline strip inside the toolbar; the toolbar stays put while the canvas scrolls; the Layout tab's
+// swap chip opens the instrument swap as an inline strip (/tmp/editor-phone-layout.png). Screenshots go to
 // /tmp/editor-phone.png (expanded) and /tmp/editor-phone-collapsed.png. Runs against the build (npm run build first).
 // BROWSER=chromium|firefox|webkit.
 import assert from 'node:assert/strict';
@@ -114,9 +115,30 @@ try {
   await page.locator('.ps-pstrip .ps-pstrip-close').tap();
   await strip.waitFor({ state: 'detached' });
 
+  // 6. The Layout tab on the Tenor Sax + Piano fixture: row 1 toggles staves, row 2's swap chip opens the swap card
+  // as an inline strip in the toolbar; Alto Sax at beginner highlights the moved notes.
+  await page.evaluate(() => { window.confirm = () => true; });
+  await page.evaluate(() => document.querySelector('.editor-demo-tenor').click()); // the demo hides its header buttons on a phone
+  await page.waitForFunction(() => /Tenor Sax/.test(window.__editor.ref.current?.getMusicXml() ?? ''), null, { timeout: 10000 });
+  await page.locator('.ps-ptab[data-tab="layout"]').tap();
+  assert.equal(await page.locator('.ps-prow-staves .ps-pchip-stave').count(), 3, 'one stave chip per staff');
+  await page.locator('.ps-pchip-swap').tap();
+  const swapStrip = page.locator('.ps-ptoolbar .ps-pstrip-swap');
+  await swapStrip.waitFor();
+  await page.selectOption('.ps-pstrip-swap .ps-swap-instrument', 'alto-saxophone');
+  await page.locator('.ps-pstrip-swap .ps-swap-level .ps-seg-item:has-text("Beginner")').tap();
+  await page.waitForFunction(() => document.querySelectorAll('.ps-editor .reader-note.note.ps-transposed').length > 0, null, { timeout: 10000 });
+  await page.locator('.ps-editor .score-loading').waitFor({ state: 'detached', timeout: 10000 });
+  const [swapBox, barBox] = [await rectOf(page, '.ps-pstrip-swap'), await rectOf(page, '.ps-ptoolbar')];
+  assert.ok(swapBox.top >= barBox.top && swapBox.bottom <= barBox.bottom, 'the swap strip lies inside the toolbar');
+  await page.screenshot({ path: '/tmp/editor-phone-layout.png' });
+  await page.locator('.ps-pstrip-swap .ps-pstrip-close').tap();
+  await swapStrip.waitFor({ state: 'detached' });
+  assert.match(await page.locator('.ps-pchip-swap').textContent(), /Tenor Sax → Alto Sax · Beginner · Fit on/, 'the swap chip summarises the swap');
+
   assert.deepEqual(errors, [], 'no page or console errors');
   await context.close();
-  console.log(`Editor phone: two-row header (${expanded}px) collapses to ${collapsed}px and a scroll restores it, toolbar entry keeps it expanded, repeat start, inline key strip in the toolbar, fixed toolbar pass`);
+  console.log(`Editor phone: two-row header (${expanded}px) collapses to ${collapsed}px and a scroll restores it, toolbar entry keeps it expanded, repeat start, inline key strip in the toolbar, fixed toolbar, Layout tab stave chips and swap strip pass`);
 } finally {
   await browser.close();
   await server.close();

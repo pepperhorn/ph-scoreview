@@ -1,5 +1,5 @@
-import { INSTRUMENTS } from '../model/instruments';
 import { usePosition, useUi } from './controls';
+import { movedStatus } from './layout-model';
 import { useEditorStore } from './useEditorStore';
 
 const DURATION_NAMES: Record<string, string> = { whole: 'whole', half: 'half', quarter: 'quarter', eighth: 'eighth', '16th': '16th', '32nd': '32nd' };
@@ -10,14 +10,12 @@ export function StatusLine({ savedAt, onReport }: { savedAt: Date | null; onRepo
   const { store } = useUi();
   const errors = useEditorStore(store, (s) => s.invariantErrors);
   const view = useEditorStore(store, (s) => s.view);
-  const swapLabel = useEditorStore(store, (s) => {
+  // The one swapped part's swap when a single part moved notes.
+  const swap = useEditorStore(store, (s) => {
     const partId = s.view.counts.partId;
-    const layout = s.document.layouts.find((l) => l.id === s.activeLayoutId);
-    const swap = layout?.parts.find((lp) => lp.partId === partId)?.swap;
-    return swap ? INSTRUMENTS[swap.instrument]?.label : s.document.parts.find((p) => p.id === partId)?.name;
+    return partId ? s.document.layouts.find((l) => l.id === s.activeLayoutId)?.parts.find((lp) => lp.partId === partId)?.swap : undefined;
   });
   const { cursor, index, beat, partName } = usePosition();
-  const { moved, direction } = view.counts;
   const dots = '.'.repeat(cursor.duration.dots);
   return (
     <footer className="ps-status ps-editor-status" role="status" aria-live="polite">
@@ -30,10 +28,10 @@ export function StatusLine({ savedAt, onReport }: { savedAt: Date | null; onRepo
       ) : (
         <span className="ps-status-check"><span className="ps-status-dot" />Score check: no problems</span>
       )}
-      {moved > 0 && (
+      {view.counts.moved > 0 && (
         <span className="ps-status-moved">
           <span className="ps-moved-dot" />
-          {moved} note{moved > 1 ? 's' : ''} moved{direction ? ` ${direction === 'down' ? '8vb' : '8va'}` : ' an octave'}{swapLabel ? ` for ${swapLabel}` : ''}
+          {movedStatus(view.counts, swap)}
         </span>
       )}
       {view.diagnostics.length > 0 && <span className="ps-status-diagnostics" title={view.diagnostics.join('\n')}>{view.diagnostics.length} range note{view.diagnostics.length > 1 ? 's' : ''}</span>}

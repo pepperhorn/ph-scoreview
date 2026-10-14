@@ -1,7 +1,8 @@
 // The score editor demo (apps/reader /editor): keyboard entry engraves, undo, a click puts the cursor on a note, the
 // ensemble fixture (5 staves) is refused, accidentals and chord entry,
 // the time popover applies on Enter, unsaved work is guarded, the desktop shell (rail keycaps, layout selector, popovers
-// beside the cursor bar, add/remove bar, title editing) works, and the change-to-redraw latency the editor logs stays under
+// beside the cursor bar, add/remove bar, title editing) works, the Layout tab's instrument swap highlights, reviews and
+// copies moved notes and a custom layout hides staves, and the change-to-redraw latency the editor logs stays under
 // PS_EDITOR_RENDER_MS (default 250; a warning above it, a failure above twice it). Runs against the build (npm run build
 // first). BROWSER=chromium|firefox|webkit.
 import assert from 'node:assert/strict';
@@ -211,6 +212,64 @@ try {
   for (let i = 0; i < 3; i++) await page.evaluate(() => window.__editor.ref.current.undo());
   assert.equal(await isDirty(page), false, 'undoing the title and bar edits returns to the clean new score');
 
+  // 7f. Layout tab and instrument swap (the demo's Tenor Sax + Piano fixture): Tenor Sax shown as Alto Sax at beginner
+  // moves its high phrases 8vb (ps-transposed noteheads and the status line count them); Review selects them; Make a copy
+  // adds a part and clears the highlights, undo restores both; a custom layout of only the piano shows two staves.
+  {
+    const TRANSPOSED = `${NOTES}.ps-transposed`;
+    const count = selector => page.locator(selector).count();
+    const scoreParts = async () => ((await musicXml(page)).match(/<score-part\b/g) ?? []).length;
+    await page.click('.editor-demo-tenor');
+    await page.waitForFunction(() => /Tenor Sax/.test(window.__editor.ref.current?.getMusicXml() ?? ''), null, { timeout: 10000 });
+    await waitForNotes(page, 17);
+    await page.click('.ps-inspector .ps-tab[data-tab="layout"]');
+    assert.deepEqual(await page.locator('.ps-stave-list .ps-stave-name').allTextContents(), ['Tenor Sax', 'Piano RH', 'Piano LH'], 'the stave list names every staff');
+    await page.selectOption('.ps-swap-card .ps-swap-instrument', 'alto-saxophone');
+    await page.click('.ps-swap-card .ps-swap-level .ps-seg-item:has-text("Beginner")');
+    await page.waitForFunction(selector => document.querySelectorAll(selector).length > 0, TRANSPOSED, { timeout: 10000 });
+    await page.locator('.ps-editor .score-loading').waitFor({ state: 'detached', timeout: 10000 }); // the swapped engraving, not the last one
+    assert.match(await page.locator(`${TRANSPOSED} .notehead`).count().then(String), /^[1-9]/, 'the moved notes are highlighted in the new engraving');
+    const moved = await count(TRANSPOSED);
+    assert.equal(moved, 6, 'the two high phrases (six notes) moved');
+    assert.match(await page.locator('.ps-status-moved').textContent(), new RegExp(`^${moved} notes moved 8vb for Alto Sax · beginner$`), 'the status line counts the moved notes');
+    assert.match(await page.locator('.ps-moved-text').textContent(), new RegExp(`Moved 8vb to fit range · ${moved} notes`));
+    assert.equal(await page.locator('.ps-stave-item[data-staff="1"] .ps-stave-meta').first().textContent(), 'as Alto Sax', 'the stave list shows the swap');
+    assert.match(await page.locator('.ps-swap-link-text').textContent(), /Linked to Tenor Sax · changes affect both/);
+    await page.click('.ps-moved-review');
+    await page.waitForFunction(selector => [...document.querySelectorAll(selector)].every(n => n.classList.contains('ps-selection')), TRANSPOSED, { timeout: 10000 });
+    assert.equal(await count(`${NOTES}.ps-selection`), moved, 'Review selects exactly the moved notes');
+    await page.locator('.ps-editor .score-loading').waitFor({ state: 'detached', timeout: 10000 });
+    await page.locator('.ps-inspector .ps-insp-body').evaluate(body => { body.scrollTop = 0; });
+    await page.screenshot({ path: '/tmp/editor-layout.png' });
+
+    assert.equal(await scoreParts(), 2);
+    await page.click('.ps-swap-copy');
+    await page.waitForFunction(() => (window.__editor.ref.current.getMusicXml().match(/<score-part\b/g) ?? []).length === 3, null, { timeout: 10000 });
+    await page.waitForFunction(selector => document.querySelectorAll(selector).length === 0, TRANSPOSED, { timeout: 10000 });
+    assert.match(await musicXml(page), /<part-name>Alto Saxophone \(from Tenor Sax\)<\/part-name>/, 'the copy is a part of its own');
+    assert.equal(await page.locator('.ps-status-moved').count(), 0, 'a copy moves nothing');
+    await page.evaluate(() => window.__editor.ref.current.undo());
+    await page.waitForFunction(() => (window.__editor.ref.current.getMusicXml().match(/<score-part\b/g) ?? []).length === 2, null, { timeout: 10000 });
+    await page.waitForFunction(([selector, n]) => document.querySelectorAll(selector).length === n, [TRANSPOSED, moved], { timeout: 10000 });
+
+    // A custom layout from the current staves, then the Tenor Sax hidden in it: only the two piano staves are drawn.
+    await page.fill('.ps-save-view-input', 'Piano only');
+    await page.click('.ps-save-layout');
+    await page.locator('.ps-profile-chip.is-on:has-text("Piano only")').waitFor();
+    await page.click('.ps-stave-item:has-text("Tenor Sax") .ps-stave-label');
+    const stavesPerSystem = () => page.evaluate(() => document.querySelector('.ps-editor .score-system svg .measure')?.querySelectorAll(':scope > .staff').length ?? 0);
+    await page.waitForFunction(() => document.querySelector('.ps-editor .score-system svg .measure')?.querySelectorAll(':scope > .staff').length === 2, null, { timeout: 10000 });
+    assert.equal(await stavesPerSystem(), 2, 'the piano-only layout draws two staves');
+    assert.equal(await count(TRANSPOSED), 0, 'the hidden swapped part leaves no highlights');
+    assert.ok((await layoutSelect.locator('option').allTextContents()).some(t => /Piano only/.test(t)), 'the layout selector lists the custom layout');
+    // A click on the first drawn staff (the piano's right hand) puts the cursor there, not on the hidden Tenor Sax.
+    await clickNote(page, 0);
+    await page.waitForFunction(selector => document.querySelector(selector)?.classList.contains('ps-cursor'), NOTES, { timeout: 10000 });
+    assert.match(await page.locator('.ps-status-cursor').textContent(), /^Piano · /, 'the click mapped to the piano');
+    for (let i = 0; i < 10 && await isDirty(page); i++) await page.evaluate(() => window.__editor.ref.current.undo());
+    assert.equal(await isDirty(page), false, 'undo returns to the clean fixture');
+  }
+
   // 8. No licence: read-only banner, disabled toolbar, keys not bound.
   await page.goto(`${server.url}/editor?licence=`);
   await page.waitForSelector('.ps-editor .score-system svg', { timeout: 60000 });
@@ -250,7 +309,7 @@ try {
   if (slow.length) console.warn(`Editor: ${slow.length} change-to-redraw time(s) at or over ${RENDER_MS} ms: ${slow.join(', ')}`);
   assert.ok(renderTimes.every(ms => ms < 2 * RENDER_MS), `every change-to-redraw time is under ${2 * RENDER_MS} ms (got ${renderTimes.join(', ')})`);
   assert.deepEqual(errors, [], 'no page or console errors');
-  console.log(`Editor: shell (keycaps, layout selector, popover placement, add/remove bar, title edit and cancel, medium-width inspector drawer), entry, undo, accidentals and chord entry, click cursor, key and time popovers, export, save and reopen, unsaved-work guard, staff cap (open and initial) and read-only pass (the phone shell: validation/editor-phone.mjs) (render ms: ${renderTimes.join(', ')})`);
+  console.log(`Editor: shell (keycaps, layout selector, popover placement, add/remove bar, title edit and cancel, medium-width inspector drawer), Layout tab (swap to Alto Sax beginner, moved-note highlights and status, Review, Make a copy and undo, piano-only custom layout and its clicks), entry, undo, accidentals and chord entry, click cursor, key and time popovers, export, save and reopen, unsaved-work guard, staff cap (open and initial) and read-only pass (the phone shell: validation/editor-phone.mjs) (render ms: ${renderTimes.join(', ')})`);
 } finally {
   await browser.close();
   await server.close();
