@@ -1162,49 +1162,91 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     if (seconds !== null) callbacks.current.onSeek?.(seconds);
   };
   // Host highlights: re-applied after every draw (systems drawn later included); elements a draw replaced lose them with it.
+  // A highlighted measure also gets a dashed box (a CSS outline on an SVG group is drawn in viewBox units, a fraction of
+  // a pixel on screen). The box lives in an overlay group beside the measures, so measure bounds (click hit-testing, the
+  // zoom anchor) stay unpadded. Without highlights there is no DOM work and no draw subscription.
   useEffect(() => {
     const result = renderRef.current, canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas || !highlights?.length) return;
+    const classed = new Map<Element, string[]>();
+    const boxes = new Map<Element, SVGRectElement>();
     const apply = () => {
-      canvas.querySelectorAll('.ps-measure-highlight').forEach(element => element.remove());
-      canvas.querySelectorAll('[data-ps-highlight]').forEach(element => {
-        for (const name of (element.getAttribute('data-ps-highlight') || '').split(' ')) if (name) element.classList.remove(name);
-        element.removeAttribute('data-ps-highlight');
-      });
-      for (const item of highlights ?? []) {
-        const targets: Element[] = [];
+      const wanted = new Map<Element, string[]>(), measures = new Map<Element, string[]>();
+      const want = (map: Map<Element, string[]>, element: Element, name: string) => { const names = map.get(element); if (!names) map.set(element, [name]); else if (!names.includes(name)) names.push(name); };
+      for (const item of highlights) {
         for (const id of item.ids ?? []) {
           const element = result?.point(id)?.element ?? canvas.querySelector(`[data-note-id="${CSS.escape(id)}"]`) ?? canvas.querySelector(`#${CSS.escape(id)}`);
-          if (element) targets.push(element.closest('.chord') ?? element);
+          if (element) want(wanted, element.closest('.chord') ?? element, item.className);
         }
         for (const index of item.measures ?? []) {
-          const element = result?.measure(index)?.element; if (!element) continue;
-          targets.push(element);
-          // CSS outline on an SVG group is drawn in viewBox units (a fraction of a pixel on screen), so a measure gets a
-          // box drawn with a non-scaling stroke instead, padded by a few screen pixels.
-          if (!element.querySelector(':scope > .ps-measure-highlight')) {
-            try {
-              const graphics = element as SVGGraphicsElement, bbox = graphics.getBBox(), ctm = graphics.getScreenCTM();
-              const pad = ctm && (ctm.a || ctm.b) ? 4 / Math.hypot(ctm.a, ctm.b) : 0;
-              if (bbox.width > 0 && bbox.height > 0) {
-                const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-                rect.setAttribute('class', 'ps-measure-highlight');
-                rect.setAttribute('x', String(bbox.x - pad)); rect.setAttribute('y', String(bbox.y - pad));
-                rect.setAttribute('width', String(bbox.width + 2 * pad)); rect.setAttribute('height', String(bbox.height + 2 * pad));
-                rect.setAttribute('aria-hidden', 'true');
-                element.appendChild(rect);
-              }
-            } catch { /* not rendered */ }
-          }
+          const element = result?.measure(index)?.element;
+          if (element) { want(wanted, element, item.className); want(measures, element, item.className); }
         }
-        for (const element of targets) {
-          element.classList.add(item.className);
-          element.setAttribute('data-ps-highlight', `${element.getAttribute('data-ps-highlight') ?? ''} ${item.className}`.trim());
+      }
+      // Reads first: boxes for newly highlighted measures, in the user space of their parent (where the overlay goes).
+      const added: { measure: Element; parent: Element; x: number; y: number; width: number; height: number }[] = [];
+      for (const measure of measures.keys()) {
+        const parent = measure.parentElement;
+        if (boxes.has(measure) || !parent) continue;
+        try {
+          const graphics = measure as SVGGraphicsElement, bbox = graphics.getBBox();
+          if (!(bbox.width > 0 && bbox.height > 0)) continue;
+          const own = graphics.getCTM(), base = (parent as unknown as SVGGraphicsElement).getCTM?.(), screen = graphics.getScreenCTM();
+          const transform = own && base ? base.inverse().multiply(own) : new DOMMatrix();
+          const corners = [[bbox.x, bbox.y], [bbox.x + bbox.width, bbox.y], [bbox.x, bbox.y + bbox.height], [bbox.x + bbox.width, bbox.y + bbox.height]]
+            .map(([x, y]) => new DOMPoint(x, y).matrixTransform(transform));
+          // 4 screen pixels of padding, in the parent's user units.
+          const parentScreen = screen ? screen.multiply(transform.inverse()) : null;
+          const scale = parentScreen ? Math.hypot(parentScreen.a, parentScreen.b) : 0, pad = scale ? 4 / scale : 0;
+          const left = Math.min(...corners.map(p => p.x)), top = Math.min(...corners.map(p => p.y));
+          added.push({ measure, parent, x: left - pad, y: top - pad,
+            width: Math.max(...corners.map(p => p.x)) - left + 2 * pad, height: Math.max(...corners.map(p => p.y)) - top + 2 * pad });
+        } catch { /* not rendered */ }
+      }
+      // Then writes: classes, stale boxes, new boxes.
+      for (const [element, names] of classed) {
+        const keep = wanted.get(element);
+        for (const name of names) if (!keep?.includes(name)) element.classList.remove(name);
+        if (!keep) { element.removeAttribute('data-ps-highlight'); classed.delete(element); }
+      }
+      for (const [element, names] of wanted) {
+        for (const name of names) if (!element.classList.contains(name)) element.classList.add(name);
+        const joined = names.join(' ');
+        if (element.getAttribute('data-ps-highlight') !== joined) element.setAttribute('data-ps-highlight', joined);
+        classed.set(element, names);
+      }
+      for (const [measure, rect] of boxes) {
+        if (measure.isConnected && measures.has(measure)) continue;
+        const layer = rect.parentElement; rect.remove(); boxes.delete(measure);
+        if (layer && !layer.childElementCount) layer.remove();
+      }
+      for (const box of added) {
+        let layer = box.parent.querySelector(':scope > .ps-highlight-layer');
+        if (!layer) {
+          layer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+          layer.setAttribute('class', 'ps-highlight-layer');
+          layer.setAttribute('aria-hidden', 'true');
+          box.parent.appendChild(layer); // after the music, so it paints on top
         }
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('class', 'ps-measure-highlight');
+        rect.setAttribute('x', String(box.x)); rect.setAttribute('y', String(box.y));
+        rect.setAttribute('width', String(box.width)); rect.setAttribute('height', String(box.height));
+        layer.appendChild(rect);
+        boxes.set(box.measure, rect);
+      }
+      for (const [measure, rect] of boxes) {
+        const names = measures.get(measure)!.join(' ');
+        if (rect.getAttribute('data-ps-class') !== names) rect.setAttribute('data-ps-class', names);
       }
     };
     apply();
-    return result?.onChange(apply);
+    const unsubscribe = result?.onChange(apply);
+    return () => {
+      unsubscribe?.();
+      for (const [element, names] of classed) { for (const name of names) element.classList.remove(name); element.removeAttribute('data-ps-highlight'); }
+      for (const rect of boxes.values()) { const layer = rect.parentElement; rect.remove(); if (layer && !layer.childElementCount) layer.remove(); }
+    };
   }, [highlights, loaded, drawTick]);
   const wasPlayingRef = useRef(false);
   useEffect(() => {
