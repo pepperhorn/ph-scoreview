@@ -555,12 +555,20 @@ try {
     // ps-transposed colours the note orange (notehead fill).
     await page.evaluate(noteId => window.__embed.setHighlights([{ ids: [noteId], className: 'ps-transposed' }]), noteId);
     await page.waitForFunction(([root, noteId]) => document.querySelector(`${root} [data-note-id="${CSS.escape(noteId)}"]`)?.closest('.ps-transposed'), [fullChrome, noteId], { timeout: 5000 });
-    const transposedFill = await page.evaluate(([root, noteId]) => {
+    // Firefox applies the inherited fill to the <use> notehead a frame later than the class lands, so poll the computed
+    // style rather than reading it once.
+    const fillOf = ([root, noteId]) => {
       const element = document.querySelector(`${root} [data-note-id="${CSS.escape(noteId)}"]`);
-      const head = element.querySelector('.notehead use, .notehead') ?? element;
-      return { fill: getComputedStyle(head).fill, html: element.closest('.ps-transposed').outerHTML.slice(0, 900) };
-    }, [fullChrome, noteId]);
-    assert.equal(transposedFill.fill, 'rgb(217, 116, 28)', `ps-transposed fills the notehead orange: ${transposedFill.html}`);
+      const head = element?.querySelector('.notehead') ?? element;
+      return head ? getComputedStyle(head).fill : '';
+    };
+    await page.waitForFunction(([root, noteId, expected]) => {
+      const element = document.querySelector(`${root} [data-note-id="${CSS.escape(noteId)}"]`);
+      const head = element?.querySelector('.notehead') ?? element;
+      return head && getComputedStyle(head).fill === expected;
+    }, [fullChrome, noteId, 'rgb(217, 116, 28)'], { timeout: 5000 }).catch(() => {});
+    const transposedFill = await page.evaluate(fillOf, [fullChrome, noteId]);
+    assert.equal(transposedFill, 'rgb(217, 116, 28)', `ps-transposed fills the notehead orange (got ${transposedFill})`);
     // A measure highlight draws a dashed box with a screen-space stroke (an outline on the group was ~0.1px) in an
     // overlay beside the measures, so the measure's own bounds (click hit-testing, zoom anchor) do not change; the box
     // comes back after a redraw.
