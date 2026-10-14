@@ -532,7 +532,12 @@ try {
     await rendered(page, fullChrome);
     const note = page.locator(`${fullChrome} .score-system svg .reader-note[data-note-id]`).first();
     const noteId = await note.getAttribute('data-note-id');
-    await note.click();
+    // Click the notehead's centre by coordinates: Firefox and WebKit report the parent <svg> as intercepting a
+    // locator click on an SVG <g>, although the event still reaches the group's descendants.
+    const head = note.locator('.notehead').first();
+    const box = await ((await head.count()) ? head : note).boundingBox();
+    assert.ok(box, 'the note has a bounding box');
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
     await page.waitForFunction(() => window.__events.some(([kind]) => kind === 'click'), null, { timeout: 5000 });
     const click = (await events(page)).find(([kind]) => kind === 'click');
     assert.equal(click[1], 'full');
