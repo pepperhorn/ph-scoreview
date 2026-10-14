@@ -7,20 +7,20 @@ import { ENDINGS, JUMPS, jumpValue, keyName } from './Popover';
 import { TempoFields } from './TempoFields';
 
 type Barline = NonNullable<GlobalMeasure['barline']>;
-const BARLINES: { value: Barline; label: string; c?: string; alt: string }[] = [
+export const BARLINES: { value: Barline; label: string; c?: string; alt: string }[] = [
   { value: 'regular', label: 'Regular barline', c: SMUFL.barSingle, alt: '|' },
   { value: 'double', label: 'Double barline', c: SMUFL.barDouble, alt: '||' },
   { value: 'final', label: 'Final barline', c: SMUFL.barFinal, alt: '|‖' },
   { value: 'dashed', label: 'Dashed barline', c: SMUFL.barDashed, alt: '¦' },
   { value: 'invisible', label: 'Invisible barline', alt: 'None' },
 ];
-const CLEF_BUTTONS: { value: Clef; label: string; c: string; alt: string }[] = [
+export const CLEF_BUTTONS: { value: Clef; label: string; c: string; alt: string }[] = [
   { value: 'treble', label: 'Treble clef', c: SMUFL.gClef, alt: 'G' },
   { value: 'bass', label: 'Bass clef', c: SMUFL.fClef, alt: 'F' },
   { value: 'alto', label: 'Alto clef', c: SMUFL.cClef, alt: 'C' },
 ];
-const TIMES = ['4/4', '3/4', '6/8'] as const;
-const MARKS = [{ mark: 'segno', label: 'Segno', c: SMUFL.segno, alt: '𝄋' }, { mark: 'coda', label: 'Coda', c: SMUFL.coda, alt: '𝄌' }, { mark: 'toCoda', label: 'To Coda', alt: 'To ⊕' }, { mark: 'fine', label: 'Fine', alt: 'Fine' }] as const;
+export const TIMES = ['4/4', '3/4', '6/8'] as const;
+export const MARKS = [{ mark: 'segno', label: 'Segno', c: SMUFL.segno, alt: '𝄋' }, { mark: 'coda', label: 'Coda', c: SMUFL.coda, alt: '𝄌' }, { mark: 'toCoda', label: 'To Coda', alt: 'To ⊕' }, { mark: 'fine', label: 'Fine', alt: 'Fine' }] as const;
 
 /** Score-wide settings at the cursor bar: key, time, clef, barlines and form, tempo, insert and delete bars. */
 export function ScoreTab() {

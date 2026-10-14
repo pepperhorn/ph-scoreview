@@ -10,3 +10,9 @@
 .editor-demo-sidebar { min-width: 0; max-height: calc(100vh - 82px); overflow: auto; border: 1px solid #e2e6df; border-radius: 12px; background: #fff; }
 .editor-demo-xml { margin: 0; padding: 12px; font: 11px/1.45 ui-monospace, Menlo, monospace; white-space: pre; }
 @media (max-width: 900px) { .editor-demo-main.has-sidebar { grid-template-columns: minmax(0, 1fr); } .editor-demo-sidebar { max-height: 240px; } }
+/* Phones: the editor fills the screen (its phone shell has its own file menu), without the demo's header. */
+@media (max-width: 760px) {
+  .editor-demo { padding: 0; gap: 0; }
+  .editor-demo-header { display: none; }
+  .editor-demo-editor.ps-editor { height: 100dvh !important; border: 0; border-radius: 0; box-shadow: none; }
+}

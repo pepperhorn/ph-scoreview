@@ -9,6 +9,8 @@ type Source = { key: number; musicXml?: string };
 const DEMO_LICENCE = 'eyJzdWIiOiJwZXBwZXJzY29yZS1kZW1vIiwiZXhwIjoxODMwMjk3NjAwLCJtYXhTdGF2ZXMiOjR9.htvTu3iKMVooELSmmTmArtBQpsDE9tcvtuebGyZZ3BGbvuxBAZ1ip25IGtfNJCuE0_OlRTvGM6v1NcLsaL04Bg';
 /** `?licence=<key>` overrides the demo licence (`?licence=` shows the read-only editor). */
 const licenceKey = () => new URLSearchParams(window.location.search).get('licence') ?? DEMO_LICENCE;
+/** `?phone=1` forces the phone shell at any width (otherwise a container 760px wide or less gets it). */
+const forcePhone = () => (new URLSearchParams(window.location.search).get('phone') === '1' ? true : undefined);
 
 /**
  * The editor demo (/editor): a licensed editor in Endless view with an optional live-MusicXML sidebar (hidden at first).
@@ -44,6 +46,7 @@ export default function EditorDemo() {
         className="editor-demo-editor"
         musicXml={source.musicXml}
         licenceKey={licenceKey()}
+        forcePhone={forcePhone()}
         view="endless"
         height="calc(100vh - 82px)"
         assetBaseUrl="/"

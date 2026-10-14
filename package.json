@@ -27,7 +27,7 @@
     "test:guardrails:firefox": "BROWSER=firefox node validation/guardrails.mjs",
     "test:assets": "node validation/assets.mjs",
     "test:sounds": "node validation/sounds.mjs",
-    "test:validation": "npm run test:api && npm run test:clock && npm run test:css && npm run test:assets && npm run test:sounds && npm run test:spelling && npm run test:transpose && npm run test:document && npm run test:parser-diff && npm run test:score-db && npm run test:performance && npm run test:clock-contract && npm run test:editor && npm run test:editor-browser && npm run test:reader && npm run test:chunks && npm run test:large && npm run test:guardrails && npm run test:embed && npm run test:clock-embed && npm run test:layout",
+    "test:validation": "npm run test:api && npm run test:clock && npm run test:css && npm run test:assets && npm run test:sounds && npm run test:spelling && npm run test:transpose && npm run test:document && npm run test:parser-diff && npm run test:score-db && npm run test:performance && npm run test:clock-contract && npm run test:editor && npm run test:editor-browser && npm run test:editor-phone && npm run test:reader && npm run test:chunks && npm run test:large && npm run test:guardrails && npm run test:embed && npm run test:clock-embed && npm run test:layout",
     "test:css": "node validation/css-scope.mjs",
     "test:embed": "node validation/embed.mjs",
     "test:layout": "node validation/layout.mjs",
@@ -41,7 +41,8 @@
     "test:pack": "node scripts/pack-smoke.mjs",
     "pack:local": "node scripts/pack-local.mjs",
     "test:editor": "npm run test -w pepperscore-editor",
-    "test:editor-browser": "node validation/editor.mjs"
+    "test:editor-browser": "node validation/editor.mjs",
+    "test:editor-phone": "node validation/editor-phone.mjs"
   },
   "devDependencies": {
     "playwright-core": "^1.63.0",

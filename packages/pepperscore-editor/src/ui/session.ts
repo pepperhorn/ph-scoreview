@@ -3,6 +3,7 @@ import { createEditorStore, type EditorStore } from '../engine/store';
 import type { PepperScoreFile } from '../format/pepperscore-file';
 import type { Dropped } from '../import/from-musicxml';
 import { verifyLicence, type Licence } from '../licence';
+import { useEditorStore } from './useEditorStore';
 import { importSource, type Opened } from './files';
 
 type Source = PepperScoreFile['source'];
@@ -35,4 +36,18 @@ export function useLicence(key: string | undefined): Licence | null | undefined 
     };
   }, [key]);
   return checked && checked.key === key ? checked.licence : undefined;
+}
+
+/** Leaving the page while `store` has unsaved changes asks first (`beforeunload`). */
+export function useLeaveGuard(store: EditorStore): void {
+  const dirty = useEditorStore(store, (s) => s.dirty);
+  useEffect(() => {
+    if (!dirty) return;
+    const guard = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', guard);
+    return () => window.removeEventListener('beforeunload', guard);
+  }, [dirty]);
 }

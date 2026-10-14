@@ -39,7 +39,7 @@ export const ENDINGS: { value: string; label: string; numbers: number[] | null }
   { value: '3', label: 'Ending 3', numbers: [3] },
 ];
 const TIME_UNITS = [1, 2, 4, 8, 16] as const;
-const TITLES: Record<PopoverName, string> = {
+export const POPOVER_TITLES: Record<PopoverName, string> = {
   key: 'Key signature', time: 'Time signature', clef: 'Clef', dynamic: 'Dynamic', jump: 'Jump', ending: 'Ending', tempo: 'Tempo',
 };
 
@@ -52,7 +52,7 @@ type PlacementProps = { anchor: Rect | null; viewport: Rect; stage: HTMLElement 
 
 const GAP = 12;
 /** The key that opens popover `name`, if any. */
-const opener = (name: PopoverName) => KEYMAP.find((b) => b.group === 'score' && b.label === TITLES[name]);
+const opener = (name: PopoverName) => KEYMAP.find((b) => b.group === 'score' && b.label === POPOVER_TITLES[name]);
 
 /**
  * A panel beside the cursor bar (left, else right, else above, else below; see `placePopover`) with native
@@ -104,7 +104,7 @@ export function Popover({ name, store, onClose, anchor, viewport, stage }: Props
       ref={root}
       className={`ps-popover ps-popover-${name}`}
       role="dialog"
-      aria-label={TITLES[name]}
+      aria-label={POPOVER_TITLES[name]}
       onKeyDown={(event) => {
         if (event.key === 'Escape') {
           event.preventDefault();
@@ -115,7 +115,7 @@ export function Popover({ name, store, onClose, anchor, viewport, stage }: Props
     >
       <span ref={arrow} className="ps-popover-arrow" aria-hidden="true" />
       <header className="ps-popover-head">
-        <div className="ps-popover-titles"><span className="ps-eyebrow">{name === 'dynamic' ? 'At the cursor' : `From bar ${index + 1}`}</span><h3 className="ps-popover-title">{TITLES[name]}</h3></div>
+        <div className="ps-popover-titles"><span className="ps-eyebrow">{name === 'dynamic' ? 'At the cursor' : `From bar ${index + 1}`}</span><h3 className="ps-popover-title">{POPOVER_TITLES[name]}</h3></div>
         <button type="button" className="ps-btn ps-icon-btn ps-popover-close" aria-label="Close" onClick={onClose}><Icon name="close" size={14} /></button>
       </header>
       <div className="ps-popover-body"><PopoverBody name={name} store={store} onClose={onClose} /></div>
@@ -133,7 +133,8 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function PopoverBody({ name, store, onClose }: Props) {
+/** A popover's fields (shared by the desktop popover and the phone's inline strip). */
+export function PopoverBody({ name, store, onClose }: Props) {
   const document = useEditorStore(store, (s) => s.document);
   const cursor = useEditorStore(store, (s) => s.cursor);
   const index = Math.max(measureIndex(document, cursor.measureId), 0);

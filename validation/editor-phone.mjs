@@ -1,0 +1,123 @@
+// The score editor's phone shell (apps/reader /editor at 390x844 on a touch device): the two-row header collapses to a
+// 28px strip after 4 s idle and a canvas scroll restores it; tapping Value -> quarter -> C enters a note and the header
+// stays expanded while typing (each dispatch restarts the idle timer); the Bar tab's repeat start adds a forward repeat;
+// the Key chip opens an inline strip inside the toolbar; the toolbar stays put while the canvas scrolls. Screenshots go to
+// /tmp/editor-phone.png (expanded) and /tmp/editor-phone-collapsed.png. Runs against the build (npm run build first).
+// BROWSER=chromium|firefox|webkit.
+import assert from 'node:assert/strict';
+import { chromium, firefox, webkit } from 'playwright-core';
+import { serveDist } from './serve-dist.mjs';
+
+const engine = process.env.BROWSER || 'chromium';
+const launcher = { chromium, firefox, webkit }[engine];
+if (!launcher) throw new Error(`BROWSER must be chromium, firefox or webkit (got "${engine}")`);
+const server = await serveDist();
+const browser = await launcher.launch({ headless: true, ...(engine === 'chromium' ? { args: ['--no-sandbox'] } : {}) });
+/** Pitched notes only: the viewer also marks rests (`.rest`, `.mRest`) as `.reader-note`. */
+const NOTES = '.ps-editor .reader-note.note';
+const waitForNotes = (page, n) => page.waitForFunction(([selector, n]) => document.querySelectorAll(selector).length === n, [NOTES, n], { timeout: 30000 });
+const musicXml = page => page.evaluate(() => window.__editor.ref.current.getMusicXml());
+const pause = ms => new Promise(done => setTimeout(done, ms));
+const rectOf = (page, selector) => page.locator(selector).evaluate(element => { const r = element.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height }; });
+const headerHeight = async page => (await rectOf(page, '.ps-phead')).height;
+/** Scrolls the score's viewport by `px` along whichever axis overflows; false when nothing scrolls. */
+const scrollCanvas = (page, px) => page.evaluate(px => {
+  const viewport = document.querySelector('.ps-editor .score-viewport');
+  const before = [viewport.scrollLeft, viewport.scrollTop];
+  if (viewport.scrollWidth > viewport.clientWidth) viewport.scrollBy({ left: px }); else viewport.scrollBy({ top: px });
+  return before[0] !== viewport.scrollLeft || before[1] !== viewport.scrollTop;
+}, px);
+
+try {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: engine === 'chromium' });
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+  await page.goto(`${server.url}/editor`);
+  await page.waitForSelector('.ps-editor .ps-shell-phone .score-system svg', { timeout: 60000 });
+  assert.equal(await page.locator('.ps-editor .ps-shell-desktop').count(), 0, 'a phone-sized container gets the phone shell only');
+  assert.equal(await page.locator('.ps-editor .ps-rail, .ps-editor .ps-inspector, .ps-editor .ps-palette').count(), 0, 'no rail, inspector or palette on a phone');
+
+  // 0. Ten more bars (the Bar tab's insert), so the Page view overflows and the canvas can scroll.
+  await page.locator('.ps-ptab[data-tab="bar"]').tap();
+  for (let i = 0; i < 10; i++) await page.locator('.ps-ptoolbar button[aria-label="Insert measure"]').tap();
+  await page.waitForFunction(() => (window.__editor.ref.current.getMusicXml().match(/<measure\b/g) ?? []).length === 18, null, { timeout: 10000 });
+  await page.locator('.ps-ptab[data-tab="value"]').tap();
+  await page.waitForFunction(() => { const v = document.querySelector('.ps-editor .score-viewport'); return v && v.scrollHeight > v.clientHeight + 100; }, null, { timeout: 30000 });
+
+  // 1. The header: two rows, at most 88px; 4.5 s idle collapses it to a strip of at most 30px.
+  await page.locator('.ps-phead .ps-phead-crumb').tap(); // a header tap expands it and restarts the idle timer
+  await pause(400);
+  const expanded = await headerHeight(page);
+  assert.ok(expanded > 60 && expanded <= 88, `the expanded header is two rows, at most 88px (${expanded})`);
+  assert.equal(await page.locator('.ps-phead-main .ps-phead-title').isVisible(), true, 'row 1 shows the title');
+  assert.equal(await page.locator('.ps-phead-meta .ps-chip-key').isVisible(), true, 'row 2 shows the key chip');
+  await page.screenshot({ path: '/tmp/editor-phone.png' });
+  await pause(4500);
+  const collapsed = await headerHeight(page);
+  assert.ok(collapsed <= 30, `4.5 s idle collapses the header to at most 30px (${collapsed})`);
+  assert.equal(await page.locator('.ps-shell-phone').getAttribute('data-header'), 'collapsed');
+  assert.equal(await page.locator('.ps-phead-meta .ps-chip-key').isVisible(), true, 'the collapsed strip keeps the key chip');
+  await pause(500);
+  await page.screenshot({ path: '/tmp/editor-phone-collapsed.png' });
+
+  // 2. Scrolling the canvas restores the header; the toolbar does not move while the canvas scrolls.
+  const toolbarBefore = await rectOf(page, '.ps-ptoolbar');
+  assert.ok(toolbarBefore.bottom <= 844 + 0.5 && toolbarBefore.bottom >= 844 - 2, `the toolbar sits at the bottom of the screen (${JSON.stringify(toolbarBefore)})`);
+  assert.ok(await scrollCanvas(page, 160), 'the canvas scrolls');
+  await pause(400);
+  assert.ok((await headerHeight(page)) > 60, 'a canvas scroll expands the header');
+  assert.deepEqual(await rectOf(page, '.ps-ptoolbar'), toolbarBefore, 'the toolbar rect is unchanged after the canvas scrolled');
+  const tabs = await rectOf(page, '.ps-ptabs');
+  assert.ok(tabs.height <= 32, `the tab strip is at most 32px (${tabs.height})`);
+  await scrollCanvas(page, -160);
+
+  // 3. Value -> quarter -> C enters a note; the dispatches keep the header expanded past the 4 s idle time.
+  await page.locator('.ps-ptab[data-tab="value"]').tap();
+  const quarter = page.locator('.ps-ptoolbar button[aria-label="Quarter note"]');
+  const size = await quarter.boundingBox();
+  assert.ok(size.width >= 44 && size.height >= 44, `toolbar buttons are 44px targets (${size.width}x${size.height})`);
+  const rows = await page.locator('.ps-prows .ps-prow').count();
+  assert.ok(rows <= 2, `at most two button rows (${rows})`);
+  await quarter.tap();
+  await pause(3000);
+  await page.locator('.ps-ptoolbar button[aria-label="Note C"]').tap();
+  await waitForNotes(page, 1);
+  assert.match(await musicXml(page), /<step>C<\/step>/, 'the tapped C is in the score');
+  await pause(2000);
+  assert.ok((await headerHeight(page)) > 60, 'the header stays expanded while typing (5 s after the first tap, 2 s after the last)');
+
+  // 4. The Bar tab's repeat start toggles a forward repeat on the cursor bar.
+  await page.locator('.ps-ptab[data-tab="bar"]').tap();
+  const repeat = page.locator('.ps-ptoolbar button[aria-label="Repeat start"]');
+  await repeat.tap();
+  await page.waitForFunction(() => /<repeat direction="forward"/.test(window.__editor.ref.current.getMusicXml()), null, { timeout: 10000 });
+  assert.equal(await repeat.getAttribute('aria-pressed'), 'true', 'the repeat start button shows it is on');
+  await repeat.tap();
+  await page.waitForFunction(() => !/<repeat direction="forward"/.test(window.__editor.ref.current.getMusicXml()), null, { timeout: 10000 });
+
+  // 5. The header's Key chip opens the key fields as an inline strip inside the toolbar, never over the score.
+  await page.locator('.ps-phead .ps-chip-key').tap();
+  const strip = page.locator('.ps-ptoolbar .ps-pstrip[aria-label="Key signature"]');
+  await strip.waitFor();
+  assert.equal(await page.locator('.ps-popover').count(), 0, 'no floating popover on a phone');
+  const [stripBox, toolbarBox] = [await rectOf(page, '.ps-ptoolbar .ps-pstrip'), await rectOf(page, '.ps-ptoolbar')];
+  assert.ok(stripBox.left >= toolbarBox.left && stripBox.right <= toolbarBox.right && stripBox.top >= toolbarBox.top && stripBox.bottom <= toolbarBox.bottom,
+    `the key strip lies inside the toolbar (${JSON.stringify({ stripBox, toolbarBox })})`);
+  await page.selectOption('.ps-pstrip .ps-select-fifths', '2');
+  await page.waitForFunction(() => /<fifths>2<\/fifths>/.test(window.__editor.ref.current.getMusicXml()), null, { timeout: 10000 });
+  await page.locator('.ps-pstrip .ps-pstrip-apply').tap();
+  await strip.waitFor({ state: 'detached' });
+  await page.locator('.ps-phead .ps-chip-key').tap();
+  await strip.waitFor();
+  await page.locator('.ps-pstrip .ps-pstrip-close').tap();
+  await strip.waitFor({ state: 'detached' });
+
+  assert.deepEqual(errors, [], 'no page or console errors');
+  await context.close();
+  console.log(`Editor phone: two-row header (${expanded}px) collapses to ${collapsed}px and a scroll restores it, toolbar entry keeps it expanded, repeat start, inline key strip in the toolbar, fixed toolbar pass`);
+} finally {
+  await browser.close();
+  await server.close();
+}

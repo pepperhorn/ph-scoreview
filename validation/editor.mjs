@@ -1,5 +1,5 @@
-// The score editor demo (apps/reader /editor): keyboard entry engraves, undo, a click puts the cursor on a note, the touch
-// palette enters notes on a phone-sized viewport, the ensemble fixture (5 staves) is refused, accidentals and chord entry,
+// The score editor demo (apps/reader /editor): keyboard entry engraves, undo, a click puts the cursor on a note, the
+// ensemble fixture (5 staves) is refused, accidentals and chord entry,
 // the time popover applies on Enter, unsaved work is guarded, the desktop shell (rail keycaps, layout selector, popovers
 // beside the cursor bar, add/remove bar, title editing) works, and the change-to-redraw latency the editor logs stays under
 // PS_EDITOR_RENDER_MS (default 250; a warning above it, a failure above twice it). Runs against the build (npm run build
@@ -17,7 +17,6 @@ const server = await serveDist();
 const browser = await launcher.launch({ headless: true, ...(engine === 'chromium' ? { args: ['--no-sandbox'] } : {}) });
 /** Pitched notes only: the viewer also marks rests (`.rest`, `.mRest`) as `.reader-note`. */
 const NOTES = '.ps-editor .reader-note.note';
-const noteCount = page => page.locator(NOTES).count();
 const waitForNotes = (page, n) => page.waitForFunction(([selector, n]) => document.querySelectorAll(selector).length === n, [NOTES, n], { timeout: 30000 });
 const musicXml = page => page.evaluate(() => window.__editor.ref.current.getMusicXml());
 const isDirty = page => page.evaluate(() => window.__editor.ref.current.isDirty());
@@ -148,9 +147,6 @@ try {
   assert.equal(await isDirty(page), false, 'a reopened score is clean');
   await page.locator('.ps-editor').focus();
 
-  // 6. The palette hides on a wide container (the phone-width palette is tested on a touch device below).
-  assert.equal(await page.locator('.ps-palette').isVisible(), false, 'the palette hides on a wide container');
-
   // 6b. A popover's own top-bar chip toggles it.
   const keyButton = page.locator('.ps-topbar .ps-btn[aria-label="Key signature"]');
   await keyButton.click();
@@ -247,25 +243,6 @@ try {
     await medium.close();
   }
 
-  // 9. Phone width on a touch device: the palette shows, and tapping its quarter and C buttons enters a note.
-  {
-    const phone = await browser.newContext({ viewport: { width: 390, height: 800 }, hasTouch: true, isMobile: engine === 'chromium' });
-    const page = await phone.newPage();
-    page.on('pageerror', error => errors.push(error.message));
-    await page.goto(`${server.url}/editor`);
-    await page.waitForSelector('.ps-editor .score-system svg', { timeout: 60000 });
-    const palette = page.locator('.ps-palette');
-    await palette.waitFor({ state: 'visible' });
-    const button = await palette.locator('.ps-palette-btn').first().boundingBox();
-    assert.ok(button.width >= 44 && button.height >= 44, `palette buttons are 44px targets (${button.width}x${button.height})`);
-    assert.equal(await noteCount(page), 0);
-    await palette.locator('button[aria-label="Quarter note"]').tap();
-    await palette.locator('button[aria-label="Note C"]').tap();
-    await waitForNotes(page, 1);
-    assert.match(await musicXml(page), /<step>C<\/step>/, 'the tapped C is in the score');
-    await phone.close();
-  }
-
   assert.ok(renderTimes.length > 0, 'the editor reported its change-to-redraw time');
   // A new score source skips the viewer's redraw fade, so an edit engraves well inside a quarter second. Slow machines
   // (CI) get a warning above PS_EDITOR_RENDER_MS and fail only above twice it.
@@ -273,7 +250,7 @@ try {
   if (slow.length) console.warn(`Editor: ${slow.length} change-to-redraw time(s) at or over ${RENDER_MS} ms: ${slow.join(', ')}`);
   assert.ok(renderTimes.every(ms => ms < 2 * RENDER_MS), `every change-to-redraw time is under ${2 * RENDER_MS} ms (got ${renderTimes.join(', ')})`);
   assert.deepEqual(errors, [], 'no page or console errors');
-  console.log(`Editor: shell (keycaps, layout selector, popover placement, add/remove bar, title edit and cancel, medium-width inspector drawer), entry, undo, accidentals and chord entry, click cursor, key and time popovers, export, save and reopen, unsaved-work guard, staff cap (open and initial), read-only and touch palette pass (render ms: ${renderTimes.join(', ')})`);
+  console.log(`Editor: shell (keycaps, layout selector, popover placement, add/remove bar, title edit and cancel, medium-width inspector drawer), entry, undo, accidentals and chord entry, click cursor, key and time popovers, export, save and reopen, unsaved-work guard, staff cap (open and initial) and read-only pass (the phone shell: validation/editor-phone.mjs) (render ms: ${renderTimes.join(', ')})`);
 } finally {
   await browser.close();
   await server.close();

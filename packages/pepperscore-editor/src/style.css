@@ -52,7 +52,7 @@
 .ps-editor :where(button, input, select) { font-family: inherit; font-size: inherit; color: inherit; }
 .ps-editor :where(h1, h3, h4, p) { margin: 0; }
 .ps-editor .ps-shell { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.ps-editor .ps-topbar, .ps-editor .ps-editor-banner, .ps-editor .ps-status, .ps-editor .ps-palette { flex: none; }
+.ps-editor .ps-topbar, .ps-editor .ps-editor-banner, .ps-editor .ps-status { flex: none; }
 
 /* ---------- Music glyphs (Bravura) with text fallbacks ---------- */
 .ps-editor .ps-glyph { display: inline-block; font-family: Bravura, serif; font-style: normal; font-weight: 400; line-height: 1; }
@@ -275,21 +275,93 @@
 }
 @media (prefers-reduced-motion: reduce) { .ps-editor .ps-inspector { transition: none; } }
 
-/* ---------- Narrow containers (until the phone shell): the touch palette replaces the rail and inspector ---------- */
-.ps-editor .ps-palette { display: none; }
-@container ps-editor (max-width: 760px) {
-  .ps-editor .ps-topbar { flex-wrap: wrap; gap: 8px 10px; min-height: 0; padding: 8px 10px; }
-  .ps-editor .ps-brand, .ps-editor .ps-history, .ps-editor .ps-chips { display: none; }
-  .ps-editor .ps-score-title { font-size: 18px; }
-  .ps-editor .ps-actions { gap: 4px; }
-  .ps-editor .ps-workspace { grid-template-columns: minmax(0, 1fr); }
-  .ps-editor .ps-rail, .ps-editor .ps-inspector, .ps-editor .ps-hints, .ps-editor .ps-canvas-head { display: none; }
-  .ps-editor .ps-desk { padding: 6px; }
-  /* Score-check failures and moved notes stay visible on narrow containers. */
-  .ps-editor .ps-status-cursor, .ps-editor .ps-status-saved, .ps-editor .ps-status-diagnostics { display: none; }
-  .ps-editor .ps-status { gap: 12px; padding: 0 10px; }
-  .ps-editor .ps-palette { display: flex; gap: 10px; padding: 6px; overflow-x: auto; border-top: 1px solid var(--ps-line); background: var(--ps-paper); scrollbar-width: thin; }
-  .ps-editor .ps-palette-group { display: flex; flex: none; gap: 4px; }
-  .ps-editor .ps-palette-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; height: 44px; padding: 0 8px; border: 1px solid var(--ps-line-2); border-radius: 10px; background: #fff; font-size: 15px; font-weight: 500; }
-  .ps-editor .ps-palette-btn.ps-btn-active { border-color: rgba(52, 86, 66, .45); background: #edf5ef; color: var(--ps-accent); font-weight: 600; }
-}
+/* ---------- Phone shell (containers 760px or less): auto-collapsing header, tabbed toolbar pinned to the bottom ---------- */
+.ps-editor .ps-shell-phone { --ps-head-h: 78px; --ps-toolbar-h: 150px; position: relative; overflow: hidden; -webkit-tap-highlight-color: transparent; }
+/* The desktop's narrow-width rules hide these; the phone shell shows them. */
+.ps-editor .ps-shell-phone .ps-chip-k { display: inline; }
+.ps-editor .ps-shell-phone .ps-licence { display: inline-flex; }
+.ps-editor .ps-shell-phone[data-header=collapsed] { --ps-head-h: 28px; }
+/* The header overlays the top of the shell and the toolbar its bottom; the body between is padded by both. */
+.ps-editor .ps-phead { position: absolute; z-index: 35; top: 0; right: 0; left: 0; display: flex; flex-direction: column; gap: 6px; height: var(--ps-head-h); padding: 7px 10px 7px 12px; overflow: hidden; border-bottom: 1px solid var(--ps-line); background: rgba(251, 250, 248, .96); backdrop-filter: blur(8px); transition: height .2s ease, padding .2s ease; }
+.ps-editor .ps-phone-body { display: flex; flex-direction: column; flex: 1; min-height: 0; padding-top: var(--ps-head-h); padding-bottom: var(--ps-toolbar-h); transition: padding-top .2s ease; }
+.ps-editor .ps-phead-main { display: flex; align-items: center; gap: 9px; flex: none; height: 34px; transition: margin-top .2s ease, opacity .16s ease; }
+.ps-editor .ps-phead-brand { flex: none; width: 28px; height: 30px; border-radius: 8px; }
+.ps-editor .ps-phead-brand .ps-glyph { font-size: 21px; transform: translateY(4px); }
+.ps-editor .ps-phead-titles { display: flex; align-items: baseline; gap: 7px; flex: 1; min-width: 0; white-space: nowrap; }
+.ps-editor .ps-phead-title { flex: 0 1 auto; min-width: 0; font-size: 17px; line-height: 1.2; cursor: default; }
+.ps-editor .ps-phead-composer { flex: 0 1000 auto; min-width: 0; margin: 0; font-size: 11px; cursor: default; }
+.ps-editor .ps-phead-play { flex: none; width: 34px; height: 34px; padding: 0; justify-content: center; }
+.ps-editor .ps-phead-more { flex: none; width: 32px; }
+.ps-editor .ps-phead-meta { display: flex; align-items: center; gap: 6px; flex: none; height: 22px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.ps-editor .ps-phead-meta::-webkit-scrollbar { display: none; }
+.ps-editor .ps-phead-mode { flex: none; height: 22px; padding: 0 8px 0 7px; gap: 5px; font-size: 9px; }
+.ps-editor .ps-phead-crumb { flex: none; margin-right: 2px; font-size: 11px; color: var(--ps-ink-3); white-space: nowrap; }
+.ps-editor .ps-pchip { flex: none; height: 22px; padding: 0 8px; gap: 4px; font-size: 10.5px; transition: opacity .16s ease; }
+.ps-editor .ps-pchip .ps-chip-k { font-size: 8px; letter-spacing: .1em; }
+.ps-editor .ps-pchip .ps-glyph-mm { font-size: 15px; transform: translateY(3px); }
+.ps-editor .ps-chip-layout { padding: 0 6px 0 8px; border-color: rgba(52, 86, 66, .3); background: var(--ps-accent-soft); color: var(--ps-accent); }
+.ps-editor .ps-chip-layout .ps-layout-select-input { max-width: 110px; color: inherit; font-size: 10.5px; }
+.ps-editor .ps-chip-layout .ps-icon { margin-left: -2px; pointer-events: none; }
+/* Collapsed: a 28px strip of the mode dot, the position and the key chip; a tap anywhere on it expands it. */
+.ps-editor .ps-shell-phone[data-header=collapsed] .ps-phead { padding-top: 3px; padding-bottom: 3px; gap: 0; cursor: pointer; }
+.ps-editor .ps-shell-phone[data-header=collapsed] .ps-phead-main { margin-top: -34px; opacity: 0; pointer-events: none; }
+.ps-editor .ps-shell-phone[data-header=collapsed] .ps-phead-mode { width: 22px; padding: 0; justify-content: center; }
+.ps-editor .ps-shell-phone[data-header=collapsed] .ps-mode-text, .ps-editor .ps-shell-phone[data-header=collapsed] .ps-pchip:not(.ps-chip-key) { display: none; }
+@media (prefers-reduced-motion: reduce) { .ps-editor .ps-phead, .ps-editor .ps-phone-body, .ps-editor .ps-phead-main { transition: none; } }
+
+/* Overflow menu, under the header's right edge. */
+.ps-editor .ps-pmenu { position: absolute; z-index: 45; top: calc(var(--ps-head-h) + 4px); right: 8px; display: flex; flex-direction: column; min-width: 200px; padding: 6px; border: 1px solid #e3e6df; border-radius: 12px; background: #fff; box-shadow: 0 18px 50px rgba(36, 52, 42, .18), 0 2px 6px rgba(36, 52, 42, .08); }
+.ps-editor .ps-pmenu-item { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: var(--ps-ink); font-size: 13px; font-weight: 500; text-align: left; }
+.ps-editor .ps-pmenu-item:not(:disabled):hover { background: #f1f2ed; transform: none; }
+.ps-editor .ps-pmenu-item .ps-icon { color: var(--ps-ink-3); }
+.ps-editor .ps-pmenu-licence { align-self: flex-start; margin: 6px 6px 4px; }
+
+/* Canvas: everything between the header and the toolbar. */
+.ps-editor .ps-phone-canvas { flex: 1; }
+.ps-editor .ps-shell-phone .ps-desk { padding: 8px 8px 10px; }
+.ps-editor .ps-shell-phone .ps-add-bar-btn { width: 26px; height: 26px; }
+.ps-editor .ps-shell-phone .ps-status { gap: 12px; min-height: 26px; padding: 0 10px; }
+.ps-editor .ps-shell-phone :is(.ps-status-cursor, .ps-status-saved, .ps-status-diagnostics) { display: none; }
+
+/* Toolbar: a 30px tab strip over at most two rows of 44px targets. */
+.ps-editor .ps-ptoolbar { position: absolute; z-index: 30; right: 0; bottom: 0; left: 0; padding-bottom: env(safe-area-inset-bottom, 0px); border-top: 1px solid var(--ps-line); background: var(--ps-paper); box-shadow: 0 -6px 18px rgba(40, 56, 46, .06); }
+.ps-editor .ps-ptabs { display: flex; align-items: stretch; height: 30px; padding: 0 6px; border-bottom: 1px solid #ecebe6; }
+.ps-editor .ps-ptab { position: relative; flex: 1 1 0; padding: 0 2px; border: 0; background: transparent; color: var(--ps-ink-4); font: 500 11.5px var(--ps-sans); cursor: pointer; }
+.ps-editor .ps-ptab.is-on { color: var(--ps-accent); font-weight: 600; }
+.ps-editor .ps-ptab.is-on::after { content: ''; position: absolute; right: 22%; bottom: -1px; left: 22%; height: 2px; border-radius: 2px; background: var(--ps-accent); }
+.ps-editor .ps-ptabs-check { display: inline-flex; align-items: center; gap: 5px; padding: 0 4px 0 8px; border: 0; background: transparent; font-size: 9.5px; font-weight: 700; letter-spacing: .06em; color: #2f7a4c; }
+.ps-editor .ps-ptabs-check.is-problem { color: var(--ps-highlight-error); }
+.ps-editor .ps-ptabs-check.is-problem .ps-status-dot { background: var(--ps-highlight-error); box-shadow: 0 0 0 3px rgba(194, 65, 12, .16); }
+/* Two rows tall whatever the tab or strip shows, so switching never resizes the canvas. */
+.ps-editor .ps-prows { display: flex; flex-direction: column; gap: 5px; min-height: 106px; padding: 6px 6px 7px; }
+.ps-editor .ps-prow { display: flex; align-items: center; gap: 3px; height: 44px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.ps-editor .ps-prow::-webkit-scrollbar { display: none; }
+.ps-editor .ps-prow-spacer { flex: 1 0 4px; }
+.ps-editor .ps-pbtn { display: inline-flex; flex: none; align-items: center; justify-content: center; gap: 4px; width: 44px; height: 44px; padding: 0; overflow: hidden; border: 1px solid #dcd8cf; border-bottom: 2px solid #cdc8bd; border-radius: 10px; background: linear-gradient(180deg, #fff, #f7f5f0); color: var(--ps-ink-2); box-shadow: inset 0 1px 0 #fff, 0 1px 2px rgba(40, 46, 40, .06); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.ps-editor .ps-pbtn:not(:disabled):hover { transform: none; }
+.ps-editor .ps-pbtn-text { width: auto; min-width: 44px; padding: 0 10px; }
+.ps-editor .ps-pbtn-letter { flex: 1 1 0; width: auto; min-width: 36px; font: 400 19px var(--ps-serif); }
+.ps-editor .ps-pbtn.is-active { border-color: rgba(52, 86, 66, .45); border-bottom-color: var(--ps-accent); background: linear-gradient(180deg, #f8fcf9, #ebf3ed); color: var(--ps-accent); box-shadow: inset 0 1px 0 #fff, 0 0 12px var(--ps-accent-glow); }
+.ps-editor .ps-pbtn-field { gap: 6px; }
+.ps-editor .ps-pbtn .ps-glyph-note { font-size: 27px; transform: translateY(8px); }
+.ps-editor .ps-pbtn .ps-glyph-pbar { font-size: 24px; transform: translateY(10px); }
+.ps-editor .ps-pbtn .ps-glyph-mark { font-size: 24px; transform: translateY(5px); }
+.ps-editor .ps-pbtn .ps-glyph-clef { font-size: 22px; transform: translateY(1px); }
+.ps-editor .ps-pbtn .ps-glyph-artic { font-size: 24px; }
+.ps-editor .ps-pbtn .ps-glyph-mm { font-size: 17px; transform: translateY(3px); }
+.ps-editor .ps-pselect { flex: none; width: auto; height: 44px; border-radius: 10px; }
+.ps-editor .ps-pnote { flex: 1 1 auto; min-width: 120px; padding: 0 4px; font-size: 11px; line-height: 1.3; color: var(--ps-ink-4); white-space: normal; }
+/* An inline strip: one row of the popover's fields, an Apply and a close button. */
+.ps-editor .ps-pstrip { gap: 8px; padding-left: 2px; }
+.ps-editor .ps-pstrip-label { flex: none; max-width: 64px; padding-right: 2px; font: italic 400 13px/1.1 var(--ps-serif); color: var(--ps-ink-3); }
+.ps-editor .ps-pstrip-fields { display: flex; flex: none; align-items: center; gap: 8px; }
+.ps-editor .ps-pstrip .ps-popover-field { flex-direction: row; align-items: center; gap: 6px; }
+/* Field labels stay for assistive technology only; the strip's title and the controls say enough. */
+.ps-editor .ps-pstrip .ps-popover-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.ps-editor .ps-pstrip :is(.ps-select, .ps-input) { width: auto; height: 40px; padding: 0 7px; }
+.ps-editor .ps-pstrip .ps-input-count { width: 56px; }
+.ps-editor .ps-pstrip .ps-tempo-text { width: 92px; flex: none; }
+.ps-editor .ps-pstrip .ps-tempo-bpm { width: 52px; }
+.ps-editor .ps-pstrip .ps-popover-apply { align-self: center; flex: none; height: 40px; }
+.ps-editor .ps-pstrip-close { display: grid; flex: none; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 10px; background: transparent; color: var(--ps-ink-3); }
+.ps-editor:not([data-ps-editable]) .ps-pbtn { filter: saturate(.3); }

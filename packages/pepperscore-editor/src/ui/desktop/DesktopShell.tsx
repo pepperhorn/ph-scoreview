@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { CanvasHeader } from '../CanvasHeader';
 import { CanvasOverlay } from '../CanvasOverlay';
-import { useUi } from '../controls';
 import { HintStrip } from '../HintStrip';
 import { Inspector } from '../Inspector';
-import { Palette } from '../Palette';
 import { Rail } from '../Rail';
 import type { ShellProps } from '../shell';
 import { StatusLine } from '../StatusLine';
@@ -12,11 +10,10 @@ import { TopBar } from '../TopBar';
 
 /**
  * The desktop editor: top bar, then the rail, the canvas (header, score with the popover layer and add-bar
- * buttons, keyboard hints) and the inspector, then the status line. On a narrow container (760px or less)
- * the touch palette stands in for the rail and inspector until the phone shell replaces this layout.
+ * buttons, keyboard hints) and the inspector, then the status line. Containers 760px wide or less get the
+ * phone shell instead.
  */
 export function DesktopShell(props: ShellProps) {
-  const ui = useUi();
   const stage = useRef<HTMLDivElement>(null);
   const workspace = useRef<HTMLDivElement>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
@@ -38,7 +35,6 @@ export function DesktopShell(props: ShellProps) {
         </main>
         <Inspector open={inspectorOpen} />
       </div>
-      <Palette ctx={ui.ctx} editable={ui.editable} refocus={ui.refocus} />
       <StatusLine savedAt={props.savedAt} onReport={props.onReport} />
     </div>
   );

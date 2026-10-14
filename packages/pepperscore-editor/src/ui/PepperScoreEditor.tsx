@@ -11,11 +11,13 @@ import type { ViewerMode } from './CanvasHeader';
 import { clickTarget } from './click-mapping';
 import { UiProvider, type EditorUi } from './controls';
 import { DesktopShell } from './desktop/DesktopShell';
-import { checkStaffCap, describeDropped, download, exportMusicXml, newScore, readScoreFile, savePepperScore, staffLimitMessage } from './files';
+import { checkStaffCap, describeDropped, download, exportMusicXml, newScore, readScoreFile, savePepperScore, staffLimitMessage, type Opened } from './files';
 import { editorHighlights } from './highlights';
 import { useGlyphFont } from './icons';
 import { handleKey, type KeyContext, type PopoverName } from './keymap';
-import { openSession, useLicence, type Session } from './session';
+import { PhoneShell } from './phone/PhoneShell';
+import { useIsPhone } from './phone/useIsPhone';
+import { openSession, useLeaveGuard, useLicence, type Session } from './session';
 import type { ShellProps } from './shell';
 import { createDrawSignal } from './useCanvasGeometry';
 import { useEditorStore } from './useEditorStore';
@@ -37,6 +39,8 @@ export type PepperScoreEditorProps = {
   autoFocus?: boolean;
   /** The initial viewer view (Page is `vertical`); default `endless`. The canvas header switches it. */
   view?: ViewerMode;
+  /** Phone shell (tabbed toolbar, auto-collapsing header) when true, desktop when false; default: by width (760px or less is a phone). */
+  forcePhone?: boolean;
   /** The editor's height (any CSS length); default 720px. */
   height?: string;
   className?: string;
@@ -153,25 +157,12 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useImperativeHandle(ref, () => ({
-    getDocument: () => store.getState().document,
-    getMusicXml: () => compileToMusicXml(store.getState().document),
-    undo: () => store.undo(),
-    redo: () => store.redo(),
-    isDirty: () => store.isDirty(),
-    confirmDiscard: () => confirmDiscard(store),
+    getDocument: () => store.getState().document, getMusicXml: () => compileToMusicXml(store.getState().document),
+    undo: () => store.undo(), redo: () => store.redo(), isDirty: () => store.isDirty(), confirmDiscard: () => confirmDiscard(store),
   }), [store]);
 
-  // Leaving the page with unsaved changes asks first.
-  const dirty = useEditorStore(store, (s) => s.dirty);
-  useEffect(() => {
-    if (!dirty) return;
-    const guard = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = '';
-    };
-    window.addEventListener('beforeunload', guard);
-    return () => window.removeEventListener('beforeunload', guard);
-  }, [dirty]);
+  useLeaveGuard(store);
+  const phone = useIsPhone(rootRef, props.forcePhone);
 
   const highlights = useMemo(() => (editable ? editorHighlights(document, cursor, selection) : []), [editable, document, cursor, selection]);
 
@@ -207,21 +198,28 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
     [store, refocus],
   );
 
+  /** Replaces the score (Open, New), after the discard prompt when there are unsaved changes. */
+  const replace = useCallback(
+    (opened: Opened) => {
+      if (!confirmDiscard(store)) return;
+      onOpened(openSession(() => opened));
+      callbacks.current.onChange?.(opened.document);
+    },
+    [onOpened, store],
+  );
   const open = useCallback(
     async (file: File) => {
       try {
         const opened = await readScoreFile(file);
         checkStaffCap(opened.document, maxStaves);
-        if (!confirmDiscard(store)) return;
-        onOpened(openSession(() => opened));
-        callbacks.current.onChange?.(opened.document);
+        replace(opened);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         // A refused file (the staff cap included) keeps the open score; only the initial props show the error-only view.
         setBanner(`Could not open ${file.name}: ${message}`);
       }
     },
-    [onOpened, maxStaves, store],
+    [replace, maxStaves],
   );
 
   const save = () =>
@@ -252,7 +250,7 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
       className="ps-editor-viewer"
       musicXml={musicXml}
       chrome="minimal"
-      view={viewerMode}
+      view={phone ? 'vertical' : viewerMode}
       height="fill"
       assetBaseUrl={props.assetBaseUrl}
       soundPack={props.soundPack}
@@ -263,11 +261,11 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
       onStop={() => setPlaying(false)}
     />
   );
-  // The phone shell (Task 5) will be chosen here on a narrow container.
   const shell: ShellProps = {
     viewer, banners, popover, closePopover, playing, savedAt, draws, viewerMode, setViewerMode,
     licence: { editable, checking, maxStaves },
-    onPlay: togglePlay, onSave: save, onExport: () => exportMusicXml(store.getState().document), onOpen: (file) => void open(file), onReport: reportErrors,
+    onPlay: togglePlay, onSave: save, onExport: () => exportMusicXml(store.getState().document), onOpen: (file) => void open(file),
+    onNew: () => replace({ document: newScore(), dropped: [] }), onReport: reportErrors,
   };
 
   return (
@@ -294,7 +292,7 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
       }}
     >
       <UiProvider value={ui}>
-        <DesktopShell {...shell} />
+        {phone ? <PhoneShell {...shell} /> : <DesktopShell {...shell} />}
       </UiProvider>
     </div>
   );
