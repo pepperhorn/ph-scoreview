@@ -6,7 +6,7 @@ import { fixedIds } from '../../test-helpers';
 import { createEditorStore } from '../store';
 import {
   createCustomLayout, createPartLayouts, makeCopy, setActiveLayout, setCursor, setLayoutParts, setLayoutTransposing, setPitch,
-  setRangeOverride, setSwap,
+  setRangeOverride, setSelection, setSwap,
 } from './index';
 
 const P = (step: Pitch['step'], octave: number, alter = 0): Pitch => ({ step, octave, alter });
@@ -231,4 +231,30 @@ test('view-only commands are never recorded, whatever the caller asks', () => {
   store.dispatch(setCursor, { tick: 960 });
   expect(store.getState().activeLayoutId).toBe('layout1');
   expect(store.getState().history.past).toHaveLength(past);
+});
+
+test('a layout change that hides the cursor staff moves the cursor to the first drawn staff, same bar and tick, outside history', () => {
+  const store = createEditorStore(duo());
+  const measureId = store.getState().cursor.measureId;
+  store.dispatch(setCursor, { partId: 'p1', staff: 1, tick: 960 });
+  store.dispatch(setSelection, { ids: ['b'] });
+  // Hiding the flute in the full score makes a custom layout of the violin only.
+  store.dispatch(createCustomLayout, { name: 'Custom', parts: [{ partId: 'p2' }] });
+  const custom = store.getState().activeLayoutId;
+  expect(store.getState().cursor).toMatchObject({ partId: 'p2', staff: 1, measureId, tick: 960 });
+  expect(store.getState().selection.ids).toEqual([]);
+  expect(store.getState().history.past).toHaveLength(1);
+
+  // Switching layouts and setting a layout's parts repair it the same way.
+  store.dispatch(setActiveLayout, { layoutId: 'layout1' });
+  store.dispatch(setCursor, { partId: 'p1', staff: 1, tick: 960 });
+  store.dispatch(setActiveLayout, { layoutId: custom });
+  expect(store.getState().cursor).toMatchObject({ partId: 'p2', staff: 1, measureId, tick: 960 });
+  store.dispatch(setLayoutParts, { layoutId: custom, parts: [{ partId: 'p1' }] });
+  expect(store.getState().cursor).toMatchObject({ partId: 'p1', staff: 1, measureId, tick: 960 });
+  // A cursor already on a drawn staff stays put.
+  store.dispatch(setSelection, { ids: ['a'] });
+  store.dispatch(setLayoutTransposing, { layoutId: custom, transposing: false });
+  expect(store.getState().cursor.partId).toBe('p1');
+  expect(store.getState().selection.ids).toEqual(['a']);
 });

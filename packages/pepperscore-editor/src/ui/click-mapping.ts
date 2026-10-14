@@ -3,7 +3,7 @@ import type { Cursor } from '../engine/types';
 import { measureTicks } from '../model/durations';
 import { effectiveTime, eventStarts, locateEvent, noteToEvent, sequenceFor } from '../model/query';
 import type { Document } from '../model/schema';
-import { visibleStaves } from './layout-model';
+import { visibleStaves } from '../engine/layout/visible-staves';
 
 export type ClickTarget = { cursor: Partial<Cursor>; selection: string[] };
 
