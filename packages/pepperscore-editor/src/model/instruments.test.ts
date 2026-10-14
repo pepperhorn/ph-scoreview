@@ -1,4 +1,4 @@
-import { INSTRUMENTS, instrumentFor, soundingMidi, writtenPitch, type InstrumentId } from './instruments';
+import { INSTRUMENTS, instrumentFor, soundingMidi, transposePitch, transposePitchSpelled, writtenPitch, type InstrumentId } from './instruments';
 
 const alto = INSTRUMENTS['alto-saxophone'];
 const clarinet = INSTRUMENTS.clarinet;
@@ -64,4 +64,28 @@ test('writtenPitch spells the transposed note for the key', () => {
   expect(writtenPitch(60, INSTRUMENTS.flute.transposition, 7)).toEqual({ step: 'B', octave: 3, alter: 1 });
   expect(writtenPitch(71, INSTRUMENTS.flute.transposition, -7)).toEqual({ step: 'C', octave: 5, alter: -1 });
   expect(writtenPitch(60, INSTRUMENTS.flute.transposition, 2)).toEqual({ step: 'C', octave: 4, alter: 0 });
+});
+
+const P = (step: 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G', octave: number, alter = 0) => ({ step, octave, alter });
+const toConcert = (t: { semitones: number; diatonic: number }) => ({ semitones: -t.semitones, diatonic: -t.diatonic });
+
+test('transposePitch keeps the spelling: it moves the step by the diatonic interval and fits the alter', () => {
+  // A clarinet written C5 (D major written key) is concert Bb4, not A#4.
+  expect(transposePitch(P('C', 5), toConcert(clarinet.transposition))).toEqual(P('B', 4, -1));
+  // Written Bb4 on the clarinet is concert Ab4.
+  expect(transposePitch(P('B', 4, -1), toConcert(clarinet.transposition))).toEqual(P('A', 4, -1));
+  // Cb + 1 semitone, 0 steps is C natural.
+  expect(transposePitch(P('C', 4, -1), { semitones: 1, diatonic: 0 })).toEqual(P('C', 4));
+  // Octave carry both ways.
+  expect(transposePitch(P('B', 3, -1), { semitones: 9, diatonic: 5 })).toEqual(P('G', 4));
+  expect(transposePitch(P('C', 5), { semitones: -14, diatonic: -8 })).toEqual(P('B', 3, -1));
+  expect(transposePitch(P('F', 4, 1), { semitones: 0, diatonic: 0 })).toEqual(P('F', 4, 1));
+});
+
+test('transposePitch falls back to writtenPitch spelling when the alter would pass a double accidental', () => {
+  // F## up an augmented-fifth-ish 8 semitones over 4 steps would need C###.
+  const spelled = transposePitchSpelled(P('F', 4, 2), { semitones: 8, diatonic: 4 }, 0);
+  expect(spelled.respelled).toBe(true);
+  expect(spelled.pitch).toEqual(writtenPitch(67 + 8, { semitones: 0, diatonic: 0 }, 0));
+  expect(transposePitchSpelled(P('C', 5), { semitones: -2, diatonic: -1 }, 0)).toEqual({ pitch: P('B', 4, -1), respelled: false });
 });

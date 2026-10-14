@@ -116,3 +116,21 @@ export function writtenPitch(soundingMidi: number, transposition: Transposition,
   // Every MIDI number has a natural or single-accidental spelling, so spellMidi always finds one.
   return spellMidi(target, keyFifths, keyFifths < 0 ? -1 : 1)!;
 }
+
+/**
+ * `pitch` moved by `t`, keeping its spelling: the step moves by `diatonic` (carrying the octave) and the alter
+ * is whatever makes the MIDI number move by `semitones`. When that alter would pass a double accidental the
+ * note is respelled with `writtenPitch` for the key `keyFifths` and `respelled` is true.
+ */
+export function transposePitchSpelled(pitch: Pitch, t: Transposition, keyFifths: number): { pitch: Pitch; respelled: boolean } {
+  const index = pitch.octave * 7 + STEPS.indexOf(pitch.step) + t.diatonic;
+  const octave = Math.floor(index / 7);
+  const step = STEPS[index - octave * 7];
+  const target = pitchMidi(pitch) + t.semitones;
+  const alter = target - pitchMidi({ step, octave, alter: 0 });
+  if (Math.abs(alter) <= 2) return { pitch: { step, octave, alter }, respelled: false };
+  return { pitch: writtenPitch(target, { semitones: 0, diatonic: 0 }, keyFifths), respelled: true };
+}
+
+/** `pitch` moved by `t`, keeping its spelling (see `transposePitchSpelled`; the fallback spells for C major). */
+export const transposePitch = (pitch: Pitch, t: Transposition): Pitch => transposePitchSpelled(pitch, t, 0).pitch;
