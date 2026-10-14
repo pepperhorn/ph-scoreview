@@ -252,16 +252,22 @@ try {
     await page.waitForFunction(() => (window.__editor.ref.current.getMusicXml().match(/<score-part\b/g) ?? []).length === 2, null, { timeout: 10000 });
     await page.waitForFunction(([selector, n]) => document.querySelectorAll(selector).length === n, [TRANSPOSED, moved], { timeout: 10000 });
 
-    // A custom layout from the current staves, then the Tenor Sax hidden in it: only the two piano staves are drawn.
+    // Hiding the Tenor Sax in the full score makes a "Custom" layout instead (export, which writes the full score, keeps
+    // both parts): only the two piano staves are drawn. Saving it under a name makes a second custom layout.
+    assert.equal(await page.locator('.ps-stave-hint').textContent(), 'Hiding a stave makes a custom layout.');
+    await page.click('.ps-stave-item:has-text("Tenor Sax") .ps-stave-label');
+    await page.locator('.ps-profile-chip.is-on:has-text("Custom")').waitFor();
+    assert.equal(await scoreParts(), 2, 'hiding a stave leaves the full score (and the export) alone');
+    const stavesPerSystem = () => page.evaluate(() => document.querySelector('.ps-editor .score-system svg .measure')?.querySelectorAll(':scope > .staff').length ?? 0);
+    await page.waitForFunction(() => document.querySelector('.ps-editor .score-system svg .measure')?.querySelectorAll(':scope > .staff').length === 2, null, { timeout: 10000 });
+    assert.equal(await stavesPerSystem(), 2, 'the custom layout draws the two piano staves');
+    assert.equal(await count(TRANSPOSED), 0, 'the hidden swapped part leaves no highlights');
     await page.fill('.ps-save-view-input', 'Piano only');
     await page.click('.ps-save-layout');
     await page.locator('.ps-profile-chip.is-on:has-text("Piano only")').waitFor();
-    await page.click('.ps-stave-item:has-text("Tenor Sax") .ps-stave-label');
-    const stavesPerSystem = () => page.evaluate(() => document.querySelector('.ps-editor .score-system svg .measure')?.querySelectorAll(':scope > .staff').length ?? 0);
-    await page.waitForFunction(() => document.querySelector('.ps-editor .score-system svg .measure')?.querySelectorAll(':scope > .staff').length === 2, null, { timeout: 10000 });
-    assert.equal(await stavesPerSystem(), 2, 'the piano-only layout draws two staves');
-    assert.equal(await count(TRANSPOSED), 0, 'the hidden swapped part leaves no highlights');
-    assert.ok((await layoutSelect.locator('option').allTextContents()).some(t => /Piano only/.test(t)), 'the layout selector lists the custom layout');
+    assert.equal(await stavesPerSystem(), 2);
+    const options = await layoutSelect.locator('option').allTextContents();
+    assert.ok(options.some(t => /Piano only/.test(t)) && options.some(t => /^Custom/.test(t)), `the layout selector lists the custom layouts (${options})`);
     // A click on the first drawn staff (the piano's right hand) puts the cursor there, not on the hidden Tenor Sax.
     await clickNote(page, 0);
     await page.waitForFunction(selector => document.querySelector(selector)?.classList.contains('ps-cursor'), NOTES, { timeout: 10000 });

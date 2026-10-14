@@ -1,5 +1,5 @@
 import { usePosition, useUi } from './controls';
-import { movedStatus } from './layout-model';
+import { movedNoteIds, movedStatus } from './layout-model';
 import { useEditorStore } from './useEditorStore';
 
 const DURATION_NAMES: Record<string, string> = { whole: 'whole', half: 'half', quarter: 'quarter', eighth: 'eighth', '16th': '16th', '32nd': '32nd' };
@@ -31,7 +31,7 @@ export function StatusLine({ savedAt, onReport }: { savedAt: Date | null; onRepo
       {view.counts.moved > 0 && (
         <span className="ps-status-moved">
           <span className="ps-moved-dot" />
-          {movedStatus(view.counts, swap)}
+          {movedStatus(movedNoteIds(view).length, view.counts.direction, swap)}
         </span>
       )}
       {view.diagnostics.length > 0 && <span className="ps-status-diagnostics" title={view.diagnostics.join('\n')}>{view.diagnostics.length} range note{view.diagnostics.length > 1 ? 's' : ''}</span>}

@@ -4,6 +4,7 @@ import { findEvent, findNote } from '../engine/sequence-edit';
 import type { ViewResult } from '../engine/layout/apply-layout';
 import type { Cursor, Selection } from '../engine/types';
 import { measureIndex } from '../model/query';
+import { movedNoteIds } from './layout-model';
 import type { Document, Event } from '../model/schema';
 
 /** The MusicXML ids the viewer knows an event by: its notes', or its own for a rest. */
@@ -16,8 +17,7 @@ const idsOf = (event: Event): string[] => (event.notes?.length ? event.notes.map
  */
 export function editorHighlights(doc: Document, cursor: Cursor, selection: Selection, view?: ViewResult): PepperScoreHighlight[] {
   const out: PepperScoreHighlight[] = [];
-  // The view document's notes: a swapped part's events keep their ids there.
-  const moved = view ? Object.keys(view.moved).flatMap((id) => { const event = findEvent(view.document, id)?.event; return event ? idsOf(event) : []; }) : [];
+  const moved = view ? movedNoteIds(view) : [];
   if (moved.length) out.push({ ids: moved, className: 'ps-transposed' });
   const atCursor = eventAtCursor(doc, cursor);
   const event = atCursor ? findEvent(doc, atCursor)?.event : undefined;

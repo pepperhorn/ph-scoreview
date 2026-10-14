@@ -3,7 +3,7 @@ import { instrumentName, LEVELS, type InstrumentId } from '../model/instruments'
 import { locateEvent } from '../model/query';
 import type { Part, Swap } from '../model/schema';
 import { Row, Seg, useDispatch, useUi } from './controls';
-import { INTERVALS, intervalValue, levelName, movedIn, movedWord, SWAP_TARGETS } from './layout-model';
+import { INTERVALS, intervalValue, levelName, movedIn, movedWord, swapTargetsFor } from './layout-model';
 import { useEditorStore } from './useEditorStore';
 
 const NEW_SWAP: Omit<Swap, 'instrument'> = { level: 'intermediate', autoRange: true, rangeOverrides: {} };
@@ -73,9 +73,9 @@ export function SwapCard({ partId, onPart, compact = false }: { partId: string |
         <div className="ps-swap-head">
           <span className="ps-override-source">{part.name}</span><span className="ps-override-arrow">→</span><span className="ps-swap-shown">shown as</span>
           <select className="ps-select ps-swap-instrument" aria-label="Show as instrument" value={swap?.instrument ?? ''} disabled={!editable}
-            onChange={(e) => { const id = e.target.value as InstrumentId | ''; if (!id) set(null); else if (swap) update({ instrument: id }); else set({ instrument: id, ...NEW_SWAP }); }}>
+            onChange={(e) => { const id = e.target.value as InstrumentId | ''; if (!id) set(null); else if (swap) update({ instrument: id, rangeOverrides: {} }); else set({ instrument: id, ...NEW_SWAP }); }}>
             <option value="">{part.name} (no swap)</option>
-            {SWAP_TARGETS.map((id) => <option key={id} value={id}>{instrumentName(id)}</option>)}
+            {swapTargetsFor(part, swap?.instrument).map((id) => <option key={id} value={id}>{instrumentName(id)}</option>)}
           </select>
         </div>
         <Seg className="ps-swap-level" label="Level" value={swap?.level} items={LEVELS.map((l) => ({ value: l, label: levelName(l) }))} onSelect={(level) => update({ level })} />
@@ -102,7 +102,7 @@ export function SwapCard({ partId, onPart, compact = false }: { partId: string |
         <div className="ps-moved-legend">
           <span className="ps-moved-swatch" aria-hidden="true"><span className="ps-moved-head" /></span>
           <span className="ps-moved-text">
-            Moved {movedWord(moved.direction)}{moved.direction ? ' to fit range' : ''} · {moved.ids.length} note{moved.ids.length === 1 ? '' : 's'}
+            Moved {movedWord(moved.direction)}{moved.direction ? ' to fit range' : ''} · {moved.notes} note{moved.notes === 1 ? '' : 's'}
             {view.diagnostics.length > 0 && <span className="ps-moved-diagnostics" title={view.diagnostics.join('\n')}> · {view.diagnostics.length} range note{view.diagnostics.length === 1 ? '' : 's'}</span>}
           </span>
           <div className="ps-moved-actions">

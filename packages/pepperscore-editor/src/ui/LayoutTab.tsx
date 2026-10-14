@@ -3,7 +3,7 @@ import { createCustomLayout, createPartLayouts, setActiveLayout, setLayoutParts,
 import type { Layout } from '../model/schema';
 import { Section, Seg, useDispatch, useUi } from './controls';
 import { Icon } from './icons';
-import { defaultSwapPart, staveRows, toggleStave, type StaveRow } from './layout-model';
+import { defaultSwapPart, planStaveToggle, staveRows, type StaveRow } from './layout-model';
 import { SwapCard } from './SwapCard';
 import { useEditorStore } from './useEditorStore';
 
@@ -15,7 +15,7 @@ export const layoutLabel = (layout: Layout): string => (layout.kind === 'score' 
 
 /**
  * The active layout and its stave rows, with a toggle that never hides the last shown staff (a layout must show
- * something).
+ * something) and never edits the full score (see `planStaveToggle`).
  */
 export function useLayoutStaves() {
   const { store } = useUi();
@@ -27,9 +27,13 @@ export function useLayoutStaves() {
   const shown = rows.filter((r) => r.on).length;
   const canToggle = (row: StaveRow) => !row.on || shown > 1;
   const toggle = (row: StaveRow) => {
-    if (layout && canToggle(row)) dispatch(setLayoutParts, { layoutId, parts: toggleStave(document, layout, row.partId, row.staff) });
+    const plan = canToggle(row) ? planStaveToggle(document, layoutId, row.partId, row.staff) : undefined;
+    if (plan?.kind === 'set') dispatch(setLayoutParts, { layoutId: plan.layoutId, parts: plan.parts });
+    else if (plan) dispatch(createCustomLayout, { name: plan.name, parts: plan.parts });
   };
-  return { document, layoutId, layout, rows, canToggle, toggle };
+  /** The full score is never edited: a toggle there makes a custom layout. */
+  const isFullScore = layout !== undefined && layout === document.layouts[0];
+  return { document, layoutId, layout, rows, canToggle, toggle, isFullScore };
 }
 
 /** The swap card's part: the user's choice while the layout shows it, else the first non-piano part. */
@@ -48,7 +52,7 @@ export function useSwapPart(): [string | undefined, (partId: string) => void] {
 export function LayoutTab() {
   const { editable } = useUi();
   const dispatch = useDispatch();
-  const { document, layoutId, layout, rows, canToggle, toggle } = useLayoutStaves();
+  const { document, layoutId, layout, rows, canToggle, toggle, isFullScore } = useLayoutStaves();
   const [swapPart, setSwapPart] = useSwapPart();
   const [name, setName] = useState('');
   const save = () => {
@@ -69,6 +73,7 @@ export function LayoutTab() {
             </li>
           ))}
         </ul>
+        {isFullScore && <p className="ps-insp-note ps-stave-hint">Hiding a stave makes a custom layout.</p>}
         <div className="ps-pitch-mode">
           <Seg label="Pitch display" value={layout?.transposing === false ? 'concert' : 'transposing'}
             items={[{ value: 'transposing', label: 'Transposing' }, { value: 'concert', label: 'Concert pitch' }]}
