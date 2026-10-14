@@ -35,4 +35,9 @@ for (const entry of await readdir(src, { recursive: true, withFileTypes: true })
   (await readFile(path, 'utf8')).split('\n').forEach((line, index) => { if (/\b(window|document|globalThis|self)\.location\b|(^|[^.\w])location\.\w/.test(line)) locationReads.push(`${path.slice(src.length)}:${index + 1}: ${line.trim()}`); });
 }
 assert.deepEqual(locationReads, [], 'packages/pepperscore/src never reads the page location (window/document/globalThis.location, location.*)');
-console.log('API: chrome presets, control overrides, settings mapping and no page URL reads passed');
+// The public entry exports the host-hook types (type-only, so checked in the source).
+const entry = await readFile(new URL('../packages/pepperscore/src/index.ts', import.meta.url), 'utf8');
+for (const name of ['PepperScoreProps', 'PepperScoreHandle', 'PepperScoreReadyInfo', 'PepperScoreClickInfo', 'PepperScoreHighlight']) {
+  assert.match(entry, new RegExp(`export type \\{[^}]*\\b${name}\\b[^}]*\\} from './components/PepperScore'`), `index.ts exports type ${name}`);
+}
+console.log('API: chrome presets, control overrides, settings mapping, exported host-hook types and no page URL reads passed');

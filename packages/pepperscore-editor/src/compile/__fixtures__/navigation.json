@@ -1,0 +1,234 @@
+{
+  "global": {
+    "measures": [
+      {
+        "id": "m1",
+        "time": {
+          "count": 4,
+          "unit": 4
+        },
+        "key": {
+          "fifths": 0
+        },
+        "segno": true,
+        "tempo": {
+          "bpm": 96,
+          "unit": "quarter",
+          "text": "Andante"
+        },
+        "rehearsal": "A"
+      },
+      {
+        "id": "m2",
+        "repeatStart": true
+      },
+      {
+        "id": "m3",
+        "ending": {
+          "numbers": [
+            1
+          ]
+        },
+        "repeatEnd": {}
+      },
+      {
+        "id": "m4",
+        "ending": {
+          "numbers": [
+            2
+          ]
+        },
+        "toCoda": true
+      },
+      {
+        "id": "m5",
+        "jump": {
+          "type": "ds",
+          "target": "coda"
+        },
+        "barline": "double"
+      },
+      {
+        "id": "m6",
+        "coda": true,
+        "barline": "final"
+      }
+    ]
+  },
+  "parts": [
+    {
+      "id": "p1",
+      "name": "Fl",
+      "instrument": {
+        "gmProgram": 74
+      },
+      "staves": 1,
+      "clefs": [
+        "treble"
+      ],
+      "measures": [
+        {
+          "id": "p1m1",
+          "sequences": [
+            {
+              "id": "p1m1s1v1",
+              "voice": 1,
+              "staff": 1,
+              "content": [
+                {
+                  "id": "p1m1s1v1r1",
+                  "type": "event",
+                  "rest": true,
+                  "fullMeasure": true,
+                  "duration": {
+                    "base": "whole",
+                    "dots": 0
+                  }
+                }
+              ]
+            }
+          ],
+          "beams": [],
+          "directions": []
+        },
+        {
+          "id": "p1m2",
+          "sequences": [
+            {
+              "id": "p1m2s1v1",
+              "voice": 1,
+              "staff": 1,
+              "content": [
+                {
+                  "id": "p1m2s1v1r1",
+                  "type": "event",
+                  "rest": true,
+                  "fullMeasure": true,
+                  "duration": {
+                    "base": "whole",
+                    "dots": 0
+                  }
+                }
+              ]
+            }
+          ],
+          "beams": [],
+          "directions": []
+        },
+        {
+          "id": "p1m3",
+          "sequences": [
+            {
+              "id": "p1m3s1v1",
+              "voice": 1,
+              "staff": 1,
+              "content": [
+                {
+                  "id": "p1m3s1v1r1",
+                  "type": "event",
+                  "rest": true,
+                  "fullMeasure": true,
+                  "duration": {
+                    "base": "whole",
+                    "dots": 0
+                  }
+                }
+              ]
+            }
+          ],
+          "beams": [],
+          "directions": []
+        },
+        {
+          "id": "p1m4",
+          "sequences": [
+            {
+              "id": "p1m4s1v1",
+              "voice": 1,
+              "staff": 1,
+              "content": [
+                {
+                  "id": "p1m4s1v1r1",
+                  "type": "event",
+                  "rest": true,
+                  "fullMeasure": true,
+                  "duration": {
+                    "base": "whole",
+                    "dots": 0
+                  }
+                }
+              ]
+            }
+          ],
+          "beams": [],
+          "directions": []
+        },
+        {
+          "id": "p1m5",
+          "sequences": [
+            {
+              "id": "p1m5s1v1",
+              "voice": 1,
+              "staff": 1,
+              "content": [
+                {
+                  "id": "p1m5s1v1r1",
+                  "type": "event",
+                  "rest": true,
+                  "fullMeasure": true,
+                  "duration": {
+                    "base": "whole",
+                    "dots": 0
+                  }
+                }
+              ]
+            }
+          ],
+          "beams": [],
+          "directions": []
+        },
+        {
+          "id": "p1m6",
+          "sequences": [
+            {
+              "id": "p1m6s1v1",
+              "voice": 1,
+              "staff": 1,
+              "content": [
+                {
+                  "id": "p1m6s1v1r1",
+                  "type": "event",
+                  "rest": true,
+                  "fullMeasure": true,
+                  "duration": {
+                    "base": "whole",
+                    "dots": 0
+                  }
+                }
+              ]
+            }
+          ],
+          "beams": [],
+          "directions": []
+        }
+      ]
+    }
+  ],
+  "layouts": [
+    {
+      "id": "layout1",
+      "name": "Score",
+      "kind": "score",
+      "parts": [
+        {
+          "partId": "p1"
+        }
+      ],
+      "overrides": {}
+    }
+  ],
+  "style": {},
+  "meta": {
+    "title": "Roadmap"
+  }
+}

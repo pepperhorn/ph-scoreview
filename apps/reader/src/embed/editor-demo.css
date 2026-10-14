@@ -1,0 +1,12 @@
+.editor-demo-page { margin: 0; background: #f6f6f2; font-family: Poppins, system-ui, sans-serif; color: #26312a; }
+.editor-demo { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.editor-demo-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.editor-demo-title { margin: 0; font-size: 18px; font-weight: 600; }
+.editor-demo-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.editor-demo-btn { height: 32px; padding: 0 12px; border: 1px solid #d6ddd4; border-radius: 8px; background: #fff; font: 500 12px Poppins, system-ui, sans-serif; cursor: pointer; }
+.editor-demo-btn:hover { background: #eef1ec; }
+.editor-demo-main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.editor-demo-main.has-sidebar { grid-template-columns: minmax(0, 1fr) minmax(220px, 360px); }
+.editor-demo-sidebar { min-width: 0; max-height: calc(70vh + 120px); overflow: auto; border: 1px solid #e2e6df; border-radius: 12px; background: #fff; }
+.editor-demo-xml { margin: 0; padding: 12px; font: 11px/1.45 ui-monospace, Menlo, monospace; white-space: pre; }
+@media (max-width: 900px) { .editor-demo-main.has-sidebar { grid-template-columns: minmax(0, 1fr); } .editor-demo-sidebar { max-height: 240px; } }

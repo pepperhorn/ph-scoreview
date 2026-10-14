@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { PepperScore, type PepperScoreControls, type PepperScoreHandle } from 'pepperscore';
+import { PepperScore, type PepperScoreControls, type PepperScoreHandle, type PepperScoreHighlight } from 'pepperscore';
 import ensemble from '../../../../validation/fixtures/ensemble.musicxml?raw';
 
 const ASSETS = '/custom-assets'; // no trailing slash on purpose (Review Focus 4)
@@ -15,19 +15,20 @@ declare global { interface Window { __embed: Record<string, unknown>; __events: 
  * Host page for validation/embed.mjs: one full reader in a 600px box, three minimal snippets and an engraving-only one,
  * all mounted at once (their imports and engravings share the Verovio worker, one channel each). The test drives the
  * page through `window.__embed`: the snippets' `view` (so every reader can re-engrave at once), B's `controls`, A's
- * ABC source, and removing any reader (mid-import included).
+ * ABC source, the full reader's `highlights`, and removing any reader (mid-import included).
  */
 export default function EmbedTest() {
   const [abcA, setAbcA] = useState(tune('Snippet A', 4));
   const [views, setViews] = useState<Record<'a' | 'b' | 'none', View>>({ a: undefined, b: undefined, none: 'endless' });
   const [sourceA, setSourceA] = useState(pianoSource);
   const [controlsB, setControlsB] = useState<PepperScoreControls | undefined>(undefined);
+  const [highlights, setHighlights] = useState<PepperScoreHighlight[]>([]);
   const [mounted, setMounted] = useState<Record<Who, boolean>>({ full: true, a: true, b: true, c: true, none: true });
   const refs = { full: useRef<PepperScoreHandle>(null), a: useRef<PepperScoreHandle>(null), b: useRef<PepperScoreHandle>(null), c: useRef<PepperScoreHandle>(null), none: useRef<PepperScoreHandle>(null) };
   const unmount = (who: Who) => setMounted(previous => ({ ...previous, [who]: false }));
   if (typeof window !== 'undefined') {
     window.__events ??= [];
-    window.__embed = { refs, setAbcA, setViews, setControlsB, breakSourceA: () => setSourceA(brokenSource), unmount, unmountNone: () => unmount('none') };
+    window.__embed = { refs, setAbcA, setViews, setControlsB, setHighlights, breakSourceA: () => setSourceA(brokenSource), unmount, unmountNone: () => unmount('none') };
   }
   const log = (who: string) => ({
     onReady: (info: unknown) => window.__events.push([who, 'ready', info]),
@@ -36,7 +37,7 @@ export default function EmbedTest() {
     onError: (error: Error) => window.__events.push([who, 'error', error.message]),
   });
   return <div className="embed-test">
-    {mounted.full && <div className="host-box embed-box-full"><PepperScore ref={refs.full} className="embed-full" height="fill" assetBaseUrl={ASSETS} settings={{ noteNames: false }} {...log('full')} /></div>}
+    {mounted.full && <div className="host-box embed-box-full"><PepperScore ref={refs.full} className="embed-full" height="fill" assetBaseUrl={ASSETS} settings={{ noteNames: false }} highlights={highlights} onElementClick={info => window.__events.push(['click', 'full', info])} {...log('full')} /></div>}
     {mounted.a && <div className="host-snippet"><PepperScore ref={refs.a} className="embed-a" chrome="minimal" view={views.a} abc={abcA} assetBaseUrl={ASSETS} soundSources={sourceA} settings={{ zoom: 1.5 }} {...log('a')} /></div>}
     {mounted.b && <div className="host-snippet"><PepperScore ref={refs.b} className="embed-b" chrome="minimal" view={views.b} controls={controlsB} musicXml={ensemble} height="200px" assetBaseUrl={ASSETS} {...log('b')} /></div>}
     {mounted.c && <div className="host-snippet"><PepperScore ref={refs.c} className="embed-c" chrome="minimal" musicXml="<score-partwise><part" assetBaseUrl={ASSETS} {...log('c')} /></div>}

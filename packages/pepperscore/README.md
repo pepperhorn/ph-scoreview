@@ -212,8 +212,10 @@ export default defineConfig({
 | `audio` | `boolean` | `true` | `false` never loads or schedules sound. Self-driven playback then runs silently on wall-clock time. |
 | `onSeek` | `(seconds: number) => void` | | With a `clock`: a click on a note or measure (and `ref.seek`) reports its time here. The reader does not move. |
 | `onTimeUpdate` | `(seconds: number) => void` | | About 10 times a second during self-driven playback. |
+| `onElementClick` | `(info: PepperScoreClickInfo) => void` | | Any click on the engraving, see "Host hooks". |
+| `highlights` | `PepperScoreHighlight[]` | | Classes on notes and measures, see "Host hooks". |
 | `autoFocus` | `boolean` | `false` | Focus the reader on mount so the page-turn keys work before any click. Keyboard shortcuts belong to the focused reader only. Each reader is one Tab stop, and keyboard focus shows a focus ring on it (clicks do not). |
-| `ref` | `Ref<PepperScoreHandle>` | | `{ play(): Promise<void>; stop(): void; transpose(semitones: number): void; seek(seconds: number): void; currentTime(): number }`. `play` does nothing while playing, before a score has loaded, with `chrome="none"`, or with a `clock`. `stop` does nothing with a `clock`. `transpose` sets the **absolute** transposition (clamped to −12…12), the same as `settings.semitones`. It does not add to the current value. `seek` moves the playhead (and keeps playing from there when playing). With a `clock` it calls `onSeek` instead. `currentTime` returns the playhead seconds, or `clock.now()` with a `clock`. |
+| `ref` | `Ref<PepperScoreHandle>` | | `{ play(): Promise<void>; stop(): void; transpose(semitones: number): void; seek(seconds: number): void; currentTime(): number; scrollToMeasure(index: number): Promise<void>; seekToMeasure(index: number): void }`. `play` does nothing while playing, before a score has loaded, with `chrome="none"`, or with a `clock`. `stop` does nothing with a `clock`. `transpose` sets the **absolute** transposition (clamped to −12…12), the same as `settings.semitones`. It does not add to the current value. `seek` moves the playhead (and keeps playing from there when playing). With a `clock` it calls `onSeek` instead. `currentTime` returns the playhead seconds, or `clock.now()` with a `clock`. |
 
 **Sizing a snippet with `barsPerLine`.** In Vertical view, `settings={{ barsPerLine: N }}` without a `zoom` picks the stave size at which exactly N bars fill the reader's width, so N is the simplest way to set how large an embed draws: on the same width, `barsPerLine: 2` draws larger staves than `barsPerLine: 4`. The size is bounded (at most stave scale 2.5, at least 0.2; a single bar on a very wide reader is stretched to fill rather than drawn huge), and lines always hold N bars. A score shorter than one line takes its share of the width, centred. `'auto'` keeps the device default (four bars across on desktop). Endless view ignores `barsPerLine`.
 
@@ -221,7 +223,7 @@ When more than one source prop is set, the first present wins, in this order: `m
 
 The component never reads `window.location`. To open `?score=…` links, read the query string yourself and pass it as `scoreUrl`.
 
-`Reader` and `ReaderProps` are still exported as deprecated aliases of `PepperScore` and `PepperScoreProps` for one release. The package also exports the types `PepperScoreProps`, `PepperScoreHandle`, `PepperScoreReadyInfo`, `PepperScoreSettings`, `PepperScoreControls`, `ChromePreset`, `SoundSource`, `SoundPackName`, `ExternalClock` and `ClockEvent`, plus `SOUNDS_VERSION` and `defaultAssetBaseUrl(pack)`.
+`Reader` and `ReaderProps` are still exported as deprecated aliases of `PepperScore` and `PepperScoreProps` for one release. The package also exports the types `PepperScoreProps`, `PepperScoreHandle`, `PepperScoreReadyInfo`, `PepperScoreSettings`, `PepperScoreControls`, `ChromePreset`, `SoundSource`, `SoundPackName`, `ExternalClock`, `ClockEvent`, `PepperScoreClickInfo` and `PepperScoreHighlight`, plus `SOUNDS_VERSION` and `defaultAssetBaseUrl(pack)`.
 
 ### Driving the playhead from your own clock
 
@@ -248,6 +250,14 @@ const clock: ExternalClock = {
 - **Count-in.** A negative clock time shows no playhead and no highlighted note.
 - Transposing while a `clock` is set does not move the playhead; it stays at `clock.now()`.
 - `validation/fixtures/clock-contract.musicxml` with `clock-contract.expected.json` (in the repository) pins the onset seconds within 1 ms (a pickup bar, and tempo 120 → 60 → 180 mid-bar). Use them to check your own tempo map against the reader's.
+
+### Host hooks
+
+For hosts that build on the reader (selection, cursors, navigation):
+
+- **`onElementClick(info)`** fires for any click on the engraving, with every `chrome` and with or without a `clock`. `info` is `{ noteId?, sourceId?, measureIndex?, fraction?, staff?, clientX, clientY }`: the note hit (and its MusicXML `id`, when known), the zero-based measure, the 0–1 position across that measure, and the 1-based nearest staff. With a handler set, notes and measures show a pointer cursor.
+- **`highlights`**: `{ ids?, measures?, className }[]`. Each entry adds `className` to those notes (note or MusicXML ids) and measures (zero-based), re-applied after every draw. Built-in classes: `ps-cursor`, `ps-selection` (notes) and `ps-cursor-measure` (measures), coloured by `--ps-cursor` and `--ps-selection`.
+- **`ref.scrollToMeasure(index)`** draws the measure's system if needed and scrolls it into view. **`ref.seekToMeasure(index)`** seeks to the measure's start, like `ref.seek` (with a `clock`, through `onSeek`).
 
 ### Chrome presets and `controls`
 

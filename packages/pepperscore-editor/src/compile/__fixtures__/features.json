@@ -1,0 +1,395 @@
+{
+  "global": {
+    "measures": [
+      {
+        "id": "m1",
+        "time": {
+          "count": 4,
+          "unit": 4
+        },
+        "key": {
+          "fifths": 1
+        }
+      },
+      {
+        "id": "m2"
+      }
+    ]
+  },
+  "parts": [
+    {
+      "id": "p1",
+      "name": "Flute",
+      "instrument": {
+        "gmProgram": 74
+      },
+      "staves": 1,
+      "clefs": [
+        "treble"
+      ],
+      "measures": [
+        {
+          "id": "p1m1",
+          "sequences": [
+            {
+              "id": "p1m1s1v1",
+              "voice": 1,
+              "staff": 1,
+              "content": [
+                {
+                  "id": "e1",
+                  "type": "event",
+                  "duration": {
+                    "base": "quarter",
+                    "dots": 0
+                  },
+                  "notes": [
+                    {
+                      "id": "n1",
+                      "pitch": {
+                        "step": "C",
+                        "octave": 5,
+                        "alter": 0
+                      }
+                    },
+                    {
+                      "id": "n2",
+                      "pitch": {
+                        "step": "E",
+                        "octave": 5,
+                        "alter": 0
+                      }
+                    }
+                  ],
+                  "articulations": [
+                    "staccato"
+                  ],
+                  "slurs": [
+                    {
+                      "id": "sl1",
+                      "target": "e4"
+                    }
+                  ]
+                },
+                {
+                  "id": "t1",
+                  "type": "tuplet",
+                  "outer": {
+                    "multiple": 3,
+                    "base": "eighth"
+                  },
+                  "inner": {
+                    "multiple": 2,
+                    "base": "eighth"
+                  },
+                  "bracket": true,
+                  "content": [
+                    {
+                      "id": "e2",
+                      "type": "event",
+                      "duration": {
+                        "base": "eighth",
+                        "dots": 0
+                      },
+                      "notes": [
+                        {
+                          "id": "n3",
+                          "pitch": {
+                            "step": "D",
+                            "octave": 5,
+                            "alter": 0
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "id": "e3",
+                      "type": "event",
+                      "duration": {
+                        "base": "eighth",
+                        "dots": 0
+                      },
+                      "notes": [
+                        {
+                          "id": "n4",
+                          "pitch": {
+                            "step": "E",
+                            "octave": 5,
+                            "alter": 0
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "id": "e4",
+                      "type": "event",
+                      "duration": {
+                        "base": "eighth",
+                        "dots": 0
+                      },
+                      "notes": [
+                        {
+                          "id": "n5",
+                          "pitch": {
+                            "step": "F",
+                            "octave": 5,
+                            "alter": 0
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "e5",
+                  "type": "event",
+                  "duration": {
+                    "base": "eighth",
+                    "dots": 0
+                  },
+                  "notes": [
+                    {
+                      "id": "n6",
+                      "pitch": {
+                        "step": "F",
+                        "octave": 5,
+                        "alter": 0
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "e6",
+                  "type": "event",
+                  "duration": {
+                    "base": "16th",
+                    "dots": 0
+                  },
+                  "notes": [
+                    {
+                      "id": "n7",
+                      "pitch": {
+                        "step": "G",
+                        "octave": 5,
+                        "alter": 0
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "e7",
+                  "type": "event",
+                  "duration": {
+                    "base": "16th",
+                    "dots": 0
+                  },
+                  "notes": [
+                    {
+                      "id": "n8",
+                      "pitch": {
+                        "step": "A",
+                        "octave": 5,
+                        "alter": 0
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "e8",
+                  "type": "event",
+                  "duration": {
+                    "base": "quarter",
+                    "dots": 0
+                  },
+                  "notes": [
+                    {
+                      "id": "n9",
+                      "pitch": {
+                        "step": "B",
+                        "octave": 5,
+                        "alter": 0
+                      },
+                      "tie": {
+                        "target": "n10"
+                      }
+                    }
+                  ],
+                  "articulations": [
+                    "accent"
+                  ]
+                }
+              ]
+            }
+          ],
+          "beams": [
+            {
+              "id": "b2",
+              "events": [
+                "e2",
+                "e3",
+                "e4"
+              ]
+            },
+            {
+              "id": "b1",
+              "events": [
+                "e5",
+                "e6",
+                "e7"
+              ]
+            }
+          ],
+          "directions": [
+            {
+              "kind": "dynamic",
+              "id": "d1",
+              "anchor": {
+                "measureId": "m1",
+                "tick": 0,
+                "staff": 1
+              },
+              "placement": "below",
+              "value": "mf"
+            },
+            {
+              "kind": "wedge",
+              "id": "w1",
+              "anchor": {
+                "measureId": "m1",
+                "tick": 960,
+                "staff": 1
+              },
+              "placement": "below",
+              "shape": "cresc",
+              "endTick": 2880
+            }
+          ]
+        },
+        {
+          "id": "p1m2",
+          "sequences": [
+            {
+              "id": "p1m2s1v1",
+              "voice": 1,
+              "staff": 1,
+              "content": [
+                {
+                  "id": "e9",
+                  "type": "event",
+                  "duration": {
+                    "base": "quarter",
+                    "dots": 0
+                  },
+                  "notes": [
+                    {
+                      "id": "n10",
+                      "pitch": {
+                        "step": "B",
+                        "octave": 5,
+                        "alter": 0
+                      }
+                    }
+                  ],
+                  "articulations": [
+                    "fermata"
+                  ]
+                },
+                {
+                  "id": "e10",
+                  "type": "event",
+                  "duration": {
+                    "base": "eighth",
+                    "dots": 1
+                  },
+                  "notes": [
+                    {
+                      "id": "n11",
+                      "pitch": {
+                        "step": "C",
+                        "octave": 6,
+                        "alter": 1
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "e11",
+                  "type": "event",
+                  "duration": {
+                    "base": "16th",
+                    "dots": 0
+                  },
+                  "notes": [
+                    {
+                      "id": "n12",
+                      "pitch": {
+                        "step": "D",
+                        "octave": 6,
+                        "alter": 0
+                      },
+                      "accidental": "cautionary"
+                    }
+                  ]
+                },
+                {
+                  "id": "e12",
+                  "type": "event",
+                  "duration": {
+                    "base": "half",
+                    "dots": 0
+                  },
+                  "rest": true
+                }
+              ]
+            }
+          ],
+          "beams": [
+            {
+              "id": "b3",
+              "events": [
+                "e10",
+                "e11"
+              ]
+            }
+          ],
+          "directions": [
+            {
+              "kind": "text",
+              "id": "x1",
+              "anchor": {
+                "measureId": "m2",
+                "tick": 0,
+                "staff": 1
+              },
+              "placement": "above",
+              "offset": {
+                "x": 1,
+                "y": -2
+              },
+              "text": "dolce",
+              "style": "expression"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "layouts": [
+    {
+      "id": "layout1",
+      "name": "Score",
+      "kind": "score",
+      "parts": [
+        {
+          "partId": "p1"
+        }
+      ],
+      "overrides": {}
+    }
+  ],
+  "style": {},
+  "meta": {
+    "title": "Features",
+    "composer": "Test & Co"
+  }
+}

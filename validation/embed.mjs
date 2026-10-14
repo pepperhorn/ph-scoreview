@@ -524,6 +524,53 @@ try {
     assert.deepEqual(changed, [], `Host rules change the reader (${state}):\n${changed.slice(0, 12).join('\n')}`);
     await context.close();
   }
+  // Host hooks: a click on a note reports it through onElementClick, highlights add a class to the note's element, and
+  // ref.scrollToMeasure resolves once the measure is drawn and scrolled to; ref.seekToMeasure moves the playhead.
+  {
+    const { context } = await hostContext();
+    const { page, errors } = await openPage(context);
+    await rendered(page, fullChrome);
+    const note = page.locator(`${fullChrome} .score-system svg .reader-note[data-note-id]`).first();
+    const noteId = await note.getAttribute('data-note-id');
+    // Click the notehead's centre by coordinates: Firefox and WebKit report the parent <svg> as intercepting a
+    // locator click on an SVG <g>, although the event still reaches the group's descendants.
+    const head = note.locator('.notehead').first();
+    const box = await ((await head.count()) ? head : note).boundingBox();
+    assert.ok(box, 'the note has a bounding box');
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await page.waitForFunction(() => window.__events.some(([kind]) => kind === 'click'), null, { timeout: 5000 });
+    const click = (await events(page)).find(([kind]) => kind === 'click');
+    assert.equal(click[1], 'full');
+    assert.equal(click[2].noteId, noteId, `the click reports the note: ${JSON.stringify(click[2])}`);
+    assert.equal(click[2].measureIndex, 0, `the click reports measure 0: ${JSON.stringify(click[2])}`);
+    assert.ok(click[2].fraction >= 0 && click[2].fraction <= 1 && click[2].staff >= 1, `fraction and staff: ${JSON.stringify(click[2])}`);
+    assert.equal(await page.locator(fullChrome).getAttribute('data-ps-clickable'), '');
+    await page.evaluate(noteId => window.__embed.setHighlights([{ ids: [noteId], className: 'ps-selection' }]), noteId);
+    await page.waitForFunction(([root, noteId]) => {
+      const element = document.querySelector(`${root} [data-note-id="${CSS.escape(noteId)}"]`);
+      return Boolean(element && (element.closest('.chord') ?? element).classList.contains('ps-selection'));
+    }, [fullChrome, noteId], { timeout: 5000 });
+    await page.evaluate(() => window.__embed.setHighlights([]));
+    await page.waitForFunction(root => !document.querySelector(`${root} .ps-selection`), fullChrome, { timeout: 5000 });
+    // A reader with neither a clock nor onElementClick does no work on a click (no layout reads).
+    await page.locator('.embed-a .score-staves svg').first().waitFor({ timeout: 30000 });
+    const layoutReads = await page.evaluate(() => {
+      const original = Element.prototype.getBoundingClientRect;
+      let reads = 0;
+      Element.prototype.getBoundingClientRect = function () { reads++; return original.call(this); };
+      try { document.querySelector('.embed-a .score-staves').dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 10, clientY: 10 })); }
+      finally { Element.prototype.getBoundingClientRect = original; }
+      return reads;
+    });
+    assert.equal(layoutReads, 0, 'a click on a reader without a clock or onElementClick reads no layout');
+    await page.evaluate(() => window.__embed.refs.full.current.scrollToMeasure(3));
+    // Self-driven seekToMeasure moves the playhead to the measure's start (after measure 0, so past 0 seconds).
+    await page.evaluate(() => window.__embed.refs.full.current.seekToMeasure(2));
+    await page.waitForFunction(() => window.__embed.refs.full.current.currentTime() > 0, null, { timeout: 5000 });
+    assert.deepEqual(errors, []);
+    await context.close();
+  }
+
   // 9. An assetBaseUrl with nothing behind it (the default CDN URL before the sounds packages are published): engraving
   // works with fallback fonts, playback runs silently with the usual notice and no error, and one console warning names
   // the base. Served locally as 404s, so nothing leaves the machine.
@@ -555,5 +602,5 @@ try {
     await context.close();
   }
 
-  console.log(`${engine}: embedding (chrome presets, callbacks, ref, settings, sounds and asset base, style isolation, containment, unique ids, focused keyboard, focus ring, landmark names, shared engine, persist, missing assets) passed`);
+  console.log(`${engine}: embedding (chrome presets, callbacks, host hooks, ref, settings, sounds and asset base, style isolation, containment, unique ids, focused keyboard, focus ring, landmark names, shared engine, persist, missing assets) passed`);
 } finally { await browser.close(); await server.close(); }
