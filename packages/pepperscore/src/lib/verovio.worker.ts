@@ -55,8 +55,9 @@ function loadVerovio(): Promise<Verovio> {
       if (typeof wasm.default !== 'function' || typeof js.VerovioToolkit !== 'function' || typeof js.enableLogToBuffer !== 'function') throw new Error('not a compatible Verovio build');
       return verovio = { createModule: wasm.default, Toolkit: js.VerovioToolkit, enableLogToBuffer: js.enableLogToBuffer };
     } catch (error) {
-      verovioPromise = undefined; // a later request tries again
-      throw new Error(`Could not load Verovio from ${module} and ${toolkit}: ${error instanceof Error ? error.message : String(error)}`);
+      verovioPromise = undefined; // a later request tries again (browsers keep a failed module fetch, so no re-download)
+      // A RequestError keeps failure() from reading the URLs in the message as an out-of-memory report ("zoom", "bloom").
+      throw new RequestError(`Could not load Verovio from ${module} and ${toolkit}: ${error instanceof Error ? error.message : String(error)}`, undefined);
     }
   })();
 }

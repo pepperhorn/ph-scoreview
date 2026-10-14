@@ -30,11 +30,14 @@ const runtimeFiles: Plugin = {
     this.emitFile({ type: 'asset', fileName: 'THIRD_PARTY_NOTICES.txt', source: thirdPartyNotices() });
   },
   // src/runtime-files.ts: drop the `@vite-ignore` (and the `"" +` lib mode adds) so host bundlers see a plain asset URL.
-  // Padded to the same length, so nothing moves and the sourcemap stays valid (`map: null`).
+  // The rewrite keeps the match's line count and the length of its last line, so the code after it does not move and
+  // the sourcemap stays valid (`map: null`). scripts/finalize-dist.mjs accepts the whitespace before `)`.
   renderChunk(code) {
     const plain = code.replace(RUNTIME_FILE_URL, (match, path: string) => {
       const url = `new URL(${path}, import.meta.url`;
-      return `${url}${' '.repeat(Math.max(0, match.length - url.length - 1))})`;
+      const lines = match.split('\n');
+      if (lines.length === 1) return `${url}${' '.repeat(Math.max(0, match.length - url.length - 1))})`;
+      return `${url}${'\n'.repeat(lines.length - 1)}${' '.repeat(lines.at(-1)!.length - 1)})`;
     });
     return plain === code ? null : { code: plain, map: null };
   },

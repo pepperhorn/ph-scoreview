@@ -9,6 +9,7 @@ import { thirdPartyNotices, verovioDist } from './third-party-notices.mjs';
 const RUNTIME_FILES = /\/packages\/pepperscore\/src\/(?:verovio\/(verovio-module\.mjs|verovio\.mjs)|THIRD_PARTY_NOTICES\.txt)$/;
 
 export default function runtimeFilesDev() {
+  let notices;
   return {
     name: 'pepperscore-runtime-files-dev',
     apply: 'serve',
@@ -19,11 +20,13 @@ export default function runtimeFilesDev() {
         const match = RUNTIME_FILES.exec(pathname);
         if (!match) return next();
         if (match[1]) {
-          response.setHeader('content-type', 'text/javascript');
-          createReadStream(join(verovioDist(), match[1])).pipe(response);
+          createReadStream(join(verovioDist(), match[1]))
+            .once('open', () => response.setHeader('content-type', 'text/javascript'))
+            .once('error', () => { if (!response.headersSent) response.statusCode = 404; response.end(); })
+            .pipe(response);
         } else {
           response.setHeader('content-type', 'text/plain; charset=utf-8');
-          response.end(thirdPartyNotices());
+          response.end(notices ??= thirdPartyNotices());
         }
       });
     },

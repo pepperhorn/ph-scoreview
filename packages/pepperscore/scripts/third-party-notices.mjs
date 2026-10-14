@@ -43,10 +43,12 @@ export function runtimePackages(names, from = packageDir) {
 }
 
 /** The installed verovio package (a devDependency: the build copies its files into dist/verovio/). */
+let verovioFound;
 function verovioPackage() {
+  if (verovioFound) return verovioFound;
   const dir = findPackage('verovio', packageDir);
   if (!dir) throw new Error('The verovio package is not installed (run npm install).');
-  return { dir, manifest: readJson(join(dir, 'package.json')) };
+  return verovioFound = { dir, manifest: readJson(join(dir, 'package.json')) };
 }
 
 const licenseOf = manifest => typeof manifest.license === 'string' ? manifest.license

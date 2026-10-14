@@ -86,7 +86,9 @@ export function verovioFilesAt(base: string, page: string = (typeof document !==
  * a restart); a blank `base` changes nothing.
  */
 export function setVerovioBaseUrl(base: string | undefined): void {
-  if (base?.trim()) hostVerovio = verovioFilesAt(base.trim());
+  if (!base?.trim()) return;
+  try { hostVerovio = verovioFilesAt(base.trim()); }
+  catch { console.error(`pepperscore: verovioBaseUrl "${base}" is not a valid URL; the shipped Verovio is used.`); }
 }
 
 function getWorker(): Worker {

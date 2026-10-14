@@ -22,7 +22,8 @@ await writeFile(types, (await readFile(types, 'utf8')).replace(/^import '\.\/sty
 
 const index = await readFile(new URL('index.js', dist), 'utf8');
 for (const path of ['./verovio/verovio-module.mjs', './verovio/verovio.mjs', './THIRD_PARTY_NOTICES.txt']) {
-  assert.ok(index.includes(`new URL("${path}", import.meta.url)`), `dist/index.js refers to ${path} as a plain new URL(…, import.meta.url)`);
+  const plain = new RegExp(`new URL\\("${path.replaceAll('.', '\\.')}", import\\.meta\\.url\\s*\\)`);
+  assert.match(index, plain, `dist/index.js refers to ${path} as a plain new URL(…, import.meta.url)`);
 }
 for (const file of ['verovio/verovio-module.mjs', 'verovio/verovio.mjs']) {
   assert.match(await readFile(new URL(file, dist), 'utf8'), /^\/\*!\n \* Verovio [\d.]+ .*LGPL-3\.0-or-later/s, `dist/${file} starts with its licence comment`);
