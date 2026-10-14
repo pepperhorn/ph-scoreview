@@ -45,6 +45,8 @@ const soundRequest = (part: Part): SoundRequest => {
 /** Sample packs route each note to its part's gain, so parts share them; sf2 and note-file players are bound to one part's gain. */
 const audioKey = (plan: SoundPlan, part: Part) => plan.kind === 'sample-pack' ? planKey(plan) : `${planKey(plan)}|${part.id}`;
 const SILENT_PLAYBACK_NOTICE = 'Audio couldn’t start on this device — playing silently.';
+/** Systems drawn ahead of the playhead during playback (large scores draw systems on demand). */
+const LOOKAHEAD_SYSTEMS = 2;
 /** onTimeUpdate fires at most this often during self-driven playback (about 10 Hz). */
 const TIME_UPDATE_MS = 100;
 export type PepperScoreReadyInfo = { title: string; composer?: string; parts: Array<{ id: string; name: string }>; measures: number };
@@ -967,6 +969,16 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     if (pendingSystem >= 0) void result!.ensureSystem(pendingSystem);
     const block = anchor ? anchor.closest<HTMLElement>('.score-system') : pendingSystem >= 0 ? canvasRef.current?.querySelector<HTMLElement>(`:scope > .score-system[data-system="${pendingSystem}"]`) : null;
     if (!block) return;
+    // While playing, draw the systems ahead of the playhead: drawn only on arrival, a system's first bar would play
+    // unhighlighted for the length of the draw (a whole bar or more for a large score at a fast tempo). Two ahead, as a
+    // one-bar system at a fast tempo lasts about as long as drawing one.
+    const playingNow = Boolean(playRef.current) || (clock ? clockFollowRef.current.playing : false);
+    if (playingNow && result) {
+      let ahead = block.nextElementSibling;
+      for (let step = 1; step <= LOOKAHEAD_SYSTEMS && ahead; step++, ahead = ahead.nextElementSibling) {
+        if (ahead.classList.contains('is-pending')) void result.ensureSystem(Number(block.dataset.system) + step);
+      }
+    }
     const line = anchor ? document.createElement('div') : null;
     if (line) {
       line.className = 'playback-line';

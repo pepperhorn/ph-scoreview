@@ -34,6 +34,15 @@ const MAX_WASM_HEAP_MB = 512;
 /** Phase 2: reading the file (hash, parse, Score transfer) must not block the main thread; Chromium reports long tasks. */
 const IMPORT_LONG_TASK_MS = 200 * budgetScale;
 const MEASURES = 150;
+/** One bar at 240 BPM in 4/4, the synthetic score's meter: the playback check's system length. */
+const TARGET_BAR_MS = 1000;
+/**
+ * Playback reaching the next system highlights it within this lag of its bar starting. Systems are drawn ahead of the
+ * playhead, so the lag is what remains of the draw (requested at the first note, about a bar earlier) plus a few frames
+ * (each playback frame of this score costs 60-110 ms): 80-350 ms locally, once 620 ms on a loaded host. Drawn only on
+ * arrival it was 650-860 ms locally and past the 1 s bar (so never) under a 4x CPU throttle and on CI.
+ */
+const HIGHLIGHT_LAG_MS = 500 * budgetScale;
 const xml = orchestral(30, MEASURES);
 // Chosen from disk: Playwright sets a path through the browser, while a buffer is decoded by a script in the page,
 // which would be a main-thread long task of the harness's own.
@@ -129,13 +138,33 @@ try {
   console.log(`${engine}: Verovio WASM heap peak ${wasmHeapMB} MB after drawing the first, a middle and the last systems`);
   assert.ok(wasmHeapMB !== null && wasmHeapMB <= MAX_WASM_HEAP_MB, `Verovio's WASM heap stays under ${MAX_WASM_HEAP_MB} MB (${wasmHeapMB} MB)`);
 
-  // Back at the top, play fast: the playhead reaches a system that was not drawn at first paint and highlights it.
+  // Back at the top, play fast: the playhead reaches a system that was not drawn at first paint and highlights it on
+  // arrival. Playback draws systems ahead of the playhead, so the highlight lands with the bar, not a draw later
+  // (drawn only on arrival it lagged 650-860 ms of the 1 s bar locally, and on slower CI missed the bar, so never came).
   await page.evaluate(() => { document.querySelector('.score-viewport').scrollTop = 0; });
   await page.waitForFunction(() => document.querySelector('.score-staves > .score-system:first-child > svg'), null, { timeout: 60000 });
   await page.locator('.bpm-control input').fill('240');
   const target = Math.max(...initial.drawn) + 1;
+  // Timed in the page, per frame: the first highlight anywhere (bar 1's downbeat) and the first in the target system.
+  await page.evaluate(index => {
+    const w = window;
+    w.__playback = {};
+    const watch = () => {
+      const now = performance.now();
+      if (w.__playback.first === undefined && document.querySelector('.reader-note.is-playing')) w.__playback.first = now;
+      if (document.querySelector(`.score-staves > .score-system[data-system="${index}"] .reader-note.is-playing`)) { w.__playback.target = now; return; }
+      requestAnimationFrame(watch);
+    };
+    requestAnimationFrame(watch);
+  }, target);
   await page.getByRole('button', { name: 'Play score', exact: true }).click();
-  await page.waitForFunction(index => document.querySelector(`.score-staves > .score-system[data-system="${index}"] .reader-note.is-playing`), target, { timeout: 60000 });
+  const reached = await page.waitForFunction(() => window.__playback.target !== undefined, null, { timeout: 20000 }).then(() => true, () => false);
+  const timing = await page.evaluate(() => window.__playback);
+  // One bar per system at 240 BPM in 4/4: the target system's first bar starts a bar after the first highlight.
+  const lag = reached ? Math.round(timing.target - timing.first - TARGET_BAR_MS) : null;
+  console.log(`${engine}: playback highlight in the next, undrawn system ${reached ? `${lag} ms after its bar began` : 'never came'}`);
+  assert.ok(reached, `The playhead highlights a system drawn on demand (the first highlight came ${timing.first === undefined ? 'never' : 'but not in the target system: it was drawn after its bar had passed'})`);
+  assert.ok(lag <= HIGHLIGHT_LAG_MS, `A system drawn on demand highlights within ${HIGHLIGHT_LAG_MS} ms of its bar starting (took ${lag} ms)`);
   const highlighted = await page.evaluate(index => ({ line: !!document.querySelector(`.score-staves > .score-system[data-system="${index}"] .playback-line`), playing: document.querySelectorAll('.reader-note.is-playing').length }), target);
   assert.ok(highlighted.playing > 0, 'A note is highlighted in a system drawn on demand');
   await page.getByRole('button', { name: 'Pause playback', exact: true }).click();
