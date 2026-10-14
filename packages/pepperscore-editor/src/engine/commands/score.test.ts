@@ -1,6 +1,6 @@
 import { createEditorStore } from '../store';
 import {
-  deleteMeasure, insertMeasure, setBarline, setClef, setEnding, setJump, setKey, setRepeatEnd, setTempo, setTime,
+  deleteMeasure, insertMeasure, setBarline, setClef, setEnding, setJump, setKey, setMeta, setRepeatEnd, setTempo, setTime,
   toggleMark, toggleRepeatStart,
 } from './index';
 import { createDocument } from '../../model/create';
@@ -276,4 +276,24 @@ test('deleting bar 1 makes its clef change the next bar’s initial clef', () =>
   expect(next.parts[0].measures[0].clefs).toBeUndefined();
   expect(next.global.measures[0].tempo).toEqual({ bpm: 72, unit: 'quarter' });
   expect(store.getState().invariantErrors).toEqual([]);
+});
+
+describe('setMeta', () => {
+  it('sets, trims and clears the title and composer as one undo step each', () => {
+    const store = createEditorStore(fourBars());
+    store.dispatch(setMeta, { title: '  Song  ' });
+    expect(store.getState().document.meta).toEqual({ title: 'Song' });
+    store.dispatch(setMeta, { composer: 'Ann' });
+    expect(store.getState().document.meta).toEqual({ title: 'Song', composer: 'Ann' });
+    store.dispatch(setMeta, { title: ' ' });
+    expect(store.getState().document.meta).toEqual({ composer: 'Ann' });
+    store.undo();
+    expect(store.getState().document.meta.title).toBe('Song');
+  });
+  it('records nothing when the value is unchanged', () => {
+    const store = createEditorStore(fourBars());
+    store.dispatch(setMeta, { title: 'Song' });
+    store.dispatch(setMeta, { title: 'Song' });
+    expect(store.getState().history.past).toHaveLength(1);
+  });
 });

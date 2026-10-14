@@ -2,20 +2,21 @@ import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState,
 import { PepperScore, type PepperScoreClickInfo, type PepperScoreHandle } from 'pepperscore';
 import { compileToMusicXml } from '../compile/to-musicxml';
 import { setCursor, setSelection } from '../engine/commands/index';
-import { createEditorStore, type EditorStore } from '../engine/store';
-import type { PepperScoreFile } from '../format/pepperscore-file';
-import type { Dropped } from '../import/from-musicxml';
+import type { EditorStore } from '../engine/store';
 import { importMusicXml } from '../import/from-musicxml';
-import { DEFAULT_MAX_STAVES, readOnlyMessage, verifyLicence, type Licence } from '../licence';
+import { DEFAULT_MAX_STAVES, readOnlyMessage } from '../licence';
 import { measureIndex, staffCount } from '../model/query';
 import type { Document } from '../model/schema';
+import type { ViewerMode } from './CanvasHeader';
 import { clickTarget } from './click-mapping';
-import { checkStaffCap, describeDropped, download, exportMusicXml, importSource, newScore, readScoreFile, savePepperScore, staffLimitMessage, type Opened } from './files';
+import { UiProvider, type EditorUi } from './controls';
+import { DesktopShell } from './desktop/DesktopShell';
+import { checkStaffCap, describeDropped, download, exportMusicXml, newScore, readScoreFile, savePepperScore, staffLimitMessage } from './files';
 import { editorHighlights } from './highlights';
+import { useGlyphFont } from './icons';
 import { handleKey, type KeyContext, type PopoverName } from './keymap';
-import { Palette } from './Palette';
-import { Popover } from './Popover';
-import { Toolbar } from './Toolbar';
+import { openSession, useLicence, type Session } from './session';
+import type { ShellProps } from './shell';
 import { useEditorStore } from './useEditorStore';
 
 export type PepperScoreEditorProps = {
@@ -33,7 +34,9 @@ export type PepperScoreEditorProps = {
   onRender?(ms: number): void;
   /** Focus the editor on mount so typing works at once. */
   autoFocus?: boolean;
-  view?: 'vertical' | 'endless';
+  /** The initial viewer view (Page is `vertical`); default `endless`. The canvas header switches it. */
+  view?: ViewerMode;
+  /** The editor's height (any CSS length); default 720px. */
   height?: string;
   className?: string;
   assetBaseUrl?: string;
@@ -61,39 +64,7 @@ export function confirmDiscard(store: EditorStore): boolean {
 /** The viewer redraws this long after the last change, so fast typing engraves once. */
 const RENDER_DEBOUNCE_MS = 80;
 
-type Source = PepperScoreFile['source'];
-/** `source` and `created` are written back when the score is saved as `.pepperscore`. */
-type Session = { kind: 'ok'; id: number; store: EditorStore; dropped: Dropped[]; source: Promise<Source>; created: string } | { kind: 'error'; message: string };
-let sessionIds = 0;
-
-function openSession(load: () => Opened, musicXml?: string): Session {
-  try {
-    const { document, dropped, source, editor, created } = load();
-    // The staff cap comes from the licence and is checked by the editor (no command changes the staff count).
-    const store = createEditorStore(document, { maxStaves: Infinity, cursor: editor?.cursor, activeLayoutId: editor?.activeLayoutId });
-    const imported = source ? Promise.resolve(source) : musicXml ? importSource(musicXml, dropped) : Promise.resolve(undefined);
-    return { kind: 'ok', id: ++sessionIds, store, dropped, source: imported, created: created ?? new Date().toISOString() };
-  } catch (error) {
-    return { kind: 'error', message: error instanceof Error ? error.message : String(error) };
-  }
-}
-
-/** The verified licence for `key`: `undefined` while it is checked, `null` when absent, invalid or expired. */
-function useLicence(key: string | undefined): Licence | null | undefined {
-  const [checked, setChecked] = useState<{ key: string | undefined; licence: Licence | null }>();
-  useEffect(() => {
-    let live = true;
-    void verifyLicence(key ?? '').then((licence) => {
-      if (live) setChecked({ key, licence });
-    });
-    return () => {
-      live = false;
-    };
-  }, [key]);
-  return checked && checked.key === key ? checked.licence : undefined;
-}
-
-/** A score editor around the PepperScore viewer: toolbar, keyboard entry, touch palette, popovers. */
+/** A score editor around the PepperScore viewer: top bar, rail, inspector, keyboard entry, popovers, touch palette. */
 export function PepperScoreEditor(props: PepperScoreEditorProps & { ref?: Ref<PepperScoreEditorHandle> }) {
   const [session, setSession] = useState<Session>(() =>
     openSession(() => {
@@ -105,11 +76,11 @@ export function PepperScoreEditor(props: PepperScoreEditorProps & { ref?: Ref<Pe
   const licence = useLicence(props.licenceKey);
   const maxStaves = licence?.maxStaves ?? DEFAULT_MAX_STAVES;
   const className = `ps-editor ${props.className ?? ''}`.trim();
-  const refusal = (message: string) => <div className={className}><div className="ps-editor-error" role="alert">{message}</div></div>;
+  const refusal = (message: string) => <div className={`${className} ps-editor-refused`}><div className="ps-editor-error" role="alert">{message}</div></div>;
   if (session.kind === 'error') return refusal(session.message);
   if (staffCount(session.store.getState().document) > maxStaves) {
     // Over the default cap: wait for the licence before refusing the score.
-    return licence === undefined ? <div className={className} aria-busy="true" /> : refusal(staffLimitMessage(maxStaves));
+    return licence === undefined ? <div className={`${className} ps-editor-refused`} aria-busy="true" /> : refusal(staffLimitMessage(maxStaves));
   }
   return <EditorSession key={session.id} {...props} className={className} editable={Boolean(licence)} checking={licence === undefined} maxStaves={maxStaves} session={session} onOpened={setSession} />;
 }
@@ -131,14 +102,18 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
   const cursor = useEditorStore(store, (s) => s.cursor);
   const selection = useEditorStore(store, (s) => s.selection);
   const invariantErrors = useEditorStore(store, (s) => s.invariantErrors);
+  const view = useEditorStore(store, (s) => s.view);
+  const glyphs = useGlyphFont();
+  const [viewerMode, setViewerMode] = useState<ViewerMode>(props.view ?? 'endless');
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<PepperScoreHandle>(null);
   const [popover, setPopover] = useState<PopoverName | null>(null);
   const [banner, setBanner] = useState(() => (dropped.length ? `Some notation was not imported: ${describeDropped(dropped)}.` : ''));
   const [playing, setPlaying] = useState(false);
 
-  // The viewer gets the compiled score 80 ms after the last change; a change starts the render clock.
-  const compiled = useMemo(() => compileToMusicXml(document), [document]);
+  // The viewer gets the active layout's view, compiled 80 ms after the last change; a change starts the render clock.
+  const compiled = useMemo(() => compileToMusicXml(view.document), [view]);
   const [musicXml, setMusicXml] = useState(compiled);
   const changedAt = useRef<number | null>(null);
   useEffect(() => {
@@ -162,7 +137,9 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
       }),
     [store],
   );
+  const [draws, setDraws] = useState(0);
   const onReady = useCallback(() => {
+    setDraws((n) => n + 1);
     if (changedAt.current === null) return;
     const ms = performance.now() - changedAt.current;
     changedAt.current = null;
@@ -195,6 +172,7 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
   }, [dirty]);
 
   const highlights = useMemo(() => (editable ? editorHighlights(document, cursor, selection) : []), [editable, document, cursor, selection]);
+  const drawn = useMemo(() => ({}), [draws, highlights, viewerMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const refocus = useCallback(() => rootRef.current?.focus({ preventScroll: true }), []);
   const closePopover = useCallback(() => {
@@ -213,10 +191,13 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
     void viewer.play();
   }, [playing, store]);
   const ctx = useMemo<KeyContext>(() => ({ store, openPopover: setPopover, play: togglePlay }), [store, togglePlay]);
+  const togglePopover = useCallback((name: PopoverName) => setPopover((current) => (current === name ? null : name)), []);
+  const ui = useMemo<EditorUi>(() => ({ store, ctx, editable, refocus, togglePopover }), [store, ctx, editable, refocus, togglePopover]);
 
   const onElementClick = useCallback(
     (info: PepperScoreClickInfo) => {
-      const target = clickTarget(store.getState().document, info);
+      // The engraving is the active layout's view: its staves are the view's, its ids the document's.
+      const target = clickTarget(store.getState().view.document, info);
       if (!target) return;
       store.dispatch(setCursor, target.cursor, { record: false });
       store.dispatch(setSelection, { ids: target.selection }, { record: false });
@@ -247,18 +228,56 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
       const { document, cursor, activeLayoutId } = store.getState();
       savePepperScore({ document, source, editor: { cursor, activeLayoutId }, created: session.created });
       store.markSaved();
+      setSavedAt(new Date());
     });
 
   const reportErrors = () =>
     download(JSON.stringify({ errors: invariantErrors, document: store.getState().document }, null, 2), 'pepperscore-report.json', 'application/json');
 
+  const banners = (
+    <>
+      {!editable && !checking && <div className="ps-editor-banner ps-editor-readonly" role="status">{readOnlyMessage(props.licenceKey)}</div>}
+      {banner && (
+        <div className="ps-editor-banner ps-editor-notice" role="status">
+          <span className="ps-editor-banner-text">{banner}</span>
+          <button type="button" className="ps-btn ps-icon-btn ps-editor-banner-close" aria-label="Dismiss" onClick={() => setBanner('')}>×</button>
+        </div>
+      )}
+    </>
+  );
+  const viewer = (
+    <PepperScore
+      ref={viewerRef}
+      className="ps-editor-viewer"
+      musicXml={musicXml}
+      chrome="minimal"
+      view={viewerMode}
+      height="fill"
+      assetBaseUrl={props.assetBaseUrl}
+      soundPack={props.soundPack}
+      onElementClick={editable ? onElementClick : undefined}
+      highlights={highlights}
+      onReady={onReady}
+      onPlay={() => setPlaying(true)}
+      onStop={() => setPlaying(false)}
+    />
+  );
+  // The phone shell (Task 5) will be chosen here on a narrow container.
+  const shell: ShellProps = {
+    viewer, banners, popover, closePopover, playing, savedAt, drawn, viewerMode, setViewerMode,
+    licence: { editable, checking, maxStaves },
+    onPlay: togglePlay, onSave: save, onExport: () => exportMusicXml(store.getState().document), onOpen: (file) => void open(file), onReport: reportErrors,
+  };
+
   return (
     <div
       ref={rootRef}
       className={className}
+      style={props.height ? { height: props.height } : undefined}
       tabIndex={0}
       data-ps-mode={cursor.mode}
       data-ps-editable={editable ? '' : undefined}
+      data-ps-glyphs={glyphs}
       onKeyDownCapture={(event) => {
         if (!editable) return;
         if (popover) {
@@ -273,52 +292,9 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
         if (handleKey(event.nativeEvent, ctx)) event.stopPropagation();
       }}
     >
-      <Toolbar
-        store={store}
-        ctx={ctx}
-        editable={editable}
-        playing={playing}
-        onPopover={(name) => setPopover((current) => (current === name ? null : name))}
-        onPlay={togglePlay}
-        onExport={() => exportMusicXml(store.getState().document)}
-        onSave={save}
-        onOpen={(file) => void open(file)}
-        refocus={refocus}
-      />
-      {!editable && !checking && <div className="ps-editor-banner ps-editor-readonly" role="status">{readOnlyMessage(props.licenceKey)}</div>}
-      {banner && (
-        <div className="ps-editor-banner ps-editor-notice" role="status">
-          <span className="ps-editor-banner-text">{banner}</span>
-          <button type="button" className="ps-btn ps-editor-banner-close" aria-label="Dismiss" onClick={() => setBanner('')}>×</button>
-        </div>
-      )}
-      <div className="ps-editor-stage">
-        {popover && editable && <Popover name={popover} store={store} onClose={closePopover} />}
-        <PepperScore
-          ref={viewerRef}
-          className="ps-editor-viewer"
-          musicXml={musicXml}
-          chrome="minimal"
-          view={props.view}
-          height={props.height}
-          assetBaseUrl={props.assetBaseUrl}
-          soundPack={props.soundPack}
-          onElementClick={editable ? onElementClick : undefined}
-          highlights={highlights}
-          onReady={onReady}
-          onPlay={() => setPlaying(true)}
-          onStop={() => setPlaying(false)}
-        />
-      </div>
-      <Palette ctx={ctx} editable={editable} refocus={refocus} />
-      <div className="ps-editor-status" role="status" aria-live="polite">
-        {invariantErrors.length > 0 && (
-          <>
-            <span className="ps-editor-status-text">Score check found {invariantErrors.length} problem{invariantErrors.length > 1 ? 's' : ''}: {invariantErrors.join('; ')}.</span>
-            <button type="button" className="ps-btn ps-editor-report" onClick={reportErrors}>Report this score</button>
-          </>
-        )}
-      </div>
+      <UiProvider value={ui}>
+        <DesktopShell {...shell} />
+      </UiProvider>
     </div>
   );
 }

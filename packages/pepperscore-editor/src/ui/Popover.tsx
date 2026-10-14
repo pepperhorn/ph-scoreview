@@ -1,9 +1,13 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { addDynamic, addText, setClef, setEnding, setJump, setKey, setTime } from '../engine/commands/index';
 import type { EditorStore } from '../engine/store';
 import { effectiveClef, effectiveKey, effectiveTime, measureIndex } from '../model/query';
 import type { Clef, Dynamic, Jump } from '../model/schema';
-import type { PopoverName } from './keymap';
+import { Icon, Kbd } from './icons';
+import { describeKey, KEYMAP, type PopoverName } from './keymap';
+import { placePopover, type Rect } from './placement';
+import { TempoFields } from './TempoFields';
+import { relativeRect } from './useCanvasGeometry';
 import { useEditorStore } from './useEditorStore';
 
 const MAJOR = ['Cb', 'Gb', 'Db', 'Ab', 'Eb', 'Bb', 'F', 'C', 'G', 'D', 'A', 'E', 'B', 'F#', 'C#'];
@@ -36,18 +40,31 @@ export const ENDINGS: { value: string; label: string; numbers: number[] | null }
 const TIME_UNITS = [1, 2, 4, 8, 16] as const;
 const TEXT_STYLES = ['plain', 'expression', 'tempo'] as const;
 const TITLES: Record<PopoverName, string> = {
-  key: 'Key signature', time: 'Time signature', clef: 'Clef', dynamic: 'Dynamic', jump: 'Jump', ending: 'Ending', text: 'Text',
+  key: 'Key signature', time: 'Time signature', clef: 'Clef', dynamic: 'Dynamic', jump: 'Jump', ending: 'Ending', text: 'Text', tempo: 'Tempo',
 };
 
 type Props = { name: PopoverName; store: EditorStore; onClose(): void };
+/**
+ * `anchor` is the cursor bar and `viewport` the canvas stage, in the stage's coordinates; `stage` finds the
+ * opener button to anchor on when no cursor bar is drawn.
+ */
+type PlacementProps = { anchor: Rect | null; viewport: Rect; stage: HTMLElement | null };
 
-/** Absolutely positioned panel with native controls; Escape or a click outside (other than its opener button) closes it. */
-export function Popover({ name, store, onClose }: Props) {
+const GAP = 12;
+/** The key that opens popover `name`, if any. */
+const opener = (name: PopoverName) => KEYMAP.find((b) => b.group === 'score' && b.label === TITLES[name]);
+
+/**
+ * A panel beside the cursor bar (left, else right, else above, else below; see `placePopover`) with native
+ * controls; Escape, its close button or a click outside (other than its opener button) closes it.
+ */
+export function Popover({ name, store, onClose, anchor, viewport, stage }: Props & PlacementProps) {
   const root = useRef<HTMLDivElement>(null);
+  const arrow = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     const outside = (event: PointerEvent) => {
       const target = event.target as Element | null;
-      // The popover's own toolbar button toggles it in its click handler; closing here first would reopen it.
+      // The popover's own opener toggles it in its click handler; closing here first would reopen it.
       if (target?.closest?.(`[data-ps-popover-for="${name}"]`)) return;
       if (root.current && !root.current.contains(target)) onClose();
     };
@@ -55,8 +72,30 @@ export function Popover({ name, store, onClose }: Props) {
     return () => window.document.removeEventListener('pointerdown', outside, true);
   }, [onClose, name]);
   useEffect(() => {
-    root.current?.querySelector<HTMLElement>('select, input')?.focus();
+    root.current?.querySelector<HTMLElement>('select, input')?.focus({ preventScroll: true });
   }, [name]);
+  // Placed after every render, from its measured size; the arrow points at the anchor's centre.
+  useLayoutEffect(() => {
+    const element = root.current;
+    if (!element) return;
+    const origin = stage?.getBoundingClientRect();
+    const button = origin ? [...window.document.querySelectorAll(`[data-ps-popover-for="${name}"]`)].find((b) => (b as HTMLElement).offsetParent) : undefined;
+    const at = anchor ?? (origin ? relativeRect(button, origin) : null) ?? { ...viewport, width: 0, height: 0, right: viewport.left, bottom: viewport.top };
+    const size = { width: element.offsetWidth, height: element.offsetHeight };
+    const place = placePopover(at, size, viewport, GAP);
+    element.style.left = `${place.left}px`;
+    element.style.top = `${place.top}px`;
+    element.dataset.side = place.side;
+    const beside = place.side === 'left' || place.side === 'right';
+    const along = beside ? Math.min(at.top + Math.min(48, at.height / 2), at.bottom) - place.top : at.left + at.width / 2 - place.left;
+    const span = beside ? size.height : size.width;
+    if (arrow.current) {
+      arrow.current.style.left = beside ? '' : `${Math.max(18, Math.min(span - 18, along))}px`;
+      arrow.current.style.top = beside ? `${Math.max(18, Math.min(span - 18, along))}px` : '';
+    }
+  });
+  const key = opener(name);
+  const index = measureIndex(store.getState().document, store.getState().cursor.measureId);
   return (
     <div
       ref={root}
@@ -71,8 +110,13 @@ export function Popover({ name, store, onClose }: Props) {
         }
       }}
     >
-      <div className="ps-popover-title">{TITLES[name]}</div>
-      <PopoverBody name={name} store={store} onClose={onClose} />
+      <span ref={arrow} className="ps-popover-arrow" aria-hidden="true" />
+      <header className="ps-popover-head">
+        <div className="ps-popover-titles"><span className="ps-eyebrow">{name === 'dynamic' || name === 'text' ? 'At the cursor' : `From bar ${index + 1}`}</span><h3 className="ps-popover-title">{TITLES[name]}</h3></div>
+        <button type="button" className="ps-btn ps-icon-btn ps-popover-close" aria-label="Close" onClick={onClose}><Icon name="close" size={14} /></button>
+      </header>
+      <div className="ps-popover-body"><PopoverBody name={name} store={store} onClose={onClose} /></div>
+      <footer className="ps-popover-foot"><span className="ps-popover-hint">{key && <><Kbd>{describeKey(key)}</Kbd> opens · </>}<Kbd>Esc</Kbd> closes</span></footer>
     </div>
   );
 }
@@ -158,6 +202,8 @@ function PopoverBody({ name, store, onClose }: Props) {
           </select>
         </Field>
       );
+    case 'tempo':
+      return <TempoFields key={measureId} store={store} document={document} measureId={measureId} index={index} editable onDone={onClose} />;
     case 'text':
       return (
         <>

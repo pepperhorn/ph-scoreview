@@ -1,6 +1,7 @@
 // The score editor demo (apps/reader /editor): keyboard entry engraves, undo, a click puts the cursor on a note, the touch
 // palette enters notes on a phone-sized viewport, the ensemble fixture (5 staves) is refused, accidentals and chord entry,
-// the time popover applies on Enter, unsaved work is guarded, and the change-to-redraw latency the editor logs stays under
+// the time popover applies on Enter, unsaved work is guarded, the desktop shell (rail keycaps, layout selector, popovers
+// beside the cursor bar, add/remove bar, title editing) works, and the change-to-redraw latency the editor logs stays under
 // PS_EDITOR_RENDER_MS (default 250; a warning above it, a failure above twice it). Runs against the build (npm run build
 // first). BROWSER=chromium|firefox|webkit.
 import assert from 'node:assert/strict';
@@ -21,6 +22,7 @@ const waitForNotes = (page, n) => page.waitForFunction(([selector, n]) => docume
 const musicXml = page => page.evaluate(() => window.__editor.ref.current.getMusicXml());
 const isDirty = page => page.evaluate(() => window.__editor.ref.current.isDirty());
 const pitchCount = xml => (xml.match(/<pitch>/g) ?? []).length;
+const barCount = xml => (xml.match(/<measure\b/g) ?? []).length;
 /** What window.confirm answers from now on (the editor asks before discarding unsaved changes). */
 const answerConfirm = (page, answer) => page.evaluate(answer => { window.__confirms = []; window.confirm = message => { window.__confirms.push(message); return answer; }; }, answer);
 const RENDER_MS = Number(process.env.PS_EDITOR_RENDER_MS) || 250;
@@ -44,26 +46,33 @@ try {
   await page.goto(`${server.url}/editor`);
   await page.waitForSelector('.ps-editor .score-system svg', { timeout: 60000 });
   assert.equal(await page.locator('.ps-editor-banner.ps-editor-readonly').count(), 0, 'the dev licence makes the demo editable');
-  assert.equal(await page.locator('.ps-editor-status').textContent(), '', 'no invariant errors');
+  assert.equal(await page.locator('.ps-status-check').textContent(), 'Score check: no problems', 'no invariant errors');
+
+  // 0. The desktop shell: rail keycaps are keycap-sized, and the layout selector lists the full score.
+  const keycap = await page.locator('.ps-rail .ps-keycap[aria-label="Quarter note"]').boundingBox();
+  assert.ok(keycap.height >= 52 && keycap.width >= 56, `rail keycaps are 56x52 (${keycap.width}x${keycap.height})`);
+  assert.equal(await page.locator('.ps-rail .ps-keycap[aria-label="Quarter note"] .ps-tool-key').textContent(), '4', 'the keycap legend comes from the keymap');
+  const layoutSelect = page.locator('.ps-canvas-head select[aria-label="Layout"]');
+  assert.deepEqual(await layoutSelect.locator('option').allTextContents(), ['Full score'], 'the layout selector lists the full score');
 
   // 1. Keyboard entry: n (entry mode), 4 (quarter), c d e f.
   await page.locator('.ps-editor').focus();
   for (const key of ['n', '4', 'c', 'd', 'e', 'f']) await page.keyboard.press(key);
   await waitForNotes(page, 4);
   assert.match(await musicXml(page), /<step>F<\/step>/, 'the handle compiles the entered F');
-  assert.equal(await page.locator('.ps-toolbar .ps-btn[aria-label="Toggle note entry"]').getAttribute('aria-pressed'), 'true', 'the toolbar shows entry mode');
+  assert.equal(await page.locator('.ps-canvas-head .ps-btn[aria-label="Toggle note entry"]').getAttribute('aria-pressed'), 'true', 'the canvas header shows entry mode');
 
   // 2. Undo removes the last note.
   await page.keyboard.press('Control+z');
   await waitForNotes(page, 3);
   assert.doesNotMatch(await musicXml(page), /<step>F<\/step>/, 'undo removed the F');
 
-  // 2b. Accidentals from the toolbar act on the last entered note (E); "Add to chord" makes letters add to its chord.
-  await page.click('.ps-toolbar .ps-btn[aria-label="Sharp"]');
+  // 2b. Accidentals from the rail act on the last entered note (E); "Add to chord" makes letters add to its chord.
+  await page.click('.ps-rail .ps-btn[aria-label="Sharp"]');
   await page.waitForFunction(() => /<step>E<\/step>\s*<alter>1<\/alter>/.test(window.__editor.ref.current.getMusicXml()), null, { timeout: 10000 });
-  await page.click('.ps-toolbar .ps-btn[aria-label="Natural"]');
+  await page.click('.ps-rail .ps-btn[aria-label="Natural"]');
   await page.waitForFunction(() => !/<alter>/.test(window.__editor.ref.current.getMusicXml()), null, { timeout: 10000 });
-  const chordToggle = page.locator('.ps-toolbar .ps-btn[aria-label="Add to chord"]');
+  const chordToggle = page.locator('.ps-rail .ps-btn[aria-label="Add to chord"]');
   await chordToggle.click();
   assert.equal(await chordToggle.getAttribute('aria-pressed'), 'true', 'the chord toggle shows it is on');
   await page.keyboard.press('g');
@@ -83,6 +92,16 @@ try {
   // 4. Popovers: k opens the key popover, a choice applies to the cursor bar, Escape closes it.
   await page.keyboard.press('k');
   await page.locator('.ps-popover-key').waitFor();
+  // The popover opens beside the cursor bar (the bar holding the cursor note), never over it.
+  await page.waitForFunction(() => document.querySelector('.ps-popover-key')?.dataset.side, null, { timeout: 5000 });
+  const overlap = await page.evaluate(() => {
+    const note = document.querySelector('.ps-editor [data-ps-highlight~="ps-cursor"]');
+    const bar = document.querySelector('.ps-editor [data-ps-highlight~="ps-cursor-measure"]') ?? note?.closest('.measure');
+    const a = bar.getBoundingClientRect(), b = document.querySelector('.ps-popover-key').getBoundingClientRect();
+    return { side: document.querySelector('.ps-popover-key').dataset.side, bar: [a.left, a.top, a.right, a.bottom], popover: [b.left, b.top, b.right, b.bottom],
+      intersects: a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom };
+  });
+  assert.equal(overlap.intersects, false, `the key popover avoids the cursor bar (${JSON.stringify(overlap)})`);
   await page.selectOption('.ps-popover-key .ps-select-fifths', '2');
   await page.keyboard.press('Escape');
   await page.locator('.ps-popover').waitFor({ state: 'detached' });
@@ -132,8 +151,8 @@ try {
   // 6. The palette hides on a wide container (the phone-width palette is tested on a touch device below).
   assert.equal(await page.locator('.ps-palette').isVisible(), false, 'the palette hides on a wide container');
 
-  // 6b. A popover's own toolbar button toggles it.
-  const keyButton = page.locator('.ps-toolbar .ps-btn[aria-label="Key signature"]');
+  // 6b. A popover's own top-bar chip toggles it.
+  const keyButton = page.locator('.ps-topbar .ps-btn[aria-label="Key signature"]');
   await keyButton.click();
   await page.locator('.ps-popover-key').waitFor();
   await keyButton.click();
@@ -144,7 +163,7 @@ try {
   await page.setInputFiles('.ps-open-input', join(root, 'validation/fixtures/ensemble.musicxml'));
   await page.locator('.ps-editor-banner.ps-editor-notice').waitFor();
   assert.match(await page.locator('.ps-editor-banner.ps-editor-notice').textContent(), /Editing is limited to 4 staves\./);
-  assert.equal(await page.locator('.ps-editor .ps-toolbar').count(), 1, 'the toolbar is still there');
+  assert.equal(await page.locator('.ps-editor .ps-topbar').count(), 1, 'the editor is still there');
   assert.equal(await musicXml(page), xmlBefore, 'the open score is kept');
   await page.click('.ps-editor-banner-close');
 
@@ -152,7 +171,7 @@ try {
   await page.click('.editor-demo-ensemble');
   await page.locator('.ps-editor-error').waitFor();
   assert.equal(await page.locator('.ps-editor-error').textContent(), 'Editing is limited to 4 staves.');
-  assert.equal(await page.locator('.ps-editor .ps-toolbar, .ps-editor .pepperscore').count(), 0, 'a refused score renders nothing else');
+  assert.equal(await page.locator('.ps-editor .ps-topbar, .ps-editor .pepperscore').count(), 0, 'a refused score renders nothing else');
   await page.click('.editor-demo-new');
   await page.waitForSelector('.ps-editor .score-system svg', { timeout: 60000 });
 
@@ -171,11 +190,30 @@ try {
   await page.waitForFunction(() => !/<step>/.test(window.__editor.ref.current?.getMusicXml() ?? '<step>'), null, { timeout: 10000 });
   assert.equal(await isDirty(page), false, 'a new score is clean');
 
+  // 7d. The add-bar "+" at the end of the score appends a bar; "−" removes the last one.
+  const bars = barCount(await musicXml(page));
+  await page.click('.ps-add-bar .ps-btn[aria-label="Add bar"]');
+  await page.waitForFunction(n => (window.__editor.ref.current.getMusicXml().match(/<measure\b/g) ?? []).length === n, bars + 1, { timeout: 10000 });
+  await page.click('.ps-add-bar .ps-btn[aria-label="Remove bar"]');
+  await page.waitForFunction(n => (window.__editor.ref.current.getMusicXml().match(/<measure\b/g) ?? []).length === n, bars, { timeout: 10000 });
+
+  // 7e. Double-clicking the title edits it; Enter commits, and the export carries it (file name included).
+  await page.dblclick('.ps-topbar .ps-score-title');
+  await page.fill('.ps-topbar .ps-meta-input-title', 'Evening Song');
+  await page.keyboard.press('Enter');
+  assert.equal(await page.locator('.ps-topbar .ps-score-title').textContent(), 'Evening Song');
+  assert.match(await musicXml(page), /<work-title>Evening Song<\/work-title>/, 'the title is in the MusicXML');
+  const [titled] = await Promise.all([page.waitForEvent('download'), page.click('.ps-btn-export')]);
+  assert.equal(titled.suggestedFilename(), 'Evening Song.musicxml');
+  for (let i = 0; i < 3; i++) await page.evaluate(() => window.__editor.ref.current.undo());
+  assert.equal(await isDirty(page), false, 'undoing the title and bar edits returns to the clean new score');
+
   // 8. No licence: read-only banner, disabled toolbar, keys not bound.
   await page.goto(`${server.url}/editor?licence=`);
   await page.waitForSelector('.ps-editor .score-system svg', { timeout: 60000 });
   assert.equal(await page.locator('.ps-editor-banner.ps-editor-readonly').textContent(), 'Editing requires a licence.');
-  assert.ok(await page.locator('.ps-toolbar .ps-btn[aria-label="Key signature"]').isDisabled(), 'the toolbar is disabled');
+  assert.ok(await page.locator('.ps-topbar .ps-btn[aria-label="Key signature"]').isDisabled(), 'the top bar chips are disabled');
+  assert.ok(await page.locator('.ps-rail .ps-btn[aria-label="Sharp"]').isDisabled(), 'the rail is disabled');
   await page.locator('.ps-editor').focus();
   for (const key of ['n', 'c']) await page.keyboard.press(key);
   assert.equal(await page.locator('.ps-editor').getAttribute('data-ps-mode'), 'select', 'n does not enter entry mode');
@@ -209,7 +247,7 @@ try {
   if (slow.length) console.warn(`Editor: ${slow.length} change-to-redraw time(s) at or over ${RENDER_MS} ms: ${slow.join(', ')}`);
   assert.ok(renderTimes.every(ms => ms < 2 * RENDER_MS), `every change-to-redraw time is under ${2 * RENDER_MS} ms (got ${renderTimes.join(', ')})`);
   assert.deepEqual(errors, [], 'no page or console errors');
-  console.log(`Editor: entry, undo, accidentals and chord entry, click cursor, key and time popovers, export, save and reopen, unsaved-work guard, staff cap (open and initial), read-only and touch palette pass (render ms: ${renderTimes.join(', ')})`);
+  console.log(`Editor: shell (keycaps, layout selector, popover placement, add/remove bar, title edit), entry, undo, accidentals and chord entry, click cursor, key and time popovers, export, save and reopen, unsaved-work guard, staff cap (open and initial), read-only and touch palette pass (render ms: ${renderTimes.join(', ')})`);
 } finally {
   await browser.close();
   await server.close();

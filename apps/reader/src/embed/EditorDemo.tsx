@@ -11,13 +11,13 @@ const DEMO_LICENCE = 'eyJzdWIiOiJwZXBwZXJzY29yZS1kZW1vIiwiZXhwIjoxODMwMjk3NjAwLC
 const licenceKey = () => new URLSearchParams(window.location.search).get('licence') ?? DEMO_LICENCE;
 
 /**
- * The editor demo (/editor): a licensed editor in Endless view with a collapsible live-MusicXML sidebar.
+ * The editor demo (/editor): a licensed editor in Endless view with an optional live-MusicXML sidebar (hidden at first).
  * validation/editor.mjs drives it through `window.__editor.ref` (the editor handle).
  */
 export default function EditorDemo() {
   const ref = useRef<PepperScoreEditorHandle>(null);
   const [source, setSource] = useState<Source>({ key: 0 });
-  const [showXml, setShowXml] = useState(true);
+  const [showXml, setShowXml] = useState(false);
   const [xml, setXml] = useState('');
   window.__editor = { ref };
   /** New and the fixture replace the score: with unsaved changes, only after the editor's discard prompt. */
@@ -45,7 +45,7 @@ export default function EditorDemo() {
         musicXml={source.musicXml}
         licenceKey={licenceKey()}
         view="endless"
-        height="70vh"
+        height="calc(100vh - 82px)"
         assetBaseUrl="/"
         autoFocus
         onChange={refreshXml}
