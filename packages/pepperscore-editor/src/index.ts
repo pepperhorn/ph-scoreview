@@ -14,6 +14,7 @@ export { fitToRange, phrases, writtenKeyFifths, type FitOptions, type FitResult,
 export * from './engine/commands/index';
 export { KEYMAP, describeKey, handleKey, type KeyBinding, type KeyContext, type PopoverName } from './ui/keymap';
 export { PepperScoreEditor, type PepperScoreEditorHandle, type PepperScoreEditorProps } from './ui/PepperScoreEditor';
+export { renderCounts } from './ui/render-counts';
 export {
   PEPPERSCORE_EXTENSION, PEPPERSCORE_MIME, PepperScoreFileSchema, readPepperScoreFile, writePepperScoreFile, type PepperScoreFile,
 } from './format/pepperscore-file';

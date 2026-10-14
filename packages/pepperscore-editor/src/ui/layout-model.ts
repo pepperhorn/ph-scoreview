@@ -133,6 +133,15 @@ export function movedIn(view: ViewResult, part: Part): { ids: string[]; notes: n
   return { ids, notes: view.movedNotes.filter((id) => own.has(id)).length, direction: shifts.length && shifts.every((s) => s === shifts[0]) ? (shifts[0] > 0 ? 'up' : 'down') : undefined };
 }
 
+/**
+ * For a swap on the full score (`layouts[0]`, which Export writes): "Export writes Tenor Sax; Make a copy to export
+ * Alto Sax." (the swap is a view, so the export keeps the source). Undefined for other layouts or no swap.
+ */
+export function swapExportNote(doc: Document, layoutId: string, part: Part, swap: Swap | undefined): string | undefined {
+  if (!swap || doc.layouts[0]?.id !== layoutId) return undefined;
+  return `Export writes ${part.name}; Make a copy to export ${instrumentName(swap.instrument)}.`;
+}
+
 const LEVEL_NAMES = { beginner: 'Beginner', intermediate: 'Intermediate', advanced: 'Advanced' } as const;
 export const levelName = (level: Swap['level']): string => LEVEL_NAMES[level];
 

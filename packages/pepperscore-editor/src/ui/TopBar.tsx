@@ -1,7 +1,7 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { memo, useRef, useState, type ReactNode } from 'react';
 import { setMeta } from '../engine/commands/index';
 import { effectiveKey, effectiveTime } from '../model/query';
-import { tip, usePosition, useUi } from './controls';
+import { tip, useCursorBar, useUi } from './controls';
 import { OPEN_ACCEPT } from './files';
 import { Glyph, Icon, SMUFL } from './icons';
 import type { PopoverName } from './keymap';
@@ -63,9 +63,11 @@ function MetaText({ field, placeholder, className }: { field: 'title' | 'compose
 }
 
 /** Brand, title and composer, the key/time/tempo chips, history, Play, file actions and the licence badge. */
-export function TopBar({ playing, licence, onPlay, onSave, onExport, onOpen }: TopBarProps) {
+export const TopBar = memo(function TopBar({ playing, licence, onPlay, onSave, onExport, onOpen }: TopBarProps) {
   const { store, editable, togglePopover, refocus } = useUi();
-  const { document, index } = usePosition();
+  // The cursor's bar only (its key, time and tempo): a move within the bar does not re-render the top bar.
+  const { index } = useCursorBar();
+  const document = useEditorStore(store, (s) => s.document);
   const canUndo = useEditorStore(store, (s) => s.history.past.length > 0);
   const canRedo = useEditorStore(store, (s) => s.history.future.length > 0);
   const key = effectiveKey(document, index);
@@ -116,4 +118,4 @@ export function TopBar({ playing, licence, onPlay, onSave, onExport, onOpen }: T
       </div>
     </header>
   );
-}
+});

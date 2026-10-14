@@ -1,4 +1,4 @@
-import { useState, type Ref } from 'react';
+import { memo, useState, type Ref } from 'react';
 import { useUi } from '../controls';
 import type { PopoverName } from '../keymap';
 import { useEditorStore } from '../useEditorStore';
@@ -13,7 +13,7 @@ type Props = { ref?: Ref<HTMLDivElement>; popover: PopoverName | null; closePopo
  * The phone toolbar, pinned to the bottom of the editor: a tab strip (Value, Pitch, Bar, Score, Layout and the
  * score check) over at most two rows of 44px buttons; an open popover shows as an inline strip instead.
  */
-export function PhoneToolbar({ ref, popover, closePopover, onReport }: Props) {
+export const PhoneToolbar = memo(function PhoneToolbar({ ref, popover, closePopover, onReport }: Props) {
   const { store, editable } = useUi();
   const [tab, setTab] = useState<PhoneTab>('value');
   const errors = useEditorStore(store, (s) => s.invariantErrors.length);
@@ -34,4 +34,4 @@ export function PhoneToolbar({ ref, popover, closePopover, onReport }: Props) {
       </div>
     </div>
   );
-}
+});

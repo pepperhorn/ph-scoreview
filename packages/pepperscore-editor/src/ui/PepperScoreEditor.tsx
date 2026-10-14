@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react';
-import { PepperScore, type PepperScoreClickInfo, type PepperScoreHandle } from 'pepperscore';
+import type { PepperScoreClickInfo, PepperScoreHandle } from 'pepperscore';
 import { compileToMusicXml } from '../compile/to-musicxml';
 import { setCursor, setSelection } from '../engine/commands/index';
 import type { EditorStore } from '../engine/store';
@@ -11,8 +11,8 @@ import type { ViewerMode } from './CanvasHeader';
 import { clickTarget } from './click-mapping';
 import { UiProvider, type EditorUi } from './controls';
 import { DesktopShell } from './desktop/DesktopShell';
+import { EditorViewer } from './EditorViewer';
 import { checkStaffCap, describeDropped, download, exportMusicXml, newScore, readScoreFile, savePepperScore, staffLimitMessage, type Opened } from './files';
-import { editorHighlights } from './highlights';
 import { useGlyphFont } from './icons';
 import { handleKey, type KeyContext, type PopoverName } from './keymap';
 import { PhoneShell } from './phone/PhoneShell';
@@ -66,9 +66,6 @@ export function confirmDiscard(store: EditorStore): boolean {
   return !store.isDirty() || window.confirm(DISCARD_PROMPT);
 }
 
-/** The viewer redraws this long after the last change, so fast typing engraves once. */
-const RENDER_DEBOUNCE_MS = 80;
-
 /** A score editor around the PepperScore viewer: top bar, rail, inspector, keyboard entry, popovers, touch palette. */
 export function PepperScoreEditor(props: PepperScoreEditorProps & { ref?: Ref<PepperScoreEditorHandle> }) {
   const [session, setSession] = useState<Session>(() =>
@@ -103,11 +100,8 @@ type SessionProps = PepperScoreEditorProps & {
 
 function EditorSession({ session, editable, checking, maxStaves, onOpened, className, ref, ...props }: SessionProps) {
   const { store, dropped } = session;
-  const document = useEditorStore(store, (s) => s.document);
-  const cursor = useEditorStore(store, (s) => s.cursor);
-  const selection = useEditorStore(store, (s) => s.selection);
-  const invariantErrors = useEditorStore(store, (s) => s.invariantErrors);
-  const view = useEditorStore(store, (s) => s.view);
+  // Only the mode: the viewer subscribes to the cursor and selection itself, so a cursor move does not re-render the shell.
+  const mode = useEditorStore(store, (s) => s.cursor.mode);
   const glyphs = useGlyphFont();
   const [viewerMode, setViewerMode] = useState<ViewerMode>(props.view ?? 'endless');
   const [savedAt, setSavedAt] = useState<Date | null>(null);
@@ -117,20 +111,8 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
   const [banner, setBanner] = useState(() => (dropped.length ? `Some notation was not imported: ${describeDropped(dropped)}.` : ''));
   const [playing, setPlaying] = useState(false);
 
-  // The viewer gets the active layout's view, compiled 80 ms after the last change; a change starts the render clock.
-  const compiled = useMemo(() => compileToMusicXml(view.document), [view]);
-  const [musicXml, setMusicXml] = useState(compiled);
+  // A document change starts the render clock; the viewer's next draw stops it.
   const changedAt = useRef<number | null>(null);
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setMusicXml((previous) => {
-        if (previous === compiled) changedAt.current = null;
-        return compiled;
-      });
-    }, RENDER_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [compiled]);
-
   const callbacks = useRef(props);
   callbacks.current = props;
   useEffect(
@@ -163,8 +145,6 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
 
   useLeaveGuard(store);
   const phone = useIsPhone(rootRef, props.forcePhone);
-
-  const highlights = useMemo(() => (editable ? editorHighlights(document, cursor, selection, view) : []), [editable, document, cursor, selection, view]);
 
   const refocus = useCallback(() => rootRef.current?.focus({ preventScroll: true }), []);
   const closePopover = useCallback(() => {
@@ -209,7 +189,7 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
     },
     [onOpened, store],
   );
-  const open = useCallback(
+  const onOpen = useCallback(
     async (file: File) => {
       try {
         const opened = await readScoreFile(file);
@@ -223,19 +203,26 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
     },
     [replace, maxStaves],
   );
+  const onNew = useCallback(() => replace({ document: newScore(), dropped: [] }), [replace]);
+  const onExport = useCallback(() => exportMusicXml(store.getState().document), [store]);
+  const onSave = useCallback(
+    () =>
+      void session.source.then((source) => {
+        const { document, cursor, activeLayoutId } = store.getState();
+        savePepperScore({ document, source, editor: { cursor, activeLayoutId }, created: session.created });
+        store.markSaved();
+        setSavedAt(new Date());
+      }),
+    [session, store],
+  );
+  const onReport = useCallback(() => {
+    const { invariantErrors: errors, document } = store.getState();
+    download(JSON.stringify({ errors, document }, null, 2), 'pepperscore-report.json', 'application/json');
+  }, [store]);
+  const onPlayed = useCallback(() => setPlaying(true), []);
+  const onStopped = useCallback(() => setPlaying(false), []);
 
-  const save = () =>
-    void session.source.then((source) => {
-      const { document, cursor, activeLayoutId } = store.getState();
-      savePepperScore({ document, source, editor: { cursor, activeLayoutId }, created: session.created });
-      store.markSaved();
-      setSavedAt(new Date());
-    });
-
-  const reportErrors = () =>
-    download(JSON.stringify({ errors: invariantErrors, document: store.getState().document }, null, 2), 'pepperscore-report.json', 'application/json');
-
-  const banners = (
+  const banners = useMemo(() => (
     <>
       {!editable && !checking && <div className="ps-editor-banner ps-editor-readonly" role="status">{readOnlyMessage(props.licenceKey)}</div>}
       {banner && (
@@ -245,29 +232,17 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
         </div>
       )}
     </>
-  );
+  ), [editable, checking, props.licenceKey, banner]);
   const viewer = (
-    <PepperScore
-      ref={viewerRef}
-      className="ps-editor-viewer"
-      musicXml={musicXml}
-      chrome="minimal"
-      view={phone ? 'vertical' : viewerMode}
-      height="fill"
-      assetBaseUrl={props.assetBaseUrl}
-      soundPack={props.soundPack}
-      onElementClick={editable ? onElementClick : undefined}
-      highlights={highlights}
-      onReady={onReady}
-      onPlay={() => setPlaying(true)}
-      onStop={() => setPlaying(false)}
+    <EditorViewer
+      viewerRef={viewerRef} store={store} editable={editable} view={phone ? 'vertical' : viewerMode} changedAt={changedAt}
+      assetBaseUrl={props.assetBaseUrl} soundPack={props.soundPack} onElementClick={onElementClick} onReady={onReady} onPlay={onPlayed} onStop={onStopped}
     />
   );
+  const licence = useMemo(() => ({ editable, checking, maxStaves }), [editable, checking, maxStaves]);
   const shell: ShellProps = {
-    viewer, banners, popover, closePopover, playing, savedAt, draws, viewerMode, setViewerMode,
-    licence: { editable, checking, maxStaves },
-    onPlay: togglePlay, onSave: save, onExport: () => exportMusicXml(store.getState().document), onOpen: (file) => void open(file),
-    onNew: () => replace({ document: newScore(), dropped: [] }), onReport: reportErrors,
+    viewer, banners, popover, closePopover, playing, savedAt, draws, viewerMode, setViewerMode, licence,
+    onPlay: togglePlay, onSave, onExport, onOpen, onNew, onReport,
   };
 
   return (
@@ -276,7 +251,7 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
       className={className}
       style={props.height ? { height: props.height } : undefined}
       tabIndex={0}
-      data-ps-mode={cursor.mode}
+      data-ps-mode={mode}
       data-ps-editable={editable ? '' : undefined}
       data-ps-glyphs={glyphs}
       onKeyDownCapture={(event) => {

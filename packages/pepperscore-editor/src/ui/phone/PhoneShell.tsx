@@ -12,12 +12,12 @@ import { PhoneToolbar } from './PhoneToolbar';
  * toolbar's measured height), so the score scrolls between them and nothing jumps.
  */
 export function PhoneShell(props: ShellProps) {
-  const { store } = useUi();
+  const { store, refocus } = useUi();
   const shell = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const toolbar = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const { collapsed, wake } = useAutoCollapse(4000, menuOpen);
+  const { collapsed, wake } = useAutoCollapse(4000, menuOpen, shell, refocus);
 
   // Any dispatch, and the user's own touch, wheel or pointer on the canvas, expands the header and restarts its
   // idle timer. Not `scroll`: the collapse itself (a taller viewport clamping scrollTop) and playback's

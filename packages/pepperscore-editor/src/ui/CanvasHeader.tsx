@@ -1,18 +1,21 @@
+import { memo } from 'react';
 import { setActiveLayout } from '../engine/commands/index';
-import { tip, usePosition, useRun, useUi } from './controls';
+import { tip, useCursorBar, useCursorPartName, useRun, useUi } from './controls';
 import { Icon } from './icons';
+import { layoutLabel } from './LayoutTab';
 import { useEditorStore } from './useEditorStore';
 
 export type ViewerMode = 'vertical' | 'endless';
 
 /** Above the score: the Entry/Select badge (click toggles), the position, the layout selector, Page/Endless, zoom and (medium widths) the inspector toggle. */
-export function CanvasHeader({ mode, onMode, inspectorOpen, onInspector }: { mode: ViewerMode; onMode(mode: ViewerMode): void; inspectorOpen: boolean; onInspector(): void }) {
+export const CanvasHeader = memo(function CanvasHeader({ mode, onMode, inspectorOpen, onInspector }: { mode: ViewerMode; onMode(mode: ViewerMode): void; inspectorOpen: boolean; onInspector(): void }) {
   const { store, editable, refocus } = useUi();
   const run = useRun();
-  const { cursor, index, bars, partName } = usePosition();
+  const { index, bars } = useCursorBar();
+  const partName = useCursorPartName();
+  const entry = useEditorStore(store, (s) => s.cursor.mode === 'enter');
   const layouts = useEditorStore(store, (s) => s.document.layouts);
   const activeLayoutId = useEditorStore(store, (s) => s.activeLayoutId);
-  const entry = cursor.mode === 'enter';
   return (
     <div className="ps-canvas-head">
       <div className="ps-canvas-crumbs">
@@ -41,7 +44,7 @@ export function CanvasHeader({ mode, onMode, inspectorOpen, onInspector }: { mod
               refocus();
             }}
           >
-            {layouts.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+            {layouts.map((l) => <option key={l.id} value={l.id}>{layoutLabel(l)}</option>)}
           </select>
           <Icon name="chevron" size={13} />
         </label>
@@ -52,10 +55,10 @@ export function CanvasHeader({ mode, onMode, inspectorOpen, onInspector }: { mod
             </button>
           ))}
         </div>
-        <span className="ps-zoom" title="Zoom">100%</span>
+        <span className="ps-zoom ps-zoom-readout" aria-hidden="true">100%</span>
         {/* Shown only on medium containers, where the inspector is a drawer over the canvas. */}
         <button type="button" className={`ps-btn ps-btn-ghost ps-btn-sm ps-inspector-toggle ${inspectorOpen ? 'is-on' : ''}`.trim()} aria-expanded={inspectorOpen} aria-controls="ps-inspector" onClick={onInspector}>Inspector</button>
       </div>
     </div>
   );
-}
+});

@@ -1,7 +1,8 @@
-import type { ReactNode } from 'react';
+import { memo, type ReactNode } from 'react';
 import { setChordMode } from '../engine/commands/index';
 import { binding, useDispatch, useRun, useUi } from './controls';
 import { BeamGroup, ChordIcon, CurveSlur, CurveTie, Glyph, SMUFL } from './icons';
+import { countRender } from './render-counts';
 import { useEditorStore } from './useEditorStore';
 
 /** The keycap legend: the binding's first key, with Ctrl and Shift as ^ and ⇧. */
@@ -42,10 +43,12 @@ export const VALUES = [
 ] as const;
 
 /** The left rail: a recessed tray of note values, then modifiers, pitch and grouping keycaps. */
-export function Rail() {
+export const Rail = memo(function Rail() {
+  countRender('Rail');
   const { store } = useUi();
   const dispatch = useDispatch();
-  // Only what the keycaps light up, so cursor moves do not re-render the rail.
+  // Memoised, with no props, and subscribed only to what the keycaps light up (the value, dot and chord state), so
+  // cursor moves do not re-render the rail (validation/editor.mjs counts its renders across arrow-key moves).
   const base = useEditorStore(store, (s) => s.cursor.duration.base);
   const dotted = useEditorStore(store, (s) => s.cursor.duration.dots > 0);
   const chord = useEditorStore(store, (s) => !!s.cursor.chord);
@@ -86,4 +89,4 @@ export function Rail() {
       </div>
     </aside>
   );
-}
+});

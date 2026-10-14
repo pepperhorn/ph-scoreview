@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { setActiveLayout } from '../../engine/commands/index';
 import { effectiveKey, effectiveTime } from '../../model/query';
-import { usePosition, useRun, useUi } from '../controls';
+import { useCursorBar, useRun, useUi } from '../controls';
 import { Glyph, Icon, SMUFL } from '../icons';
 import type { PopoverName } from '../keymap';
+import { layoutLabel } from '../LayoutTab';
 import { keyName } from '../Popover';
 import { tempoAt } from '../TempoFields';
 import { useEditorStore } from '../useEditorStore';
@@ -13,17 +14,26 @@ import { PhoneMenu, type PhoneMenuProps } from './PhoneMenu';
  * Collapses after `ms` without a `wake()` (the phone shell wakes it on every store dispatch, touch, wheel or
  * pointer down on the canvas, and header tap); `wake()` expands it again and restarts the timer. While `paused`
  * (the overflow menu is open) it stays expanded with no timer. The timer lives in a ref, so frequent wakes (a
- * swipe) cost no renders.
+ * swipe) cost no renders. The collapse makes the first row (`.ps-phead-main` in `root`) inert, which would drop
+ * focus held there (Play, More) to the page and stop the editor's keys, so `refocus` returns it to the editor first.
  */
-export function useAutoCollapse(ms = 4000, paused = false): { collapsed: boolean; wake(): void } {
+export function useAutoCollapse(ms = 4000, paused = false, root?: RefObject<HTMLElement | null>, refocus?: () => void): { collapsed: boolean; wake(): void } {
   const [collapsed, setCollapsed] = useState(false);
   const timer = useRef(0);
   const held = useRef(paused);
   held.current = paused;
+  const focus = useRef({ root, refocus });
+  focus.current = { root, refocus };
   const wake = useCallback(() => {
     setCollapsed(false);
     window.clearTimeout(timer.current);
-    if (!held.current) timer.current = window.setTimeout(() => setCollapsed(true), ms);
+    if (held.current) return;
+    timer.current = window.setTimeout(() => {
+      const { root, refocus } = focus.current;
+      const active = root?.current?.ownerDocument.activeElement;
+      if (active && root?.current?.querySelector('.ps-phead-main')?.contains(active)) refocus?.();
+      setCollapsed(true);
+    }, ms);
   }, [ms]);
   useEffect(() => {
     wake();
@@ -46,16 +56,22 @@ export type PhoneHeaderProps = PhoneMenuProps & {
  * badge, the position, the layout chip and the key, time and tempo chips (their popovers open as inline strips
  * in the toolbar). Collapsed (`data-header="collapsed"` on the shell) it is a 28px strip: mode dot, position, key.
  */
-export function PhoneHeader({ collapsed, wake, playing, onPlay, menuOpen, setMenuOpen, ...menu }: PhoneHeaderProps) {
+export const PhoneHeader = memo(function PhoneHeader({ collapsed, wake, playing, onPlay, menuOpen, setMenuOpen, ...menu }: PhoneHeaderProps) {
   const { store, editable, togglePopover, refocus } = useUi();
   const run = useRun();
-  const { document, cursor, index, bars } = usePosition();
+  const { index, bars } = useCursorBar();
+  const document = useEditorStore(store, (s) => s.document);
+  const entry = useEditorStore(store, (s) => s.cursor.mode === 'enter');
   const layouts = useEditorStore(store, (s) => s.document.layouts);
   const activeLayoutId = useEditorStore(store, (s) => s.activeLayoutId);
   const key = effectiveKey(document, index);
   const time = effectiveTime(document, index);
   const tempo = tempoAt(document, index);
-  const entry = cursor.mode === 'enter';
+  // The closed menu returns focus to the editor, so keys work at once and the collapse never strands focus.
+  const closeMenu = useCallback(() => {
+    setMenuOpen(false);
+    refocus();
+  }, [setMenuOpen, refocus]);
   const chip = (name: PopoverName, label: string, k: string, value: ReactNode) => (
     <button type="button" className={`ps-btn ps-chip ps-pchip ps-chip-${name}`} aria-label={label} disabled={!editable} onClick={() => togglePopover(name)}>
       <span className="ps-chip-k">{k}</span>{value}
@@ -70,10 +86,10 @@ export function PhoneHeader({ collapsed, wake, playing, onPlay, menuOpen, setMen
             <h1 className={`ps-score-title ps-phead-title ${document.meta.title ? '' : 'is-empty'}`.trim()}>{document.meta.title || 'Untitled score'}</h1>
             {document.meta.composer && <p className="ps-score-composer ps-phead-composer">{document.meta.composer}</p>}
           </div>
-          <button type="button" className={`ps-btn ps-btn-play ps-phead-play ${playing ? 'is-playing' : ''}`.trim()} aria-label={playing ? 'Stop' : 'Play'} onClick={onPlay}>
+          <button type="button" className={`ps-btn ps-btn-play ps-phead-play ${playing ? 'is-playing' : ''}`.trim()} aria-label={playing ? 'Stop' : 'Play'} onClick={() => { onPlay(); refocus(); }}>
             <Icon name={playing ? 'stop' : 'play'} size={14} />
           </button>
-          <button type="button" className="ps-btn ps-icon-btn ps-phead-more" aria-label="More" aria-haspopup="menu" aria-expanded={menuOpen} data-ps-menu-toggle="" onClick={() => setMenuOpen(!menuOpen)}>
+          <button type="button" className="ps-btn ps-icon-btn ps-phead-more" aria-label="More" aria-haspopup="menu" aria-expanded={menuOpen} data-ps-menu-toggle="" onClick={() => { setMenuOpen(!menuOpen); if (menuOpen) refocus(); }}>
             <Icon name="more" size={18} />
           </button>
         </div>
@@ -92,7 +108,7 @@ export function PhoneHeader({ collapsed, wake, playing, onPlay, menuOpen, setMen
                 refocus();
               }}
             >
-              {layouts.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+              {layouts.map((l) => <option key={l.id} value={l.id}>{layoutLabel(l)}</option>)}
             </select>
             <Icon name="chevron" size={12} />
           </label>
@@ -101,7 +117,7 @@ export function PhoneHeader({ collapsed, wake, playing, onPlay, menuOpen, setMen
           {chip('tempo', 'Tempo', 'Tempo', tempo ? <><Glyph c={SMUFL.quarter} alt="♩" className="ps-glyph-mm" />= {tempo.bpm}</> : 'None')}
         </div>
       </header>
-      {menuOpen && <PhoneMenu {...menu} onClose={() => setMenuOpen(false)} />}
+      {menuOpen && <PhoneMenu {...menu} onClose={closeMenu} />}
     </>
   );
-}
+});

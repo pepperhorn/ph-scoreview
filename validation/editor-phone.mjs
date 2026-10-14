@@ -2,7 +2,8 @@
 // 28px strip after 4 s idle and a canvas scroll restores it; tapping Value -> quarter -> C enters a note and the header
 // stays expanded while typing (each dispatch restarts the idle timer); a scroll the collapse itself causes (at the
 // bottom of the score) does not reopen it; the Bar tab's repeat start adds a forward repeat; the Pitch tab has tuplet,
-// beam and Dyn (the dynamic strip); Escape closes the overflow menu, which holds the header open;
+// beam and Dyn (the dynamic strip); Escape closes the overflow menu, which holds the header open; Play then Stop leave
+// focus on the editor, so after the collapse keys still enter notes;
 // the Key chip opens an inline strip inside the toolbar; the toolbar stays put while the canvas scrolls; the Layout tab's
 // swap chip opens the instrument swap as an inline strip (/tmp/editor-phone-layout.png). Screenshots go to
 // /tmp/editor-phone.png (expanded) and /tmp/editor-phone-collapsed.png. Runs against the build (npm run build first).
@@ -165,6 +166,24 @@ try {
   await page.locator('.ps-pmenu').waitFor({ state: 'detached' });
   assert.equal(await page.locator('.ps-editor').getAttribute('data-ps-mode'), mode, 'Escape closed the menu only');
 
+  // 6b. Play then Stop from the header return focus to the editor, so the collapse (which makes the first row inert)
+  // never strands it: 4.5 s later the root still has focus, entry mode holds and c enters a note.
+  await page.locator('.ps-phead .ps-phead-crumb').tap();
+  await headerSettles(page, 'full');
+  if (await page.locator('.ps-editor').getAttribute('data-ps-mode') !== 'enter') await page.locator('.ps-phead-mode').tap();
+  assert.equal(await page.locator('.ps-editor').getAttribute('data-ps-mode'), 'enter');
+  const pitchesBefore = ((await musicXml(page)).match(/<pitch>/g) ?? []).length;
+  await page.locator('.ps-phead-play').tap();
+  await page.locator('.ps-phead-play[aria-label="Stop"]').waitFor({ timeout: 30000 });
+  await page.locator('.ps-phead-play').tap();
+  await page.locator('.ps-phead-play[aria-label="Play"]').waitFor({ timeout: 10000 });
+  await pause(4500);
+  assert.equal(await page.locator('.ps-shell-phone').getAttribute('data-header'), 'collapsed', 'the header collapsed after Stop');
+  assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('ps-editor') ?? false), true, `focus is on the editor root (${await page.evaluate(() => document.activeElement?.className)})`);
+  assert.equal(await page.locator('.ps-editor').getAttribute('data-ps-mode'), 'enter', 'still in entry mode');
+  await page.keyboard.press('c');
+  await page.waitForFunction(n => (window.__editor.ref.current.getMusicXml().match(/<pitch>/g) ?? []).length === n + 1, pitchesBefore, { timeout: 10000 });
+
   assert.equal(await page.evaluate(() => window.__viewerRemovals), 0, 'the viewer never remounted');
   // 7. The Layout tab on the Tenor Sax + Piano fixture: row 1 toggles staves, row 2's swap chip opens the swap card
   // as an inline strip in the toolbar; Alto Sax at beginner highlights the moved notes.
@@ -189,7 +208,7 @@ try {
 
   assert.deepEqual(errors, [], 'no page or console errors');
   await context.close();
-  console.log(`Editor phone: one viewer mount, two-row header (${expanded}px) collapses to ${collapsed}px, a user scroll restores it and a clamp scroll does not, toolbar entry keeps it expanded, repeat start, tuplet/beam/dynamic, inline key strip in the toolbar, menu Escape and hold, fixed toolbar, Layout tab stave chips and swap strip pass`);
+  console.log(`Editor phone: one viewer mount, two-row header (${expanded}px) collapses to ${collapsed}px, a user scroll restores it and a clamp scroll does not, toolbar entry keeps it expanded, repeat start, tuplet/beam/dynamic, inline key strip in the toolbar, menu Escape and hold, Play/Stop keeps focus through the collapse, fixed toolbar, Layout tab stave chips and swap strip pass`);
 } finally {
   await browser.close();
   await server.close();

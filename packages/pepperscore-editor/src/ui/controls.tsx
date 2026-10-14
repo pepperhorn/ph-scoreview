@@ -69,6 +69,29 @@ export function usePosition(): Position {
   };
 }
 
+/** The cursor's bar (0-based) and the bar count, as primitives: a move within the bar re-renders nothing. */
+export function useCursorBar(): { index: number; bars: number } {
+  const { store } = useUi();
+  const index = useEditorStore(store, (s) => Math.max(measureIndex(s.document, s.cursor.measureId), 0));
+  const bars = useEditorStore(store, (s) => s.document.global.measures.length);
+  return { index, bars };
+}
+
+/** The name of the cursor's part. */
+export function useCursorPartName(): string {
+  const { store } = useUi();
+  return useEditorStore(store, (s) => s.document.parts.find((p) => p.id === s.cursor.partId)?.name ?? '');
+}
+
+/** The cursor's 1-based beat in its bar. */
+export function useCursorBeat(): number {
+  const { store } = useUi();
+  return useEditorStore(store, (s) => {
+    const time = effectiveTime(s.document, Math.max(measureIndex(s.document, s.cursor.measureId), 0));
+    return Math.floor(s.cursor.tick / (measureTicks(time) / time.count)) + 1;
+  });
+}
+
 export function Section({ title, className = '', children }: { title: string; className?: string; children: ReactNode }) {
   return <section className={`ps-insp-section ${className}`.trim()}><h4 className="ps-insp-title">{title}</h4>{children}</section>;
 }

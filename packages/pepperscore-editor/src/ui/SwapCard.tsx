@@ -3,7 +3,7 @@ import { instrumentName, LEVELS, type InstrumentId } from '../model/instruments'
 import { locateEvent } from '../model/query';
 import type { Part, Swap } from '../model/schema';
 import { Row, Seg, useDispatch, useUi } from './controls';
-import { INTERVALS, intervalValue, levelName, movedIn, movedWord, swapTargetsFor } from './layout-model';
+import { INTERVALS, intervalValue, levelName, movedIn, movedWord, swapExportNote, swapTargetsFor } from './layout-model';
 import { useEditorStore } from './useEditorStore';
 
 const NEW_SWAP: Omit<Swap, 'instrument'> = { level: 'intermediate', autoRange: true, rangeOverrides: {} };
@@ -58,6 +58,7 @@ export function SwapCard({ partId, onPart, compact = false }: { partId: string |
     if (after.length > before) onPart(after[after.length - 1].id);
   };
   const off = !editable || !swap;
+  const exportNote = swapExportNote(document, layoutId, part, swap);
   const interval = intervalValue(swap?.interval);
 
   return (
@@ -95,6 +96,7 @@ export function SwapCard({ partId, onPart, compact = false }: { partId: string |
               <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm ps-swap-copy" disabled={!editable} onClick={copy}>Make a copy (own stave)</button>
               <button type="button" className="ps-btn ps-btn-ghost ps-btn-sm ps-swap-remove" disabled={!editable} onClick={() => set(null)}>Remove swap</button>
             </div>
+            {exportNote && <p className="ps-insp-note ps-swap-export-note">{exportNote}</p>}
           </div>
         )}
       </div>

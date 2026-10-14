@@ -409,6 +409,7 @@
 .ps-editor .ps-swap-link { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; padding-top: 9px; border-top: 1px solid #f0efea; }
 .ps-editor .ps-swap-link-text { display: inline-flex; align-items: baseline; gap: 7px; font-size: 11px; color: var(--ps-ink-3); }
 .ps-editor .ps-swap-link-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.ps-editor .ps-swap-export-note { margin-top: 0; }
 .ps-editor .ps-link-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--ps-accent); }
 .ps-editor .ps-moved-legend { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px 9px; margin-top: 10px; padding: 9px 10px; border-radius: 10px; background: #fdf3ea; border: 1px solid #f2dcc6; }
 .ps-editor .ps-moved-swatch { display: grid; place-items: center; width: 24px; height: 22px; overflow: hidden; color: var(--ps-transposed); }
@@ -433,6 +434,7 @@
 .ps-editor .ps-pstrip-swap .ps-pstrip-fields { flex: 1 1 0; min-width: 0; }
 .ps-editor .ps-pstrip-swap .ps-swap.is-compact, .ps-editor .ps-pstrip-swap .ps-swap.is-compact .ps-swap-card { flex-wrap: wrap; row-gap: 6px; }
 .ps-editor .ps-pstrip-swap .ps-swap-link-text { display: none; }
+.ps-editor .ps-swap.is-compact .ps-swap-export-note { flex: none; margin: 0; white-space: nowrap; }
 .ps-editor .ps-shell-phone .ps-status-check { flex: none; }
 .ps-editor .ps-shell-phone .ps-status-moved { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .ps-editor .ps-prow-staves .ps-stave-hint { flex: none; min-width: 0; width: 96px; padding: 0 2px; font-size: 10px; line-height: 1.2; }

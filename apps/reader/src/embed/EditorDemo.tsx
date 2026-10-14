@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { compileToMusicXml, PepperScoreEditor, type Document, type PepperScoreEditorHandle } from 'pepperscore-editor';
+import { compileToMusicXml, PepperScoreEditor, renderCounts, type Document, type PepperScoreEditorHandle } from 'pepperscore-editor';
 import ensemble from '../../../../validation/fixtures/ensemble.musicxml?raw';
 import { tenorPianoDocument } from './editor-fixtures';
 
-declare global { interface Window { __editor: { ref: React.RefObject<PepperScoreEditorHandle | null> } } }
+declare global { interface Window { __editor: { ref: React.RefObject<PepperScoreEditorHandle | null>; renderCounts: Record<string, number> } } }
 
 type Source = { key: number; musicXml?: string; document?: Document };
 /** The demo's signed licence (4 staves, expires 2028-01-01); `'dev'` would only work in development builds. */
@@ -15,15 +15,15 @@ const forcePhone = () => (new URLSearchParams(window.location.search).get('phone
 
 /**
  * The editor demo (/editor): a licensed editor in Endless view with an optional live-MusicXML sidebar (hidden at first).
- * validation/editor.mjs drives it through `window.__editor.ref` (the editor handle) and the fixture buttons (the tenor
- * sax + piano fixture is the instrument swap's).
+ * validation/editor.mjs drives it through `window.__editor.ref` (the editor handle), reads `window.__editor.renderCounts`
+ * (shell render counts) and uses the fixture buttons (the tenor sax + piano fixture is the instrument swap's).
  */
 export default function EditorDemo() {
   const ref = useRef<PepperScoreEditorHandle>(null);
   const [source, setSource] = useState<Source>({ key: 0 });
   const [showXml, setShowXml] = useState(false);
   const [xml, setXml] = useState('');
-  window.__editor = { ref };
+  window.__editor = { ref, renderCounts };
   /** New and the fixture replace the score: with unsaved changes, only after the editor's discard prompt. */
   const replace = (next: Omit<Source, 'key'>) => {
     if (ref.current && !ref.current.confirmDiscard()) return;

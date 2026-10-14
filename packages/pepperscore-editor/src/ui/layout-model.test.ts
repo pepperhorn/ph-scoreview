@@ -7,7 +7,7 @@ import { editorHighlights } from './highlights';
 import { createCustomLayout } from '../engine/commands/index';
 import { createEditorStore } from '../engine/store';
 import { findEvent } from '../engine/sequence-edit';
-import { customLayoutName, defaultSwapPart, INTERVALS, intervalValue, movedIn, movedNoteIds, movedStatus, planStaveToggle, staveRows, swapTargetsFor, toggleStave, visibleStaves } from './layout-model';
+import { customLayoutName, defaultSwapPart, INTERVALS, intervalValue, movedIn, movedNoteIds, movedStatus, planStaveToggle, staveRows, swapExportNote, swapTargetsFor, toggleStave, visibleStaves } from './layout-model';
 
 /** Tenor sax (written C6 D6 quarters, a half rest) and a two-staff piano, one 4/4 bar. */
 function saxAndPiano(): Document {
@@ -88,6 +88,17 @@ describe('stave list', () => {
     const doc = saxAndPiano();
     expect(defaultSwapPart(doc, doc.layouts[0])).toBe(doc.parts[0].id);
     expect(defaultSwapPart(doc, { ...doc.layouts[0], parts: [{ partId: doc.parts[1].id }] })).toBe(doc.parts[1].id);
+  });
+});
+
+describe('swap export note', () => {
+  it('says what export writes when the swap is on the full score, and nothing elsewhere', () => {
+    const doc = saxAndPiano();
+    const swap = { instrument: 'alto-saxophone' as const, level: 'beginner' as const, autoRange: true, rangeOverrides: {} };
+    doc.layouts.push({ id: 'solo', name: 'Solo', kind: 'custom', transposing: true, overrides: {}, parts: [{ partId: doc.parts[0].id }] });
+    expect(swapExportNote(doc, doc.layouts[0].id, doc.parts[0], swap)).toBe('Export writes Tenor Sax; Make a copy to export Alto Sax.');
+    expect(swapExportNote(doc, 'solo', doc.parts[0], swap)).toBeUndefined();
+    expect(swapExportNote(doc, doc.layouts[0].id, doc.parts[0], undefined)).toBeUndefined();
   });
 });
 

@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { binding } from './controls';
 import { Kbd } from './icons';
 import { describeKey } from './keymap';
@@ -19,11 +20,11 @@ export const HINTS: [keys: string, text: string][] = [
 ];
 
 /** Keyboard hints under the score. */
-export function HintStrip() {
+export const HintStrip = memo(function HintStrip() {
   return (
     <div className="ps-hints" aria-label="Keyboard hints">
       {HINTS.map(([keys, text]) => <span key={text} className="ps-hint"><Kbd>{keys}</Kbd><span className="ps-hint-text">{text}</span></span>)}
       <span className="ps-hint-caption">Popovers avoid the cursor bar</span>
     </div>
   );
-}
+});

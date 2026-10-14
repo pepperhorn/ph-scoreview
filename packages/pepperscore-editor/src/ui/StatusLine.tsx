@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { usePosition, useUi } from './controls';
 import { movedNoteIds, movedStatus } from './layout-model';
 import { useEditorStore } from './useEditorStore';
@@ -6,7 +7,7 @@ const DURATION_NAMES: Record<string, string> = { whole: 'whole', half: 'half', q
 const time = (date: Date) => `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 
 /** The bottom line: score check (or its problems and a report button), moved notes, the cursor and the last save. */
-export function StatusLine({ savedAt, onReport }: { savedAt: Date | null; onReport(): void }) {
+export const StatusLine = memo(function StatusLine({ savedAt, onReport }: { savedAt: Date | null; onReport(): void }) {
   const { store } = useUi();
   const errors = useEditorStore(store, (s) => s.invariantErrors);
   const view = useEditorStore(store, (s) => s.view);
@@ -15,6 +16,7 @@ export function StatusLine({ savedAt, onReport }: { savedAt: Date | null; onRepo
     const partId = s.view.counts.partId;
     return partId ? s.document.layouts.find((l) => l.id === s.activeLayoutId)?.parts.find((lp) => lp.partId === partId)?.swap : undefined;
   });
+  // The whole cursor: the line shows its bar, beat, value, mode and chord state.
   const { cursor, index, beat, partName } = usePosition();
   const dots = '.'.repeat(cursor.duration.dots);
   return (
@@ -41,4 +43,4 @@ export function StatusLine({ savedAt, onReport }: { savedAt: Date | null; onRepo
       {savedAt && <span className="ps-status-saved">Saved locally · {time(savedAt)}</span>}
     </footer>
   );
-}
+});

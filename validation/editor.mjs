@@ -2,9 +2,10 @@
 // ensemble fixture (5 staves) is refused, accidentals and chord entry,
 // the time popover applies on Enter, unsaved work is guarded, the desktop shell (rail keycaps, layout selector, popovers
 // beside the cursor bar, add/remove bar, title editing) works, the Layout tab's instrument swap highlights, reviews and
-// copies moved notes and a custom layout hides staves, and the change-to-redraw latency the editor logs stays under
-// PS_EDITOR_RENDER_MS (default 400; a warning above it, a failure above twice it). Runs against the build (npm run build
-// first). BROWSER=chromium|firefox|webkit.
+// copies moved notes and a custom layout hides staves (moving the cursor to a drawn staff), five arrow-key moves render
+// the rail at most once, Escape closes a popover before the inspector drawer, and the change-to-redraw latency the editor
+// logs stays under PS_EDITOR_RENDER_MS (default 400; a warning above it, a failure above twice it). Runs against the
+// build (npm run build first). BROWSER=chromium|firefox|webkit.
 import assert from 'node:assert/strict';
 import { chromium, firefox, webkit } from 'playwright-core';
 import { readFile } from 'node:fs/promises';
@@ -54,6 +55,8 @@ try {
   assert.equal(await page.locator('.ps-rail .ps-keycap[aria-label="Quarter note"] .ps-tool-key').textContent(), '4', 'the keycap legend comes from the keymap');
   const layoutSelect = page.locator('.ps-canvas-head select[aria-label="Layout"]');
   assert.deepEqual(await layoutSelect.locator('option').allTextContents(), ['Full score'], 'the layout selector lists the full score');
+  assert.equal(await page.locator('.ps-canvas-head .ps-zoom-readout').getAttribute('aria-hidden'), 'true', 'the zoom readout is a plain label');
+  assert.equal(await page.locator('.ps-canvas-head button.ps-zoom, .ps-canvas-head button.ps-zoom-readout').count(), 0, 'the zoom readout is not a button');
 
   // 1. Keyboard entry: n (entry mode), 4 (quarter), c d e f.
   await page.locator('.ps-editor').focus();
@@ -83,6 +86,21 @@ try {
   await page.evaluate(() => window.__editor.ref.current.undo());
   await page.waitForFunction(() => !/<chord\/>/.test(window.__editor.ref.current.getMusicXml()), null, { timeout: 10000 });
   await page.locator('.ps-editor').focus();
+
+  // 2c. Cursor moves re-render the viewer, not the shell: five arrow-key moves render the rail at most once.
+  {
+    const railRenders = () => page.evaluate(() => window.__editor.renderCounts.Rail ?? 0);
+    const position = () => page.locator('.ps-status-cursor').textContent();
+    const before = [await railRenders(), await position()];
+    for (let i = 0; i < 5; i++) {
+      await page.keyboard.press('ArrowLeft');
+      await page.waitForTimeout(60);
+    }
+    await page.waitForTimeout(200);
+    assert.notEqual(await position(), before[1], 'the arrow keys moved the cursor');
+    const renders = (await railRenders()) - before[0];
+    assert.ok(renders <= 1, `five cursor moves render the rail at most once (${renders})`);
+  }
 
   // 3. A click on the first note puts the cursor (and the selection) on it.
   await clickNote(page, 0);
@@ -235,6 +253,7 @@ try {
     assert.match(await page.locator('.ps-moved-text').textContent(), new RegExp(`Moved 8vb to fit range · ${moved} notes`));
     assert.equal(await page.locator('.ps-stave-item[data-staff="1"] .ps-stave-meta').first().textContent(), 'as Alto Sax', 'the stave list shows the swap');
     assert.match(await page.locator('.ps-swap-link-text').textContent(), /Linked to Tenor Sax · changes affect both/);
+    assert.equal(await page.locator('.ps-swap-export-note').textContent(), 'Export writes Tenor Sax; Make a copy to export Alto Sax.', 'a full-score swap says what Export writes');
     await page.click('.ps-moved-review');
     await page.waitForFunction(selector => [...document.querySelectorAll(selector)].every(n => n.classList.contains('ps-selection')), TRANSPOSED, { timeout: 10000 });
     assert.equal(await count(`${NOTES}.ps-selection`), moved, 'Review selects exactly the moved notes');
@@ -255,6 +274,7 @@ try {
     // Hiding the Tenor Sax in the full score makes a "Custom" layout instead (export, which writes the full score, keeps
     // both parts): only the two piano staves are drawn. Saving it under a name makes a second custom layout.
     assert.equal(await page.locator('.ps-stave-hint').textContent(), 'Hiding a stave makes a custom layout.');
+    assert.match(await page.locator('.ps-status-cursor').textContent(), /^Tenor Sax · /, 'the cursor starts on the Tenor Sax');
     await page.click('.ps-stave-item:has-text("Tenor Sax") .ps-stave-label');
     await page.locator('.ps-profile-chip.is-on:has-text("Custom")').waitFor();
     assert.equal(await scoreParts(), 2, 'hiding a stave leaves the full score (and the export) alone');
@@ -262,12 +282,26 @@ try {
     await page.waitForFunction(() => document.querySelector('.ps-editor .score-system svg .measure')?.querySelectorAll(':scope > .staff').length === 2, null, { timeout: 10000 });
     assert.equal(await stavesPerSystem(), 2, 'the custom layout draws the two piano staves');
     assert.equal(await count(TRANSPOSED), 0, 'the hidden swapped part leaves no highlights');
+    // The cursor left the hidden Tenor Sax for the first drawn staff: c (no click first) enters on the piano.
+    assert.match(await page.locator('.ps-status-cursor').textContent(), /^Piano · /, 'hiding the cursor stave moved the cursor to the piano');
+    const pianoPitches = () => page.evaluate(() => (JSON.stringify(window.__editor.ref.current.getDocument().parts.find(p => p.name === 'Piano')).match(/"pitch"/g) ?? []).length);
+    const saxPitches = () => page.evaluate(() => (JSON.stringify(window.__editor.ref.current.getDocument().parts.find(p => p.name === 'Tenor Sax')).match(/"pitch"/g) ?? []).length);
+    const [piano0, sax0] = [await pianoPitches(), await saxPitches()];
+    const xmlHidden = await musicXml(page);
+    await page.locator('.ps-editor').focus();
+    if (await page.locator('.ps-editor').getAttribute('data-ps-mode') !== 'enter') await page.keyboard.press('n');
+    await page.keyboard.press('c');
+    await page.waitForFunction(xml => window.__editor.ref.current.getMusicXml() !== xml, xmlHidden, { timeout: 10000 });
+    assert.equal(await saxPitches(), sax0, 'nothing was entered on the hidden Tenor Sax');
+    assert.notEqual(await pianoPitches(), piano0, 'c entered on the piano');
+    await page.evaluate(() => window.__editor.ref.current.undo());
+    await page.keyboard.press('Escape');
     await page.fill('.ps-save-view-input', 'Piano only');
     await page.click('.ps-save-layout');
     await page.locator('.ps-profile-chip.is-on:has-text("Piano only")').waitFor();
     assert.equal(await stavesPerSystem(), 2);
     const options = await layoutSelect.locator('option').allTextContents();
-    assert.ok(options.some(t => /Piano only/.test(t)) && options.some(t => /^Custom/.test(t)), `the layout selector lists the custom layouts (${options})`);
+    assert.ok(options.includes('Piano only (custom)') && options.includes('Custom (custom)'), `the layout selector lists the custom layouts with their kind (${options})`);
     // A click on the first drawn staff (the piano's right hand) puts the cursor there, not on the hidden Tenor Sax.
     await clickNote(page, 0);
     await page.waitForFunction(selector => document.querySelector(selector)?.classList.contains('ps-cursor'), NOTES, { timeout: 10000 });
@@ -303,6 +337,12 @@ try {
     await page.waitForFunction(() => { const r = document.querySelector('.ps-editor .ps-inspector').getBoundingClientRect(); return r.right <= window.innerWidth + 1 && r.width > 200; }, null, { timeout: 5000 });
     await page.click('.ps-inspector .ps-glyph-btn[aria-label="Repeat start"]');
     await page.waitForFunction(() => /<repeat direction="forward"\/>/.test(window.__editor.ref.current.getMusicXml()), null, { timeout: 10000 });
+    // With a popover open over the drawer, Escape closes the popover first, then the drawer.
+    await page.keyboard.press('k');
+    await page.locator('.ps-popover-key').waitFor();
+    await page.keyboard.press('Escape');
+    await page.locator('.ps-popover').waitFor({ state: 'detached' });
+    assert.equal(await inspector.isVisible(), true, 'the first Escape closed only the popover');
     await page.keyboard.press('Escape');
     await inspector.waitFor({ state: 'hidden', timeout: 5000 });
     await medium.close();
