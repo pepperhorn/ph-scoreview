@@ -95,7 +95,7 @@ const xml = `<?xml version="1.0" encoding="UTF-8"?>
 const xmlPath = join(mkdtempSync(join(tmpdir(), 'chunks-')), 'chunk-boundaries.musicxml');
 writeFileSync(xmlPath, xml);
 
-const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.wasm': 'application/wasm', '.json': 'application/json' };
+const mime = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.wasm': 'application/wasm', '.json': 'application/json' };
 const server = createServer(async (request, response) => {
   const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
   const path = resolve(dist, `.${pathname === '/' ? '/index.html' : pathname}`);
