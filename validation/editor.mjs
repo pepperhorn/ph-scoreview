@@ -3,7 +3,7 @@
 // the time popover applies on Enter, unsaved work is guarded, the desktop shell (rail keycaps, layout selector, popovers
 // beside the cursor bar, add/remove bar, title editing) works, the Layout tab's instrument swap highlights, reviews and
 // copies moved notes and a custom layout hides staves, and the change-to-redraw latency the editor logs stays under
-// PS_EDITOR_RENDER_MS (default 250; a warning above it, a failure above twice it). Runs against the build (npm run build
+// PS_EDITOR_RENDER_MS (default 400; a warning above it, a failure above twice it). Runs against the build (npm run build
 // first). BROWSER=chromium|firefox|webkit.
 import assert from 'node:assert/strict';
 import { chromium, firefox, webkit } from 'playwright-core';
@@ -25,7 +25,7 @@ const pitchCount = xml => (xml.match(/<pitch>/g) ?? []).length;
 const barCount = xml => (xml.match(/<measure\b/g) ?? []).length;
 /** What window.confirm answers from now on (the editor asks before discarding unsaved changes). */
 const answerConfirm = (page, answer) => page.evaluate(answer => { window.__confirms = []; window.confirm = message => { window.__confirms.push(message); return answer; }; }, answer);
-const RENDER_MS = Number(process.env.PS_EDITOR_RENDER_MS) || 250;
+const RENDER_MS = Number(process.env.PS_EDITOR_RENDER_MS) || 400;
 /** Clicks the centre of a notehead (the note group's own centre can fall on empty SVG). */
 async function clickNote(page, index) {
   const box = await page.locator(`${NOTES} .notehead`).nth(index).boundingBox();

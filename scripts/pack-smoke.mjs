@@ -21,10 +21,19 @@ for (const host of hosts) assert.ok(HOSTS.includes(host), `PACK_SMOKE_HOSTS list
 const install = (app, tarball, packages) => run(['install', '--no-audit', '--no-fund', tarball, ...packages], app);
 const react = ['react@^19.2.0', 'react-dom@^19.2.0'];
 
-/** The host build copies both worker chunks, ships the package stylesheet and resolves Poppins through @fontsource. */
+/**
+ * The host build copies both worker chunks and, byte for byte, the Verovio files the worker imports at runtime (LGPL:
+ * they stay separate, replaceable files) and the third-party notices; it ships the package stylesheet and resolves
+ * Poppins through @fontsource.
+ */
 function assertHostOutput(label, dir) {
   const files = readdirSync(dir);
   assert.ok(files.some(file => /verovio\.worker.*\.js$/.test(file)), `${label} build emits the Verovio worker: ${files}`);
+  for (const file of ['verovio-module.mjs', 'verovio.mjs']) {
+    const shipped = readFileSync(join(root, 'packages/pepperscore/dist/verovio', file));
+    assert.ok(files.some(name => name.endsWith('.mjs') && readFileSync(join(dir, name)).equals(shipped)), `${label} build copies ${file} unchanged: ${files}`);
+  }
+  assert.ok(files.some(file => /^THIRD_PARTY_NOTICES.*\.txt$/.test(file)), `${label} build copies THIRD_PARTY_NOTICES.txt`);
   assert.ok(files.some(file => /import\.worker.*\.js$/.test(file)), `${label} build emits the import worker`);
   assert.ok(files.some(file => file.endsWith('.css') && readFileSync(join(dir, file), 'utf8').includes('.pepperscore')), `${label} build emits the package stylesheet`);
   assert.ok(files.some(file => /poppins.*\.woff2$/i.test(file)), `${label}: Poppins arrives through @fontsource`);
@@ -141,13 +150,13 @@ try {
   execFileSync(npm, ['run', 'build', '-w', 'pepperscore'], { cwd: root, stdio: ['ignore', 2, 'inherit'] });
   const [packed] = JSON.parse(run(['pack', '--json', '--ignore-scripts', '--pack-destination', work, '-w', 'pepperscore'], root));
   const files = packed.files.map(file => file.path);
-  for (const expected of ['dist/index.js', 'dist/index.d.ts', 'dist/style.css', 'package.json', 'README.md', 'LICENSE', 'LICENSES/LGPL-3.0.txt', 'LICENSES/GPL-3.0.txt']) assert.ok(files.includes(expected), `tarball has ${expected}`);
+  for (const expected of ['dist/index.js', 'dist/index.d.ts', 'dist/style.css', 'dist/verovio/verovio-module.mjs', 'dist/verovio/verovio.mjs', 'dist/verovio/LICENSE', 'dist/THIRD_PARTY_NOTICES.txt', 'package.json', 'README.md', 'LICENSE', 'LICENSES/LGPL-3.0.txt', 'LICENSES/GPL-3.0.txt']) assert.ok(files.includes(expected), `tarball has ${expected}`);
   assert.ok(files.some(file => /^dist\/assets\/verovio\.worker-[\w-]+\.js$/.test(file)), 'tarball has the Verovio worker chunk');
   assert.ok(files.some(file => /^dist\/assets\/import\.worker-[\w-]+\.js$/.test(file)), 'tarball has the import worker chunk');
   assert.ok(!files.some(file => file.startsWith('src/')), 'tarball ships no sources');
   const manifest = readJson('packages/pepperscore/package.json');
   assert.deepEqual(manifest.peerDependencies, { react: '>=19', 'react-dom': '>=19' });
-  assert.equal(manifest.license, 'MIT AND LGPL-3.0-or-later', 'MIT component code, LGPL-3.0-or-later bundled Verovio');
+  assert.equal(manifest.license, 'MIT AND LGPL-3.0-or-later', 'MIT component code, LGPL-3.0-or-later Verovio shipped in dist/verovio/');
   console.log(`Pack smoke: ${packed.filename} (${files.length} files) has the build output and no sources`);
 
   const tarball = join(work, packed.filename);

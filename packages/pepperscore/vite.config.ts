@@ -1,24 +1,52 @@
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
+// @ts-expect-error plain ESM helper without types
+import { thirdPartyNotices, verovioBanner, verovioDist, verovioLicense } from './scripts/third-party-notices.mjs';
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { dependencies: Record<string, string>; peerDependencies: Record<string, string> };
 const externals = [...Object.keys(pkg.dependencies), ...Object.keys(pkg.peerDependencies)];
 
+/** Upstream Verovio files the worker imports at runtime (see src/runtime-files.ts and verovio-protocol.ts VerovioFiles). */
+const VEROVIO_FILES = ['verovio-module.mjs', 'verovio.mjs'];
+
+/** `new URL('./verovio/…' or './THIRD_PARTY_NOTICES.txt', import.meta.url)` as src/runtime-files.ts writes it, after lib mode. */
+const RUNTIME_FILE_URL = /new URL\(\s*(?:\/\*\s*@vite-ignore\s*\*\/\s*)?((["'`])\.\/(?:verovio\/[\w.-]+|THIRD_PARTY_NOTICES\.txt)\2)\s*,\s*(?:(["'`])\3\s*\+\s*)?import\.meta\.url\s*\)/g;
+
 /**
- * Verovio's Emscripten glue imports `node:module` only on its Node branch. A stub keeps it inside the worker chunk instead
- * of a separate browser-external chunk that hosts would never copy next to the worker.
+ * Verovio (LGPL-3.0-or-later) is not bundled: upstream's own files are copied into dist/verovio/ unmodified, under a
+ * licence comment, next to a LICENSE, and the worker imports them at runtime (replaceable through `verovioBaseUrl`).
+ * THIRD_PARTY_NOTICES.txt covers the runtime dependencies, Verovio and the fonts.
  */
-const nodeModuleStub = {
-  name: 'pepperscore-node-module-stub',
-  enforce: 'pre' as const,
-  resolveId: (id: string) => (id === 'node:module' ? '\0node-module-stub' : null),
-  load: (id: string) => (id === '\0node-module-stub' ? 'export const createRequire = () => { throw new Error("node:module is not available in the browser"); }; export default { createRequire };' : null),
+const runtimeFiles: Plugin = {
+  name: 'pepperscore-runtime-files',
+  apply: 'build',
+  generateBundle() {
+    for (const file of VEROVIO_FILES) {
+      this.emitFile({ type: 'asset', fileName: `verovio/${file}`, source: verovioBanner(file) + readFileSync(join(verovioDist(), file), 'utf8') });
+    }
+    this.emitFile({ type: 'asset', fileName: 'verovio/LICENSE', source: verovioLicense() });
+    this.emitFile({ type: 'asset', fileName: 'THIRD_PARTY_NOTICES.txt', source: thirdPartyNotices() });
+  },
+  // src/runtime-files.ts: drop the `@vite-ignore` (and the `"" +` lib mode adds) so host bundlers see a plain asset URL.
+  // The rewrite keeps the match's line count and the length of its last line, so the code after it does not move and
+  // the sourcemap stays valid (`map: null`). scripts/finalize-dist.mjs accepts the whitespace before `)`.
+  renderChunk(code) {
+    const plain = code.replace(RUNTIME_FILE_URL, (match, path: string) => {
+      const url = `new URL(${path}, import.meta.url`;
+      const lines = match.split('\n');
+      if (lines.length === 1) return `${url}${' '.repeat(Math.max(0, match.length - url.length - 1))})`;
+      return `${url}${'\n'.repeat(lines.length - 1)}${' '.repeat(lines.at(-1)!.length - 1)})`;
+    });
+    return plain === code ? null : { code: plain, map: null };
+  },
 };
 
-/** Library mode: one ESM entry, one stylesheet, and the two workers as separate chunks (Verovio's WASM stays inlined in its worker). */
+/** Library mode: one ESM entry, one stylesheet, the two workers as separate chunks, and the runtime files above. */
 export default defineConfig({
   base: './',
+  plugins: [runtimeFiles],
   build: {
     lib: { entry: fileURLToPath(new URL('./src/index.ts', import.meta.url)), formats: ['es'], fileName: () => 'index.js', cssFileName: 'style' },
     outDir: 'dist',
@@ -27,5 +55,5 @@ export default defineConfig({
     target: 'es2022',
     rollupOptions: { external: id => externals.some(dep => id === dep || id.startsWith(`${dep}/`)) },
   },
-  worker: { format: 'es', plugins: () => [nodeModuleStub], rolldownOptions: { output: { codeSplitting: false } } },
+  worker: { format: 'es', rolldownOptions: { output: { codeSplitting: false } } },
 });

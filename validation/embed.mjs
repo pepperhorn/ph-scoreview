@@ -1,5 +1,6 @@
 // PepperScore embedded in a host-styled page (apps/reader /embed-test): one full reader in a 600px box, minimal snippets
 // A (ABC, soundSources, settings.zoom), B (ensemble, 200px) and C (invalid XML), and an engraving-only Endless snippet.
+// Also /embed-missing-assets (an assetBaseUrl with nothing behind it) and /embed-verovio (a host-supplied Verovio).
 // Runs against the build. BROWSER=chromium|firefox|webkit.
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -10,7 +11,8 @@ import { root, serveDist } from './serve-dist.mjs';
 const engine = process.env.BROWSER || 'chromium';
 const launcher = { chromium, firefox, webkit }[engine];
 if (!launcher) throw new Error(`BROWSER must be chromium, firefox or webkit (got "${engine}")`);
-const server = await serveDist();
+// /custom-verovio/ stands in for a host's own Verovio build: the upstream files pepperscore ships in dist/verovio/.
+const server = await serveDist({ mounts: { '/custom-verovio/': join(root, 'packages/pepperscore/dist/verovio') } });
 const browser = await launcher.launch({ headless: true, ...(engine === 'chromium' ? { args: ['--no-sandbox'] } : {}) });
 const sounds = join(root, 'packages/pepperscore-sounds-complete');
 const inside = (outer, inner) => inner.left >= outer.left - 1 && inner.top >= outer.top - 1 && inner.right <= outer.right + 1 && inner.bottom <= outer.bottom + 1;
@@ -654,5 +656,48 @@ try {
     await context.close();
   }
 
-  console.log(`${engine}: embedding (chrome presets, callbacks, host hooks, ref, settings, sounds and asset base, style isolation, containment, unique ids, focused keyboard, focus ring, landmark names, shared engine, persist, missing assets) passed`);
+  // 10. Verovio (LGPL) is a separate, replaceable file: the worker imports the copy shipped with pepperscore (emitted by
+  // the host build), or with `verovioBaseUrl` the host's copy instead; a base with no Verovio behind it fails with an
+  // error naming the URL. Checked on the server's log, since not every browser reports worker imports to Playwright.
+  {
+    const verovioFiles = () => server.requests.filter(path => /\.mjs$/.test(path));
+    const openVerovio = async query => {
+      const context = await browser.newContext({ viewport: { width: 1000, height: 700 } });
+      await context.route(/poppins/i, route => route.abort());
+      const page = await context.newPage();
+      const errors = [];
+      page.on('pageerror', error => errors.push(error.message));
+      server.requests.length = 0;
+      await page.goto(`${server.url}/embed-verovio${query}`);
+      return { context, page, errors };
+    };
+    {
+      const { context, page, errors } = await openVerovio('');
+      await rendered(page, '.pepperscore.embed-verovio');
+      const files = verovioFiles();
+      assert.ok(files.some(path => /^\/_astro\/verovio-module\.[\w-]+\.mjs$/.test(path)) && files.some(path => /^\/_astro\/verovio\.[\w-]+\.mjs$/.test(path)), `the worker imports the Verovio files the host build emitted: ${files}`);
+      assert.deepEqual(errors, []);
+      await context.close();
+    }
+    {
+      const { context, page, errors } = await openVerovio('?verovio=/custom-verovio/');
+      await rendered(page, '.pepperscore.embed-verovio');
+      assert.deepEqual(verovioFiles().sort(), ['/custom-verovio/verovio-module.mjs', '/custom-verovio/verovio.mjs'], 'with verovioBaseUrl the worker imports Verovio from there, and only from there');
+      assert.deepEqual((await page.evaluate(() => window.__verovioEvents)).filter(([kind]) => kind === 'error'), [], 'no onError');
+      assert.deepEqual(errors, []);
+      await context.close();
+    }
+    {
+      const { context, page, errors } = await openVerovio('?verovio=/no-verovio/');
+      await page.waitForFunction(() => window.__verovioEvents?.some(([kind]) => kind === 'error'), null, { timeout: 30000 });
+      const [, message] = (await page.evaluate(() => window.__verovioEvents)).find(([kind]) => kind === 'error');
+      assert.ok(message.includes(`${server.url}/no-verovio/verovio-module.mjs`), `the error names the Verovio URL: ${message}`);
+      assert.ok(server.requests.includes('/no-verovio/verovio-module.mjs'), 'the worker asked the configured base');
+      assert.equal(await page.locator('.embed-verovio .score-system svg').count(), 0, 'nothing engraved');
+      assert.deepEqual(errors, []);
+      await context.close();
+    }
+  }
+
+  console.log(`${engine}: embedding (chrome presets, callbacks, host hooks, ref, settings, sounds and asset base, style isolation, containment, unique ids, focused keyboard, focus ring, landmark names, shared engine, persist, missing assets, verovioBaseUrl) passed`);
 } finally { await browser.close(); await server.close(); }
