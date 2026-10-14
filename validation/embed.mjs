@@ -552,6 +552,44 @@ try {
     }, [fullChrome, noteId], { timeout: 5000 });
     await page.evaluate(() => window.__embed.setHighlights([]));
     await page.waitForFunction(root => !document.querySelector(`${root} .ps-selection`), fullChrome, { timeout: 5000 });
+    // ps-transposed colours the note orange (notehead fill).
+    await page.evaluate(noteId => window.__embed.setHighlights([{ ids: [noteId], className: 'ps-transposed' }]), noteId);
+    await page.waitForFunction(([root, noteId]) => document.querySelector(`${root} [data-note-id="${CSS.escape(noteId)}"]`)?.closest('.ps-transposed'), [fullChrome, noteId], { timeout: 5000 });
+    const transposedFill = await page.evaluate(([root, noteId]) => {
+      const element = document.querySelector(`${root} [data-note-id="${CSS.escape(noteId)}"]`);
+      const head = element.querySelector('.notehead use, .notehead') ?? element;
+      return { fill: getComputedStyle(head).fill, html: element.closest('.ps-transposed').outerHTML.slice(0, 900) };
+    }, [fullChrome, noteId]);
+    assert.equal(transposedFill.fill, 'rgb(217, 116, 28)', `ps-transposed fills the notehead orange: ${transposedFill.html}`);
+    // A measure highlight draws a dashed box with a screen-space stroke (an outline on the group was ~0.1px), and the
+    // box comes back after a redraw.
+    const measureBox = () => page.evaluate(root => {
+      const rect = document.querySelector(`${root} .score-system svg .measure.ps-cursor-measure > rect.ps-measure-highlight`);
+      if (!rect) return null;
+      const measure = rect.parentElement, style = getComputedStyle(rect);
+      const own = rect.getBoundingClientRect(), outer = measure.getBoundingClientRect();
+      const fresh = !rect.__seen; rect.__seen = true;
+      return { fresh, strokeWidth: parseFloat(style.strokeWidth), vectorEffect: style.vectorEffect, dash: style.strokeDasharray, fill: style.fill,
+        stroke: style.stroke, width: own.width, height: own.height, measureWidth: outer.width, measureHeight: outer.height,
+        firstMeasure: measure === document.querySelector(`${root} .score-system svg .measure`) };
+    }, fullChrome);
+    await page.evaluate(() => window.__embed.setHighlights([{ measures: [0], className: 'ps-cursor-measure' }]));
+    await page.waitForFunction(root => document.querySelector(`${root} .measure.ps-cursor-measure > .ps-measure-highlight`), fullChrome, { timeout: 5000 });
+    const drawnBox = await measureBox();
+    assert.ok(drawnBox.firstMeasure, `the box is inside measure 0: ${JSON.stringify(drawnBox)}`);
+    assert.equal(drawnBox.vectorEffect, 'non-scaling-stroke', `the box stroke does not scale: ${JSON.stringify(drawnBox)}`);
+    assert.ok(drawnBox.strokeWidth >= 1.5, `the box stroke is at least 1.5px on screen: ${JSON.stringify(drawnBox)}`);
+    assert.ok(drawnBox.dash !== 'none' && drawnBox.fill === 'none', `the box is dashed and unfilled: ${JSON.stringify(drawnBox)}`);
+    assert.ok(drawnBox.width >= drawnBox.measureWidth - 1 && drawnBox.width > 20 && drawnBox.height > 20, `the box covers the measure: ${JSON.stringify(drawnBox)}`);
+    await page.evaluate(() => window.__embed.refs.full.current.transpose(2));
+    await page.waitForFunction(root => { const rect = document.querySelector(`${root} .measure.ps-cursor-measure > .ps-measure-highlight`); return rect && !rect.__seen; }, fullChrome, { timeout: 15000 });
+    const redrawnBox = await measureBox();
+    assert.ok(redrawnBox.fresh && redrawnBox.firstMeasure && redrawnBox.strokeWidth >= 1.5, `the box survives a redraw: ${JSON.stringify(redrawnBox)}`);
+    assert.equal(await page.locator(`${fullChrome} .ps-measure-highlight`).count(), 1, 'one box per highlighted measure');
+    await page.evaluate(() => window.__embed.refs.full.current.transpose(0));
+    await page.waitForFunction(root => { const rect = document.querySelector(`${root} .measure.ps-cursor-measure > .ps-measure-highlight`); return rect && !rect.__seen; }, fullChrome, { timeout: 15000 });
+    await page.evaluate(() => window.__embed.setHighlights([]));
+    await page.waitForFunction(root => !document.querySelector(`${root} .ps-measure-highlight, ${root} .ps-cursor-measure`), fullChrome, { timeout: 5000 });
     // A reader with neither a clock nor onElementClick does no work on a click (no layout reads).
     await page.locator('.embed-a .score-staves svg').first().waitFor({ timeout: 30000 });
     const layoutReads = await page.evaluate(() => {
