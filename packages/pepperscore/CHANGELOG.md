@@ -8,6 +8,8 @@
 - `highlights` prop (`PepperScoreHighlight[]`): host classes on notes and measures, re-applied after every draw. New styles `ps-cursor`, `ps-selection` and `ps-cursor-measure` (`--ps-cursor`, `--ps-selection`).
 - Handle: `scrollToMeasure(index)` (draws the measure's system if needed and scrolls it into view) and `seekToMeasure(index)` (seeks to the measure's first performed occurrence).
 - Type exports `PepperScoreClickInfo` and `PepperScoreHighlight`.
+- `verovioBaseUrl` prop: engrave with another interface-compatible Verovio build (a directory laid out like the `verovio` package's `dist/`).
+- `dist/THIRD_PARTY_NOTICES.txt` (runtime dependencies, Verovio, the OFL fonts), linked as "Licences" in the full reader's options drawer.
 
 ### Changed
 
@@ -15,6 +17,7 @@
 - New highlight class `ps-transposed` (`--ps-transposed`, default `#d9741c`) for notes.
 - `ps-selection` defaults to ink blue `#2f6a9a` (was green `#1f9d55`), so it does not clash with `ps-transposed`.
 - A new score source draws immediately; the redraw fade only applies to setting changes.
+- Verovio is no longer bundled into the worker chunk. Its own unmodified files ship in `dist/verovio/` (with a licence comment and a `LICENSE`) and the worker imports them at runtime; host bundlers copy them like the worker chunks. Serve `.mjs` as JavaScript. The LICENSE's relink offer now points at upstream Verovio 6.3.0 source and `verovioBaseUrl`.
 
 ## 0.2.0
 

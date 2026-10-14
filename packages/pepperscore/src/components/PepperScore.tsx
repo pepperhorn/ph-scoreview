@@ -15,7 +15,8 @@ import { readerStorage, type PersistNamespace } from '../lib/storage';
 import { scoreForView, spokenKey, transposeReadout } from '../lib/transpose';
 import type { SpellingKey } from '../lib/spelling';
 import { baseTimelineFor, deriveTimeline, playbackDuration, playbackEventsFrom, playbackMidis, playbackPositionAt, type BaseTimeline } from '../lib/playback/timeline';
-import { closeVerovioChannel, isOutOfMemory, isRestarted, isSuperseded, openVerovioChannel, prepareVerovio, reduceChunkSize } from '../lib/verovio-runtime';
+import { closeVerovioChannel, isOutOfMemory, isRestarted, isSuperseded, openVerovioChannel, prepareVerovio, reduceChunkSize, setVerovioBaseUrl } from '../lib/verovio-runtime';
+import { thirdPartyNoticesUrl } from '../runtime-files';
 import { claimPlayback, getSharedAudio, releasePlayback, resumeAudio } from '../lib/audio-engine';
 import { isLargeFile, isLargeScore, largeScoreMessage, staffMeasures } from '../lib/large-file';
 import { isSameFile, lastFileToFile, type LastFileInfo } from '../lib/last-file';
@@ -45,6 +46,8 @@ const soundRequest = (part: Part): SoundRequest => {
 /** Sample packs route each note to its part's gain, so parts share them; sf2 and note-file players are bound to one part's gain. */
 const audioKey = (plan: SoundPlan, part: Part) => plan.kind === 'sample-pack' ? planKey(plan) : `${planKey(plan)}|${part.id}`;
 const SILENT_PLAYBACK_NOTICE = 'Audio couldn’t start on this device — playing silently.';
+/** Systems drawn ahead of the playhead during playback (large scores draw systems on demand). */
+const LOOKAHEAD_SYSTEMS = 2;
 /** onTimeUpdate fires at most this often during self-driven playback (about 10 Hz). */
 const TIME_UPDATE_MS = 100;
 export type PepperScoreReadyInfo = { title: string; composer?: string; parts: Array<{ id: string; name: string }>; measures: number };
@@ -112,6 +115,14 @@ export type PepperScoreProps = {
   persist?: PersistNamespace;
   /** Root of a pepperscore-sounds-<pack> layout; default: the jsDelivr copy of pepperscore-sounds-<soundPack>. */
   assetBaseUrl?: string;
+  /**
+   * A directory with an interface-compatible Verovio build to engrave with instead of the copy shipped in
+   * dist/verovio/, laid out like the verovio npm package's dist/ (`verovio-module.mjs` and `verovio.mjs`), for example
+   * `https://cdn.jsdelivr.net/npm/verovio@6.3.0/dist/`. Relative URLs resolve against the page; cross-origin needs CORS.
+   * All readers on a page share one Verovio worker: set it before the first score engraves (the latest value wins
+   * when the worker next starts).
+   */
+  verovioBaseUrl?: string;
   soundPack?: SoundPackName;
   /** Sounds that replace the built-in ones for the programs (or drum kit) they claim; the first claiming entry wins. */
   soundSources?: SoundSource[];
@@ -172,7 +183,7 @@ const flag = (element: HTMLElement, key: 'psShort' | 'psTiny' | 'psWide', on: bo
 /** Where the viewport centre sits in a measure, so a re-layout can put that point back at the centre. */
 type ZoomAnchor = { index: number; fx: number; fy: number };
 
-export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: preset = 'full', controls, view, height, className, ariaLabel, settings, persist, assetBaseUrl, soundPack = 'core', soundSources, onReady, onPlay, onStop, onError, clock, audio: withAudio = true, onSeek, onTimeUpdate, onElementClick, highlights, autoFocus, ref }: PepperScoreProps) {
+export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: preset = 'full', controls, view, height, className, ariaLabel, settings, persist, assetBaseUrl, verovioBaseUrl, soundPack = 'core', soundSources, onReady, onPlay, onStop, onError, clock, audio: withAudio = true, onSeek, onTimeUpdate, onElementClick, highlights, autoFocus, ref }: PepperScoreProps) {
   const chrome = useMemo(() => resolveChrome(preset, controls), [preset, controls?.mixer, controls?.openFile, controls?.drawer, controls?.transport, controls?.viewToggle, controls?.zoom]);
   /** A host clock always shows the playhead (ivories uses chrome="none" with a clock). */
   const playhead = chrome.playhead || Boolean(clock);
@@ -309,6 +320,11 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const readyRevisionRef = useRef(-1);
   /** The score revision last drawn: a new source draws at once, only setting changes wait for the redraw fade. */
   const drawnRevisionRef = useRef(-1);
+  // Before the channel effect, so the worker (started by this reader's first engraving) already loads the host's Verovio.
+  useEffect(() => setVerovioBaseUrl(verovioBaseUrl), [verovioBaseUrl]);
+  /** The third-party notices URL, set after mount: on an SSR host the server would resolve it to a file: URL. */
+  const [noticesUrl, setNoticesUrl] = useState<string>();
+  useEffect(() => setNoticesUrl(thirdPartyNoticesUrl()), []);
   useEffect(() => { const channel = openVerovioChannel(); channelRef.current = channel; return () => { cancelImports(channel); closeVerovioChannel(channel); }; }, []);
   useEffect(() => ensureMusicFonts(assetBase, failed => warnAssetBase(assetBase, failed)), [assetBase]);
   const hiddenSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
@@ -967,6 +983,16 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     if (pendingSystem >= 0) void result!.ensureSystem(pendingSystem);
     const block = anchor ? anchor.closest<HTMLElement>('.score-system') : pendingSystem >= 0 ? canvasRef.current?.querySelector<HTMLElement>(`:scope > .score-system[data-system="${pendingSystem}"]`) : null;
     if (!block) return;
+    // While playing, draw the systems ahead of the playhead: drawn only on arrival, a system's first bar would play
+    // unhighlighted for the length of the draw (a whole bar or more for a large score at a fast tempo). Two ahead, as a
+    // one-bar system at a fast tempo lasts about as long as drawing one.
+    const playingNow = Boolean(playRef.current) || (clock ? clockFollowRef.current.playing : false);
+    if (playingNow && result) {
+      let ahead = block.nextElementSibling;
+      for (let step = 1; step <= LOOKAHEAD_SYSTEMS && ahead; step++, ahead = ahead.nextElementSibling) {
+        if (ahead.classList.contains('is-pending')) void result.ensureSystem(Number((ahead as HTMLElement).dataset.system));
+      }
+    }
     const line = anchor ? document.createElement('div') : null;
     if (line) {
       line.className = 'playback-line';
@@ -1475,7 +1501,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
         <div className="drawer-panel pitch-panel"><h3><Settings2 size={17}/> Pitch</h3><div className="pitch-options"><div><span className="pitch-label">Transpose score</span><div className="semitone-control"><button aria-label="Transpose down a semitone" disabled={prefs.semitones <= -12} onClick={() => transposeBy(-1)}><Minus size={16}/></button><output aria-live={drawer ? 'polite' : 'off'}>{prefs.semitones > 0 ? '+' : ''}{prefs.semitones} semitones</output><button aria-label="Transpose up a semitone" disabled={prefs.semitones >= 12} onClick={() => transposeBy(1)}><Plus size={16}/></button><button className="pitch-reset" aria-label="Reset transposition" title="Reset transposition" disabled={prefs.semitones === 0 && !prefs.keyFlip} onClick={() => changePitch({ semitones: 0, keyFlip: false })}><RotateCcw size={15}/></button></div></div><div className="pitch-key"><span className="pitch-label">Key</span><div className="pitch-key-control"><output className="pitch-key-readout" aria-live={drawer ? 'polite' : 'off'}>{readout.text}</output><button className={`pitch-key-flip ${flipTo ? '' : 'is-disabled'}`} aria-label={flipLabel} title={flipLabel} aria-disabled={!flipTo} onClick={flipKey}><span className="pitch-key-flip-icon" aria-hidden="true">⇄</span><span className="pitch-key-flip-label">{flipText}</span></button></div></div>{!concertBasis && <div><span className="pitch-label">Score view</span><div className="font-toggle pitch-view" role="group" aria-label="Score pitch view"><button className={prefs.scorePitch === 'written' ? 'is-selected' : ''} aria-pressed={prefs.scorePitch === 'written'} onClick={() => changePitch({ scorePitch: 'written' })}>Transposing</button><button className={prefs.scorePitch === 'concert' ? 'is-selected' : ''} aria-pressed={prefs.scorePitch === 'concert'} onClick={() => changePitch({ scorePitch: 'concert' })}>Concert</button></div></div>}</div><p className="pitch-hint">{concertBasis ? 'This score is written at concert pitch, so it is shown at concert pitch. Playback stays at concert pitch.' : hasTransposingParts ? 'Transposing shows written parts; Concert shows sounding pitches. Playback stays at concert pitch.' : 'This score has no instrument transposition data, so both views match.'}</p></div>
       </div>
       {error && <div className="ps-error" role="alert"><span className="ps-error-text">{error}</span>{oomButton}</div>}
-      <div className="drawer-foot">SPACE / PAGE DOWN · next view &nbsp;&nbsp; PAGE UP · previous view <span>FluidR3 GM · CC BY 3.0; TimGM drums · GPL-2</span></div>
+      <div className="drawer-foot">SPACE / PAGE DOWN · next view &nbsp;&nbsp; PAGE UP · previous view <span>FluidR3 GM · CC BY 3.0; TimGM drums · GPL-2</span>{noticesUrl && <a className="drawer-licences" href={noticesUrl} target="_blank" rel="noopener" title="Third-party licences: Verovio (LGPL-3.0-or-later), fonts (SIL OFL 1.1) and libraries">Licences</a>}</div>
     </aside>
     </>}
     {!drawer && (notice || largeNotice || reopenOffer) && <div className="reader-notices">
