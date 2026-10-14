@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { setMeta } from '../engine/commands/index';
 import { effectiveKey, effectiveTime } from '../model/query';
 import { tip, usePosition, useUi } from './controls';
@@ -24,9 +24,13 @@ function MetaText({ field, placeholder, className }: { field: 'title' | 'compose
   const { store, editable, refocus } = useUi();
   const value = useEditorStore(store, (s) => s.document.meta[field]);
   const [draft, setDraft] = useState<string | null>(null);
+  // Escape cancels: refocusing the editor blurs the input, and that blur must not commit the draft.
+  const cancelled = useRef(false);
   const Tag = field === 'title' ? 'h1' : 'p';
   if (draft !== null) {
     const commit = () => {
+      if (cancelled.current) return;
+      cancelled.current = true; // the blur that refocusing causes must not commit twice
       store.dispatch(setMeta, { [field]: draft });
       setDraft(null);
       refocus();
@@ -43,6 +47,7 @@ function MetaText({ field, placeholder, className }: { field: 'title' | 'compose
           e.stopPropagation();
           if (e.key === 'Enter') commit();
           if (e.key === 'Escape') {
+            cancelled.current = true;
             setDraft(null);
             refocus();
           }
@@ -51,7 +56,7 @@ function MetaText({ field, placeholder, className }: { field: 'title' | 'compose
     );
   }
   return (
-    <Tag className={`${className} ${value ? '' : 'is-empty'}`.trim()} title={editable ? 'Double-click to edit' : undefined} onDoubleClick={editable ? () => setDraft(value ?? '') : undefined}>
+    <Tag className={`${className} ${value ? '' : 'is-empty'}`.trim()} title={editable ? 'Double-click to edit' : undefined} onDoubleClick={editable ? () => { cancelled.current = false; setDraft(value ?? ''); } : undefined}>
       {value || placeholder}
     </Tag>
   );

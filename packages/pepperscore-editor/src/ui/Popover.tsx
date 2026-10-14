@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { addDynamic, addText, setClef, setEnding, setJump, setKey, setTime } from '../engine/commands/index';
+import { addDynamic, setClef, setEnding, setJump, setKey, setTime } from '../engine/commands/index';
 import type { EditorStore } from '../engine/store';
 import { effectiveClef, effectiveKey, effectiveTime, measureIndex } from '../model/query';
 import type { Clef, Dynamic, Jump } from '../model/schema';
+import { usePosition } from './controls';
 import { Icon, Kbd } from './icons';
 import { describeKey, KEYMAP, type PopoverName } from './keymap';
 import { placePopover, type Rect } from './placement';
@@ -38,9 +39,8 @@ export const ENDINGS: { value: string; label: string; numbers: number[] | null }
   { value: '3', label: 'Ending 3', numbers: [3] },
 ];
 const TIME_UNITS = [1, 2, 4, 8, 16] as const;
-const TEXT_STYLES = ['plain', 'expression', 'tempo'] as const;
 const TITLES: Record<PopoverName, string> = {
-  key: 'Key signature', time: 'Time signature', clef: 'Clef', dynamic: 'Dynamic', jump: 'Jump', ending: 'Ending', text: 'Text', tempo: 'Tempo',
+  key: 'Key signature', time: 'Time signature', clef: 'Clef', dynamic: 'Dynamic', jump: 'Jump', ending: 'Ending', tempo: 'Tempo',
 };
 
 type Props = { name: PopoverName; store: EditorStore; onClose(): void };
@@ -78,8 +78,11 @@ export function Popover({ name, store, onClose, anchor, viewport, stage }: Props
   useLayoutEffect(() => {
     const element = root.current;
     if (!element) return;
+    // Hidden until the stage is measured, so it never flashes at the corner.
+    element.style.visibility = viewport.width ? '' : 'hidden';
     const origin = stage?.getBoundingClientRect();
-    const button = origin ? [...window.document.querySelectorAll(`[data-ps-popover-for="${name}"]`)].find((b) => (b as HTMLElement).offsetParent) : undefined;
+    const editor = stage?.closest('.ps-editor');
+    const button = origin && editor ? [...editor.querySelectorAll(`[data-ps-popover-for="${name}"]`)].find((b) => (b as HTMLElement).offsetParent) : undefined;
     const at = anchor ?? (origin ? relativeRect(button, origin) : null) ?? { ...viewport, width: 0, height: 0, right: viewport.left, bottom: viewport.top };
     const size = { width: element.offsetWidth, height: element.offsetHeight };
     const place = placePopover(at, size, viewport, GAP);
@@ -93,9 +96,9 @@ export function Popover({ name, store, onClose, anchor, viewport, stage }: Props
       arrow.current.style.left = beside ? '' : `${Math.max(18, Math.min(span - 18, along))}px`;
       arrow.current.style.top = beside ? `${Math.max(18, Math.min(span - 18, along))}px` : '';
     }
-  });
+  }, [anchor, viewport, name, stage]);
   const key = opener(name);
-  const index = measureIndex(store.getState().document, store.getState().cursor.measureId);
+  const { index } = usePosition();
   return (
     <div
       ref={root}
@@ -112,7 +115,7 @@ export function Popover({ name, store, onClose, anchor, viewport, stage }: Props
     >
       <span ref={arrow} className="ps-popover-arrow" aria-hidden="true" />
       <header className="ps-popover-head">
-        <div className="ps-popover-titles"><span className="ps-eyebrow">{name === 'dynamic' || name === 'text' ? 'At the cursor' : `From bar ${index + 1}`}</span><h3 className="ps-popover-title">{TITLES[name]}</h3></div>
+        <div className="ps-popover-titles"><span className="ps-eyebrow">{name === 'dynamic' ? 'At the cursor' : `From bar ${index + 1}`}</span><h3 className="ps-popover-title">{TITLES[name]}</h3></div>
         <button type="button" className="ps-btn ps-icon-btn ps-popover-close" aria-label="Close" onClick={onClose}><Icon name="close" size={14} /></button>
       </header>
       <div className="ps-popover-body"><PopoverBody name={name} store={store} onClose={onClose} /></div>
@@ -137,8 +140,6 @@ function PopoverBody({ name, store, onClose }: Props) {
   const measureId = cursor.measureId;
   const anchor = { measureId, tick: Math.round(cursor.tick), staff: cursor.staff };
   const g = document.global.measures[index];
-  const [text, setText] = useState('');
-  const [style, setStyle] = useState<(typeof TEXT_STYLES)[number]>('plain');
 
   switch (name) {
     case 'key': {
@@ -204,28 +205,6 @@ function PopoverBody({ name, store, onClose }: Props) {
       );
     case 'tempo':
       return <TempoFields key={measureId} store={store} document={document} measureId={measureId} index={index} editable onDone={onClose} />;
-    case 'text':
-      return (
-        <>
-          <Field label="Text">
-            <input
-              className="ps-input ps-input-text"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key !== 'Enter' || !text.trim()) return;
-                store.dispatch(addText, { anchor, text: text.trim(), style, partId: cursor.partId });
-                onClose();
-              }}
-            />
-          </Field>
-          <Field label="Style">
-            <select className="ps-select ps-select-text-style" value={style} onChange={(e) => setStyle(e.target.value as (typeof TEXT_STYLES)[number])}>
-              {TEXT_STYLES.map((s) => <option key={s} value={s}>{s[0].toUpperCase() + s.slice(1)}</option>)}
-            </select>
-          </Field>
-        </>
-      );
   }
 }
 

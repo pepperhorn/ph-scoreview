@@ -7,15 +7,15 @@ import { useEditorStore } from './useEditorStore';
 type Tab = 'score' | 'stave' | 'layout';
 const LABEL: Record<Tab, string> = { score: 'Score', stave: 'Stave', layout: 'Layout' };
 
-/** The right-hand inspector: Score (score-wide settings at the cursor bar), Stave (marks at the cursor) and Layout. */
-export function Inspector() {
+/** The right-hand inspector (on medium containers a drawer, `open` or not): Score (score-wide settings at the cursor bar), Stave (marks at the cursor) and Layout. */
+export function Inspector({ open = false }: { open?: boolean }) {
   const { store } = useUi();
   const [tab, setTab] = useState<Tab>('score');
   const { index, beat, partName } = usePosition();
   const layoutName = useEditorStore(store, (s) => s.document.layouts.find((l) => l.id === s.activeLayoutId)?.name ?? '');
   const context = { score: `Bar ${index + 1} · whole score`, stave: `${partName} · bar ${index + 1}, beat ${beat}`, layout: `Layout · ${layoutName}` }[tab];
   return (
-    <aside className="ps-inspector" aria-label="Inspector">
+    <aside id="ps-inspector" className={`ps-inspector ${open ? 'is-open' : ''}`.trim()} aria-label="Inspector">
       <div className="ps-tabs" role="tablist">
         {(['score', 'stave', 'layout'] as const).map((t) => (
           <button key={t} type="button" role="tab" id={`ps-tab-${t}`} data-tab={t} aria-selected={tab === t} className={`ps-tab ${tab === t ? 'is-on' : ''}`.trim()} onClick={() => setTab(t)}>{LABEL[t]}</button>

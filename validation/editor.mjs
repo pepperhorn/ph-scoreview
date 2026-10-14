@@ -205,6 +205,13 @@ try {
   assert.match(await musicXml(page), /<work-title>Evening Song<\/work-title>/, 'the title is in the MusicXML');
   const [titled] = await Promise.all([page.waitForEvent('download'), page.click('.ps-btn-export')]);
   assert.equal(titled.suggestedFilename(), 'Evening Song.musicxml');
+  // Escape cancels an edit (the blur from refocusing must not commit it).
+  await page.dblclick('.ps-topbar .ps-score-title');
+  await page.fill('.ps-topbar .ps-meta-input-title', 'Discarded');
+  await page.keyboard.press('Escape');
+  await page.locator('.ps-topbar .ps-meta-input-title').waitFor({ state: 'detached' });
+  assert.equal(await page.locator('.ps-topbar .ps-score-title').textContent(), 'Evening Song', 'Escape kept the title');
+  assert.doesNotMatch(await musicXml(page), /Discarded/, 'Escape committed nothing');
   for (let i = 0; i < 3; i++) await page.evaluate(() => window.__editor.ref.current.undo());
   assert.equal(await isDirty(page), false, 'undoing the title and bar edits returns to the clean new score');
 
@@ -220,6 +227,25 @@ try {
   assert.doesNotMatch(await musicXml(page), /<step>/, 'c entered nothing');
 
   await context.close();
+
+  // 8b. A medium-width editor (761-960px): the inspector is a drawer over the canvas; it toggles a repeat start and
+  // Escape closes it.
+  {
+    const medium = await browser.newContext({ viewport: { width: 900, height: 900 } });
+    const page = await medium.newPage();
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto(`${server.url}/editor`);
+    await page.waitForSelector('.ps-editor .score-system svg', { timeout: 60000 });
+    const inspector = page.locator('.ps-editor .ps-inspector');
+    assert.equal(await inspector.isVisible(), false, 'the inspector drawer starts closed');
+    await page.click('.ps-canvas-head .ps-inspector-toggle');
+    await page.waitForFunction(() => { const r = document.querySelector('.ps-editor .ps-inspector').getBoundingClientRect(); return r.right <= window.innerWidth + 1 && r.width > 200; }, null, { timeout: 5000 });
+    await page.click('.ps-inspector .ps-glyph-btn[aria-label="Repeat start"]');
+    await page.waitForFunction(() => /<repeat direction="forward"\/>/.test(window.__editor.ref.current.getMusicXml()), null, { timeout: 10000 });
+    await page.keyboard.press('Escape');
+    await inspector.waitFor({ state: 'hidden', timeout: 5000 });
+    await medium.close();
+  }
 
   // 9. Phone width on a touch device: the palette shows, and tapping its quarter and C buttons enters a note.
   {
@@ -247,7 +273,7 @@ try {
   if (slow.length) console.warn(`Editor: ${slow.length} change-to-redraw time(s) at or over ${RENDER_MS} ms: ${slow.join(', ')}`);
   assert.ok(renderTimes.every(ms => ms < 2 * RENDER_MS), `every change-to-redraw time is under ${2 * RENDER_MS} ms (got ${renderTimes.join(', ')})`);
   assert.deepEqual(errors, [], 'no page or console errors');
-  console.log(`Editor: shell (keycaps, layout selector, popover placement, add/remove bar, title edit), entry, undo, accidentals and chord entry, click cursor, key and time popovers, export, save and reopen, unsaved-work guard, staff cap (open and initial), read-only and touch palette pass (render ms: ${renderTimes.join(', ')})`);
+  console.log(`Editor: shell (keycaps, layout selector, popover placement, add/remove bar, title edit and cancel, medium-width inspector drawer), entry, undo, accidentals and chord entry, click cursor, key and time popovers, export, save and reopen, unsaved-work guard, staff cap (open and initial), read-only and touch palette pass (render ms: ${renderTimes.join(', ')})`);
 } finally {
   await browser.close();
   await server.close();

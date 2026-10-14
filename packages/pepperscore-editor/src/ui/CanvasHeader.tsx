@@ -5,8 +5,8 @@ import { useEditorStore } from './useEditorStore';
 
 export type ViewerMode = 'vertical' | 'endless';
 
-/** Above the score: the Entry/Select badge (click toggles), the position, the layout selector, Page/Endless and zoom. */
-export function CanvasHeader({ mode, onMode }: { mode: ViewerMode; onMode(mode: ViewerMode): void }) {
+/** Above the score: the Entry/Select badge (click toggles), the position, the layout selector, Page/Endless, zoom and (medium widths) the inspector toggle. */
+export function CanvasHeader({ mode, onMode, inspectorOpen, onInspector }: { mode: ViewerMode; onMode(mode: ViewerMode): void; inspectorOpen: boolean; onInspector(): void }) {
   const { store, editable, refocus } = useUi();
   const run = useRun();
   const { cursor, index, bars, partName } = usePosition();
@@ -53,6 +53,8 @@ export function CanvasHeader({ mode, onMode }: { mode: ViewerMode; onMode(mode: 
           ))}
         </div>
         <span className="ps-zoom" title="Zoom">100%</span>
+        {/* Shown only on medium containers, where the inspector is a drawer over the canvas. */}
+        <button type="button" className={`ps-btn ps-btn-ghost ps-btn-sm ps-inspector-toggle ${inspectorOpen ? 'is-on' : ''}`.trim()} aria-expanded={inspectorOpen} aria-controls="ps-inspector" onClick={onInspector}>Inspector</button>
       </div>
     </div>
   );

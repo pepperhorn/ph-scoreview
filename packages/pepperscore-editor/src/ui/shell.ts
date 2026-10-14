@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { ViewerMode } from './CanvasHeader';
 import type { PopoverName } from './keymap';
+import type { DrawSignal } from './useCanvasGeometry';
 
 /**
  * What a shell (desktop now, phone later) lays out. The session owns state and actions; `viewer` is the
@@ -16,8 +17,8 @@ export type ShellProps = {
   viewerMode: ViewerMode;
   setViewerMode(mode: ViewerMode): void;
   savedAt: Date | null;
-  /** Changes after every viewer draw and highlight change (overlays re-measure the engraving). */
-  drawn: unknown;
+  /** Fires after every viewer draw (overlays re-measure the engraving). */
+  draws: DrawSignal;
   onPlay(): void;
   onSave(): void;
   onExport(): void;

@@ -17,6 +17,7 @@ import { useGlyphFont } from './icons';
 import { handleKey, type KeyContext, type PopoverName } from './keymap';
 import { openSession, useLicence, type Session } from './session';
 import type { ShellProps } from './shell';
+import { createDrawSignal } from './useCanvasGeometry';
 import { useEditorStore } from './useEditorStore';
 
 export type PepperScoreEditorProps = {
@@ -25,7 +26,7 @@ export type PepperScoreEditorProps = {
   musicXml?: string;
   /**
    * A signed licence key (see README); its `maxStaves` caps the score size (default 4). Absent, invalid or
-   * expired: read-only (banner, disabled toolbar, no keyboard editing). Read-only while it is being checked.
+   * expired: read-only (banner, disabled editing controls, no keyboard editing). Read-only while it is being checked.
    */
   licenceKey?: string;
   /** After every change to the document (commands, undo, redo). */
@@ -137,14 +138,15 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
       }),
     [store],
   );
-  const [draws, setDraws] = useState(0);
+  // Overlays re-measure after each draw through this signal; the session itself never re-renders for a draw.
+  const draws = useMemo(createDrawSignal, []);
   const onReady = useCallback(() => {
-    setDraws((n) => n + 1);
+    draws.emit();
     if (changedAt.current === null) return;
     const ms = performance.now() - changedAt.current;
     changedAt.current = null;
     callbacks.current.onRender?.(ms);
-  }, []);
+  }, [draws]);
 
   useEffect(() => {
     if (props.autoFocus) rootRef.current?.focus();
@@ -172,7 +174,6 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
   }, [dirty]);
 
   const highlights = useMemo(() => (editable ? editorHighlights(document, cursor, selection) : []), [editable, document, cursor, selection]);
-  const drawn = useMemo(() => ({}), [draws, highlights, viewerMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const refocus = useCallback(() => rootRef.current?.focus({ preventScroll: true }), []);
   const closePopover = useCallback(() => {
@@ -264,7 +265,7 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
   );
   // The phone shell (Task 5) will be chosen here on a narrow container.
   const shell: ShellProps = {
-    viewer, banners, popover, closePopover, playing, savedAt, drawn, viewerMode, setViewerMode,
+    viewer, banners, popover, closePopover, playing, savedAt, draws, viewerMode, setViewerMode,
     licence: { editable, checking, maxStaves },
     onPlay: togglePlay, onSave: save, onExport: () => exportMusicXml(store.getState().document), onOpen: (file) => void open(file), onReport: reportErrors,
   };

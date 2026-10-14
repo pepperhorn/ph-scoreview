@@ -290,8 +290,11 @@ describe('setMeta', () => {
     store.undo();
     expect(store.getState().document.meta.title).toBe('Song');
   });
-  it('records nothing when the value is unchanged', () => {
+  it('records nothing when the value is unchanged, or blank where there is none', () => {
     const store = createEditorStore(fourBars());
+    store.dispatch(setMeta, { title: '', composer: '  ' });
+    expect(store.getState().document.meta).toEqual({});
+    expect(store.getState().history.past).toHaveLength(0);
     store.dispatch(setMeta, { title: 'Song' });
     store.dispatch(setMeta, { title: 'Song' });
     expect(store.getState().history.past).toHaveLength(1);

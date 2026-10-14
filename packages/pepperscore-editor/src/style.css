@@ -263,11 +263,17 @@
   .ps-editor .ps-chip-k, .ps-editor .ps-licence { display: none; }
   .ps-editor .ps-workspace { grid-template-columns: 136px minmax(0, 1fr) 264px; }
 }
+/* Medium widths: the inspector becomes a drawer over the canvas, opened from the canvas header. */
+.ps-editor .ps-inspector-toggle { display: none; }
+.ps-editor .ps-inspector-toggle.is-on { border-color: rgba(52, 86, 66, .45); color: var(--ps-accent); }
 @container ps-editor (max-width: 960px) {
   .ps-editor .ps-workspace { grid-template-columns: 136px minmax(0, 1fr); }
-  .ps-editor .ps-inspector { display: none; }
+  .ps-editor .ps-inspector { position: absolute; z-index: 40; top: 0; right: 0; bottom: 0; width: min(304px, 85%); visibility: hidden; transform: translateX(100%); box-shadow: -18px 0 40px rgba(36, 52, 42, .14); transition: transform .2s ease, visibility .2s; }
+  .ps-editor .ps-inspector.is-open { visibility: visible; transform: none; }
+  .ps-editor .ps-inspector-toggle { display: inline-flex; }
   .ps-editor .ps-hint-caption { display: none; }
 }
+@media (prefers-reduced-motion: reduce) { .ps-editor .ps-inspector { transition: none; } }
 
 /* ---------- Narrow containers (until the phone shell): the touch palette replaces the rail and inspector ---------- */
 .ps-editor .ps-palette { display: none; }
@@ -279,7 +285,9 @@
   .ps-editor .ps-workspace { grid-template-columns: minmax(0, 1fr); }
   .ps-editor .ps-rail, .ps-editor .ps-inspector, .ps-editor .ps-hints, .ps-editor .ps-canvas-head { display: none; }
   .ps-editor .ps-desk { padding: 6px; }
-  .ps-editor .ps-status { display: none; }
+  /* Score-check failures and moved notes stay visible on narrow containers. */
+  .ps-editor .ps-status-cursor, .ps-editor .ps-status-saved, .ps-editor .ps-status-diagnostics { display: none; }
+  .ps-editor .ps-status { gap: 12px; padding: 0 10px; }
   .ps-editor .ps-palette { display: flex; gap: 10px; padding: 6px; overflow-x: auto; border-top: 1px solid var(--ps-line); background: var(--ps-paper); scrollbar-width: thin; }
   .ps-editor .ps-palette-group { display: flex; flex: none; gap: 4px; }
   .ps-editor .ps-palette-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; height: 44px; padding: 0 8px; border: 1px solid var(--ps-line-2); border-radius: 10px; background: #fff; font-size: 15px; font-weight: 500; }

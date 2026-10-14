@@ -45,15 +45,18 @@ const VALUES = [
 export function Rail() {
   const { store } = useUi();
   const dispatch = useDispatch();
-  const cursor = useEditorStore(store, (s) => s.cursor);
+  // Only what the keycaps light up, so cursor moves do not re-render the rail.
+  const base = useEditorStore(store, (s) => s.cursor.duration.base);
+  const dotted = useEditorStore(store, (s) => s.cursor.duration.dots > 0);
+  const chord = useEditorStore(store, (s) => !!s.cursor.chord);
   return (
     <aside className="ps-rail" aria-label="Note entry tools">
       <div className="ps-rail-label">Value</div>
       <div className="ps-tray" role="group" aria-label="Duration">
         {VALUES.map((v) => (
-          <Keycap key={v.base} label={v.label} active={cursor.duration.base === v.base} className="ps-pencil"><Glyph c={v.c} alt={v.alt} className="ps-glyph-note" /></Keycap>
+          <Keycap key={v.base} label={v.label} active={base === v.base} className="ps-pencil"><Glyph c={v.c} alt={v.alt} className="ps-glyph-note" /></Keycap>
         ))}
-        <Keycap label="Toggle dot" active={cursor.duration.dots > 0}><Glyph c={SMUFL.dot} alt="dot" className="ps-glyph-dot" /></Keycap>
+        <Keycap label="Toggle dot" active={dotted}><Glyph c={SMUFL.dot} alt="dot" className="ps-glyph-dot" /></Keycap>
       </div>
       <div className="ps-rail-label">Modify</div>
       <div className="ps-rail-grid" role="group" aria-label="Modifiers">
@@ -70,8 +73,8 @@ export function Rail() {
           label="Add to chord"
           keys="⇧"
           title="Add to chord: note letters add to the chord (Shift+letter adds one note)"
-          active={!!cursor.chord}
-          onClick={() => dispatch(setChordMode, { on: !cursor.chord }, { record: false })}
+          active={chord}
+          onClick={() => dispatch(setChordMode, { on: !chord }, { record: false })}
         >
           <ChordIcon />
         </Keycap>

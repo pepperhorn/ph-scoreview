@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useState, type RefObject } from 'react';
 import { rect, type Rect } from './placement';
 
 /** Rectangles in the canvas stage's coordinates: the stage itself, the cursor bar and the last drawn bar. */
@@ -23,51 +23,75 @@ export function cursorBarElement(host: ParentNode): Element | null {
 
 const same = (a: Rect | null, b: Rect | null) => a === b || (!!a && !!b && a.left === b.left && a.top === b.top && a.width === b.width && a.height === b.height);
 
+/** A signal the session fires after every viewer draw; listeners never re-render the session. */
+export type DrawSignal = { subscribe(listener: () => void): () => void };
+export function createDrawSignal(): DrawSignal & { emit(): void } {
+  const listeners = new Set<() => void>();
+  return {
+    emit: () => listeners.forEach((listener) => listener()),
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+}
+
+/** The last bar of the last drawn system (only that system's bars are scanned). */
+function lastBarElement(host: ParentNode): Element | null {
+  const systems = host.querySelectorAll('.score-system');
+  const bars = systems[systems.length - 1]?.querySelectorAll('svg .measure');
+  return bars?.[bars.length - 1] ?? null;
+}
+
+export type GeometryNeeds = {
+  /** The cursor bar is measured (popover open): again after every cursor or selection change. */
+  cursor: boolean;
+  /** The last bar is measured (add-bar buttons shown). */
+  last: boolean;
+  /** Fires after every viewer draw. */
+  draws: DrawSignal;
+  /** Cursor and selection changes (the viewer re-applies its highlights a frame later). */
+  subscribe(listener: () => void): () => void;
+};
+
 /**
- * Measures the stage when `trigger` changes (a draw, a highlight change), on scroll and on resize, at most once
- * per frame and a frame after the change (the viewer re-applies highlights after a draw), so popovers and the
- * add-bar buttons follow the engraving. Nothing is measured while the viewer redraws.
+ * Measures what `needs` asks for, a frame after a draw, a highlight change (cursor needed only), a scroll or a
+ * resize, at most once per frame; with nothing needed it measures and listens to nothing.
  */
-export function useCanvasGeometry(stage: RefObject<HTMLElement | null>, trigger: unknown): CanvasGeometry {
+export function useCanvasGeometry(stage: RefObject<HTMLElement | null>, needs: GeometryNeeds): CanvasGeometry {
   const [geometry, setGeometry] = useState<CanvasGeometry>(EMPTY);
-  const scheduleRef = useRef<() => void>(() => {});
-  useEffect(() => {
-    let frame = requestAnimationFrame(() => {
-      frame = 0;
-      scheduleRef.current();
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [trigger]);
+  const { cursor: wantCursor, last: wantLast, draws, subscribe } = needs;
   useEffect(() => {
     const host = stage.current;
-    if (!host) return;
+    if (!host || (!wantCursor && !wantLast)) return;
     let frame = 0;
     const measure = () => {
       frame = 0;
       const origin = host.getBoundingClientRect();
-      const bars = host.querySelectorAll('.score-system svg .measure');
       const next: CanvasGeometry = {
         viewport: rect(0, 0, origin.width, origin.height),
-        cursor: relativeRect(cursorBarElement(host), origin),
-        last: relativeRect(bars[bars.length - 1], origin),
+        cursor: wantCursor ? relativeRect(cursorBarElement(host), origin) : null,
+        last: wantLast ? relativeRect(lastBarElement(host), origin) : null,
       };
       setGeometry((previous) => (same(previous.viewport, next.viewport) && same(previous.cursor, next.cursor) && same(previous.last, next.last) ? previous : next));
     };
+    // Two frames: the viewer applies highlights in its own effect, after this one is scheduled.
     const schedule = () => {
-      if (!frame) frame = requestAnimationFrame(measure);
+      if (!frame) frame = requestAnimationFrame(() => (frame = requestAnimationFrame(measure)));
     };
-    scheduleRef.current = schedule;
     schedule();
     const resize = new ResizeObserver(schedule);
     resize.observe(host);
+    const unsubscribeDraws = draws.subscribe(schedule);
+    const unsubscribeStore = wantCursor ? subscribe(schedule) : () => {};
     host.addEventListener('scroll', schedule, true);
-    window.addEventListener('resize', schedule);
     return () => {
       cancelAnimationFrame(frame);
       resize.disconnect();
+      unsubscribeDraws();
+      unsubscribeStore();
       host.removeEventListener('scroll', schedule, true);
-      window.removeEventListener('resize', schedule);
     };
-  }, [stage]);
+  }, [stage, wantCursor, wantLast, draws, subscribe]);
   return geometry;
 }
