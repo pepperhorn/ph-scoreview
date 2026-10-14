@@ -337,3 +337,5 @@
 /* A natural-height Endless snippet has no viewport height to centre the score in: no balancing row below it. */
 .pepperscore[data-ps-height=natural] .ps-landscape .score-content{grid-template-rows:auto auto}
 .pepperscore[data-ps-clock] .score-system svg .reader-note,.pepperscore[data-ps-clock] .score-system svg .measure{cursor:pointer}
+/* The Licences entry in the drawer foot: quiet like the attribution beside it, always shown (the attribution hides on narrow readers). */
+.pepperscore .drawer-foot{gap:14px}.pepperscore .drawer-licences{color:inherit;text-decoration:underline;text-underline-offset:2px;white-space:nowrap}.pepperscore .drawer-licences:hover{color:#61806a}

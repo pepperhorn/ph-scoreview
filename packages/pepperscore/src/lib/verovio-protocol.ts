@@ -21,6 +21,17 @@ export type VerovioRequest = { id: number } & (
   | { kind: 'render'; channel: number; ticket: number; revision: number; view: ViewSpec; options: Record<string, unknown>; pages: number[]; chunkBudget: number; simulateOom?: boolean }
 );
 
+/**
+ * Where the worker imports Verovio from: upstream's own, unmodified ES modules, loaded at runtime so they stay a
+ * separately replaceable library (LGPL-3.0-or-later). `module` is the Emscripten module (npm verovio's
+ * dist/verovio-module.mjs, default export: an async factory of the WASM module); `toolkit` is the JavaScript toolkit
+ * (dist/verovio.mjs, exports `VerovioToolkit` and `enableLogToBuffer`). Absolute URLs.
+ */
+export type VerovioFiles = { module: string; toolkit: string };
+
+/** Sent once by the runtime right after it starts a worker, before any request. */
+export type VerovioConfigure = { kind: 'configure'; files: VerovioFiles };
+
 export type VerovioReply = {
   id: number;
   value?: unknown;
