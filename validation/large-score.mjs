@@ -39,7 +39,7 @@ const xml = orchestral(30, MEASURES);
 // which would be a main-thread long task of the harness's own.
 const xmlPath = join(mkdtempSync(join(tmpdir(), 'large-score-')), 'synthetic-symphony.musicxml');
 writeFileSync(xmlPath, xml);
-const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.wasm': 'application/wasm', '.json': 'application/json' };
+const mime = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.wasm': 'application/wasm', '.json': 'application/json' };
 const server = createServer(async (request, response) => {
   const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
   const path = resolve(dist, `.${pathname === '/' ? '/index.html' : pathname}`);
