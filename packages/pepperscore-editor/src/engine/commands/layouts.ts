@@ -11,9 +11,10 @@ const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.str
 /** Layout parts naming parts of the document, copied. */
 const knownParts = (doc: Document, parts: LayoutPart[]): LayoutPart[] => structuredClone(parts.filter((lp) => doc.parts.some((p) => p.id === lp.partId)));
 
-/** Switches the layout the editor shows; dispatch with `{ record: false }`. Unknown ids are a no-op. */
+/** Switches the layout the editor shows; never recorded. Unknown ids are a no-op. */
 export const setActiveLayout: Command<{ layoutId: string }> = {
   label: 'Switch layout',
+  record: false,
   run: (draft, { layoutId }) => {
     if (layoutOf(draft, layoutId) && draft.activeLayoutId !== layoutId) draft.activeLayoutId = layoutId;
   },
@@ -127,8 +128,9 @@ function renewIds(part: Part): Map<string, string> {
 
 /**
  * Unlinks a swapped layout part into a new part of its own: the pitches as the layout shows them (written
- * for the target when the layout is transposing), named "<Target> (from <Source>)", appended to the score
- * and replacing the source in this layout only. A part without a swap is a no-op.
+ * for the target when the layout is transposing), named "<Target> (from <Source>)", appended to the parts,
+ * replacing the source in this layout and added to the end of the full score (`layouts[0]`) so it exports.
+ * A part without a swap is a no-op.
  */
 export const makeCopy: Command<{ layoutId: string; partId: string }> = {
   label: 'Make a copy',
@@ -150,5 +152,8 @@ export const makeCopy: Command<{ layoutId: string; partId: string }> = {
     const replacement: LayoutPart = { partId: copy.id };
     if (lp.staves) replacement.staves = [...lp.staves];
     layout.parts[layout.parts.indexOf(lp)] = replacement;
+    // The full score lists the copy too, so it is exported.
+    const score = draft.document.layouts[0];
+    if (!score.parts.some((p) => p.partId === copy.id)) score.parts.push({ partId: copy.id });
   },
 };

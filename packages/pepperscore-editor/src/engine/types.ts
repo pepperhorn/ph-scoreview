@@ -38,4 +38,5 @@ export type History = { past: HistoryEntry[]; future: HistoryEntry[] };
  */
 export type EditorState = Editable & { history: History; dirty: boolean; invariantErrors: string[]; view: ViewResult };
 
-export type Command<A> = { label: string; coalesceKey?: (args: A) => string | undefined; run: (draft: Editable, args: A) => void };
+/** `record: false` marks a view-only command (cursor, selection, active layout): never recorded, whatever the caller asks. */
+export type Command<A> = { label: string; record?: false; coalesceKey?: (args: A) => string | undefined; run: (draft: Editable, args: A) => void };

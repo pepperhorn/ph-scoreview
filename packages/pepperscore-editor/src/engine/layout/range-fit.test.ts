@@ -124,3 +124,29 @@ test('chords: one out-of-range note shifts the whole event', () => {
   expect(moved).toEqual({ a: -12 });
   expect(pitches(part).a).toEqual([P('C', 3), P('C', 4)]);
 });
+
+test('an override on one note of a tie moves its whole tie chain, so the tie holds', () => {
+  const d = doc(74, [
+    [q('a', [P('D', 4)]), q('b', [P('D', 4)]), { id: 'c', type: 'event', duration: { base: 'half', dots: 0 }, notes: [note('cn0', P('G', 5), { tie: { target: 'dn0' } })] }],
+    [{ id: 'd', type: 'event', duration: { base: 'half', dots: 0 }, notes: [note('dn0', P('G', 5))] }, { id: 'r', type: 'event', duration: { base: 'half', dots: 0 }, rest: true }],
+  ]);
+  expect(fit(d, { target: alto, level: 'beginner', overrides: { c: 0 } }).moved).toEqual({ a: -12, b: -12 });
+  expect(fit(d, { target: alto, level: 'beginner', autoRange: false, overrides: { d: 12 } }).moved).toEqual({ c: 12, d: 12 });
+});
+
+test('a phrase still out of range after its octave keeps the move and reports it', () => {
+  // Concert C6 (84) moves to C5 (72), still above the alto beginner top (69).
+  const d = doc(74, [[q('a', [P('C', 6)]), { id: 'r', type: 'event', duration: { base: 'half', dots: 1 }, rest: true }]]);
+  const { moved, diagnostics } = fit(d, { target: alto, level: 'beginner' });
+  expect(moved).toEqual({ a: -12 });
+  expect(diagnostics).toHaveLength(1);
+  expect(diagnostics[0]).toMatch(/still out of/);
+});
+
+test('a shift past octave 9 is skipped with a diagnostic', () => {
+  const d = doc(1, [[q('a', [P('C', 9)]), { id: 'r', type: 'event', duration: { base: 'half', dots: 1 }, rest: true }]]);
+  const { part, moved, diagnostics } = fit(d, { target: INSTRUMENTS.flute, level: 'advanced', autoRange: false, overrides: { a: 12 } });
+  expect(moved).toEqual({});
+  expect(pitches(part).a).toEqual([P('C', 9)]);
+  expect(diagnostics[0]).toMatch(/octave 9/);
+});

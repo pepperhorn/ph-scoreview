@@ -1,4 +1,5 @@
 import { createDocument } from '../../model/create';
+import { checkInvariants } from '../../model/invariants';
 import { eventStarts } from '../../model/query';
 import type { Document, Event, Part, Pitch, Swap } from '../../model/schema';
 import { fixedIds } from '../../test-helpers';
@@ -128,7 +129,7 @@ test('edit through the view keeps overrides', () => {
   expect(store.getState().view.moved).toEqual({ a: -12, b: -12, c: -12 });
 });
 
-test('makeCopy bakes the swap into a new linked-free part and undoes cleanly', () => {
+test('makeCopy bakes the swap into a new unlinked part, adds it to the full score and undoes cleanly', () => {
   const { store, layoutId } = swapped();
   const before = store.getState().document;
   store.dispatch(makeCopy, { layoutId, partId: 'p1' });
@@ -139,7 +140,7 @@ test('makeCopy bakes the swap into a new linked-free part and undoes cleanly', (
   expect(copy).toMatchObject({ name: 'Alto Saxophone (from Flute)', instrument: { gmProgram: 66 }, transposition: { semitones: 9, diatonic: 5 }, clefs: ['treble'] });
   const layout = document.layouts.find((l) => l.id === layoutId)!;
   expect(layout.parts).toEqual([{ partId: copy.id }]);
-  expect(document.layouts[0].parts.map((p) => p.partId)).toEqual(['p1', 'p2']);
+  expect(document.layouts[0].parts.map((p) => p.partId)).toEqual(['p1', 'p2', copy.id]);
   expect(Object.values(pitches(copy))).toEqual([P('A', 4), P('C', 5, 1), P('E', 5)]);
   // Every id is new.
   const ids = (part: Part) => part.measures.flatMap((pm) => [pm.id, ...pm.sequences.flatMap((s) => [s.id, ...eventStarts(s).flatMap(({ event }) => [event.id, ...(event.notes ?? []).map((n) => n.id)])])]);
@@ -177,4 +178,30 @@ test('makeCopy keeps references inside the copy consistent', () => {
   expect(pm.beams[0].events).toEqual([ca.id, cb.id]);
   expect(pm.directions[0].anchor.eventId).toBe(ca.id);
   expect(pm.directions[0].id).not.toBe('dy');
+});
+
+test('an override on the first note of a tie keeps the tie in the view and in the copy', () => {
+  const doc = duo();
+  const content = doc.parts[0].measures[0].sequences[0].content as Event[];
+  content[1].notes = [{ id: 'bn', pitch: P('E', 5), tie: { target: 'cn' } }];
+  content[2].notes = [{ id: 'cn', pitch: P('E', 5) }];
+  const store = createEditorStore(doc);
+  store.dispatch(createCustomLayout, { name: 'Alto', parts: [{ partId: 'p1', swap: altoBeginner }] });
+  const layoutId = store.getState().activeLayoutId;
+  store.dispatch(setRangeOverride, { layoutId, partId: 'p1', eventId: 'b', shift: 0 });
+  const { view } = store.getState();
+  expect(view.moved).toEqual({ a: -12 });
+  expect(checkInvariants(view.document)).toEqual([]);
+  store.dispatch(makeCopy, { layoutId, partId: 'p1' });
+  expect(store.getState().invariantErrors).toEqual([]);
+});
+
+test('view-only commands are never recorded, whatever the caller asks', () => {
+  const store = createEditorStore(duo());
+  store.dispatch(createCustomLayout, { name: 'Strings', parts: [{ partId: 'p2' }] });
+  const past = store.getState().history.past.length;
+  store.dispatch(setActiveLayout, { layoutId: 'layout1' });
+  store.dispatch(setCursor, { tick: 960 });
+  expect(store.getState().activeLayoutId).toBe('layout1');
+  expect(store.getState().history.past).toHaveLength(past);
 });

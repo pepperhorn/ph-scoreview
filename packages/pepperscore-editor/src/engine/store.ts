@@ -73,13 +73,13 @@ export function createEditorStore(document: Document, options: EditorStoreOption
   };
 
   return Object.assign(store, {
-    /** Runs `command` on a draft; recorded in history (record defaults true) unless it changed nothing. */
+    /** Runs `command` on a draft; recorded in history (record defaults true) unless it changed nothing or the command is never recorded. */
     dispatch<A>(command: Command<A>, args: A, options?: { record?: boolean }): void {
       const state = store.getState();
       const [next, patches, inverse] = produceWithPatches(editableOf(state), (draft) => command.run(draft, args));
       if (patches.length === 0) return;
       const update: Partial<EditorState> = { ...next, ...layoutView(next.document, next.activeLayoutId), invariantErrors: check(next.document) };
-      if (options?.record ?? true) {
+      if (command.record !== false && (options?.record ?? true)) {
         const entry: HistoryEntry = { label: command.label, patches, inverse, coalesceKey: command.coalesceKey?.(args), at: Date.now() };
         update.history = record(state.history, entry);
         update.dirty = dirtyAt(update.history);

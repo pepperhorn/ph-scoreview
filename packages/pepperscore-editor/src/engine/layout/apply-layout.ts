@@ -86,12 +86,13 @@ function withOverrides(part: Part, overrides: Layout['overrides']): Part {
 }
 
 /**
- * The document as layout `layoutId` (the first layout when unknown) shows it. The full score with nothing to
- * change returns `doc` itself. Otherwise the view document holds the layout's parts in its order, with its
+ * The document as layout `layoutId` shows it. An unknown layout (or none) and the full score with nothing to
+ * change return `doc` itself. Otherwise the view document holds the layout's parts in its order, with its
  * only layout listing them, and leaves `doc` untouched.
  */
 export function applyLayout(doc: Document, layoutId: string): ViewResult {
-  const layout = doc.layouts.find((l) => l.id === layoutId) ?? doc.layouts[0];
+  const layout = doc.layouts.find((l) => l.id === layoutId);
+  if (!layout) return { document: doc, moved: {}, counts: { moved: 0 }, diagnostics: [] };
   const moved: Record<string, 12 | -12> = {};
   const movedBy = new Set<string>();
   const diagnostics: string[] = [];

@@ -95,12 +95,38 @@ export type FitOptions = {
 
 export type FitResult = { part: Part; moved: Record<string, 12 | -12>; diagnostics: string[] };
 
+/** Each event's tie chain (the events its ties link, both ways, in order); untied events are absent. */
+function tieChains(events: { event: Event }[]): Map<string, string[]> {
+  const noteOwner = new Map<string, string>();
+  for (const { event } of events) for (const n of event.notes ?? []) noteOwner.set(n.id, event.id);
+  const parent = new Map<string, string>();
+  const root = (id: string): string => { let r = id; while (parent.has(r)) r = parent.get(r)!; return r; };
+  for (const { event } of events)
+    for (const n of event.notes ?? []) {
+      const owner = n.tie && noteOwner.get(n.tie.target);
+      if (!owner) continue;
+      const [a, b] = [root(event.id), root(owner)];
+      if (a !== b) parent.set(b, a);
+    }
+  const groups = new Map<string, string[]>();
+  for (const { event } of events) {
+    const r = root(event.id);
+    groups.set(r, [...(groups.get(r) ?? []), event.id]);
+  }
+  const chains = new Map<string, string[]>();
+  for (const chain of groups.values()) if (chain.length > 1) for (const id of chain) chains.set(id, chain);
+  return chains;
+}
+
 /**
  * Shows `part` for `target`: every note goes to sounding pitch, then up the `interval`, then (when
  * transposing) to the target's written pitch, keeping its spelling. With `autoRange`, a phrase holding a
  * note outside the target's range at `level` (judged on sounding plus interval) moves an octave as one:
- * up when below, down when above, not at all (with a diagnostic) when both. Overrides then set single
- * events. Unpitched targets (no ranges) are not fitted. `moved` holds the events shifted by an octave.
+ * up when below, down when above, not at all (with a diagnostic) when both; a phrase still out of range
+ * after its move keeps it and gets a diagnostic. Overrides then set single events, extended to their tie
+ * chain so a tie never breaks (the first override along the chain wins). A shift that would take a note
+ * past octave 0..9 is skipped with a diagnostic. Unpitched targets (no ranges) are not fitted. `moved`
+ * holds the events shifted by an octave.
  */
 export function fitToRange(part: Part, options: FitOptions): FitResult {
   const { target, level, interval = CONCERT, overrides, autoRange, transposing } = options;
@@ -110,35 +136,54 @@ export function fitToRange(part: Part, options: FitOptions): FitResult {
   const diagnostics: string[] = [];
   const events = partEvents(part);
   const measureOf = new Map(events.map(({ event, measure }) => [event.id, measure]));
+  const where = (ids: string[]) => `part ${part.name} bar ${(measureOf.get(ids[0]) ?? 0) + 1} phrase ${ids[0]}..${ids.at(-1)}`;
+  const span = `the ${target.label} ${level} range`;
 
   const shifts = new Map<string, Shift>();
   if (autoRange && range) {
     const soundingMidi = (p: Pitch) => pitchMidi(p) - source.semitones + interval.semitones;
     const byId = new Map(events.map(({ event }) => [event.id, event]));
+    const outside = (midis: number[]) => ({ below: midis.some((m) => m < range.low), above: midis.some((m) => m > range.high) });
     for (const phrase of phrases(part)) {
       const midis = phrase.eventIds.flatMap((id) => (byId.get(id)?.notes ?? []).map((n) => soundingMidi(n.pitch)));
-      const below = midis.some((m) => m < range.low), above = midis.some((m) => m > range.high);
+      const { below, above } = outside(midis);
       if (below && above) {
-        const first = phrase.eventIds[0], last = phrase.eventIds.at(-1);
-        diagnostics.push(`range: part ${part.name} bar ${(measureOf.get(first) ?? 0) + 1} phrase ${first}..${last} is out of the ${target.label} ${level} range both ways; not moved`);
+        diagnostics.push(`range: ${where(phrase.eventIds)} is out of ${span} both ways; not moved`);
         continue;
       }
-      if (below || above) for (const id of phrase.eventIds) shifts.set(id, below ? 12 : -12);
+      if (!below && !above) continue;
+      const shift = below ? 12 : -12;
+      for (const id of phrase.eventIds) shifts.set(id, shift);
+      const after = outside(midis.map((m) => m + shift));
+      if (after.below || after.above) diagnostics.push(`range: ${where(phrase.eventIds)} is still out of ${span} after moving ${shift > 0 ? '8va' : '8vb'}`);
     }
   }
+
+  const chains = tieChains(events);
+  const overrideFor = (id: string): Shift | undefined => {
+    const owner = (chains.get(id) ?? [id]).find((e) => overrides[e] !== undefined);
+    return owner === undefined ? undefined : overrides[owner];
+  };
 
   const moved: Record<string, 12 | -12> = {};
   const fitted = structuredClone(part);
   for (const { event, measure } of partEvents(fitted)) {
     if (!event.notes?.length) continue;
-    const shift = overrides[event.id] ?? shifts.get(event.id) ?? 0;
-    if (shift !== 0) moved[event.id] = shift;
     const concert = options.keyByMeasure(measure).fifths;
-    for (const n of event.notes) {
+    const written = (shift: number) => event.notes!.map((n) => {
       const sounding = spell(n.pitch, toSounding, writtenKeyFifths(concert, interval), diagnostics, n.id);
       const octaved = { ...sounding, octave: sounding.octave + shift / 12 };
-      n.pitch = transposing ? spell(octaved, target.transposition, writtenKeyFifths(concert, add(interval, target.transposition)), diagnostics, n.id) : octaved;
+      return transposing ? spell(octaved, target.transposition, writtenKeyFifths(concert, add(interval, target.transposition)), diagnostics, n.id) : octaved;
+    });
+    let shift = overrideFor(event.id) ?? shifts.get(event.id) ?? 0;
+    let pitches = written(shift);
+    if (shift !== 0 && pitches.some((p) => p.octave < 0 || p.octave > 9)) {
+      diagnostics.push(`range: event ${event.id} in part ${part.name} cannot move ${shift > 0 ? '8va' : '8vb'} past octave ${shift > 0 ? 9 : 0}; not moved`);
+      shift = 0;
+      pitches = written(0);
     }
+    if (shift !== 0) moved[event.id] = shift as 12 | -12;
+    event.notes.forEach((n, i) => { n.pitch = pitches[i]; });
   }
   return { part: fitted, moved, diagnostics };
 }
