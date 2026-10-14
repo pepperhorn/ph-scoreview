@@ -319,6 +319,7 @@
   .ps-device, .ps-design[data-view=phone] .ps-device { width: 100%; height: calc(100dvh - 38px); min-height: 0; padding: 0; border-radius: 0; background: none; box-shadow: none; }
   .ps-app, .ps-design[data-view=phone] .ps-app { border: 0; border-radius: 0; }
   .ps-design[data-view=phone] .ps-shell { padding-top: 0; }
+  .ps-design[data-view=phone] .ps-topbar { top: 0; }
 }
 
 /* Fixed-height bands of the shell never shrink; the workspace takes the rest. */
@@ -373,3 +374,21 @@
 .ps-override-arrow { color: var(--ps-ink-4); text-align: center; }
 
 @container ps-app (max-width: 760px) { .ps-add-bar-btn { width: 26px; height: 26px; } }
+
+/* ---------- Phone header auto-hide (4 s idle -> 28px strip; scroll or tap restores). ---------- */
+@container ps-app (max-width: 760px) {
+  .ps-shell { --ps-head-h: 78px; }
+  .ps-app[data-header=collapsed] .ps-shell { --ps-head-h: 28px; }
+  /* The header overlays the top of the shell; what follows it is padded by its height, so the score grows without a jump. */
+  .ps-topbar { position: absolute; z-index: 15; top: 0; left: 0; right: 0; height: var(--ps-head-h); overflow: hidden; align-content: start; background: rgba(251, 250, 248, .96); backdrop-filter: blur(8px); transition: height .2s ease, padding .2s ease; }
+  .ps-design[data-view=phone] .ps-topbar { top: 22px; }
+  .ps-topbar + * { margin-top: var(--ps-head-h); transition: margin-top .2s ease; }
+  .ps-brand, .ps-title-block, .ps-actions { transition: margin-top .2s ease, opacity .16s ease; }
+  .ps-mode-text, .ps-chip { transition: opacity .16s ease; }
+  .ps-app[data-header=collapsed] .ps-topbar { padding-top: 3px; padding-bottom: 3px; row-gap: 0; cursor: pointer; }
+  .ps-app[data-header=collapsed] .ps-brand, .ps-app[data-header=collapsed] .ps-title-block, .ps-app[data-header=collapsed] .ps-actions { margin-top: -40px; opacity: 0; pointer-events: none; }
+  .ps-app[data-header=collapsed] .ps-meta-mode { width: 22px; padding: 0; justify-content: center; }
+  .ps-app[data-header=collapsed] .ps-mode-text { display: none; }
+  .ps-app[data-header=collapsed] .ps-chip:not(:first-child) { opacity: 0; pointer-events: none; }
+}
+@media (prefers-reduced-motion: reduce) { .ps-topbar, .ps-topbar + *, .ps-brand, .ps-title-block, .ps-actions { transition: none !important; } }

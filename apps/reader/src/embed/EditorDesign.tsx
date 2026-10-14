@@ -255,6 +255,35 @@ function KeyStrip({ onClose }: { onClose(): void }) {
   </div>;
 }
 
+/** Phone layouts (app container at 760px or less) only; desktop never collapses the header. */
+const COMPACT_MAX = 760;
+const HEADER_IDLE_MS = 4000;
+
+/**
+ * Phone header auto-hide: after 4 s without activity the two-row header collapses to a slim strip; scrolling the score
+ * (either direction) or tapping the strip brings it back, and the idle timer starts again.
+ */
+function useAutoHideHeader(app: React.RefObject<HTMLDivElement | null>) {
+  const [compact, setCompact] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const [activity, setActivity] = useState(0);
+  useEffect(() => {
+    const element = app.current;
+    if (!element) return;
+    const observer = new ResizeObserver(() => setCompact(element.clientWidth <= COMPACT_MAX));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [app]);
+  useEffect(() => {
+    if (!compact) { setCollapsed(false); return; }
+    if (collapsed) return;
+    const timer = window.setTimeout(() => setCollapsed(true), HEADER_IDLE_MS);
+    return () => window.clearTimeout(timer);
+  }, [compact, collapsed, activity]);
+  const wake = useCallback(() => { setCollapsed(false); setActivity(n => n + 1); }, []);
+  return { collapsed: compact && collapsed, wake };
+}
+
 /** Phone: a fixed two-row toolbar under a compact tab strip; the canvas ends above it, so the score stays scrollable. */
 function PhoneToolbar({ tab, setTab, keyOpen, setKeyOpen }: { tab: PhoneTab; setTab(t: PhoneTab): void; keyOpen: boolean; setKeyOpen(open: boolean): void }) {
   let rows: ReactNode;
@@ -408,6 +437,8 @@ export default function EditorDesign() {
   const geometry = useScoreGeometry(paper, drawn + (view === 'phone' ? 1000 : 0));
   const onReady = useCallback(() => setDrawn(n => n + 1), []);
   const openKey = () => { setPhoneTab('score'); setKeyOpen(true); };
+  const app = useRef<HTMLDivElement>(null);
+  const { collapsed, wake } = useAutoHideHeader(app);
 
   // Text fallbacks if Bravura never loads (the viewer injects its @font-face on mount).
   useEffect(() => {
@@ -430,16 +461,16 @@ export default function EditorDesign() {
 
     <div className="ps-stage">
       <div className="ps-device">
-        <div className={`ps-app ${readOnly ? 'is-readonly' : ''}`}>
+        <div ref={app} className={`ps-app ${readOnly ? 'is-readonly' : ''}`} data-header={collapsed ? 'collapsed' : 'full'}>
           <div className="ps-shell">
-            <header className="ps-topbar ps-reveal">
+            <header className="ps-topbar ps-reveal" onClick={collapsed ? wake : undefined}>
               <div className="ps-brand"><span className="ps-brand-mark"><Glyph c={SMUFL.gClef} alt="𝄞"/></span><span className="ps-brand-name">pepperscore</span></div>
               <div className="ps-title-block">
                 <h1 className="ps-score-title">Expression and Rhythm</h1>
                 <p className="ps-score-composer">Clara Weston · Study for piano, Op. 4</p>
               </div>
               <div className="ps-meta-row" aria-label="Score settings">
-                <span className="ps-mode-pill ps-meta-mode"><span className="ps-mode-dot"/>Entry</span>
+                <span className="ps-mode-pill ps-meta-mode"><span className="ps-mode-dot"/><span className="ps-mode-text">Entry</span></span>
                 <span className="ps-meta-crumb">bar 2 of 4</span>
                 <div className="ps-chips">
                   <button type="button" className="ps-btn ps-chip" onClick={openKey}><span className="ps-chip-k">Key</span>C major</button>
@@ -475,7 +506,7 @@ export default function EditorDesign() {
                   <div className="ps-canvas-crumbs"><span className="ps-mode-pill"><span className="ps-mode-dot"/>Entry</span><span className="ps-crumb">Piano · bar 2 of 4</span></div>
                   <div className="ps-canvas-view"><Seg items={['Page', 'Endless']} on={0}/><span className="ps-zoom">100%</span></div>
                 </div>
-                <div className="ps-desk">
+                <div className="ps-desk" onScroll={wake}>
                   <div className="ps-paper" ref={paper}>
                     <PepperScore key={view} className="ps-design-score" settings={view === 'phone' ? PHONE_FRAME_SETTINGS : undefined} chrome="none" musicXml={expressive} highlights={HIGHLIGHTS} assetBaseUrl="/" ariaLabel="Expression and Rhythm" onReady={onReady}/>
                     {!readOnly && <KeyPopover at={placePopover(geometry)}/>}
