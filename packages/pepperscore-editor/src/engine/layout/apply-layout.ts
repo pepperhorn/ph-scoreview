@@ -101,6 +101,8 @@ export function applyLayout(doc: Document, layoutId: string): ViewResult {
   for (const lp of layout.parts) {
     const source = doc.parts.find((p) => p.id === lp.partId);
     if (!source) continue;
+    // A part with every staff hidden is not drawn: its swap moves nothing and reports nothing.
+    if (lp.staves && !lp.staves.some((s) => s >= 1 && s <= source.staves)) continue;
     let part = source;
     if (lp.swap) {
       const fit = swapPart(doc, source, lp.swap, layout.transposing);

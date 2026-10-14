@@ -54,7 +54,7 @@ The design's `overlay`, `interactive`, `layout`, `getGeometry()` and `renderPage
 
 ### Deferred
 
-Layouts UI (switching, part layouts, breaks), overlay anchor handles and offset nudging in the UI, lyrics, tablature and percussion kits, MEI export, templates and rules (`applyTemplate`, rule authoring, template management), LLM-assisted engraving review, and the remaining viewer hooks listed above.
+Layout breaks (the Layouts UI shipped in phase 2), overlay anchor handles and offset nudging in the UI, lyrics, tablature and percussion kits, MEI export, templates and rules (`applyTemplate`, rule authoring, template management), LLM-assisted engraving review, and the remaining viewer hooks listed above.
 
 ## Validation
 
@@ -95,3 +95,66 @@ By score size: six notes entered one at a time (`C D E F G A`, quarters) into an
 | 128 · 4 | 530 (503–667) | **247** (232–348) |
 
 The fixed fade accounted for about 260 ms of every edit. Without it, an edit costs the 80 ms debounce plus roughly 50–170 ms of compile and engraving, growing with bars × staves because the whole document is re-imported on every edit. The design's "well under 100 ms" estimate holds for the work after the debounce on small scores only. At the 4-staff cap with 128 bars, an edit takes about a quarter second. Incremental engraving would be the next step if longer scores matter, and it is not planned.
+
+## Phase 2 (layouts, instrument swap, shells)
+
+Plan: [docs/superpowers/plans/2026-10-14-score-editor-layouts-and-shell.md](../superpowers/plans/2026-10-14-score-editor-layouts-and-shell.md). The keymap is unchanged in phase 2 (no new bindings), so the keymap paragraph above and the README table stand. Shipped as stacked PRs: #42 (engine: model, layout engine, viewer fixes) and #41 (desktop and phone shells, Layout UI).
+
+### What shipped
+
+- Model and engine: `INSTRUMENTS` (16 ids, transposition, clef, GM program, ranges per level), `Layout.kind` (`score`, `part`, `custom`) and `transposing`, `LayoutPart.swap`, `applyLayout` (a derived `state.view` with moved-note ids and counts), phrase-based `fitToRange` with tie chains, and the commands `setActiveLayout`, `createCustomLayout`, `createPartLayouts`, `setLayoutParts`, `setLayoutTransposing`, `setSwap`, `setRangeOverride`, `makeCopy`, `setMeta`. Phase 1 `.pepperscore` files open unchanged.
+- Viewer: the measure highlight is a `.ps-measure-highlight` rect in an overlay layer, the `ps-transposed` class (`--ps-transposed`), `ps-selection` defaults to ink blue, no highlight work without highlights, and look-ahead drawing during playback.
+- Desktop shell from the design mock: top bar, keycap rail, canvas header with the layout selector, Score / Stave / Layout inspector tabs, popovers placed away from the cursor bar, add-bar buttons, hint strip, status line, and an inspector drawer between 761 and 960px.
+- Phone shell: two-row header that collapses, tabbed bottom toolbar, inline strips, overflow menu, Page view forced, `forcePhone`.
+- Layout tab and swap card (desktop), and the phone layout strip.
+- Screenshots reviewed against the mock: `/tmp/editor-desktop.png`, `/tmp/editor-layout.png`, `/tmp/editor-phone.png`, `/tmp/editor-phone-collapsed.png`, `/tmp/editor-phone-layout.png` (not committed).
+
+### Measurements
+
+`validation/editor-phone.mjs` (390 x 844, touch), run against the build:
+
+| | Measured |
+| --- | --- |
+| Header expanded | 78px |
+| Header collapsed (after 4 s idle) | 28px |
+| Collapse / restore transition | 200 ms; the body padding follows, no jump |
+| Tab strip | at most 32px; buttons 44px; at most two rows |
+| Toolbar rect after a scroll | identical |
+| Viewer mounts | 1 (0 removals of `.ps-editor-viewer`) |
+
+The phone test does not time redraws; the edit-to-engrave latency is logged by `validation/editor.mjs`, which drives the desktop shell and the phone-sized palette steps. Its numbers on the shared WSL2 machine: 197, 181, 314, 188, 15 ms (an idle run after the shell review fixes) and 422, 398, 320, 88, 283, 109, 272, 346, 318 ms under a load average of about 40 (the final verification run). The phase 1 default-score figure (137–183 ms) does not carry over: the shell adds the canvas geometry, popover and highlight work, and the machine is rarely idle.
+
+Editor redraw gate: `PS_EDITOR_RENDER_MS` defaults to 400 ms (warning above it, failure above 2x, 800 ms). It was 250 ms; the 500 ms failure line flaked on CI (528 ms) and locally (455 ms) once the shell shipped, so the gate was raised in the large-score fix (PR #39).
+
+### Large-score look-ahead fix
+
+CI timed out at `validation/large-score.mjs:138` after PR #35. Root cause (pre-existing, not a PR #35 hunk): systems were drawn on arrival, and a worker draw of one 30-part system takes 0.6–1.3 s, longer than a 1000 ms bar at 240 BPM. The playhead left the bar before the system existed, so it was never highlighted; each playback frame also costs 60–110 ms. Fix: during playback the next `LOOKAHEAD_SYSTEMS = 2` pending systems are drawn ahead of the playhead (clock mode included), and the highlight effect does nothing without highlights.
+
+Highlight lag (target bar start to first `.is-playing`, `npm run test:large`):
+
+| Config | Lag (ms) |
+| --- | --- |
+| Before (main) | never, never, never, 836, 565 |
+| After (look-ahead 2) | 307, 347, 291, 79, 98, 621 (host under load), 306, 83, 245, 56, 33 |
+
+Latency guard: `large-score.mjs` records the first and target highlights in the page, logs `playback highlight in the next, undrawn system N ms after its bar began`, asserts the target is reached within 20 s with a message naming the cause, and asserts a lag of at most `500 * budgetScale` ms (1000 on CI). It fails on the old viewer. Concern: the 60–110 ms per-frame cost of a 30-part score is the floor under the lag.
+
+### Deferred (from the review ledger)
+
+- Instruments: `GM_BLOCKS` maps timpani (48) to violin and misses the drum, guitar and voice program mappings; `StyleSheetSchema.partial()` is redundant; a `LayoutInput` type for constructors.
+- Swap engine: tied notes across a key change may spell differently when the fallback fires; the octave-bound skip is decided per event, not per tie chain; auto-range shifts are not propagated along tie chains that span phrases; `makeCopy` reads `layouts[0]` unguarded; the compiler writes the concert key for transposing and swapped parts (needs `writtenKeyFifths` per part).
+- Viewer highlights: the box is missing if applied while hidden (no retry); padding is wrong mid-zoom; all boxes are cursor blue whatever the class.
+- Desktop shell: add-bar button position in Page view with lazy systems; Newsreader is loaded from Google at runtime (bundle before release); a popover is not re-placed when its content resizes while open; Escape closes the inspector drawer before an open popover.
+- Phone shell: stave text entry; `store.subscribe` wakes the header on every dispatch (playback cursor updates may keep it awake); SSR emits an empty root until the layout effect; `inert` can drop focus from a collapsed header control; 100vh hosts push the toolbar under the URL bar (README documents `dvh`); the Bar and Score rows scroll horizontally at 390px.
+- Other: the swap strip on the phone copies `InlineStrip`'s markup instead of reusing it; in a concert layout octave-transposing instruments are written at true pitch (Dorico keeps the octave transposition).
+
+### Rulings
+
+- The editor's `InstrumentId` list duplicates the viewer's instead of importing viewer internals (keeps the editor on the public API); drift is possible if the viewer adds instruments.
+- Existing notes are transposed with the spelling-preserving `transposePitch`, not `writtenPitch`.
+- `makeCopy` also adds the copy to `layouts[0]` so it exports; the full score gains a stave the user may not want (they can uncheck it).
+- `makeCopy` in the full score keeps the source part (swap removed) beside the copy, so "copy" means both exist; cost: the full score gains a stave.
+- The 761–960px inspector becomes an overlay drawer, not a hidden panel.
+- Full-score stave checkboxes spawn a custom layout instead of editing `layouts[0]`; cost: an extra layout appears when the user only wanted to peek.
+- `pepperscore-editor` stays private with the licence key gate kept; the MIT-vs-entitlement split (PR #36 open question) is assessed at release time.
+- Phase 2 ships as stacked PRs ("PR as you go"): #42 engine, #41 shells and Layout UI.

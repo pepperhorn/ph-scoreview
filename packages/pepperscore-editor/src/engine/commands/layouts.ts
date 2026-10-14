@@ -20,11 +20,15 @@ export const setActiveLayout: Command<{ layoutId: string }> = {
   },
 };
 
-/** Adds a Custom score of `parts` (unknown parts dropped) and makes it the active layout. */
+/**
+ * Adds a Custom score of `parts` (unknown parts dropped) and makes it the active layout; it is transposing or concert
+ * pitch as the layout active before it was (transposing when there is none).
+ */
 export const createCustomLayout: Command<{ name: string; parts: LayoutPart[] }> = {
   label: 'Create custom layout',
   run: (draft, { name, parts }) => {
-    const layout: Layout = { id: newId(), name, kind: 'custom', parts: knownParts(draft.document, parts), transposing: true, overrides: {} };
+    const transposing = layoutOf(draft, draft.activeLayoutId)?.transposing ?? true;
+    const layout: Layout = { id: newId(), name, kind: 'custom', parts: knownParts(draft.document, parts), transposing, overrides: {} };
     draft.document.layouts.push(layout);
     draft.activeLayoutId = layout.id;
   },

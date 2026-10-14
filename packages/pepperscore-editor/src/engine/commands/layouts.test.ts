@@ -156,6 +156,18 @@ test('makeCopy bakes the swap into a new unlinked part, adds it to the full scor
   expect(store.getState().history.past).toHaveLength(past);
 });
 
+test('a custom layout is transposing or concert pitch as the active layout was', () => {
+  const store = createEditorStore(duo());
+  store.dispatch(createCustomLayout, { name: 'A', parts: [{ partId: 'p1' }] });
+  expect(store.getState().document.layouts[1].transposing).toBe(true);
+  store.dispatch(setLayoutTransposing, { layoutId: 'layout1', transposing: false });
+  store.dispatch(setActiveLayout, { layoutId: 'layout1' });
+  store.dispatch(createCustomLayout, { name: 'B', parts: [{ partId: 'p1' }] });
+  const { document, activeLayoutId } = store.getState();
+  expect(document.layouts[2]).toMatchObject({ name: 'B', transposing: false });
+  expect(activeLayoutId).toBe(document.layouts[2].id);
+});
+
 test('makeCopy in the full score keeps the source (unswapped) and puts the copy on its own stave after it', () => {
   const store = createEditorStore(duo());
   store.dispatch(setSwap, { layoutId: 'layout1', partId: 'p1', swap: altoBeginner });

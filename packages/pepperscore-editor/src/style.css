@@ -435,3 +435,4 @@
 .ps-editor .ps-pstrip-swap .ps-swap-link-text { display: none; }
 .ps-editor .ps-shell-phone .ps-status-check { flex: none; }
 .ps-editor .ps-shell-phone .ps-status-moved { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ps-editor .ps-prow-staves .ps-stave-hint { flex: none; min-width: 0; width: 96px; padding: 0 2px; font-size: 10px; line-height: 1.2; }

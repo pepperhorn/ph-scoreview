@@ -46,10 +46,86 @@ export function App() {
 | `assetBaseUrl` | `string` | Where the viewer loads its fonts and sounds from. |
 | `soundPack` | `'core' \| 'complete'` | The playback sound pack. |
 
-The `ref` handle has `getDocument()`, `getMusicXml()`, `undo()`, `redo()`, `isDirty()` (changed since it was opened
+The `ref` handle (`PepperScoreEditorHandle`) has `getDocument()`, `getMusicXml()`, `undo()`, `redo()`, `isDirty()` (changed since it was opened
 or last saved; undoing back to the save is clean) and `confirmDiscard()` (true when clean, else `window.confirm('Discard
 unsaved changes?')`). Open asks the same before replacing a dirty score, and a `beforeunload` guard warns before leaving
 the page with unsaved changes. Hosts that replace the score themselves (a New button) should call `confirmDiscard()` first.
+
+## Layouts
+
+A layout is a view of the score; edits to pitches, rhythms and barlines are global and show in every layout. The
+canvas header's selector (and the phone header's layout chip) switches the active layout, and the Layout tab of the
+inspector edits it.
+
+- **Full score** (`layouts[0]`) is the conductor score and what Export writes. Its stave checkboxes never edit it:
+  hiding a stave in the Full score spawns a **custom** layout (named "Custom", "Custom 2", and so on) and switches to
+  it, as one undoable step. The tab says so ("Hiding a stave makes a custom layout.").
+- **Parts**: "+ Parts" creates one layout per part (`createPartLayouts`).
+- **Custom**: tick the staves to show (the last shown stave cannot be hidden), type a name and "Save as custom
+  layout". Hiding every stave of a swapped part keeps its swap, so showing a stave again brings the swapped view back.
+- **Transposing / Concert** is a property of the layout: transposing parts show written pitch for their instrument,
+  concert layouts show sounding pitch.
+
+Layouts, swaps and overrides are saved in the `.pepperscore` file. Files written before layouts existed open
+unchanged (a layout without `kind` or `transposing` becomes a transposing score layout).
+
+## Instrument swap
+
+The Layout tab's swap card shows a part for another instrument. The swap is a view-time transform of the same music,
+**linked** to the source part, so an edit to either shows in both ("Linked to Tenor Sax · changes affect both").
+
+- **Instrument and level** (beginner, intermediate, advanced) choose the playable range. All instruments except the
+  drum kit are targets; the part's own instrument is not offered.
+- **Fit to range automatically**: a phrase (broken by a rest, a slur end or the bar line; a tie keeps its notes
+  together) that falls outside the range moves 8va or 8vb as a unit. Changing the target instrument clears manual
+  octave choices; "Undo moves" turns fitting off.
+- **Extra transposition**: an interval from a minor second to an octave, up or down, on top of the instrument's own.
+- **Make a copy (own stave)** unlinks the swap into a new part placed after the source. The source stays in the full
+  score without its swap, and the copy is selected.
+- **Remove swap** returns the part to its own instrument.
+- **Highlights and status count**: notes moved to fit the range are orange (`ps-transposed`, `--ps-transposed`); the
+  plain instrument transposition is not highlighted. The status line reads "N notes moved 8vb for Alto Sax ·
+  beginner" ("moved to fit range" when both directions occur), and the swap card's legend shows the same count.
+  "Review" selects the moved notes and scrolls to the first.
+
+Known limitation: the exported MusicXML (and the engraved view) still carry the concert key signature for swapped and
+transposing parts; a per-part written key is not compiled yet.
+
+## Desktop shell
+
+Above 760px wide (measured on the editor, not the window) the editor has the desktop shell:
+
+- **Top bar**: brand, title and composer (double-click to edit; Enter or blur commits, Escape cancels), Key, Time and
+  Tempo chips that open popovers, undo and redo, Play, Save, Export, Open and a licence badge.
+- **Rail**: keycaps (56 x 52) for the value (whole to 32nd, dot), modify (rest, tie, slur), pitch (sharp, flat,
+  natural, chord toggle) and group (tuplet, beam) tools, with legends taken from `KEYMAP`.
+- **Canvas header**: Entry / Select pill, "Part · bar N of M", the layout selector and Page / Endless.
+- **Inspector tabs**: Score (key, time, clef, barlines, repeats, endings, jumps, marks, tempo, insert/delete bar),
+  Stave (articulations, dynamics, text, beam group) and Layout (staves, layouts, instrument swap).
+- **Popovers** are placed beside the cursor bar and never cover it: left, right, above, then below, clamped to the
+  viewport; with no cursor bar they fall back to the button that opened them.
+- **Add-bar buttons**: "+" appends a bar and "-" deletes the last bar, at the right edge of the last drawn bar.
+- **Inspector drawer**: from 761 to 960px the inspector is a drawer sliding over the canvas, opened from the
+  canvas header's "Inspector" button and closed by Escape or a tap outside it.
+
+## Phone shell
+
+At 760px wide or less (or with `forcePhone`) the editor switches to the phone shell:
+
+- **Two-row header** (78px) with the brand, title, composer, Play and an overflow menu (Save, Export, Open, New score)
+  on row 1, and the mode badge, "bar N of M", the layout chip and the Key / Time / Tempo chips on row 2. After 4
+  seconds without input it collapses to a 28px strip (mode dot, position, key chip); a touch, wheel or pointer down on
+  the canvas, a header tap or a document change brings it back; scrolling caused by playback or by the collapse itself
+  does not. The body padding follows the header height, so nothing jumps.
+- **Tabbed toolbar** pinned to the bottom: tabs Value, Pitch, Bar, Score and Layout, and two 44px rows of buttons. The
+  toolbar never changes height when you change tab or open a strip.
+- **Inline strips**: Key, Time, Clef, Tempo, Dynamic and the swap card open as a strip in place of the button rows,
+  not as a floating popover. Escape, the close button or Apply closes them.
+- **Page view is forced**: the phone shell always shows the score in Page view (Endless shows a single bar at 390px).
+- **Heights**: give a phone host a `dvh` height (`height="100dvh"`), not `100vh`, so the toolbar is not pushed under
+  the browser's address bar. The shell is chosen before the first paint, so the viewer mounts once.
+
+Not on the phone yet: text on a stave (use the desktop shell).
 
 ## Keyboard
 

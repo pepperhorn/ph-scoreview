@@ -14,7 +14,7 @@ import { PBtn } from './PhoneTabs';
 export function LayoutStrip() {
   const { editable } = useUi();
   const dispatch = useDispatch();
-  const { document, layoutId, layout, rows, canToggle, toggle } = useLayoutStaves();
+  const { document, layoutId, layout, rows, canToggle, toggle, isFullScore } = useLayoutStaves();
   const [swapPart, setSwapPart] = useSwapPart();
   const target = useSwapTarget(swapPart);
   const [open, setOpen] = useState(false);
@@ -42,6 +42,8 @@ export function LayoutStrip() {
   return (
     <>
       <div className="ps-prow ps-prow-staves" role="group" aria-label="Staves in layout">
+        {/* In the row, not above it: the toolbar keeps its two-row height on every tab. */}
+        {isFullScore && <span className="ps-pnote ps-stave-hint">Hiding a stave makes a custom layout</span>}
         {rows.map((row) => (
           <PBtn key={`${row.partId}/${row.staff}`} label={row.name} text on={row.on} disabled={!canToggle(row)} className="ps-pchip-stave" onClick={() => toggle(row)}>
             <Check on={row.on} />{row.name}
