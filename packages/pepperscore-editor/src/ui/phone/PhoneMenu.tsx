@@ -11,7 +11,7 @@ export type PhoneMenuProps = {
   onNew(): void;
 };
 
-/** The phone header's overflow menu: Save, Export, Open and New, and the licence state. Closes on a choice, Escape or a tap outside. */
+/** The phone header's overflow menu: Save, Export, Open and New, and the licence state. Focuses its first item; closes on a choice, Escape or a tap outside. */
 export function PhoneMenu({ licence, onSave, onExport, onOpen, onNew, onClose }: PhoneMenuProps & { onClose(): void }) {
   const { editable, refocus } = useUi();
   const root = useRef<HTMLDivElement>(null);
@@ -21,9 +21,25 @@ export function PhoneMenu({ licence, onSave, onExport, onOpen, onNew, onClose }:
       if (target?.closest?.('[data-ps-menu-toggle]')) return; // the toggle closes it itself
       if (root.current && !root.current.contains(target)) onClose();
     };
+    // Escape is taken on the window in the capture phase, ahead of the editor root's key handling (which would
+    // otherwise read it as "select mode"), whether or not focus is in the menu.
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !root.current?.closest('.ps-editor')?.contains(event.target as Node)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+      refocus();
+    };
     window.document.addEventListener('pointerdown', outside, true);
-    return () => window.document.removeEventListener('pointerdown', outside, true);
-  }, [onClose]);
+    window.addEventListener('keydown', escape, true);
+    return () => {
+      window.document.removeEventListener('pointerdown', outside, true);
+      window.removeEventListener('keydown', escape, true);
+    };
+  }, [onClose, refocus]);
+  useEffect(() => {
+    root.current?.querySelector<HTMLElement>('button:not(:disabled)')?.focus({ preventScroll: true });
+  }, []);
   const choose = (action: () => void) => () => {
     onClose();
     action();
@@ -35,12 +51,6 @@ export function PhoneMenu({ licence, onSave, onExport, onOpen, onNew, onClose }:
       className="ps-pmenu"
       role="menu"
       aria-label="File"
-      onKeyDown={(event) => {
-        if (event.key !== 'Escape') return;
-        event.stopPropagation();
-        onClose();
-        refocus();
-      }}
     >
       <button type="button" role="menuitem" className="ps-btn ps-pmenu-item ps-btn-save" disabled={!editable} onClick={choose(onSave)}><Icon name="save" size={16} />Save</button>
       <button type="button" role="menuitem" className="ps-btn ps-pmenu-item ps-btn-export" onClick={choose(onExport)}><Icon name="export" size={16} />Export MusicXML</button>

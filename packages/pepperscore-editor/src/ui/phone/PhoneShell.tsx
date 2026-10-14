@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CanvasOverlay } from '../CanvasOverlay';
 import { useUi } from '../controls';
 import type { ShellProps } from '../shell';
@@ -16,15 +16,21 @@ export function PhoneShell(props: ShellProps) {
   const shell = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const toolbar = useRef<HTMLDivElement>(null);
-  const { collapsed, wake } = useAutoCollapse();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const { collapsed, wake } = useAutoCollapse(4000, menuOpen);
 
-  // Any dispatch or canvas scroll expands the header and restarts its idle timer.
+  // Any dispatch, and the user's own touch, wheel or pointer on the canvas, expands the header and restarts its
+  // idle timer. Not `scroll`: the collapse itself (a taller viewport clamping scrollTop) and playback's
+  // auto-scroll fire it too, which would keep the header bouncing open.
   useEffect(() => store.subscribe(() => wake()), [store, wake]);
   useEffect(() => {
     const host = stage.current;
     if (!host) return;
-    host.addEventListener('scroll', wake, { capture: true, passive: true });
-    return () => host.removeEventListener('scroll', wake, { capture: true });
+    const events = ['touchmove', 'wheel', 'pointerdown'] as const;
+    for (const type of events) host.addEventListener(type, wake, { capture: true, passive: true });
+    return () => {
+      for (const type of events) host.removeEventListener(type, wake, { capture: true });
+    };
   }, [wake]);
   useLayoutEffect(() => {
     const bar = toolbar.current;
@@ -40,7 +46,7 @@ export function PhoneShell(props: ShellProps) {
   return (
     <div ref={shell} className="ps-shell ps-shell-phone" data-header={collapsed ? 'collapsed' : 'full'}>
       <PhoneHeader
-        collapsed={collapsed} wake={wake} playing={props.playing} onPlay={props.onPlay}
+        collapsed={collapsed} wake={wake} playing={props.playing} onPlay={props.onPlay} menuOpen={menuOpen} setMenuOpen={setMenuOpen}
         licence={props.licence} onSave={props.onSave} onExport={props.onExport} onOpen={props.onOpen} onNew={props.onNew}
       />
       <div className="ps-phone-body">

@@ -32,7 +32,7 @@ function Keycap({ label, keys = legend(label), active, className = '', title, on
   );
 }
 
-const VALUES = [
+export const VALUES = [
   { label: 'Whole note', base: 'whole', c: SMUFL.whole, alt: '𝅝' },
   { label: 'Half note', base: 'half', c: SMUFL.half, alt: '𝅗𝅥' },
   { label: 'Quarter note', base: 'quarter', c: SMUFL.quarter, alt: '♩' },

@@ -10,39 +10,48 @@ import { useEditorStore } from '../useEditorStore';
 import { PhoneMenu, type PhoneMenuProps } from './PhoneMenu';
 
 /**
- * Collapses after `ms` without a `wake()` (the phone shell wakes it on every store dispatch, canvas scroll and
- * header tap); `wake()` expands it again and restarts the timer. The timer lives in a ref, so frequent wakes
- * (a scroll) cost no renders.
+ * Collapses after `ms` without a `wake()` (the phone shell wakes it on every store dispatch, touch, wheel or
+ * pointer down on the canvas, and header tap); `wake()` expands it again and restarts the timer. While `paused`
+ * (the overflow menu is open) it stays expanded with no timer. The timer lives in a ref, so frequent wakes (a
+ * swipe) cost no renders.
  */
-export function useAutoCollapse(ms = 4000): { collapsed: boolean; wake(): void } {
+export function useAutoCollapse(ms = 4000, paused = false): { collapsed: boolean; wake(): void } {
   const [collapsed, setCollapsed] = useState(false);
   const timer = useRef(0);
+  const held = useRef(paused);
+  held.current = paused;
   const wake = useCallback(() => {
     setCollapsed(false);
     window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setCollapsed(true), ms);
+    if (!held.current) timer.current = window.setTimeout(() => setCollapsed(true), ms);
   }, [ms]);
   useEffect(() => {
     wake();
     return () => window.clearTimeout(timer.current);
-  }, [wake]);
+  }, [wake, paused]);
   return { collapsed, wake };
 }
 
-export type PhoneHeaderProps = PhoneMenuProps & { collapsed: boolean; wake(): void; playing: boolean; onPlay(): void };
+export type PhoneHeaderProps = PhoneMenuProps & {
+  collapsed: boolean;
+  wake(): void;
+  playing: boolean;
+  onPlay(): void;
+  menuOpen: boolean;
+  setMenuOpen(open: boolean): void;
+};
 
 /**
  * The phone header, two rows: brand, title and composer, Play and the overflow menu; then the Entry/Select
  * badge, the position, the layout chip and the key, time and tempo chips (their popovers open as inline strips
  * in the toolbar). Collapsed (`data-header="collapsed"` on the shell) it is a 28px strip: mode dot, position, key.
  */
-export function PhoneHeader({ collapsed, wake, playing, onPlay, ...menu }: PhoneHeaderProps) {
+export function PhoneHeader({ collapsed, wake, playing, onPlay, menuOpen, setMenuOpen, ...menu }: PhoneHeaderProps) {
   const { store, editable, togglePopover, refocus } = useUi();
   const run = useRun();
   const { document, cursor, index, bars } = usePosition();
   const layouts = useEditorStore(store, (s) => s.document.layouts);
   const activeLayoutId = useEditorStore(store, (s) => s.activeLayoutId);
-  const [menuOpen, setMenuOpen] = useState(false);
   const key = effectiveKey(document, index);
   const time = effectiveTime(document, index);
   const tempo = tempoAt(document, index);
@@ -54,8 +63,8 @@ export function PhoneHeader({ collapsed, wake, playing, onPlay, ...menu }: Phone
   );
   return (
     <>
-      <header className="ps-phead" aria-label="Score header" aria-expanded={!collapsed} onPointerDown={wake}>
-        <div className="ps-phead-main">
+      <header className="ps-phead" aria-label="Score header" onPointerDown={wake}>
+        <div className="ps-phead-main" inert={collapsed}>
           <span className="ps-brand-mark ps-phead-brand"><Glyph c={SMUFL.gClef} alt="𝄞" /></span>
           <div className="ps-phead-titles">
             <h1 className={`ps-score-title ps-phead-title ${document.meta.title ? '' : 'is-empty'}`.trim()}>{document.meta.title || 'Untitled score'}</h1>
@@ -64,7 +73,7 @@ export function PhoneHeader({ collapsed, wake, playing, onPlay, ...menu }: Phone
           <button type="button" className={`ps-btn ps-btn-play ps-phead-play ${playing ? 'is-playing' : ''}`.trim()} aria-label={playing ? 'Stop' : 'Play'} onClick={onPlay}>
             <Icon name={playing ? 'stop' : 'play'} size={14} />
           </button>
-          <button type="button" className="ps-btn ps-icon-btn ps-phead-more" aria-label="More" aria-haspopup="menu" aria-expanded={menuOpen} data-ps-menu-toggle="" onClick={() => setMenuOpen((open) => !open)}>
+          <button type="button" className="ps-btn ps-icon-btn ps-phead-more" aria-label="More" aria-haspopup="menu" aria-expanded={menuOpen} data-ps-menu-toggle="" onClick={() => setMenuOpen(!menuOpen)}>
             <Icon name="more" size={18} />
           </button>
         </div>

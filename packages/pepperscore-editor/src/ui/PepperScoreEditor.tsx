@@ -294,7 +294,7 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
       }}
     >
       <UiProvider value={ui}>
-        {phone ? <PhoneShell {...shell} /> : <DesktopShell {...shell} />}
+        {phone === null ? null : phone ? <PhoneShell {...shell} /> : <DesktopShell {...shell} />}
       </UiProvider>
     </div>
   );

@@ -3,24 +3,16 @@ import { deleteMeasure, insertMeasure, setBarline, setChordMode, setClef, setEnd
 import { findEvent } from '../../engine/sequence-edit';
 import { effectiveClef, effectiveKey, effectiveTime } from '../../model/query';
 import { binding, usePosition, useRun, useUi, useDispatch } from '../controls';
-import { ChordIcon, CurveSlur, CurveTie, Glyph, Icon, SMUFL } from '../icons';
+import { BeamGroup, ChordIcon, CurveSlur, CurveTie, Glyph, Icon, SMUFL } from '../icons';
 import { targetEvent } from '../key-actions';
 import type { PopoverName } from '../keymap';
 import { ENDINGS, JUMPS, jumpValue, keyName } from '../Popover';
+import { VALUES } from '../Rail';
 import { BARLINES, CLEF_BUTTONS, MARKS, TIMES } from '../ScoreTab';
+import { ARTICULATIONS } from '../StaveTab';
 import { tempoAt } from '../TempoFields';
 import { LayoutStrip } from './LayoutStrip';
 import { useEditorStore } from '../useEditorStore';
-
-/** The Rail's note values (the Rail keeps its own list while the desktop shell is in review). */
-const VALUES = [
-  { label: 'Whole note', base: 'whole', c: SMUFL.whole, alt: '𝅝' },
-  { label: 'Half note', base: 'half', c: SMUFL.half, alt: '𝅗𝅥' },
-  { label: 'Quarter note', base: 'quarter', c: SMUFL.quarter, alt: '♩' },
-  { label: 'Eighth note', base: 'eighth', c: SMUFL.eighth, alt: '♪' },
-  { label: '16th note', base: '16th', c: SMUFL.sixteenth, alt: '16th' },
-  { label: '32nd note', base: '32nd', c: SMUFL.thirtySecond, alt: '32nd' },
-] as const;
 
 export type PhoneTab = 'value' | 'pitch' | 'bar' | 'score' | 'layout';
 
@@ -71,16 +63,9 @@ function ValueRows() {
   );
 }
 
-const ARTICULATIONS = [
-  { label: 'Accent', value: 'accent', c: SMUFL.accent, alt: '>' },
-  { label: 'Staccato', value: 'staccato', c: SMUFL.staccato, alt: '·' },
-  { label: 'Tenuto', value: 'tenuto', c: SMUFL.tenuto, alt: '–' },
-  { label: 'Marcato', value: 'marcato', c: SMUFL.marcato, alt: '^' },
-] as const;
-
-/** Accidentals, chord entry and octave shifts; tie, slur and articulations on the last entered (or selected) note. */
+/** Accidentals, chord entry and octave shifts; tie, slur, articulations, tuplet, beams and a dynamic at the last entered (or selected) note. */
 function PitchRows() {
-  const { store } = useUi();
+  const { store, togglePopover } = useUi();
   const dispatch = useDispatch();
   const chord = useEditorStore(store, (s) => !!s.cursor.chord);
   const target = useEditorStore(store, (s) => {
@@ -97,10 +82,13 @@ function PitchRows() {
         <PBtn label="Octave up" text><Icon name="up" size={15} />8va</PBtn>
         <PBtn label="Octave down" text><Icon name="down" size={15} />8vb</PBtn>
       </PRow>
-      <PRow label="Ties, slurs and articulations">
+      <PRow label="Ties, slurs, articulations, tuplets, beams and dynamics">
         <PBtn label="Tie"><CurveTie /></PBtn>
         <PBtn label="Slur"><CurveSlur /></PBtn>
         {ARTICULATIONS.map((a) => <PBtn key={a.value} label={a.label} on={!!target?.articulations?.includes(a.value)}><Glyph c={a.c} alt={a.alt} className="ps-glyph-artic" /></PBtn>)}
+        <PBtn label="Tuplet (3)"><Glyph c={SMUFL.tuplet3} alt="3" className="ps-glyph-tuplet" /></PBtn>
+        <PBtn label="Beam grouping 2/3/4/auto"><BeamGroup /></PBtn>
+        <PBtn label="Dynamic" text className="ps-pbtn-field ps-pchip-dynamic" onClick={() => togglePopover('dynamic')}><span className="ps-chip-k">Dyn</span><Glyph c={SMUFL.mf} alt="mf" className="ps-glyph-dyn" /></PBtn>
       </PRow>
     </>
   );

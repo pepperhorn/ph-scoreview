@@ -5,10 +5,11 @@ export const PHONE_MAX_WIDTH = 760;
 
 /**
  * True when the editor root is a phone-sized container (content width 760px or less), followed with a
- * `ResizeObserver`; `force` (the `forcePhone` prop) overrides the measurement either way.
+ * `ResizeObserver`; `force` (the `forcePhone` prop) overrides the measurement either way. `null` until the
+ * root is first measured (in a layout effect, before the first paint), so no shell mounts only to be replaced.
  */
-export function useIsPhone(root: RefObject<HTMLElement | null>, force?: boolean): boolean {
-  const [phone, setPhone] = useState(false);
+export function useIsPhone(root: RefObject<HTMLElement | null>, force?: boolean): boolean | null {
+  const [phone, setPhone] = useState<boolean | null>(force ?? null);
   useLayoutEffect(() => {
     const element = root.current;
     if (!element || force !== undefined) return;

@@ -348,6 +348,7 @@
 .ps-editor .ps-pbtn .ps-glyph-mark { font-size: 24px; transform: translateY(5px); }
 .ps-editor .ps-pbtn .ps-glyph-clef { font-size: 22px; transform: translateY(1px); }
 .ps-editor .ps-pbtn .ps-glyph-artic { font-size: 24px; }
+.ps-editor .ps-pbtn .ps-glyph-dyn { font-size: 24px; transform: translateY(2px); }
 .ps-editor .ps-pbtn .ps-glyph-mm { font-size: 17px; transform: translateY(3px); }
 .ps-editor .ps-pselect { flex: none; width: auto; height: 44px; border-radius: 10px; }
 .ps-editor .ps-pnote { flex: 1 1 auto; min-width: 120px; padding: 0 4px; font-size: 11px; line-height: 1.3; color: var(--ps-ink-4); white-space: normal; }

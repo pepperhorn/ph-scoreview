@@ -8,7 +8,7 @@ import { autoBeamSequence, targetEvent } from './key-actions';
 import { DYNAMICS } from './Popover';
 import { useEditorStore } from './useEditorStore';
 
-const ARTICULATIONS = [
+export const ARTICULATIONS = [
   { label: 'Accent', value: 'accent', c: SMUFL.accent, alt: '>' },
   { label: 'Staccato', value: 'staccato', c: SMUFL.staccato, alt: '·' },
   { label: 'Tenuto', value: 'tenuto', c: SMUFL.tenuto, alt: '–' },

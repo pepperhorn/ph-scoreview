@@ -41,7 +41,7 @@ export function App() {
 | `autoFocus` | `boolean` | Focus the editor on mount so typing works at once. |
 | `view` | `'vertical' \| 'endless'` | The viewer's layout. |
 | `height` | `string` | CSS height of the viewer. |
-| `forcePhone` | `boolean` | `true` for the phone shell (tabbed bottom toolbar, auto-collapsing header), `false` for the desktop shell; default: the phone shell when the editor is 760px wide or less. |
+| `forcePhone` | `boolean` | `true` for the phone shell (tabbed bottom toolbar, auto-collapsing header), `false` for the desktop shell; default: the phone shell when the editor is 760px wide or less. The phone shell always shows the score in Page view; give a phone host a `dvh` height (e.g. `height="100dvh"`) so the pinned toolbar sits above the browser's own bars. |
 | `className` | `string` | Added to the root `.ps-editor` element. |
 | `assetBaseUrl` | `string` | Where the viewer loads its fonts and sounds from. |
 | `soundPack` | `'core' \| 'complete'` | The playback sound pack. |

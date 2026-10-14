@@ -1,6 +1,8 @@
 // The score editor's phone shell (apps/reader /editor at 390x844 on a touch device): the two-row header collapses to a
 // 28px strip after 4 s idle and a canvas scroll restores it; tapping Value -> quarter -> C enters a note and the header
-// stays expanded while typing (each dispatch restarts the idle timer); the Bar tab's repeat start adds a forward repeat;
+// stays expanded while typing (each dispatch restarts the idle timer); a scroll the collapse itself causes (at the
+// bottom of the score) does not reopen it; the Bar tab's repeat start adds a forward repeat; the Pitch tab has tuplet,
+// beam and Dyn (the dynamic strip); Escape closes the overflow menu, which holds the header open;
 // the Key chip opens an inline strip inside the toolbar; the toolbar stays put while the canvas scrolls; the Layout tab's
 // swap chip opens the instrument swap as an inline strip (/tmp/editor-phone-layout.png). Screenshots go to
 // /tmp/editor-phone.png (expanded) and /tmp/editor-phone-collapsed.png. Runs against the build (npm run build first).
@@ -21,6 +23,12 @@ const musicXml = page => page.evaluate(() => window.__editor.ref.current.getMusi
 const pause = ms => new Promise(done => setTimeout(done, ms));
 const rectOf = (page, selector) => page.locator(selector).evaluate(element => { const r = element.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height }; });
 const headerHeight = async page => (await rectOf(page, '.ps-phead')).height;
+/** Waits until the header is expanded (two rows) or collapsed (the strip), its height transition included. */
+const headerSettles = (page, state, timeout = 2000) => page.waitForFunction(state => {
+  const header = document.querySelector('.ps-phead'), shell = document.querySelector('.ps-shell-phone');
+  const height = header?.getBoundingClientRect().height ?? 0;
+  return shell?.dataset.header === state && (state === 'full' ? height > 60 : height <= 30);
+}, state, { timeout });
 /** Scrolls the score's viewport by `px` along whichever axis overflows; false when nothing scrolls. */
 const scrollCanvas = (page, px) => page.evaluate(px => {
   const viewport = document.querySelector('.ps-editor .score-viewport');
@@ -32,6 +40,16 @@ const scrollCanvas = (page, px) => page.evaluate(px => {
 try {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: engine === 'chromium' });
   const page = await context.newPage();
+  // Counts viewer removals: the phone shell must be chosen before the first paint, so no shell (and no viewer) is
+  // mounted only to be replaced. A swap inside one task leaves only the removal in the mutation records.
+  await page.addInitScript(() => {
+    window.__viewerRemovals = 0;
+    new MutationObserver(records => {
+      for (const record of records) for (const node of record.removedNodes) {
+        if (node.nodeType === 1) window.__viewerRemovals += (node.matches('.ps-editor-viewer') ? 1 : 0) + node.querySelectorAll('.ps-editor-viewer').length;
+      }
+    }).observe(document, { childList: true, subtree: true });
+  });
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
@@ -39,6 +57,7 @@ try {
   await page.waitForSelector('.ps-editor .ps-shell-phone .score-system svg', { timeout: 60000 });
   assert.equal(await page.locator('.ps-editor .ps-shell-desktop').count(), 0, 'a phone-sized container gets the phone shell only');
   assert.equal(await page.locator('.ps-editor .ps-rail, .ps-editor .ps-inspector, .ps-editor .ps-palette').count(), 0, 'no rail, inspector or palette on a phone');
+  assert.equal(await page.evaluate(() => window.__viewerRemovals), 0, 'the viewer mounts once (no desktop shell first)');
 
   // 0. Ten more bars (the Bar tab's insert), so the Page view overflows and the canvas can scroll.
   await page.locator('.ps-ptab[data-tab="bar"]').tap();
@@ -49,7 +68,7 @@ try {
 
   // 1. The header: two rows, at most 88px; 4.5 s idle collapses it to a strip of at most 30px.
   await page.locator('.ps-phead .ps-phead-crumb').tap(); // a header tap expands it and restarts the idle timer
-  await pause(400);
+  await headerSettles(page, 'full');
   const expanded = await headerHeight(page);
   assert.ok(expanded > 60 && expanded <= 88, `the expanded header is two rows, at most 88px (${expanded})`);
   assert.equal(await page.locator('.ps-phead-main .ps-phead-title').isVisible(), true, 'row 1 shows the title');
@@ -60,19 +79,29 @@ try {
   assert.ok(collapsed <= 30, `4.5 s idle collapses the header to at most 30px (${collapsed})`);
   assert.equal(await page.locator('.ps-shell-phone').getAttribute('data-header'), 'collapsed');
   assert.equal(await page.locator('.ps-phead-meta .ps-chip-key').isVisible(), true, 'the collapsed strip keeps the key chip');
-  await pause(500);
+  assert.equal(await page.locator('.ps-phead-main').evaluate(element => element.inert), true, 'the hidden first row is inert');
   await page.screenshot({ path: '/tmp/editor-phone-collapsed.png' });
 
   // 2. Scrolling the canvas restores the header; the toolbar does not move while the canvas scrolls.
   const toolbarBefore = await rectOf(page, '.ps-ptoolbar');
   assert.ok(toolbarBefore.bottom <= 844 + 0.5 && toolbarBefore.bottom >= 844 - 2, `the toolbar sits at the bottom of the screen (${JSON.stringify(toolbarBefore)})`);
-  assert.ok(await scrollCanvas(page, 160), 'the canvas scrolls');
-  await pause(400);
-  assert.ok((await headerHeight(page)) > 60, 'a canvas scroll expands the header');
+  // A user scroll (the wheel here; a swipe on a phone) wakes the header.
+  const canvas = await rectOf(page, '.ps-editor .score-viewport');
+  await page.mouse.move(canvas.left + canvas.width / 2, canvas.top + canvas.height / 2);
+  await page.mouse.wheel(0, 160);
+  await headerSettles(page, 'full');
+  assert.ok(await scrollCanvas(page, 40), 'the canvas scrolls');
   assert.deepEqual(await rectOf(page, '.ps-ptoolbar'), toolbarBefore, 'the toolbar rect is unchanged after the canvas scrolled');
   const tabs = await rectOf(page, '.ps-ptabs');
   assert.ok(tabs.height <= 32, `the tab strip is at most 32px (${tabs.height})`);
-  await scrollCanvas(page, -160);
+
+  // 2b. At the bottom of the score, the collapse grows the viewport and clamps scrollTop (a scroll event): the header
+  // must not reopen for it, so it stays collapsed.
+  await page.evaluate(() => { const v = document.querySelector('.ps-editor .score-viewport'); v.scrollTop = v.scrollHeight; });
+  await headerSettles(page, 'collapsed', 6000);
+  await pause(2000);
+  assert.equal(await page.locator('.ps-shell-phone').getAttribute('data-header'), 'collapsed', 'the header stays collapsed at the bottom of the score');
+  await page.evaluate(() => { document.querySelector('.ps-editor .score-viewport').scrollTop = 0; });
 
   // 3. Value -> quarter -> C enters a note; the dispatches keep the header expanded past the 4 s idle time.
   await page.locator('.ps-ptab[data-tab="value"]').tap();
@@ -98,6 +127,14 @@ try {
   await repeat.tap();
   await page.waitForFunction(() => !/<repeat direction="forward"/.test(window.__editor.ref.current.getMusicXml()), null, { timeout: 10000 });
 
+  // 4b. The Pitch tab has tuplet and beam keycaps, and its Dyn chip opens the dynamic strip.
+  await page.locator('.ps-ptab[data-tab="pitch"]').tap();
+  for (const label of ['Tuplet (3)', 'Beam grouping 2/3/4/auto', 'Dynamic']) assert.equal(await page.locator(`.ps-ptoolbar button[aria-label="${label}"]`).count(), 1, `the Pitch tab has ${label}`);
+  await page.locator('.ps-ptoolbar button[aria-label="Dynamic"]').tap();
+  await page.locator('.ps-ptoolbar .ps-pstrip[aria-label="Dynamic"]').waitFor();
+  await page.locator('.ps-pstrip .ps-pstrip-close').tap();
+  await page.locator('.ps-pstrip').waitFor({ state: 'detached' });
+
   // 5. The header's Key chip opens the key fields as an inline strip inside the toolbar, never over the score.
   await page.locator('.ps-phead .ps-chip-key').tap();
   const strip = page.locator('.ps-ptoolbar .ps-pstrip[aria-label="Key signature"]');
@@ -115,7 +152,21 @@ try {
   await page.locator('.ps-pstrip .ps-pstrip-close').tap();
   await strip.waitFor({ state: 'detached' });
 
-  // 6. The Layout tab on the Tenor Sax + Piano fixture: row 1 toggles staves, row 2's swap chip opens the swap card
+  // 6. The overflow menu focuses its first item and holds the header open; Escape closes it without leaving entry mode.
+  await page.locator('.ps-phead').tap();
+  await headerSettles(page, 'full');
+  const mode = await page.locator('.ps-editor').getAttribute('data-ps-mode');
+  await page.locator('.ps-phead-more').tap();
+  await page.locator('.ps-pmenu').waitFor();
+  assert.match(await page.evaluate(() => document.activeElement?.className ?? ''), /ps-pmenu-item/, 'the menu focuses its first item');
+  await pause(4500);
+  assert.equal(await page.locator('.ps-shell-phone').getAttribute('data-header'), 'full', 'the header stays open while the menu is');
+  await page.keyboard.press('Escape');
+  await page.locator('.ps-pmenu').waitFor({ state: 'detached' });
+  assert.equal(await page.locator('.ps-editor').getAttribute('data-ps-mode'), mode, 'Escape closed the menu only');
+
+  assert.equal(await page.evaluate(() => window.__viewerRemovals), 0, 'the viewer never remounted');
+  // 7. The Layout tab on the Tenor Sax + Piano fixture: row 1 toggles staves, row 2's swap chip opens the swap card
   // as an inline strip in the toolbar; Alto Sax at beginner highlights the moved notes.
   await page.evaluate(() => { window.confirm = () => true; });
   await page.evaluate(() => document.querySelector('.editor-demo-tenor').click()); // the demo hides its header buttons on a phone
@@ -138,7 +189,7 @@ try {
 
   assert.deepEqual(errors, [], 'no page or console errors');
   await context.close();
-  console.log(`Editor phone: two-row header (${expanded}px) collapses to ${collapsed}px and a scroll restores it, toolbar entry keeps it expanded, repeat start, inline key strip in the toolbar, fixed toolbar, Layout tab stave chips and swap strip pass`);
+  console.log(`Editor phone: one viewer mount, two-row header (${expanded}px) collapses to ${collapsed}px, a user scroll restores it and a clamp scroll does not, toolbar entry keeps it expanded, repeat start, tuplet/beam/dynamic, inline key strip in the toolbar, menu Escape and hold, fixed toolbar, Layout tab stave chips and swap strip pass`);
 } finally {
   await browser.close();
   await server.close();
