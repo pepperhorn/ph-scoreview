@@ -22,8 +22,10 @@ const SMUFL = {
 
 const HIGHLIGHTS: PepperScoreHighlight[] = [
   { ids: ['accent'], className: 'ps-cursor' },
-  { ids: ['sharp', 'natural'], className: 'ps-selection' },
+  { ids: ['last', 'bass4'], className: 'ps-selection' },
   { measures: [1], className: 'ps-cursor-measure' },
+  // Instrument swap: notes range fitting moved relative to the source part (spec: Layouts, Instrument swap).
+  { ids: ['sharp', 'natural', 'bass3'], className: 'ps-transposed' },
 ];
 
 /**
@@ -196,43 +198,57 @@ function StaveTab() {
 }
 
 const STAVES: Array<{ name: string; on: boolean }> = [
-  { name: 'Flute', on: true }, { name: 'Alto Sax', on: true }, { name: 'Trumpet', on: false }, { name: 'Piano RH', on: true }, { name: 'Piano LH', on: true },
+  { name: 'Flute', on: true }, { name: 'Tenor Sax', on: true }, { name: 'Trumpet', on: false }, { name: 'Piano RH', on: true }, { name: 'Piano LH', on: true },
 ];
-const VIEW_PROFILES = ['Conductor', 'Alto Sax part', 'Rhythm section'];
+/** Layouts (Dorico's vocabulary): full score, parts, custom. */
+const LAYOUTS: Array<{ name: string; kind?: string }> = [{ name: 'Full score' }, { name: 'Alto Sax', kind: 'part' }, { name: 'Rhythm section', kind: 'custom' }];
+const ACTIVE_LAYOUT = 'Full score';
+const MOVED_SUMMARY = '12 notes moved 8vb for Alto Sax · intermediate';
 const Check = ({ on }: { on: boolean }) => <span className={`ps-check ${on ? 'is-on' : ''}`}>{on && <Icon name="check" size={11}/>}</span>;
+const LayoutSelect = ({ className = '' }: { className?: string }) =>
+  <button type="button" className={`ps-btn ps-layout-select ${className}`} aria-label={`Layout: ${ACTIVE_LAYOUT}`} title="Layout"><span className="ps-layout-select-k">Layout</span><span className="ps-layout-select-name">{ACTIVE_LAYOUT}</span><Icon name="chevron" size={13}/></button>;
 
-/** View control: which staves are in the view, named view profiles, and per-part instrument overrides. */
-function ViewTab() {
+/** Layout control: staves in the layout, pitch display, saved layouts, and an instrument swap (a linked transform). */
+function LayoutTab() {
   return <>
-    <Section title="Staves in view">
+    <Section title="Staves in layout">
       <ul className="ps-stave-list">
-        {STAVES.map(stave => <li key={stave.name} className={`ps-stave-item ${stave.on ? 'is-on' : ''}`}><label className="ps-stave-label"><Check on={stave.on}/><span className="ps-stave-name">{stave.name}</span></label><span className="ps-stave-meta">{stave.on ? 'shown' : 'hidden'}</span></li>)}
+        {STAVES.map(stave => <li key={stave.name} className={`ps-stave-item ${stave.on ? 'is-on' : ''}`}><label className="ps-stave-label"><Check on={stave.on}/><span className="ps-stave-name">{stave.name}</span></label><span className="ps-stave-meta">{stave.name === 'Tenor Sax' ? 'as Alto Sax' : stave.on ? 'shown' : 'hidden'}</span></li>)}
       </ul>
+      <div className="ps-pitch-mode"><Seg items={['Transposing', 'Concert pitch']} on={0}/></div>
     </Section>
-    <Section title="View profiles">
-      <div className="ps-profile-chips">{VIEW_PROFILES.map((name, i) => <button key={name} type="button" className={`ps-btn ps-profile-chip ${i === 0 ? 'is-on' : ''}`}>{name}</button>)}</div>
-      <div className="ps-save-view"><input className="ps-input ps-save-view-input" placeholder="Name this view…" defaultValue="Horns only" aria-label="View name"/><button type="button" className="ps-btn ps-btn-primary ps-btn-sm">Save as view</button></div>
-      <p className="ps-insp-note">Views are saved with the project; the score itself is unchanged.</p>
+    <Section title="Layouts">
+      <div className="ps-profile-chips">{LAYOUTS.map(layout => <button key={layout.name} type="button" className={`ps-btn ps-profile-chip ${layout.name === ACTIVE_LAYOUT ? 'is-on' : ''}`}>{layout.name}{layout.kind && <span className="ps-profile-kind"> ({layout.kind})</span>}</button>)}</div>
+      <div className="ps-save-view"><input className="ps-input ps-save-view-input" placeholder="Name…" defaultValue="Horns only" aria-label="Custom layout name"/><button type="button" className="ps-btn ps-btn-primary ps-btn-sm">Save as custom layout</button></div>
     </Section>
-    <Section title="Instrument override">
-      <div className="ps-override"><span className="ps-override-source">Alto Sax</span><span className="ps-override-arrow">→</span><Select value="Trumpet in B♭"/></div>
-      <div className="ps-override"><span className="ps-override-source">Flute</span><span className="ps-override-arrow">→</span><Select value="As written"/></div>
-      <p className="ps-insp-note">Shows the part for another instrument, transposed (Alto Sax in E♭ → Trumpet in B♭: up a perfect fourth).</p>
+    <Section title="Instrument swap" className="ps-insp-swap">
+      <div className="ps-swap-card">
+        <div className="ps-swap-head"><span className="ps-override-source">Tenor Sax</span><span className="ps-override-arrow">→</span><span className="ps-swap-shown">shown as</span><Select value="Alto Sax"/></div>
+        <Seg items={['Beginner', 'Intermediate', 'Advanced']} on={1}/>
+        <label className="ps-swap-toggle"><span className="ps-toggle is-on" role="switch" aria-checked="true"/>Fit to range automatically</label>
+        <Row label="Extra"><Select value="none"/></Row>
+        <div className="ps-swap-link"><span className="ps-swap-link-text"><span className="ps-link-dot"/>Linked to Tenor Sax · changes affect both</span><button type="button" className="ps-btn ps-btn-ghost ps-btn-sm">Make a copy (own stave)</button></div>
+      </div>
+      <div className="ps-moved-legend">
+        <span className="ps-moved-swatch" aria-hidden="true"><span className="ps-moved-head"/></span>
+        <span className="ps-moved-text">Moved 8vb to fit range · 12 notes</span>
+        <div className="ps-moved-actions"><button type="button" className="ps-btn ps-btn-ghost ps-btn-sm">Review</button><button type="button" className="ps-btn ps-btn-ghost ps-btn-sm">Undo moves</button></div>
+      </div>
     </Section>
   </>;
 }
 
-type InspectorTab = 'score' | 'stave' | 'view';
-const TAB_LABEL: Record<InspectorTab, string> = { score: 'Score', stave: 'Stave', view: 'View' };
-const TAB_CONTEXT: Record<InspectorTab, string> = { score: 'Bar 2 · whole score', stave: 'Piano RH · bar 2, beat 3', view: 'View · Conductor' };
+type InspectorTab = 'score' | 'stave' | 'layout';
+const TAB_LABEL: Record<InspectorTab, string> = { score: 'Score', stave: 'Stave', layout: 'Layout' };
+const TAB_CONTEXT: Record<InspectorTab, string> = { score: 'Bar 2 · whole score', stave: 'Piano RH · bar 2, beat 3', layout: `Layout · ${ACTIVE_LAYOUT}` };
 
 function Inspector({ tab, setTab }: { tab: InspectorTab; setTab(t: InspectorTab): void }) {
   return <aside className="ps-inspector ps-reveal" aria-label="Inspector">
     <div className="ps-tabs" role="tablist">
-      {(['score', 'stave', 'view'] as const).map(t => <button key={t} type="button" role="tab" data-tab={t} aria-selected={tab === t} className={`ps-tab ${tab === t ? 'is-on' : ''}`} onClick={() => setTab(t)}>{TAB_LABEL[t]}</button>)}
+      {(['score', 'stave', 'layout'] as const).map(t => <button key={t} type="button" role="tab" data-tab={t} aria-selected={tab === t} className={`ps-tab ${tab === t ? 'is-on' : ''}`} onClick={() => setTab(t)}>{TAB_LABEL[t]}</button>)}
     </div>
     <div className="ps-insp-context"><span className="ps-eyebrow">{TAB_CONTEXT[tab]}</span></div>
-    <div className="ps-insp-body">{tab === 'score' ? <ScoreTab/> : tab === 'stave' ? <StaveTab/> : <ViewTab/>}</div>
+    <div className="ps-insp-body">{tab === 'score' ? <ScoreTab/> : tab === 'stave' ? <StaveTab/> : <LayoutTab/>}</div>
   </aside>;
 }
 
@@ -242,8 +258,8 @@ function PBtn({ label, on, text, children }: { label: string; on?: boolean; text
 }
 const PRow = ({ children }: { children: ReactNode }) => <div className="ps-prow">{children}</div>;
 
-type PhoneTab = 'value' | 'pitch' | 'bar' | 'score' | 'view';
-const PHONE_TABS: Array<[PhoneTab, string]> = [['value', 'Value'], ['pitch', 'Pitch'], ['bar', 'Bar'], ['score', 'Score'], ['view', 'View']];
+type PhoneTab = 'value' | 'pitch' | 'bar' | 'score' | 'layout';
+const PHONE_TABS: Array<[PhoneTab, string]> = [['value', 'Value'], ['pitch', 'Pitch'], ['bar', 'Bar'], ['score', 'Score'], ['layout', 'Layout']];
 
 /** The key popover on a phone: a one-row strip inside the toolbar, never floating over the score. */
 function KeyStrip({ onClose }: { onClose(): void }) {
@@ -350,9 +366,8 @@ function PhoneToolbar({ tab, setTab, keyOpen, setKeyOpen }: { tab: PhoneTab; set
   else rows = <>
     <PRow>{STAVES.map(stave => <PBtn key={stave.name} label={stave.name} text on={stave.on}><Check on={stave.on}/>{stave.name}</PBtn>)}</PRow>
     <PRow>
-      {VIEW_PROFILES.map((name, i) => <PBtn key={name} label={`${name} view`} text on={i === 0}>{name}</PBtn>)}
-      <PBtn label="Save as view" text><Icon name="plus" size={14}/>Save view</PBtn>
-      <PBtn label="Instrument override" text>Alto Sax → Trumpet</PBtn>
+      <PBtn label="Instrument swap: open" text on><span className="ps-moved-dot"/>Tenor Sax → Alto Sax · Intermediate · Fit on</PBtn>
+      <PBtn label="Concert pitch" text>Concert</PBtn>
     </PRow>
   </>;
   return <div className="ps-ptoolbar" aria-label="Phone toolbar">
@@ -366,12 +381,12 @@ function PhoneToolbar({ tab, setTab, keyOpen, setKeyOpen }: { tab: PhoneTab; set
 
 type Box = { left: number; top: number; right: number; bottom: number; width: number; height: number };
 type Placement = { left: number; top: number; side: 'left' | 'right' | 'above' | 'below'; arrow: number };
-type Geometry = { width: number; cursor: Box | null; last: Box | null };
+type Geometry = { width: number; cursor: Box | null; last: Box | null; moved: Box | null };
 const POPOVER = { w: 276, h: 272, gap: 14, margin: 8 };
 
 /** Where the cursor bar and the last bar sit on the paper (measured once the engraving is drawn, and on resize). */
 function useScoreGeometry(paper: React.RefObject<HTMLDivElement | null>, tick: number): Geometry {
-  const [geometry, setGeometry] = useState<Geometry>({ width: 0, cursor: null, last: null });
+  const [geometry, setGeometry] = useState<Geometry>({ width: 0, cursor: null, last: null, moved: null });
   useEffect(() => {
     const host = paper.current;
     if (!host) return;
@@ -387,7 +402,10 @@ function useScoreGeometry(paper: React.RefObject<HTMLDivElement | null>, tick: n
         const r = element.getBoundingClientRect();
         return r.width ? { left: r.left - origin.left, top: r.top - origin.top, right: r.right - origin.left, bottom: r.bottom - origin.top, width: r.width, height: r.height } : null;
       };
-      setGeometry({ width: origin.width, cursor: box(host.querySelector('.ps-cursor-measure')), last: box(bars[bars.length - 1]) });
+      // The passage moved 8vb: the transposed notes on the upper staff (the first two in document order); the mark goes below them.
+      const moved = [...host.querySelectorAll('.ps-transposed')].slice(0, 2).map(box).filter((b): b is Box => b !== null);
+      const span = moved.length ? moved.reduce((a, b) => ({ left: Math.min(a.left, b.left), top: Math.min(a.top, b.top), right: Math.max(a.right, b.right), bottom: Math.max(a.bottom, b.bottom), width: 0, height: 0 })) : null;
+      setGeometry({ width: origin.width, cursor: box(host.querySelector('.ps-cursor-measure')), last: box(bars[bars.length - 1]), moved: span });
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -473,7 +491,8 @@ export default function EditorDesign() {
                 <span className="ps-mode-pill ps-meta-mode"><span className="ps-mode-dot"/><span className="ps-mode-text">Entry</span></span>
                 <span className="ps-meta-crumb">bar 2 of 4</span>
                 <div className="ps-chips">
-                  <button type="button" className="ps-btn ps-chip" onClick={openKey}><span className="ps-chip-k">Key</span>C major</button>
+                  <LayoutSelect className="ps-chip ps-chip-layout"/>
+                  <button type="button" className="ps-btn ps-chip ps-chip-key" onClick={openKey}><span className="ps-chip-k">Key</span>C major</button>
                   <button type="button" className="ps-btn ps-chip"><span className="ps-chip-k">Time</span>4/4</button>
                   <button type="button" className="ps-btn ps-chip"><span className="ps-chip-k">Tempo</span><Glyph c={SMUFL.quarter} alt="♩" className="ps-glyph-mm"/>= 120</button>
                 </div>
@@ -504,13 +523,14 @@ export default function EditorDesign() {
               <main className="ps-canvas ps-reveal" aria-label="Score">
                 <div className="ps-canvas-head">
                   <div className="ps-canvas-crumbs"><span className="ps-mode-pill"><span className="ps-mode-dot"/>Entry</span><span className="ps-crumb">Piano · bar 2 of 4</span></div>
-                  <div className="ps-canvas-view"><Seg items={['Page', 'Endless']} on={0}/><span className="ps-zoom">100%</span></div>
+                  <div className="ps-canvas-view"><LayoutSelect/><Seg items={['Page', 'Endless']} on={0}/><span className="ps-zoom">100%</span></div>
                 </div>
                 <div className="ps-desk" onScroll={wake}>
                   <div className="ps-paper" ref={paper}>
                     <PepperScore key={view} className="ps-design-score" settings={view === 'phone' ? PHONE_FRAME_SETTINGS : undefined} chrome="none" musicXml={expressive} highlights={HIGHLIGHTS} assetBaseUrl="/" ariaLabel="Expression and Rhythm" onReady={onReady}/>
                     {!readOnly && <KeyPopover at={placePopover(geometry)}/>}
                     {!readOnly && <AddBarButtons geometry={geometry}/>}
+                    {geometry.moved && <span className="ps-octave-mark" style={{ left: geometry.moved.left - 6, top: geometry.moved.bottom + 16, width: geometry.moved.right - geometry.moved.left + 18 }}><span className="ps-octave-text">8vb</span><span className="ps-octave-line"/></span>}
                   </div>
                 </div>
                 <div className="ps-hints" aria-label="Keyboard hints">
@@ -525,7 +545,7 @@ export default function EditorDesign() {
 
             <footer className="ps-status">
               <span className="ps-status-check"><span className="ps-status-dot"/>Score check: no problems</span>
-              <span className="ps-status-pos">Quarter · bar 2, beat 3 · Piano RH</span>
+              <span className="ps-status-moved"><span className="ps-moved-dot"/>{MOVED_SUMMARY}</span>
               <span className="ps-status-saved">Saved locally · 14:32</span>
             </footer>
           </div>
