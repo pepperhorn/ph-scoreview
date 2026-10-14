@@ -73,7 +73,7 @@ function Kbd({ children }: { children: ReactNode }) { return <kbd className="ps-
 
 type ToolProps = { label: string; keys?: string; active?: boolean; className?: string; children: ReactNode };
 function Tool({ label, keys, active, className = '', children }: ToolProps) {
-  return <button type="button" className={`ps-btn ps-tool ${active ? 'is-active' : ''} ${className}`} aria-pressed={active ?? false} title={keys ? `${label} (${keys})` : label} aria-label={label}>
+  return <button type="button" className={`ps-btn ps-tool ps-keycap ${active ? 'is-active' : ''} ${className}`} aria-pressed={active ?? false} title={keys ? `${label} (${keys})` : label} aria-label={label}>
     <span className="ps-tool-face">{children}</span>
     {keys && <span className="ps-tool-key">{keys}</span>}
   </button>;
@@ -119,10 +119,10 @@ function ToolRail() {
 
 const KEYS_MAJOR = ['C', 'G', 'D', 'A', 'E', 'F', 'B♭', 'E♭', 'A♭', 'D♭', 'B', 'F♯'];
 
-/** The example popover: key signature, opened from bar 1. */
-function KeyPopover({ at }: { at: { left: number; top: number } }) {
-  return <div className="ps-popover ps-popover-key" role="dialog" aria-label="Key signature" style={{ left: at.left, top: at.top }}>
-    <span className="ps-popover-arrow" aria-hidden="true"/>
+/** The example popover: key signature, opened from bar 1 and placed beside the cursor bar (never over it). */
+function KeyPopover({ at }: { at: Placement }) {
+  return <div className={`ps-popover ps-popover-key is-${at.side}`} role="dialog" aria-label="Key signature" style={{ left: at.left, top: at.top }}>
+    <span className="ps-popover-arrow" aria-hidden="true" style={at.side === 'above' || at.side === 'below' ? { left: at.arrow } : { top: at.arrow }}/>
     <header className="ps-popover-head">
       <div className="ps-popover-titles"><span className="ps-eyebrow">From bar 1</span><h3 className="ps-popover-title">Key signature</h3></div>
       <button type="button" className="ps-btn ps-icon-btn ps-popover-close" aria-label="Close"><Icon name="close" size={14}/></button>
@@ -195,49 +195,170 @@ function StaveTab() {
   </>;
 }
 
-function Inspector({ tab, setTab, sheetOpen, toggleSheet }: { tab: 'score' | 'stave'; setTab(t: 'score' | 'stave'): void; sheetOpen: boolean; toggleSheet(): void }) {
-  return <aside className={`ps-inspector ps-reveal ${sheetOpen ? 'is-open' : ''}`} aria-label="Inspector">
-    <button type="button" className="ps-sheet-grip" aria-label={sheetOpen ? 'Close inspector' : 'Open inspector'} onClick={toggleSheet}><span className="ps-sheet-grip-bar"/></button>
+const STAVES: Array<{ name: string; on: boolean }> = [
+  { name: 'Flute', on: true }, { name: 'Alto Sax', on: true }, { name: 'Trumpet', on: false }, { name: 'Piano RH', on: true }, { name: 'Piano LH', on: true },
+];
+const VIEW_PROFILES = ['Conductor', 'Alto Sax part', 'Rhythm section'];
+const Check = ({ on }: { on: boolean }) => <span className={`ps-check ${on ? 'is-on' : ''}`}>{on && <Icon name="check" size={11}/>}</span>;
+
+/** View control: which staves are in the view, named view profiles, and per-part instrument overrides. */
+function ViewTab() {
+  return <>
+    <Section title="Staves in view">
+      <ul className="ps-stave-list">
+        {STAVES.map(stave => <li key={stave.name} className={`ps-stave-item ${stave.on ? 'is-on' : ''}`}><label className="ps-stave-label"><Check on={stave.on}/><span className="ps-stave-name">{stave.name}</span></label><span className="ps-stave-meta">{stave.on ? 'shown' : 'hidden'}</span></li>)}
+      </ul>
+    </Section>
+    <Section title="View profiles">
+      <div className="ps-profile-chips">{VIEW_PROFILES.map((name, i) => <button key={name} type="button" className={`ps-btn ps-profile-chip ${i === 0 ? 'is-on' : ''}`}>{name}</button>)}</div>
+      <div className="ps-save-view"><input className="ps-input ps-save-view-input" placeholder="Name this view…" defaultValue="Horns only" aria-label="View name"/><button type="button" className="ps-btn ps-btn-primary ps-btn-sm">Save as view</button></div>
+      <p className="ps-insp-note">Views are saved with the project; the score itself is unchanged.</p>
+    </Section>
+    <Section title="Instrument override">
+      <div className="ps-override"><span className="ps-override-source">Alto Sax</span><span className="ps-override-arrow">→</span><Select value="Trumpet in B♭"/></div>
+      <div className="ps-override"><span className="ps-override-source">Flute</span><span className="ps-override-arrow">→</span><Select value="As written"/></div>
+      <p className="ps-insp-note">Shows the part for another instrument, transposed (Alto Sax in E♭ → Trumpet in B♭: up a perfect fourth).</p>
+    </Section>
+  </>;
+}
+
+type InspectorTab = 'score' | 'stave' | 'view';
+const TAB_LABEL: Record<InspectorTab, string> = { score: 'Score', stave: 'Stave', view: 'View' };
+const TAB_CONTEXT: Record<InspectorTab, string> = { score: 'Bar 2 · whole score', stave: 'Piano RH · bar 2, beat 3', view: 'View · Conductor' };
+
+function Inspector({ tab, setTab }: { tab: InspectorTab; setTab(t: InspectorTab): void }) {
+  return <aside className="ps-inspector ps-reveal" aria-label="Inspector">
     <div className="ps-tabs" role="tablist">
-      {(['score', 'stave'] as const).map(t => <button key={t} type="button" role="tab" aria-selected={tab === t} className={`ps-tab ${tab === t ? 'is-on' : ''}`} onClick={() => { setTab(t); if (!sheetOpen) toggleSheet(); }}>{t === 'score' ? 'Score' : 'Stave'}</button>)}
+      {(['score', 'stave', 'view'] as const).map(t => <button key={t} type="button" role="tab" data-tab={t} aria-selected={tab === t} className={`ps-tab ${tab === t ? 'is-on' : ''}`} onClick={() => setTab(t)}>{TAB_LABEL[t]}</button>)}
     </div>
-    <div className="ps-insp-context"><span className="ps-eyebrow">{tab === 'score' ? 'Bar 2 · whole score' : 'Piano RH · bar 2, beat 3'}</span></div>
-    <div className="ps-insp-body">{tab === 'score' ? <ScoreTab/> : <StaveTab/>}</div>
+    <div className="ps-insp-context"><span className="ps-eyebrow">{TAB_CONTEXT[tab]}</span></div>
+    <div className="ps-insp-body">{tab === 'score' ? <ScoreTab/> : tab === 'stave' ? <StaveTab/> : <ViewTab/>}</div>
   </aside>;
 }
 
-const PALETTE: Array<{ label: string; face: ReactNode; on?: boolean }> = [
-  ...DURATIONS.slice().reverse().map(d => ({ label: d.label, face: <Glyph c={d.c} alt={d.alt} className="ps-glyph-note"/>, on: d.key === '4' })),
-  { label: 'Pitch up', face: <Icon name="up" size={20}/> },
-  { label: 'Pitch down', face: <Icon name="down" size={20}/> },
-  { label: 'Sharp', face: <Glyph c={SMUFL.sharp} alt="♯" className="ps-glyph-acc"/> },
-  { label: 'Flat', face: <Glyph c={SMUFL.flat} alt="♭" className="ps-glyph-acc"/> },
-  { label: 'Natural', face: <Glyph c={SMUFL.natural} alt="♮" className="ps-glyph-acc"/> },
-  { label: 'Rest', face: <Glyph c={SMUFL.restQuarter} alt="rest" className="ps-glyph-rest"/> },
-  { label: 'Dot', face: <Glyph c={SMUFL.dot} alt="dot" className="ps-glyph-dot"/> },
-  { label: 'Tie', face: <CurveTie/> },
-  { label: 'Slur', face: <CurveSlur/> },
-  { label: 'Accent', face: <Glyph c={SMUFL.accent} alt=">" className="ps-glyph-art"/> },
-  { label: 'Staccato', face: <Glyph c={SMUFL.staccato} alt="·" className="ps-glyph-art"/> },
-  { label: 'Undo', face: <Icon name="undo" size={19}/> },
-  { label: 'Redo', face: <Icon name="redo" size={19}/> },
-];
+/** A phone toolbar target: 44px square (glyph or icon), or a 44px-tall text chip. */
+function PBtn({ label, on, text, children }: { label: string; on?: boolean; text?: boolean; children: ReactNode }) {
+  return <button type="button" className={`ps-btn ps-pbtn ${text ? 'ps-pbtn-text' : ''} ${on ? 'is-active' : ''}`} aria-label={label} title={label} aria-pressed={on ?? false}>{children}</button>;
+}
+const PRow = ({ children }: { children: ReactNode }) => <div className="ps-prow">{children}</div>;
 
-/** Bar 1's position on the paper, for the example popover (measured once the engraving is drawn). */
-function useBarOneAnchor(paper: React.RefObject<HTMLDivElement | null>, tick: number) {
-  const [at, setAt] = useState({ left: 96, top: 150 });
+type PhoneTab = 'value' | 'pitch' | 'bar' | 'score' | 'view';
+const PHONE_TABS: Array<[PhoneTab, string]> = [['value', 'Value'], ['pitch', 'Pitch'], ['bar', 'Bar'], ['score', 'Score'], ['view', 'View']];
+
+/** The key popover on a phone: a one-row strip inside the toolbar, never floating over the score. */
+function KeyStrip({ onClose }: { onClose(): void }) {
+  return <div className="ps-prow ps-pstrip" role="dialog" aria-label="Key signature">
+    <span className="ps-pstrip-label">Key</span>
+    {['C', 'G', 'D', 'F', 'B♭', 'E♭', 'A', 'A♭'].map(k => <PBtn key={k} label={`${k} major`} text on={k === 'C'}>{k}</PBtn>)}
+    <PBtn label="Minor" text>min</PBtn>
+    <button type="button" className="ps-btn ps-pstrip-close" aria-label="Close" onClick={onClose}><Icon name="close" size={15}/></button>
+  </div>;
+}
+
+/** Phone: a fixed two-row toolbar under a compact tab strip; the canvas ends above it, so the score stays scrollable. */
+function PhoneToolbar({ tab, setTab, keyOpen, setKeyOpen }: { tab: PhoneTab; setTab(t: PhoneTab): void; keyOpen: boolean; setKeyOpen(open: boolean): void }) {
+  let rows: ReactNode;
+  if (tab === 'value') rows = <>
+    <PRow>{DURATIONS.map(d => <PBtn key={d.key} label={d.label} on={d.key === '4'}><Glyph c={d.c} alt={d.alt} className="ps-glyph-note"/></PBtn>)}</PRow>
+    <PRow>
+      <PBtn label="Dot"><Glyph c={SMUFL.dot} alt="dot" className="ps-glyph-dot"/></PBtn>
+      <PBtn label="Rest"><Glyph c={SMUFL.restQuarter} alt="rest" className="ps-glyph-rest"/></PBtn>
+      <PBtn label="Triplet"><Glyph c={SMUFL.tuplet3} alt="3" className="ps-glyph-tuplet"/></PBtn>
+      <PBtn label="Beam group"><BeamGroup/></PBtn>
+      <span className="ps-prow-spacer"/>
+      <PBtn label="Undo"><Icon name="undo" size={19}/></PBtn>
+      <PBtn label="Redo"><Icon name="redo" size={19}/></PBtn>
+    </PRow>
+  </>;
+  else if (tab === 'pitch') rows = <>
+    <PRow>
+      <PBtn label="Sharp"><Glyph c={SMUFL.sharp} alt="♯" className="ps-glyph-acc"/></PBtn>
+      <PBtn label="Flat"><Glyph c={SMUFL.flat} alt="♭" className="ps-glyph-acc"/></PBtn>
+      <PBtn label="Natural"><Glyph c={SMUFL.natural} alt="♮" className="ps-glyph-acc"/></PBtn>
+      <PBtn label="Chord entry" on><Chord/></PBtn>
+    </PRow>
+    <PRow>
+      <PBtn label="Octave up" text><Icon name="up" size={16}/>8va</PBtn>
+      <PBtn label="Octave down" text><Icon name="down" size={16}/>8vb</PBtn>
+      <PBtn label="Tie"><CurveTie/></PBtn>
+      <PBtn label="Slur"><CurveSlur/></PBtn>
+    </PRow>
+  </>;
+  else if (tab === 'bar') rows = <>
+    <PRow>
+      <PBtn label="Regular barline" on><Glyph c={SMUFL.barSingle} alt="|" className="ps-glyph-pbar"/></PBtn>
+      <PBtn label="Double barline"><Glyph c={SMUFL.barDouble} alt="||" className="ps-glyph-pbar"/></PBtn>
+      <PBtn label="Final barline"><Glyph c={SMUFL.barFinal} alt="|‖" className="ps-glyph-pbar"/></PBtn>
+      <PBtn label="Repeat start" on><Glyph c={SMUFL.repeatLeft} alt="|:" className="ps-glyph-pbar"/></PBtn>
+      <PBtn label="Repeat end"><Glyph c={SMUFL.repeatRight} alt=":|" className="ps-glyph-pbar"/></PBtn>
+    </PRow>
+    <PRow>
+      <PBtn label="First ending" text>1.</PBtn>
+      <PBtn label="Second ending" text>2.</PBtn>
+      <PBtn label="Jump" text>D.S.</PBtn>
+      <PBtn label="Rehearsal mark" text on>A</PBtn>
+      <PBtn label="Segno"><Glyph c={SMUFL.segno} alt="𝄋" className="ps-glyph-mark"/></PBtn>
+      <PBtn label="Coda"><Glyph c={SMUFL.coda} alt="𝄌" className="ps-glyph-mark"/></PBtn>
+    </PRow>
+  </>;
+  else if (tab === 'score') rows = <>
+    {keyOpen ? <KeyStrip onClose={() => setKeyOpen(false)}/> : <PRow>
+      <button type="button" className="ps-btn ps-pbtn ps-pbtn-text ps-pbtn-field" onClick={() => setKeyOpen(true)}><span className="ps-chip-k">Key</span>C major</button>
+      <PBtn label="4/4 time" text on>4/4</PBtn>
+      <PBtn label="3/4 time" text>3/4</PBtn>
+      <PBtn label="6/8 time" text>6/8</PBtn>
+      <PBtn label="Tempo" text><Glyph c={SMUFL.quarter} alt="♩" className="ps-glyph-mm"/>=120</PBtn>
+    </PRow>}
+    <PRow>
+      <PBtn label="Treble clef" on><Glyph c={SMUFL.gClef} alt="G" className="ps-glyph-clef"/></PBtn>
+      <PBtn label="Bass clef"><Glyph c={SMUFL.fClef} alt="F" className="ps-glyph-clef"/></PBtn>
+      <PBtn label="Alto clef"><Glyph c={SMUFL.cClef} alt="C" className="ps-glyph-clef"/></PBtn>
+      <span className="ps-prow-spacer"/>
+      <PBtn label="Insert bar" text><Icon name="plus" size={15}/>Bar</PBtn>
+      <PBtn label="Delete bar" text><Icon name="minus" size={15}/>Bar</PBtn>
+    </PRow>
+  </>;
+  else rows = <>
+    <PRow>{STAVES.map(stave => <PBtn key={stave.name} label={stave.name} text on={stave.on}><Check on={stave.on}/>{stave.name}</PBtn>)}</PRow>
+    <PRow>
+      {VIEW_PROFILES.map((name, i) => <PBtn key={name} label={`${name} view`} text on={i === 0}>{name}</PBtn>)}
+      <PBtn label="Save as view" text><Icon name="plus" size={14}/>Save view</PBtn>
+      <PBtn label="Instrument override" text>Alto Sax → Trumpet</PBtn>
+    </PRow>
+  </>;
+  return <div className="ps-ptoolbar" aria-label="Phone toolbar">
+    <div className="ps-ptabs" role="tablist">
+      {PHONE_TABS.map(([id, label]) => <button key={id} type="button" role="tab" data-tab={id} aria-selected={tab === id} className={`ps-ptab ${tab === id ? 'is-on' : ''}`} onClick={() => setTab(id)}>{label}</button>)}
+      <span className="ps-ptabs-check" title="Score check: no problems"><span className="ps-status-dot"/>OK</span>
+    </div>
+    <div className="ps-prows">{rows}</div>
+  </div>;
+}
+
+type Box = { left: number; top: number; right: number; bottom: number; width: number; height: number };
+type Placement = { left: number; top: number; side: 'left' | 'right' | 'above' | 'below'; arrow: number };
+type Geometry = { width: number; cursor: Box | null; last: Box | null };
+const POPOVER = { w: 276, h: 272, gap: 14, margin: 8 };
+
+/** Where the cursor bar and the last bar sit on the paper (measured once the engraving is drawn, and on resize). */
+function useScoreGeometry(paper: React.RefObject<HTMLDivElement | null>, tick: number): Geometry {
+  const [geometry, setGeometry] = useState<Geometry>({ width: 0, cursor: null, last: null });
   useEffect(() => {
     const host = paper.current;
     if (!host) return;
     const measure = () => {
-      const bar = host.querySelector<SVGGraphicsElement>('.score-system svg .measure');
-      if (!bar) return;
-      // Engraving units per CSS pixel, so the dashed bar outline keeps a 2px stroke at any zoom.
-      const scale = bar.getScreenCTM()?.a;
+      const bars = host.querySelectorAll<SVGGraphicsElement>('.score-system svg .measure');
+      if (!bars.length) return;
+      // Engraving units per CSS pixel, so the dashed bar outline keeps a constant stroke at any zoom.
+      const scale = bars[0].getScreenCTM()?.a;
       if (scale) host.style.setProperty('--ps-svg-px', `${1 / scale}px`);
-      const a = bar.getBoundingClientRect(), b = host.getBoundingClientRect();
-      if (!a.width) return;
-      setAt({ left: Math.max(12, a.left - b.left + Math.min(a.width * .3, 90) - 32), top: a.top - b.top + a.height * .5 });
+      const origin = host.getBoundingClientRect();
+      const box = (element: Element | null): Box | null => {
+        if (!element) return null;
+        const r = element.getBoundingClientRect();
+        return r.width ? { left: r.left - origin.left, top: r.top - origin.top, right: r.right - origin.left, bottom: r.bottom - origin.top, width: r.width, height: r.height } : null;
+      };
+      setGeometry({ width: origin.width, cursor: box(host.querySelector('.ps-cursor-measure')), last: box(bars[bars.length - 1]) });
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -246,19 +367,47 @@ function useBarOneAnchor(paper: React.RefObject<HTMLDivElement | null>, tick: nu
     const stop = window.setTimeout(() => window.clearInterval(timer), 6000);
     return () => { observer.disconnect(); window.clearInterval(timer); window.clearTimeout(stop); };
   }, [paper, tick]);
-  return at;
+  return geometry;
+}
+
+/** The collision rule: a popover opens beside the cursor bar, left if it fits, else right, else above (below as a last resort); never over it. */
+function placePopover({ width, cursor }: Geometry): Placement {
+  const { w, h, gap, margin } = POPOVER;
+  if (!cursor) return { left: margin, top: 120, side: 'left', arrow: 40 };
+  const top = Math.max(margin, cursor.top - 6);
+  const arrow = Math.min(h - 22, Math.max(18, cursor.top + Math.min(60, cursor.height / 3) - top));
+  if (cursor.left - gap - w >= margin) return { left: cursor.left - gap - w, top, side: 'left', arrow };
+  if (cursor.right + gap + w <= width - margin) return { left: cursor.right + gap, top, side: 'right', arrow };
+  const left = Math.min(width - margin - w, Math.max(margin, cursor.left + cursor.width / 2 - w / 2));
+  const arrowX = cursor.left + cursor.width / 2 - left;
+  if (cursor.top - gap - h >= margin) return { left, top: cursor.top - gap - h, side: 'above', arrow: arrowX };
+  return { left, top: cursor.bottom + gap, side: 'below', arrow: arrowX };
+}
+
+/** Add and remove bar, after chordee2's ChartSVG `add-bar-btn`: stacked at the right edge of the last bar. */
+function AddBarButtons({ geometry }: { geometry: Geometry }) {
+  const last = geometry.last;
+  if (!last) return null;
+  const mid = last.top + last.height / 2;
+  const left = last.right + 30 <= geometry.width ? last.right + 8 : last.right - 30;
+  return <div className="ps-add-bar" style={{ left, top: mid - 25 }}>
+    <button type="button" className="ps-btn ps-add-bar-btn" title="Add bar" aria-label="Add bar"><Icon name="plus" size={13}/></button>
+    <button type="button" className="ps-btn ps-add-bar-btn ps-remove-bar-btn" title="Remove bar" aria-label="Remove bar"><Icon name="minus" size={13}/></button>
+  </div>;
 }
 
 export default function EditorDesign() {
   const [view, setView] = useState<'desktop' | 'phone'>('desktop');
   const [readOnly, setReadOnly] = useState(false);
-  const [tab, setTab] = useState<'score' | 'stave'>('score');
-  const [sheetOpen, setSheetOpen] = useState(false);
+  const [tab, setTab] = useState<InspectorTab>('score');
+  const [phoneTab, setPhoneTab] = useState<PhoneTab>('value');
+  const [keyOpen, setKeyOpen] = useState(false);
   const [glyphs, setGlyphs] = useState<'bravura' | 'fallback'>('bravura');
   const [drawn, setDrawn] = useState(0);
   const paper = useRef<HTMLDivElement>(null);
-  const popoverAt = useBarOneAnchor(paper, drawn + (view === 'phone' ? 1000 : 0));
+  const geometry = useScoreGeometry(paper, drawn + (view === 'phone' ? 1000 : 0));
   const onReady = useCallback(() => setDrawn(n => n + 1), []);
+  const openKey = () => { setPhoneTab('score'); setKeyOpen(true); };
 
   // Text fallbacks if Bravura never loads (the viewer injects its @font-face on mount).
   useEffect(() => {
@@ -281,7 +430,7 @@ export default function EditorDesign() {
 
     <div className="ps-stage">
       <div className="ps-device">
-        <div className={`ps-app ${readOnly ? 'is-readonly' : ''}`} data-sheet={sheetOpen ? 'open' : 'closed'}>
+        <div className={`ps-app ${readOnly ? 'is-readonly' : ''}`}>
           <div className="ps-shell">
             <header className="ps-topbar ps-reveal">
               <div className="ps-brand"><span className="ps-brand-mark"><Glyph c={SMUFL.gClef} alt="𝄞"/></span><span className="ps-brand-name">pepperscore</span></div>
@@ -289,17 +438,21 @@ export default function EditorDesign() {
                 <h1 className="ps-score-title">Expression and Rhythm</h1>
                 <p className="ps-score-composer">Clara Weston · Study for piano, Op. 4</p>
               </div>
-              <div className="ps-chips" aria-label="Score settings">
-                <button type="button" className="ps-btn ps-chip"><span className="ps-chip-k">Key</span>C major</button>
-                <button type="button" className="ps-btn ps-chip"><span className="ps-chip-k">Time</span>4/4</button>
-                <button type="button" className="ps-btn ps-chip"><span className="ps-chip-k">Tempo</span><Glyph c={SMUFL.quarter} alt="♩" className="ps-glyph-mm"/>= 120</button>
+              <div className="ps-meta-row" aria-label="Score settings">
+                <span className="ps-mode-pill ps-meta-mode"><span className="ps-mode-dot"/>Entry</span>
+                <span className="ps-meta-crumb">bar 2 of 4</span>
+                <div className="ps-chips">
+                  <button type="button" className="ps-btn ps-chip" onClick={openKey}><span className="ps-chip-k">Key</span>C major</button>
+                  <button type="button" className="ps-btn ps-chip"><span className="ps-chip-k">Time</span>4/4</button>
+                  <button type="button" className="ps-btn ps-chip"><span className="ps-chip-k">Tempo</span><Glyph c={SMUFL.quarter} alt="♩" className="ps-glyph-mm"/>= 120</button>
+                </div>
               </div>
               <div className="ps-actions">
                 <div className="ps-history">
                   <button type="button" className="ps-btn ps-icon-btn ps-undo" aria-label="Undo" title="Undo (Ctrl+Z)"><Icon name="undo" size={17}/></button>
                   <button type="button" className="ps-btn ps-icon-btn ps-redo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)" disabled><Icon name="redo" size={17}/></button>
                 </div>
-                <button type="button" className="ps-btn ps-btn-play"><Icon name="play" size={14}/><span className="ps-btn-text">Play</span></button>
+                <button type="button" className="ps-btn ps-btn-play" aria-label="Play"><Icon name="play" size={14}/><span className="ps-btn-text">Play</span></button>
                 <div className="ps-file">
                   <button type="button" className="ps-btn ps-btn-ghost ps-save"><Icon name="save" size={15}/><span className="ps-btn-text">Save</span></button>
                   <button type="button" className="ps-btn ps-btn-ghost ps-export"><Icon name="export" size={15}/><span className="ps-btn-text">Export</span></button>
@@ -325,19 +478,19 @@ export default function EditorDesign() {
                 <div className="ps-desk">
                   <div className="ps-paper" ref={paper}>
                     <PepperScore key={view} className="ps-design-score" settings={view === 'phone' ? PHONE_FRAME_SETTINGS : undefined} chrome="none" musicXml={expressive} highlights={HIGHLIGHTS} assetBaseUrl="/" ariaLabel="Expression and Rhythm" onReady={onReady}/>
-                    {!readOnly && <KeyPopover at={popoverAt}/>}
+                    {!readOnly && <KeyPopover at={placePopover(geometry)}/>}
+                    {!readOnly && <AddBarButtons geometry={geometry}/>}
                   </div>
                 </div>
                 <div className="ps-hints" aria-label="Keyboard hints">
                   {HINTS.map(([k, v]) => <span key={k} className="ps-hint"><Kbd>{k}</Kbd><span className="ps-hint-text">{v}</span></span>)}
+                  <span className="ps-hint-caption">Popovers avoid the cursor bar</span>
                 </div>
               </main>
-              <Inspector tab={tab} setTab={setTab} sheetOpen={sheetOpen} toggleSheet={() => setSheetOpen(v => !v)}/>
+              <Inspector tab={tab} setTab={setTab}/>
             </div>
 
-            <nav className="ps-palette" aria-label="Touch palette">
-              {PALETTE.map(item => <button key={item.label} type="button" className={`ps-btn ps-palette-btn ${item.on ? 'is-active' : ''}`} aria-label={item.label} title={item.label}>{item.face}</button>)}
-            </nav>
+            <PhoneToolbar tab={phoneTab} setTab={setPhoneTab} keyOpen={keyOpen} setKeyOpen={setKeyOpen}/>
 
             <footer className="ps-status">
               <span className="ps-status-check"><span className="ps-status-dot"/>Score check: no problems</span>
