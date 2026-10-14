@@ -43,7 +43,7 @@ test('the full score layout returns the document itself and moves nothing', () =
   expect(view.counts).toEqual({ moved: 0 });
   expect(view.diagnostics).toEqual([]);
   // An unknown layout, or none at all, shows the document as it is.
-  const empty = { document: doc, moved: {}, counts: { moved: 0 }, diagnostics: [] };
+  const empty = { document: doc, moved: {}, movedNotes: [], counts: { moved: 0 }, diagnostics: [] };
   expect(applyLayout(doc, 'gone')).toEqual(empty);
   expect(applyLayout(doc, 'gone').document).toBe(doc);
   const bare = { ...doc, layouts: [] };

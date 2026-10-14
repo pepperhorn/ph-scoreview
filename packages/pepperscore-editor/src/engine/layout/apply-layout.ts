@@ -1,5 +1,5 @@
 import { INSTRUMENTS, type Instrument } from '../../model/instruments';
-import { effectiveKey } from '../../model/query';
+import { effectiveKey, eventStarts } from '../../model/query';
 import type { Direction, Document, Layout, Part, Swap } from '../../model/schema';
 import { pruneDanglingReferences } from '../prune';
 import { fitToRange, type FitResult } from './range-fit';
@@ -7,11 +7,13 @@ import { fitToRange, type FitResult } from './range-fit';
 /**
  * The active layout's view of a document: the `document` to compile (the layout's parts, staves, swaps,
  * concert pitch and direction overrides applied; ids unchanged so clicks map back), the events range
- * fitting or an override moved by an octave, a summary for the status line, and fitting diagnostics.
+ * fitting or an override moved by an octave, the note ids of those events as drawn (a rest's own id; document
+ * order; what `ps-transposed` highlights), a summary for the status line, and fitting diagnostics.
  */
 export type ViewResult = {
   document: Document;
   moved: Record<string, 12 | -12>;
+  movedNotes: string[];
   counts: { moved: number; partId?: string; direction?: 'up' | 'down' };
   diagnostics: string[];
 };
@@ -92,11 +94,12 @@ function withOverrides(part: Part, overrides: Layout['overrides']): Part {
  */
 export function applyLayout(doc: Document, layoutId: string): ViewResult {
   const layout = doc.layouts.find((l) => l.id === layoutId);
-  if (!layout) return { document: doc, moved: {}, counts: { moved: 0 }, diagnostics: [] };
+  if (!layout) return { document: doc, moved: {}, movedNotes: [], counts: { moved: 0 }, diagnostics: [] };
   const moved: Record<string, 12 | -12> = {};
   const movedBy = new Set<string>();
   const diagnostics: string[] = [];
   const parts: Part[] = [];
+  const movedNotes: string[] = [];
 
   for (const lp of layout.parts) {
     const source = doc.parts.find((p) => p.id === lp.partId);
@@ -114,7 +117,16 @@ export function applyLayout(doc: Document, layoutId: string): ViewResult {
       part = concertPart(doc, source);
     }
     const kept = lp.staves ? keepStaves(doc, part, lp.staves) : part;
-    if (kept) parts.push(withOverrides(kept, layout.overrides));
+    if (!kept) continue;
+    parts.push(withOverrides(kept, layout.overrides));
+    // The drawn notes of the moved events (hidden staves dropped), collected once here rather than per cursor move.
+    if (movedBy.has(source.id)) {
+      for (const pm of kept.measures) for (const seq of pm.sequences) for (const { event } of eventStarts(seq)) {
+        if (moved[event.id] === undefined) continue;
+        if (event.notes?.length) for (const n of event.notes) movedNotes.push(n.id);
+        else movedNotes.push(event.id);
+      }
+    }
   }
 
   const shifts = Object.values(moved);
@@ -124,5 +136,5 @@ export function applyLayout(doc: Document, layoutId: string): ViewResult {
 
   const unchanged = layout === doc.layouts[0] && parts.length === doc.parts.length && parts.every((p, i) => p === doc.parts[i]);
   const document: Document = unchanged ? doc : { ...doc, parts, layouts: [{ ...layout, parts: parts.map((p) => ({ partId: p.id })) }] };
-  return { document, moved, counts, diagnostics };
+  return { document, moved, movedNotes, counts, diagnostics };
 }

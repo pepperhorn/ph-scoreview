@@ -6,6 +6,7 @@ import { clickTarget, staffAt } from './click-mapping';
 import { editorHighlights } from './highlights';
 import { createCustomLayout } from '../engine/commands/index';
 import { createEditorStore } from '../engine/store';
+import { findEvent } from '../engine/sequence-edit';
 import { customLayoutName, defaultSwapPart, INTERVALS, intervalValue, movedIn, movedNoteIds, movedStatus, planStaveToggle, staveRows, swapTargetsFor, toggleStave, visibleStaves } from './layout-model';
 
 /** Tenor sax (written C6 D6 quarters, a half rest) and a two-staff piano, one 4/4 bar. */
@@ -128,6 +129,36 @@ describe('moved note counts', () => {
     const view = applyLayout(doc, doc.layouts[0].id);
     expect(movedIn(view, doc.parts[0])).toMatchObject({ ids: ['e1', 'e2'], notes: 3 });
     expect(movedNoteIds(view).sort()).toEqual(['n1', 'n1b', 'n2']);
+  });
+
+  it('applyLayout lists the moved note ids in document order, as the event lookup derived them', () => {
+    const doc = saxAndPiano();
+    const e1 = doc.parts[0].measures[0].sequences[0].content[0];
+    if (e1.type === 'event') e1.notes!.push({ id: 'n1b', pitch: { step: 'E', octave: 6, alter: 0 } });
+    doc.layouts[0].parts[0].swap = { instrument: 'alto-saxophone', level: 'beginner', autoRange: true, rangeOverrides: {} };
+    const view = applyLayout(doc, doc.layouts[0].id);
+    const derived = Object.keys(view.moved).flatMap((id) => {
+      const event = findEvent(view.document, id)?.event;
+      return !event ? [] : event.notes?.length ? event.notes.map((n) => n.id) : [event.id];
+    });
+    expect(view.movedNotes).toEqual(['n1', 'n1b', 'n2']);
+    expect([...view.movedNotes].sort()).toEqual(derived.sort());
+    expect(movedNoteIds(view)).toBe(view.movedNotes);
+  });
+
+  it('reads the moved notes of a 128-bar swapped score in under 1 ms', () => {
+    const doc = createDocument({ parts: [{ name: 'Tenor Sax', clef: 'treble', gmProgram: 67 }, { name: 'Piano', clef: 'treble', gmProgram: 1, staves: 2 }], measures: 128 });
+    doc.parts[0].transposition = { semitones: 14, diatonic: 8 };
+    doc.parts[0].measures.forEach((pm, m) => {
+      pm.sequences[0].content = (['C', 'D', 'E', 'D'] as const).map((step, i) => ({ id: `e${m}-${i}`, type: 'event' as const, duration: { base: 'quarter' as const, dots: 0 as const }, notes: [{ id: `n${m}-${i}`, pitch: { step, octave: 6, alter: 0 } }] }));
+    });
+    doc.layouts[0].parts[0].swap = { instrument: 'alto-saxophone', level: 'beginner', autoRange: true, rangeOverrides: {} };
+    const view = applyLayout(doc, doc.layouts[0].id);
+    expect(view.counts.moved).toBe(512);
+    expect(movedIn(view, doc.parts[0]).notes).toBe(512);
+    const start = performance.now();
+    for (let i = 0; i < 10; i++) expect(movedNoteIds(view)).toHaveLength(512);
+    expect((performance.now() - start) / 10).toBeLessThan(1);
   });
 });
 

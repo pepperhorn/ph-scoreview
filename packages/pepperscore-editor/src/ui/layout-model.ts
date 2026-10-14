@@ -1,6 +1,5 @@
 import type { ViewResult } from '../engine/layout/apply-layout';
 import { INSTRUMENT_IDS, instrumentFor, instrumentName, type InstrumentId, type Transposition } from '../model/instruments';
-import { findEvent } from '../engine/sequence-edit';
 import { eventStarts } from '../model/query';
 import type { Document, Layout, LayoutPart, Part, Swap } from '../model/schema';
 
@@ -128,27 +127,24 @@ export function defaultSwapPart(doc: Document, layout: Layout | undefined): stri
   return (parts.find((p) => instrumentFor(p.instrument.gmProgram).id !== 'piano') ?? parts[0])?.id;
 }
 
-/** Ids of every event in `part`, in score order. */
-export function partEventIds(part: Part): string[] {
-  return part.measures.flatMap((pm) => pm.sequences.flatMap((seq) => eventStarts(seq).map(({ event }) => event.id)));
-}
-
-/** The note ids (a rest's own id) of the events `view` moved, in the view document: what `ps-transposed` highlights. */
-export function movedNoteIds(view: ViewResult, eventIds: string[] = Object.keys(view.moved)): string[] {
-  return eventIds.flatMap((id) => {
-    const event = findEvent(view.document, id)?.event;
-    return !event ? [] : event.notes?.length ? event.notes.map((n) => n.id) : [event.id];
-  });
-}
+/** The note ids (a rest's own id) of the events `view` moved, as drawn: what `ps-transposed` highlights (computed by `applyLayout`). */
+export const movedNoteIds = (view: ViewResult): string[] => view.movedNotes;
 
 /**
  * The events of `part` the view moved by an octave (score order), how many notes they hold, and their common
  * direction if they share one.
  */
 export function movedIn(view: ViewResult, part: Part): { ids: string[]; notes: number; direction?: 'up' | 'down' } {
-  const ids = partEventIds(part).filter((id) => view.moved[id] !== undefined);
+  const ids: string[] = [];
+  const own = new Set<string>();
+  for (const pm of part.measures) for (const seq of pm.sequences) for (const { event } of eventStarts(seq)) {
+    if (view.moved[event.id] === undefined) continue;
+    ids.push(event.id);
+    own.add(event.id);
+    for (const n of event.notes ?? []) own.add(n.id);
+  }
   const shifts = ids.map((id) => view.moved[id]);
-  return { ids, notes: movedNoteIds(view, ids).length, direction: shifts.length && shifts.every((s) => s === shifts[0]) ? (shifts[0] > 0 ? 'up' : 'down') : undefined };
+  return { ids, notes: view.movedNotes.filter((id) => own.has(id)).length, direction: shifts.length && shifts.every((s) => s === shifts[0]) ? (shifts[0] > 0 ? 'up' : 'down') : undefined };
 }
 
 const LEVEL_NAMES = { beginner: 'Beginner', intermediate: 'Intermediate', advanced: 'Advanced' } as const;
