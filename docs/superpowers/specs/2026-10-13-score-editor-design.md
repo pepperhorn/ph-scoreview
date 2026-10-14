@@ -123,18 +123,38 @@ Invariants (checked by `invariants.ts`, run after every command in dev and in te
 
 ## Layouts (score and part views)
 
-Today's single-part view is achieved by soloing or hiding staves. The model makes that explicit, following Dorico and MNX:
+Today's single-part view is achieved by soloing or hiding staves. The model makes that explicit, following Dorico and MNX. The UI uses Dorico's vocabulary, **Layouts** (Full score, Parts, Custom score), with a layout selector beside the Page/Endless toggle; stave checkboxes plus a saved name make a Custom layout:
 
 ```ts
 type Layout = {
-  id: string; name: string; kind: 'score' | 'part';
-  parts: { partId: string; staves?: number[] }[];   // ordered; omitted staves = all
+  id: string; name: string; kind: 'score' | 'part' | 'custom';   // Dorico vocabulary: Full score, Part, Custom score
+  parts: LayoutPart[];                                // ordered; omitted staves = all
+  transposing: boolean;                               // transposing vs concert-pitch layout (Dorico: a layout property)
   breaks?: { measureId: string; type: 'system' | 'page' }[];
-  style?: Partial<StyleSheet>;                      // per-layout overrides (staff size, margins, multirests)
-  overrides: Record<string, LayoutOverride>;        // keyed by object id (direction, event, measure)
+  style?: Partial<StyleSheet>;                        // per-layout overrides (staff size, margins, multirests)
+  overrides: Record<string, LayoutOverride>;          // keyed by object id (direction, event, measure)
+};
+type LayoutPart = {
+  partId: string; staves?: number[];
+  /** Show this part for another instrument: a linked, view-time transform of the same music (see Instrument swap). */
+  swap?: { instrument: InstrumentId; level: 'beginner' | 'intermediate' | 'advanced'; interval?: { semitones: number; diatonic: number };
+           autoRange: boolean; rangeOverrides: Record<string, 0 | 12 | -12> };   // event id → octave shift chosen by the user
 };
 type LayoutOverride = { offset?: Offset; hidden?: boolean; text?: string; cue?: boolean };
 ```
+
+### Instrument swap (linked parts, range fitting)
+
+Showing a part for a different instrument (tenor sax as alto sax, alto sax as trumpet) never copies or generates staves. It is a `LayoutPart.swap`: the same music, linked to the source part, so any edit to either shows in both. The user is told this plainly in the UI ("Linked to Tenor Sax · changes affect both"). "Make a copy (own stave)" is the explicit action that unlinks it into a new part.
+
+The only content difference a swap introduces is transposition:
+
+- **Written pitch** follows the target instrument's transposition when the layout is transposing.
+- **Range fitting.** The instrument schema records a playable range per level (`beginner`, `intermediate`, `advanced`). With `autoRange` on, a note or a whole passage that falls outside the target instrument's range at the chosen level is moved 8va or 8vb automatically; a passage is the run of consecutive out-of-range notes extended to the nearest phrase boundary (rest, slur end or bar line), so a phrase moves as one. The user can override any note or passage (`rangeOverrides`), and the override survives re-fitting.
+- **Free transposition.** Because a swap is a transposition, the user may also set an arbitrary `interval` (a major third up, say) and still keep the link; it stays linked until turned into a copy.
+- **Change highlights.** Every note whose written pitch differs from the source because of range fitting or a user override is highlighted (`ps-transposed`, default orange `--ps-transposed`), and the status line counts them ("12 notes moved 8vb for Alto Sax · beginner"). Plain instrument transposition (the whole part moving by the instrument's interval) is not highlighted; only notes moved relative to that.
+
+The instrument schema (`src/model/instruments.ts`, later) holds per instrument: transposition, clef, GM program, and the three playable ranges as MIDI bounds; the viewer already carries GM mapping and transposition, so this extends that table rather than adding a second one.
 
 `layouts[0]` is the conductor score. Creating a part layout per part is one command (`createPartLayouts`). The editor has an **active layout**; the viewer renders it through the existing hidden-staff view mechanism (`mei-view.ts`), with breaks and style passed as Verovio options or view MEI. Edits to content (pitches, rhythms, barlines) are global and apply everywhere; edits to position, visibility, cue size and text wording made while a part layout is active are stored as overrides for that layout only. Part-specific state (multirests, cue notes, break positions) is what the factory tunes most, which is why it is modelled now even though the v1 UI only exposes switching between layouts.
 
