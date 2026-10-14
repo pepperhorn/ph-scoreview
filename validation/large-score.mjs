@@ -160,8 +160,9 @@ try {
   await page.getByRole('button', { name: 'Play score', exact: true }).click();
   const reached = await page.waitForFunction(() => window.__playback.target !== undefined, null, { timeout: 20000 }).then(() => true, () => false);
   const timing = await page.evaluate(() => window.__playback);
-  // One bar per system at 240 BPM in 4/4: the target system's first bar starts a bar after the first highlight.
-  const lag = reached ? Math.round(timing.target - timing.first - TARGET_BAR_MS) : null;
+  // One bar per system at 240 BPM in 4/4: the target system's first bar starts `target` bars after the first highlight
+  // (the first highlight is in system 0; `target` is the first system not drawn at first paint).
+  const lag = reached ? Math.round(timing.target - timing.first - target * TARGET_BAR_MS) : null;
   console.log(`${engine}: playback highlight in the next, undrawn system ${reached ? `${lag} ms after its bar began` : 'never came'}`);
   assert.ok(reached, `The playhead highlights a system drawn on demand (the first highlight came ${timing.first === undefined ? 'never' : 'but not in the target system: it was drawn after its bar had passed'})`);
   assert.ok(lag <= HIGHLIGHT_LAG_MS, `A system drawn on demand highlights within ${HIGHLIGHT_LAG_MS} ms of its bar starting (took ${lag} ms)`);

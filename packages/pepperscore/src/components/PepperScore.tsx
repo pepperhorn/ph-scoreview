@@ -976,7 +976,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     if (playingNow && result) {
       let ahead = block.nextElementSibling;
       for (let step = 1; step <= LOOKAHEAD_SYSTEMS && ahead; step++, ahead = ahead.nextElementSibling) {
-        if (ahead.classList.contains('is-pending')) void result.ensureSystem(Number(block.dataset.system) + step);
+        if (ahead.classList.contains('is-pending')) void result.ensureSystem(Number((ahead as HTMLElement).dataset.system));
       }
     }
     const line = anchor ? document.createElement('div') : null;
