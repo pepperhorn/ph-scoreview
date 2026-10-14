@@ -211,3 +211,18 @@ export const setSelection: Command<{ ids: string[] }> = {
     draft.selection.ids = [...ids];
   },
 };
+
+/** Sets the score's title and/or composer; a blank value removes it. Keys left out are unchanged. */
+export const setMeta: Command<{ title?: string; composer?: string }> = {
+  label: 'Edit score info',
+  run: (draft, args) => {
+    const meta = draft.document.meta;
+    for (const key of ['title', 'composer'] as const) {
+      const value = args[key];
+      if (value === undefined) continue;
+      const trimmed = value.trim();
+      if (!trimmed) delete meta[key];
+      else if (meta[key] !== trimmed) meta[key] = trimmed;
+    }
+  },
+};

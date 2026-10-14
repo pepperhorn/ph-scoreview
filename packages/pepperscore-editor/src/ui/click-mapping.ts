@@ -3,31 +3,28 @@ import type { Cursor } from '../engine/types';
 import { measureTicks } from '../model/durations';
 import { effectiveTime, eventStarts, locateEvent, noteToEvent, sequenceFor } from '../model/query';
 import type { Document } from '../model/schema';
+import { visibleStaves } from '../engine/layout/visible-staves';
 
 export type ClickTarget = { cursor: Partial<Cursor>; selection: string[] };
 
 /**
- * The (part, staff) of the viewer's 1-based visible staff index: the viewer draws one staff per
- * entry, walking the compiled layout's parts in order and each part's staves.
+ * The (part, staff) of the viewer's 1-based visible staff index under layout `layoutId` (default the full score):
+ * the viewer draws one staff per entry of the layout's visible staves, in order, so a partial-staff layout (only
+ * the piano's left hand, say) maps its first drawn staff to that staff, not to the score's first.
  */
-export function staffAt(doc: Document, viewerStaff: number): { partId: string; staff: number } | undefined {
-  const layout = doc.layouts[0];
-  let n = 0;
-  for (const lp of layout?.parts ?? []) {
-    const part = doc.parts.find((p) => p.id === lp.partId);
-    if (!part) continue;
-    for (let staff = 1; staff <= part.staves; staff++) if (++n === viewerStaff) return { partId: part.id, staff };
-  }
-  return undefined;
+export function staffAt(doc: Document, viewerStaff: number, layoutId?: string): { partId: string; staff: number } | undefined {
+  const layout = doc.layouts.find((l) => l.id === layoutId) ?? doc.layouts[0];
+  return visibleStaves(doc, layout)[viewerStaff - 1];
 }
 
 /**
  * Where a click on the engraving puts the cursor. A hit note's `sourceId` is the MusicXML id of its
  * first pitch, which is a model note id (a rest's is its event id): the cursor moves onto that
  * event and selects it. Otherwise a click in a measure moves the cursor to the event start nearest
- * the click in that staff's voice 1, and clears the selection.
+ * the click in that staff's voice 1, and clears the selection. `doc` is the document (not the layout's view: its
+ * staves are renumbered) and `layoutId` the active layout the engraving shows.
  */
-export function clickTarget(doc: Document, info: PepperScoreClickInfo): ClickTarget | undefined {
+export function clickTarget(doc: Document, info: PepperScoreClickInfo, layoutId?: string): ClickTarget | undefined {
   if (info.sourceId) {
     const eventId = noteToEvent(doc).get(info.sourceId) ?? info.sourceId;
     const located = locateEvent(doc, eventId);
@@ -42,7 +39,7 @@ export function clickTarget(doc: Document, info: PepperScoreClickInfo): ClickTar
   }
   const index = info.measureIndex;
   if (index === undefined || !doc.global.measures[index]) return undefined;
-  const where = staffAt(doc, info.staff ?? 1) ?? staffAt(doc, 1);
+  const where = staffAt(doc, info.staff ?? 1, layoutId) ?? staffAt(doc, 1, layoutId);
   if (!where) return undefined;
   const pm = doc.parts.find((p) => p.id === where.partId)?.measures[index];
   const barTicks = measureTicks(effectiveTime(doc, index));

@@ -6,7 +6,7 @@ import { fixedIds } from '../../test-helpers';
 import { createEditorStore } from '../store';
 import {
   createCustomLayout, createPartLayouts, makeCopy, setActiveLayout, setCursor, setLayoutParts, setLayoutTransposing, setPitch,
-  setRangeOverride, setSwap,
+  setRangeOverride, setSelection, setSwap,
 } from './index';
 
 const P = (step: Pitch['step'], octave: number, alter = 0): Pitch => ({ step, octave, alter });
@@ -156,6 +156,33 @@ test('makeCopy bakes the swap into a new unlinked part, adds it to the full scor
   expect(store.getState().history.past).toHaveLength(past);
 });
 
+test('a custom layout is transposing or concert pitch as the active layout was', () => {
+  const store = createEditorStore(duo());
+  store.dispatch(createCustomLayout, { name: 'A', parts: [{ partId: 'p1' }] });
+  expect(store.getState().document.layouts[1].transposing).toBe(true);
+  store.dispatch(setLayoutTransposing, { layoutId: 'layout1', transposing: false });
+  store.dispatch(setActiveLayout, { layoutId: 'layout1' });
+  store.dispatch(createCustomLayout, { name: 'B', parts: [{ partId: 'p1' }] });
+  const { document, activeLayoutId } = store.getState();
+  expect(document.layouts[2]).toMatchObject({ name: 'B', transposing: false });
+  expect(activeLayoutId).toBe(document.layouts[2].id);
+});
+
+test('makeCopy in the full score keeps the source (unswapped) and puts the copy on its own stave after it', () => {
+  const store = createEditorStore(duo());
+  store.dispatch(setSwap, { layoutId: 'layout1', partId: 'p1', swap: altoBeginner });
+  const before = store.getState().document;
+  store.dispatch(makeCopy, { layoutId: 'layout1', partId: 'p1' });
+  const { document, view, invariantErrors } = store.getState();
+  const copy = document.parts[2];
+  expect(document.layouts[0].parts).toEqual([{ partId: 'p1' }, { partId: copy.id }, { partId: 'p2' }]);
+  expect(view.moved).toEqual({});
+  expect(view.document.parts.map((p) => p.id)).toEqual(['p1', copy.id, 'p2']);
+  expect(invariantErrors).toEqual([]);
+  store.undo();
+  expect(store.getState().document).toEqual(before);
+});
+
 test('makeCopy keeps references inside the copy consistent', () => {
   const doc = duo();
   const [a, b] = doc.parts[0].measures[0].sequences[0].content as Event[];
@@ -204,4 +231,30 @@ test('view-only commands are never recorded, whatever the caller asks', () => {
   store.dispatch(setCursor, { tick: 960 });
   expect(store.getState().activeLayoutId).toBe('layout1');
   expect(store.getState().history.past).toHaveLength(past);
+});
+
+test('a layout change that hides the cursor staff moves the cursor to the first drawn staff, same bar and tick, outside history', () => {
+  const store = createEditorStore(duo());
+  const measureId = store.getState().cursor.measureId;
+  store.dispatch(setCursor, { partId: 'p1', staff: 1, tick: 960 });
+  store.dispatch(setSelection, { ids: ['b'] });
+  // Hiding the flute in the full score makes a custom layout of the violin only.
+  store.dispatch(createCustomLayout, { name: 'Custom', parts: [{ partId: 'p2' }] });
+  const custom = store.getState().activeLayoutId;
+  expect(store.getState().cursor).toMatchObject({ partId: 'p2', staff: 1, measureId, tick: 960 });
+  expect(store.getState().selection.ids).toEqual([]);
+  expect(store.getState().history.past).toHaveLength(1);
+
+  // Switching layouts and setting a layout's parts repair it the same way.
+  store.dispatch(setActiveLayout, { layoutId: 'layout1' });
+  store.dispatch(setCursor, { partId: 'p1', staff: 1, tick: 960 });
+  store.dispatch(setActiveLayout, { layoutId: custom });
+  expect(store.getState().cursor).toMatchObject({ partId: 'p2', staff: 1, measureId, tick: 960 });
+  store.dispatch(setLayoutParts, { layoutId: custom, parts: [{ partId: 'p1' }] });
+  expect(store.getState().cursor).toMatchObject({ partId: 'p1', staff: 1, measureId, tick: 960 });
+  // A cursor already on a drawn staff stays put.
+  store.dispatch(setSelection, { ids: ['a'] });
+  store.dispatch(setLayoutTransposing, { layoutId: custom, transposing: false });
+  expect(store.getState().cursor.partId).toBe('p1');
+  expect(store.getState().selection.ids).toEqual(['a']);
 });

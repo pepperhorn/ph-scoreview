@@ -17,6 +17,8 @@
 - New highlight class `ps-transposed` (`--ps-transposed`, default `#d9741c`) for notes.
 - `ps-selection` defaults to ink blue `#2f6a9a` (was green `#1f9d55`), so it does not clash with `ps-transposed`.
 - A new score source draws immediately; the redraw fade only applies to setting changes.
+- During playback the next two systems are drawn ahead of the playhead (`LOOKAHEAD_SYSTEMS = 2`), so a system is ready before its bar starts. Before, a system was requested only when the playhead entered it, and on a large score at a fast tempo the bar could end before the draw finished.
+- With no `highlights` set and none applied, the highlight effect does no DOM queries and does not subscribe to redraws.
 - Verovio is no longer bundled into the worker chunk. Its own unmodified files ship in `dist/verovio/` (with a licence comment and a `LICENSE`) and the worker imports them at runtime; host bundlers copy them like the worker chunks. Serve `.mjs` as JavaScript. The LICENSE's relink offer now points at upstream Verovio 6.3.0 source and `verovioBaseUrl`.
 
 ## 0.2.0

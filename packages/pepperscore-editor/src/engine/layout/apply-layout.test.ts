@@ -43,7 +43,7 @@ test('the full score layout returns the document itself and moves nothing', () =
   expect(view.counts).toEqual({ moved: 0 });
   expect(view.diagnostics).toEqual([]);
   // An unknown layout, or none at all, shows the document as it is.
-  const empty = { document: doc, moved: {}, counts: { moved: 0 }, diagnostics: [] };
+  const empty = { document: doc, moved: {}, movedNotes: [], counts: { moved: 0 }, diagnostics: [] };
   expect(applyLayout(doc, 'gone')).toEqual(empty);
   expect(applyLayout(doc, 'gone').document).toBe(doc);
   const bare = { ...doc, layouts: [] };
@@ -115,6 +115,17 @@ test('a phrase out of range both ways surfaces a diagnostic', () => {
   const view = applyLayout(doc, 'view');
   expect(view.moved).toEqual({});
   expect(view.diagnostics).toHaveLength(1);
+});
+
+test('a swapped part with every staff hidden is not drawn and moves or reports nothing', () => {
+  const swap = { instrument: 'alto-saxophone' as const, level: 'beginner' as const, autoRange: true, rangeOverrides: {} };
+  const moving = oneBar(74, [q('a', P('C', 5)), q('b', P('E', 5)), q('c', P('G', 5)), restQ('r')], { transposing: true, parts: [{ partId: 'p1', swap, staves: [] }] });
+  const hidden = applyLayout(moving, 'view');
+  expect(hidden.moved).toEqual({});
+  expect(hidden.counts).toEqual({ moved: 0 });
+  expect(hidden.document.parts).toEqual([]);
+  const both = oneBar(1, [q('a', P('C', 2)), q('b', P('C', 6)), restQ('r1'), restQ('r2')], { transposing: true, parts: [{ partId: 'p1', swap, staves: [] }] });
+  expect(applyLayout(both, 'view').diagnostics).toEqual([]);
 });
 
 test('a concert-pitch layout writes a clarinet part at concert pitch, keeping the spelling', () => {
