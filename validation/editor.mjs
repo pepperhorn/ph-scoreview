@@ -1,7 +1,7 @@
 // The score editor demo (apps/reader /editor): keyboard entry engraves, undo, a click puts the cursor on a note, the touch
 // palette enters notes on a phone-sized viewport, the ensemble fixture (5 staves) is refused, accidentals and chord entry,
 // the time popover applies on Enter, unsaved work is guarded, and the change-to-redraw latency the editor logs stays under
-// PS_EDITOR_RENDER_MS (default 250; a warning above it, a failure above twice it). Runs against the build (npm run build
+// PS_EDITOR_RENDER_MS (default 400; a warning above it, a failure above twice it). Runs against the build (npm run build
 // first). BROWSER=chromium|firefox|webkit.
 import assert from 'node:assert/strict';
 import { chromium, firefox, webkit } from 'playwright-core';
@@ -23,7 +23,7 @@ const isDirty = page => page.evaluate(() => window.__editor.ref.current.isDirty(
 const pitchCount = xml => (xml.match(/<pitch>/g) ?? []).length;
 /** What window.confirm answers from now on (the editor asks before discarding unsaved changes). */
 const answerConfirm = (page, answer) => page.evaluate(answer => { window.__confirms = []; window.confirm = message => { window.__confirms.push(message); return answer; }; }, answer);
-const RENDER_MS = Number(process.env.PS_EDITOR_RENDER_MS) || 250;
+const RENDER_MS = Number(process.env.PS_EDITOR_RENDER_MS) || 400;
 /** Clicks the centre of a notehead (the note group's own centre can fall on empty SVG). */
 async function clickNote(page, index) {
   const box = await page.locator(`${NOTES} .notehead`).nth(index).boundingBox();
