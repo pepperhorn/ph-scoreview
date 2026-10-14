@@ -1,9 +1,9 @@
-import createVerovioModule from 'verovio/wasm';
-import { VerovioToolkit, enableLogToBuffer } from 'verovio/esm';
+import type createVerovioModule from 'verovio/wasm';
+import type { VerovioToolkit, enableLogToBuffer } from 'verovio/esm';
 import { buildViewMei, scanBaseline, type BaselineInfo, type ViewSpec } from './notation/mei-view';
 import { spellBaseline, spellingNeeded, type SpellingSpec } from './notation/mei-spelling';
 import { indexMusicXml, measureId, planChunk, sliceMusicXml, tailFor, type ChunkIndex, type ChunkPlan } from './notation/musicxml-chunks';
-import type { VerovioReply, VerovioRequest } from './verovio-protocol';
+import type { VerovioConfigure, VerovioFiles, VerovioReply, VerovioRequest } from './verovio-protocol';
 
 /**
  * One persistent Verovio document per score view (see docs/specs/large-score-performance.md).
@@ -37,11 +37,43 @@ const CHUNK_MEI_LIMIT = 8;
 
 type Toolkit = InstanceType<typeof VerovioToolkit>;
 type Module = Awaited<ReturnType<typeof createVerovioModule>>;
+/**
+ * Verovio is not bundled into this worker: it imports upstream's own files at runtime from the URLs the runtime sends
+ * first (`configure`; by default the copies shipped in dist/verovio/, or the host's `verovioBaseUrl`), so the
+ * LGPL-licensed library stays a separate, replaceable file. See verovio-protocol.ts VerovioFiles for the interface.
+ */
+type Verovio = { createModule: typeof createVerovioModule; Toolkit: typeof VerovioToolkit; enableLogToBuffer: typeof enableLogToBuffer };
+let files: VerovioFiles | undefined;
+let verovioPromise: Promise<Verovio> | undefined;
+let verovio: Verovio | undefined;
+function loadVerovio(): Promise<Verovio> {
+  return verovioPromise ??= (async () => {
+    if (!files) throw new Error('The notation renderer was not told where to load Verovio from.');
+    const { module, toolkit } = files;
+    try {
+      const [wasm, js] = await Promise.all([import(/* @vite-ignore */ module), import(/* @vite-ignore */ toolkit)]);
+      if (typeof wasm.default !== 'function' || typeof js.VerovioToolkit !== 'function' || typeof js.enableLogToBuffer !== 'function') throw new Error('not a compatible Verovio build');
+      return verovio = { createModule: wasm.default, Toolkit: js.VerovioToolkit, enableLogToBuffer: js.enableLogToBuffer };
+    } catch (error) {
+      verovioPromise = undefined; // a later request tries again
+      throw new Error(`Could not load Verovio from ${module} and ${toolkit}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  })();
+}
 let modulePromise: Promise<Module> | undefined;
 let currentModule: Module | undefined;
 // Verovio logs every import and layout warning to the console; a large score logs tens of thousands, which costs
 // real time in the worker. Logs are buffered instead and summarized once per request (see drainLog).
-const moduleReady = () => modulePromise ??= createVerovioModule().then(module => { enableLogToBuffer(1, module); currentModule = module; return module; });
+function moduleReady(): Promise<Module> {
+  if (modulePromise) return modulePromise;
+  const created: Promise<Module> = loadVerovio()
+    .then(api => api.createModule())
+    .then(module => { verovio!.enableLogToBuffer(1, module); currentModule = module; return module; })
+    .catch(error => { if (modulePromise === created) modulePromise = undefined; throw error; }); // the next request tries again
+  return modulePromise = created;
+}
+/** A new toolkit on the current module (the module and the toolkit class load together). */
+const newToolkit = async (): Promise<Toolkit> => { const module = await moduleReady(); return new verovio!.Toolkit(module); };
 let main: Toolkit | undefined;
 let probe: Toolkit | undefined;
 /** What the main toolkit holds: the loaded view and the options it was last laid out with. */
@@ -65,9 +97,8 @@ function discardToolkits(resetModule: boolean): void {
 }
 
 async function toolkit(which: 'main' | 'probe'): Promise<Toolkit> {
-  const module = await moduleReady();
-  if (which === 'main') return main ??= new VerovioToolkit(module);
-  return probe ??= new VerovioToolkit(module);
+  if (which === 'main') return main ??= await newToolkit();
+  return probe ??= await newToolkit();
 }
 
 /** Current size of the WASM heap in bytes (it only grows; the runtime recycles the worker when it is large). */
@@ -94,7 +125,7 @@ const IMPORT_OPTIONS = { breaks: 'none', inputFrom: 'auto', xmlIdChecksum: true 
 
 /** Convert MusicXML text to Verovio's MEI in a toolkit of its own, destroyed afterwards so its document is freed. */
 async function convert(text: string): Promise<string> {
-  const target = new VerovioToolkit(await moduleReady());
+  const target = await newToolkit();
   try {
     load(target, text, IMPORT_OPTIONS);
     return target.getMEI();
@@ -117,7 +148,7 @@ async function chunkMei(entry: ChunkedBaseline, from: number, to: number): Promi
 
 /** Verovio's transposition of a baseline, in a toolkit of its own (destroyed afterwards so its document is freed). */
 async function transposeMei(mei: string, options: { transpose: string; transposeToSoundingPitch: boolean }): Promise<string> {
-  const target = new VerovioToolkit(await moduleReady());
+  const target = await newToolkit();
   try {
     load(target, mei, { breaks: 'none', xmlIdChecksum: true, ...options });
     return target.getMEI();
@@ -355,8 +386,9 @@ async function step(): Promise<void> {
   setTimeout(() => void step(), 0);
 }
 
-self.onmessage = (event: MessageEvent<VerovioRequest>) => {
+self.onmessage = (event: MessageEvent<VerovioRequest | VerovioConfigure>) => {
   const request = event.data;
+  if (request.kind === 'configure') { files = request.files; return; }
   if (request.kind === 'probe' || request.kind === 'render') latestTickets.set(request.channel, Math.max(latestTickets.get(request.channel) ?? 0, request.ticket));
   queue.push(request);
   if (!running) { running = true; setTimeout(() => void step(), 0); }

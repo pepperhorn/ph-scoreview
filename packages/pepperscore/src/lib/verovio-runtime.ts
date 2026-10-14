@@ -1,5 +1,6 @@
 import type { SourceDocument } from './notation/document';
-import type { BaselineInfo, PagesResult, ProbeResult, VerovioReply, VerovioRequest, ViewSpec } from './verovio-protocol';
+import { bundledVerovioFiles } from '../runtime-files';
+import type { BaselineInfo, PagesResult, ProbeResult, VerovioConfigure, VerovioFiles, VerovioReply, VerovioRequest, ViewSpec } from './verovio-protocol';
 
 /** A worker failure; `code` says why (see VerovioReply). */
 export class VerovioError extends Error {
@@ -70,9 +71,28 @@ let worker: Worker | undefined;
 let nextId = 0;
 const pending = new Map<number, Pending>();
 
+/** The host's Verovio (`verovioBaseUrl`); unset, the worker loads the copy shipped with pepperscore. */
+let hostVerovio: VerovioFiles | undefined;
+
+/** The Verovio files under a directory laid out like the verovio npm package's dist/; a relative URL resolves against the page. */
+export function verovioFilesAt(base: string, page: string = (typeof document !== 'undefined' && document.baseURI) || 'http://localhost/'): VerovioFiles {
+  const dir = new URL(base.endsWith('/') ? base : `${base}/`, page);
+  return { module: new URL('verovio-module.mjs', dir).href, toolkit: new URL('verovio.mjs', dir).href };
+}
+
+/**
+ * Load Verovio from `base` (see PepperScoreProps.verovioBaseUrl) instead of the shipped copy. Every reader on the page
+ * shares one worker, so this applies to all of them, from the next time the worker starts (the first engraving, or
+ * a restart); a blank `base` changes nothing.
+ */
+export function setVerovioBaseUrl(base: string | undefined): void {
+  if (base?.trim()) hostVerovio = verovioFilesAt(base.trim());
+}
+
 function getWorker(): Worker {
   if (worker) return worker;
   worker = new Worker(new URL('./verovio.worker.ts', import.meta.url), { type: 'module' });
+  worker.postMessage({ kind: 'configure', files: hostVerovio ?? bundledVerovioFiles() } satisfies VerovioConfigure);
   worker.onmessage = ({ data }: MessageEvent<VerovioReply>) => {
     const item = pending.get(data.id);
     if (!item) return;
