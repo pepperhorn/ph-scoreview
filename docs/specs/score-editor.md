@@ -122,7 +122,7 @@ Plan: [docs/superpowers/plans/2026-10-14-score-editor-layouts-and-shell.md](../s
 | Toolbar rect after a scroll | identical |
 | Viewer mounts | 1 (0 removals of `.ps-editor-viewer`) |
 
-The phone test does not time redraws; the edit-to-engrave latency is logged by `validation/editor.mjs`, which drives the desktop shell and the phone-sized palette steps. Its numbers on the shared WSL2 machine: 197, 181, 314, 188, 15 ms (an idle run after the shell review fixes) and 422, 398, 320, 88, 283, 109, 272, 346, 318 ms under a load average of about 40 (the final verification run). The phase 1 default-score figure (137–183 ms) does not carry over: the shell adds the canvas geometry, popover and highlight work, and the machine is rarely idle.
+The phone test does not time redraws; the edit-to-engrave latency is logged by `validation/editor.mjs`, which drives the desktop shell. Its numbers on the shared WSL2 machine: 197, 181, 314, 188, 15 ms (an idle run after the shell review fixes) and 422, 398, 320, 88, 283, 109, 272, 346, 318 ms under a load average of about 40 (the final verification run). The phase 1 default-score figure (137–183 ms) does not carry over: the shell adds the canvas geometry, popover and highlight work, and the machine is rarely idle.
 
 Editor redraw gate: `PS_EDITOR_RENDER_MS` defaults to 400 ms (warning above it, failure above 2x, 800 ms). It was 250 ms; the 500 ms failure line flaked on CI (528 ms) and locally (455 ms) once the shell shipped, so the gate was raised in the large-score fix (PR #39).
 

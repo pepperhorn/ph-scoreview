@@ -65,6 +65,10 @@ inspector edits it.
   layout". Hiding every stave of a swapped part keeps its swap, so showing a stave again brings the swapped view back.
 - **Transposing / Concert** is a property of the layout: transposing parts show written pitch for their instrument,
   concert layouts show sounding pitch.
+- **A swap on the full score** is a view only: Export still writes the source part. The swap card says so ("Export
+  writes Tenor Sax; Make a copy to export Alto Sax."); "Make a copy" bakes the swap into a part that exports.
+- **Switching layouts** (or hiding the cursor's stave) moves the cursor to the first drawn stave at the same bar and
+  beat, and clears the selection, so typing never edits a stave the layout does not draw.
 
 Layouts, swaps and overrides are saved in the `.pepperscore` file. Files written before layouts existed open
 unchanged (a layout without `kind` or `transposing` becomes a transposing score layout).
@@ -80,8 +84,10 @@ The Layout tab's swap card shows a part for another instrument. The swap is a vi
   together) that falls outside the range moves 8va or 8vb as a unit. Changing the target instrument clears manual
   octave choices; "Undo moves" turns fitting off.
 - **Extra transposition**: an interval from a minor second to an octave, up or down, on top of the instrument's own.
-- **Make a copy (own stave)** unlinks the swap into a new part placed after the source. The source stays in the full
-  score without its swap, and the copy is selected.
+- **Make a copy (own stave)** unlinks the swap into a new part of its own (`makeCopy`). In the full score the copy is
+  placed right after the source, and the source keeps its stave without the swap (both export). In any other layout
+  the copy replaces the source in that layout and is appended to the full score, so it exports too. Either way the
+  swap card then selects the copy as its part.
 - **Remove swap** returns the part to its own instrument.
 - **Highlights and status count**: notes moved to fit the range are orange (`ps-transposed`, `--ps-transposed`); the
   plain instrument transposition is not highlighted. The status line reads "N notes moved 8vb for Alto Sax ·
