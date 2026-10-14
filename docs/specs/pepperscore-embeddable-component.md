@@ -114,7 +114,7 @@ The three kinds map to the existing players (smplr Soundfont2, `FluidPlayer`, th
 
 ## Build and publish
 
-- `packages/pepperscore` builds with Vite library mode: `dist/index.js` (ESM), `dist/index.d.ts`, `dist/style.css`; workers are emitted as separate chunks referenced through `new URL(…, import.meta.url)`, which host bundlers copy as assets. Vite and Astro hosts are tested (`npm run test:pack`); webpack 5 and Next are untested. Verovio's WASM stays inlined in its worker as today.
+- `packages/pepperscore` builds with Vite library mode: `dist/index.js` (ESM), `dist/index.d.ts`, `dist/style.css`; workers are emitted as separate chunks referenced through `new URL(…, import.meta.url)`, which host bundlers copy as assets. Vite and Astro hosts are tested (`npm run test:pack`); webpack 5 and Next are untested. Verovio (LGPL-3.0-or-later) is not bundled: upstream's `verovio-module.mjs` (WASM inlined) and `verovio.mjs` are copied unmodified, under a licence comment, to `dist/verovio/` with a `LICENSE`, referenced from `dist/index.js` the same `new URL(…, import.meta.url)` way, and imported by the worker at runtime. `verovioBaseUrl` points the (shared) worker at another interface-compatible build. `dist/THIRD_PARTY_NOTICES.txt` covers the runtime dependencies, Verovio and the OFL fonts.
 - `react`/`react-dom` are peer dependencies (>=19); other deps are regular dependencies.
 - Publishing is manual (`npm publish -w …`); nothing in CI publishes.
 
