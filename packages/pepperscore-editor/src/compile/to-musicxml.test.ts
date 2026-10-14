@@ -222,7 +222,7 @@ test('later measures write only changed attributes; mid-bar clefs are dropped wi
 
 test('layout filters and orders parts', () => {
   const doc = fixedIds(createDocument({ parts: [{ name: 'Flute', clef: 'treble', gmProgram: 74 }, { name: 'Cello', clef: 'bass', gmProgram: 43 }], measures: 1 }));
-  doc.layouts.push({ id: 'cello', name: 'Cello part', kind: 'part', parts: [{ partId: 'p2' }], overrides: {} });
+  doc.layouts.push({ id: 'cello', name: 'Cello part', kind: 'part', transposing: true, parts: [{ partId: 'p2' }], overrides: {} });
   const all = squash(compileToMusicXml(doc));
   expect(all).toContain('<score-part id="P1"><part-name>Flute</part-name>');
   expect(all).toContain('<score-part id="P2"><part-name>Cello</part-name>');

@@ -49,7 +49,7 @@ export function createDocument(args: {
   return {
     global: { measures: globalMeasures },
     parts,
-    layouts: [{ id: newId(), name: 'Score', kind: 'score', parts: parts.map((p) => ({ partId: p.id })), overrides: {} }],
+    layouts: [{ id: newId(), name: 'Full score', kind: 'score', transposing: true, parts: parts.map((p) => ({ partId: p.id })), overrides: {} }],
     style: {},
     meta: { ...args.meta },
   };

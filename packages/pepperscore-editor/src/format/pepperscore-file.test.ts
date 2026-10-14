@@ -1,5 +1,6 @@
 import type { Cursor } from '../engine/types';
 import { helloDoc } from '../test-helpers';
+import phase1 from './__fixtures__/phase1.pepperscore.json?raw';
 import { PEPPERSCORE_EXTENSION, PEPPERSCORE_MIME, readPepperScoreFile, writePepperScoreFile } from './pepperscore-file';
 
 const cursor = (doc: ReturnType<typeof helloDoc>): Cursor => ({
@@ -62,5 +63,14 @@ describe('.pepperscore files', () => {
   it('names its MIME type and extension', () => {
     expect(PEPPERSCORE_MIME).toBe('application/vnd.pepperscore+json');
     expect(PEPPERSCORE_EXTENSION).toBe('.pepperscore');
+  });
+
+  it('opens a phase 1 file, whose layouts have no kind or transposing flag', () => {
+    const text = phase1;
+    expect(JSON.parse(text).document.layouts[0]).not.toHaveProperty('transposing');
+    const file = readPepperScoreFile(text);
+    expect(file.pepperscore).toEqual({ version: 1 });
+    expect(file.document.layouts).toEqual([{ id: 'layout1', name: 'Score', kind: 'score', transposing: true, parts: [{ partId: 'p1' }], overrides: {} }]);
+    expect(file.document.parts[0].measures[0].sequences[0].content.map((e) => e.id)).toEqual(['e1', 'e2', 'e3']);
   });
 });

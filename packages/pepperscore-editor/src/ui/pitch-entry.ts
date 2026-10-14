@@ -1,4 +1,4 @@
-import { keyAlter } from '../engine/commands/pitch';
+import { keyAlter } from '../model/instruments';
 import type { Pitch } from '../model/schema';
 
 const SEMITONES: Record<Pitch['step'], number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };

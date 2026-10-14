@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { DURATION_BASES } from './durations';
+import { INSTRUMENT_IDS, LEVELS } from './instruments';
 
 const CLEFS = ['treble', 'bass', 'alto', 'tenor', 'percussion', 'treble8vb'] as const;
 const ARTICULATIONS = ['staccato', 'tenuto', 'accent', 'marcato', 'staccatissimo', 'fermata'] as const;
@@ -49,8 +50,31 @@ export const DirectionSchema = z.discriminatedUnion('kind', [
 export const PartMeasureSchema = z.object({ id: z.string(), clefs: z.array(z.object({ staff: z.number().int().min(1), clef: z.enum(CLEFS), tick: z.number().int().min(0).optional() })).optional(), sequences: z.array(SequenceSchema), beams: z.array(BeamSchema), directions: z.array(DirectionSchema) });
 /** `clefs` is the initial clef per staff (index 0 = staff 1); `PartMeasure.clefs` are changes. */
 export const PartSchema = z.object({ id: z.string(), name: z.string(), abbreviation: z.string().optional(), instrument: z.object({ gmProgram: z.number().int().min(1).max(128), midiChannel: z.number().int().optional() }), staves: z.union([z.literal(1), z.literal(2)]), clefs: z.array(z.enum(CLEFS)), transposition: z.object({ semitones: z.number().int(), diatonic: z.number().int() }).optional(), measures: z.array(PartMeasureSchema) });
-export const LayoutSchema = z.object({ id: z.string(), name: z.string(), kind: z.enum(['score', 'part']), parts: z.array(z.object({ partId: z.string(), staves: z.array(z.number().int()).optional() })), breaks: z.array(z.object({ measureId: z.string(), type: z.enum(['system', 'page']) })).optional(), overrides: z.record(z.string(), z.object({ offset: OffsetSchema.optional(), hidden: z.boolean().optional(), text: z.string().optional(), cue: z.boolean().optional() })) });
 export const StyleSheetSchema = z.object({ musicFont: z.enum(['Bravura', 'Petaluma']).optional(), staffSize: z.number().positive().optional() });
+/**
+ * Shows a layout part for another instrument: a linked, view-time transform of the same music. `interval`
+ * is a free transposition on top of the instrument's; `rangeOverrides` maps an event id to the octave shift
+ * the user chose, which survives automatic range fitting.
+ */
+export const SwapSchema = z.object({
+  instrument: z.enum(INSTRUMENT_IDS), level: z.enum(LEVELS),
+  interval: z.object({ semitones: z.number().int(), diatonic: z.number().int() }).optional(),
+  autoRange: z.boolean().default(true),
+  rangeOverrides: z.record(z.string(), z.union([z.literal(0), z.literal(12), z.literal(-12)])).default({}),
+});
+/** A part in a layout, in order; omitted `staves` means all of them. */
+export const LayoutPartSchema = z.object({ partId: z.string(), staves: z.array(z.number().int()).optional(), swap: SwapSchema.optional() });
+/**
+ * A Full score (`score`), Part (`part`) or Custom score (`custom`), after Dorico. `kind` and `transposing`
+ * default so phase 1 files load: their layouts were transposing score layouts.
+ */
+export const LayoutSchema = z.object({
+  id: z.string(), name: z.string(), kind: z.enum(['score', 'part', 'custom']).default('score'),
+  parts: z.array(LayoutPartSchema), transposing: z.boolean().default(true),
+  breaks: z.array(z.object({ measureId: z.string(), type: z.enum(['system', 'page']) })).optional(),
+  style: StyleSheetSchema.partial().optional(),
+  overrides: z.record(z.string(), z.object({ offset: OffsetSchema.optional(), hidden: z.boolean().optional(), text: z.string().optional(), cue: z.boolean().optional() })),
+});
 export const DocumentSchema = z.object({ global: z.object({ measures: z.array(GlobalMeasureSchema) }), parts: z.array(PartSchema), layouts: z.array(LayoutSchema).min(1), style: StyleSheetSchema, meta: z.object({ title: z.string().optional(), composer: z.string().optional() }) });
 
 export type Time = z.infer<typeof TimeSchema>;
@@ -66,6 +90,8 @@ export type Anchor = z.infer<typeof AnchorSchema>;
 export type Direction = z.infer<typeof DirectionSchema>;
 export type PartMeasure = z.infer<typeof PartMeasureSchema>;
 export type Part = z.infer<typeof PartSchema>;
+export type Swap = z.infer<typeof SwapSchema>;
+export type LayoutPart = z.infer<typeof LayoutPartSchema>;
 export type Layout = z.infer<typeof LayoutSchema>;
 export type StyleSheet = z.infer<typeof StyleSheetSchema>;
 export type Document = z.infer<typeof DocumentSchema>;
