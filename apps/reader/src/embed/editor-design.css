@@ -135,7 +135,6 @@
 .ps-desk { flex: 1; min-height: 0; overflow: auto; padding: 26px 30px 30px; scrollbar-width: thin; scrollbar-color: #d6d9d2 transparent; }
 .ps-paper { position: relative; max-width: 1000px; margin: 0 auto; padding: 26px 18px 36px; border: 1px solid #ebe9e3; border-radius: var(--ps-radius-lg); background: var(--ps-sheet); box-shadow: 0 12px 46px rgba(89, 102, 87, .08), 0 1px 2px rgba(60, 70, 60, .05); }
 .ps-design .ps-design-score { background: transparent; }
-.ps-design .ps-paper .score-system svg .measure.ps-cursor-measure { outline: calc(var(--ps-svg-px, 1px) * 1.5) dashed var(--ps-cursor); outline-offset: calc(var(--ps-svg-px, 1px) * 6); }
 .ps-hints { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 18px; padding: 10px 16px; border-top: 1px solid var(--ps-line); background: var(--ps-paper); }
 .ps-hint { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--ps-ink-3); }
 

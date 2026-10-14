@@ -3,6 +3,7 @@ import { createStore } from 'zustand/vanilla';
 import { checkInvariants } from '../model/invariants';
 import type { Document } from '../model/schema';
 import { clampCursor } from './cursor-clamp';
+import { applyLayout, type ViewResult } from './layout/apply-layout';
 import { record, takeRedo, takeUndo } from './history';
 import { liveSelection } from './prune';
 import type { Command, Cursor, Editable, EditorState, HistoryEntry } from './types';
@@ -21,7 +22,7 @@ function initialCursor(document: Document): Cursor {
   };
 }
 
-const editableOf = (s: EditorState): Editable => ({ document: s.document, cursor: s.cursor, selection: s.selection });
+const editableOf = (s: EditorState): Editable => ({ document: s.document, cursor: s.cursor, selection: s.selection, activeLayoutId: s.activeLayoutId });
 
 /**
  * `maxStaves` is the staff cap the invariant report checks (default 4); `cursor` and `activeLayoutId`
@@ -31,14 +32,20 @@ export type EditorStoreOptions = { maxStaves?: number; cursor?: Cursor; activeLa
 
 export function createEditorStore(document: Document, options: EditorStoreOptions = {}) {
   const check = (doc: Document) => checkInvariants(doc, { maxStaves: options.maxStaves });
-  const layoutId = document.layouts.some((l) => l.id === options.activeLayoutId) ? options.activeLayoutId : undefined;
+  /** The layout `id` if `doc` has it, else the first; and its view, memoised on the document and layout id. */
+  let memo: { document: Document; layoutId: string; view: ViewResult } | undefined;
+  const layoutView = (doc: Document, id: string | undefined): { activeLayoutId: string; view: ViewResult } => {
+    const layoutId = doc.layouts.some((l) => l.id === id) ? id! : (doc.layouts[0]?.id ?? '');
+    if (memo?.document !== doc || memo.layoutId !== layoutId) memo = { document: doc, layoutId, view: applyLayout(doc, layoutId) };
+    return { activeLayoutId: layoutId, view: memo.view };
+  };
   const store = createStore<EditorState>()(() => ({
     document,
     cursor: options.cursor ? clampCursor(document, options.cursor) : initialCursor(document),
     selection: { ids: [] },
     history: { past: [], future: [] },
     dirty: false,
-    activeLayoutId: layoutId ?? document.layouts[0]?.id ?? '',
+    ...layoutView(document, options.activeLayoutId),
     invariantErrors: check(document),
   }));
 
@@ -58,6 +65,7 @@ export function createEditorStore(document: Document, options: EditorStoreOption
       document: next.document,
       cursor: clampCursor(next.document, next.cursor, previous),
       selection: liveSelection(next.document, next.selection),
+      ...layoutView(next.document, next.activeLayoutId),
       history,
       dirty: dirtyAt(history),
       invariantErrors: check(next.document),
@@ -65,13 +73,13 @@ export function createEditorStore(document: Document, options: EditorStoreOption
   };
 
   return Object.assign(store, {
-    /** Runs `command` on a draft; recorded in history (record defaults true) unless it changed nothing. */
+    /** Runs `command` on a draft; recorded in history (record defaults true) unless it changed nothing or the command is never recorded. */
     dispatch<A>(command: Command<A>, args: A, options?: { record?: boolean }): void {
       const state = store.getState();
       const [next, patches, inverse] = produceWithPatches(editableOf(state), (draft) => command.run(draft, args));
       if (patches.length === 0) return;
-      const update: Partial<EditorState> = { ...next, invariantErrors: check(next.document) };
-      if (options?.record ?? true) {
+      const update: Partial<EditorState> = { ...next, ...layoutView(next.document, next.activeLayoutId), invariantErrors: check(next.document) };
+      if (command.record !== false && (options?.record ?? true)) {
         const entry: HistoryEntry = { label: command.label, patches, inverse, coalesceKey: command.coalesceKey?.(args), at: Date.now() };
         update.history = record(state.history, entry);
         update.dirty = dirtyAt(update.history);

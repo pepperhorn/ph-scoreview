@@ -77,9 +77,10 @@ function selectAtCursor(draft: Editable): void {
   if (ids.length !== draft.selection.ids.length || ids.some((x, i) => x !== draft.selection.ids[i])) draft.selection.ids = ids;
 }
 
-/** Cursor and selection only; dispatch with `{ record: false }`. By event: to the previous/next event start; by measure: tick 0 of the adjacent bar. The selection becomes the event at the new cursor (see `selectAtCursor`). */
+/** Cursor and selection only; never recorded. By event: to the previous/next event start; by measure: tick 0 of the adjacent bar. The selection becomes the event at the new cursor (see `selectAtCursor`). */
 export const moveCursor: Command<{ by: 'event' | 'measure'; delta: number }> = {
   label: 'Move cursor',
+  record: false,
   run: (draft, { by, delta }) => {
     move(draft, by, delta);
     selectAtCursor(draft);
@@ -89,10 +90,11 @@ export const moveCursor: Command<{ by: 'event' | 'measure'; delta: number }> = {
 /**
  * Escape: select mode. Leaving entry mode right after entering a note selects that note (the event before the
  * cursor), so "enter, Esc, fix it" acts on it; otherwise, and always in select mode, the selection is cleared.
- * Cursor and selection only; dispatch with `{ record: false }`.
+ * Cursor and selection only; never recorded.
  */
 export const escapeToSelect: Command<Record<string, never>> = {
   label: 'Select mode',
+  record: false,
   run: (draft) => {
     const last = draft.cursor.mode === 'enter' && draft.cursor.entered !== undefined ? eventsBeforeCursor(draft.document, draft.cursor, 1)[0] : undefined;
     const ids = last ? [last] : [];
@@ -112,10 +114,11 @@ function voiceEvents(doc: Document, cursor: Cursor): string[] {
  * lands on (the head). The anchor is the first selected event (a selected note counts as its event)
  * when it is in the cursor's voice, else the event at the cursor before the move (none there: the event before
  * the cursor); it stays first in
- * `selection.ids`, so moving back towards it shrinks the run. Dispatch with `{ record: false }`.
+ * `selection.ids`, so moving back towards it shrinks the run. Never recorded.
  */
 export const extendSelection: Command<{ delta: number }> = {
   label: 'Extend selection',
+  record: false,
   run: (draft, { delta }) => {
     const doc = draft.document;
     const order = voiceEvents(doc, draft.cursor);
@@ -131,27 +134,30 @@ export const extendSelection: Command<{ delta: number }> = {
   },
 };
 
-/** Cursor-only; dispatch with `{ record: false }`. */
+/** Cursor-only; never recorded. */
 export const setEntryMode: Command<{ mode: Cursor['mode'] }> = {
   label: 'Set entry mode',
+  record: false,
   run: (draft, { mode }) => {
     if (draft.cursor.mode !== mode) draft.cursor.mode = mode;
     if (draft.cursor.entered !== undefined) delete draft.cursor.entered;
   },
 };
 
-/** "Add to chord" on or off. Cursor-only; dispatch with `{ record: false }`. */
+/** "Add to chord" on or off. Cursor-only; never recorded. */
 export const setChordMode: Command<{ on: boolean }> = {
   label: 'Add to chord',
+  record: false,
   run: (draft, { on }) => {
     if (on) draft.cursor.chord = true;
     else if (draft.cursor.chord !== undefined) delete draft.cursor.chord;
   },
 };
 
-/** Cursor-only; dispatch with `{ record: false }`. */
+/** Cursor-only; never recorded. */
 export const setCursorDuration: Command<{ duration: Duration }> = {
   label: 'Set entry duration',
+  record: false,
   run: (draft, { duration }) => {
     const d = draft.cursor.duration;
     if (d.base !== duration.base || d.dots !== duration.dots) draft.cursor.duration = { ...duration };

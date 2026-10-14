@@ -13,6 +13,9 @@
 
 ### Changed
 
+- A highlighted measure (`highlights` with `measures`, any class) now shows a dashed box: a `.ps-measure-highlight` `<rect>` (in a `.ps-highlight-layer` overlay, so measure bounds are unchanged) with a 2px non-scaling stroke in `--ps-cursor`. The old `ps-cursor-measure` CSS outline was drawn in viewBox units and was nearly invisible.
+- New highlight class `ps-transposed` (`--ps-transposed`, default `#d9741c`) for notes.
+- `ps-selection` defaults to ink blue `#2f6a9a` (was green `#1f9d55`), so it does not clash with `ps-transposed`.
 - A new score source draws immediately; the redraw fade only applies to setting changes.
 - Verovio is no longer bundled into the worker chunk. Its own unmodified files ship in `dist/verovio/` (with a licence comment and a `LICENSE`) and the worker imports them at runtime; host bundlers copy them like the worker chunks. Serve `.mjs` as JavaScript. The LICENSE's relink offer now points at upstream Verovio 6.3.0 source and `verovioBaseUrl`.
 

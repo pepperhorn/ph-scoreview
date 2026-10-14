@@ -55,7 +55,7 @@ export function importMusicXml(text: string, { maxStaves = STAFF_LIMIT }: { maxS
     for (const pending of reader.ties.values()) for (const { location } of pending) drop.add('tie', location);
     for (const open of reader.slurs.values()) for (const { location } of open) drop.add('slur', location);
   });
-  doc.layouts.push({ id: 'L1', name: 'Score', kind: 'score', parts: doc.parts.map((p) => ({ partId: p.id })), overrides: {} });
+  doc.layouts.push({ id: 'L1', name: 'Full score', kind: 'score', transposing: true, parts: doc.parts.map((p) => ({ partId: p.id })), overrides: {} });
 
   normalize(doc, drop);
   const parsed = DocumentSchema.safeParse(doc);
