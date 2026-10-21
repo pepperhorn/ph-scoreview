@@ -144,7 +144,8 @@ Not on the phone yet: text on a stave (use the desktop shell).
 Letter keys are case-insensitive; Cmd counts as Ctrl. Digit and symbol keys match the typed character,
 whatever Shift state produced it. Some keys only act in note entry mode (`N` toggles it) or in select mode.
 
-Edits act on the target: the single selected event or note, else (in entry mode) the event just before the cursor.
+Edits act on the target: the single selected event or note; else, right after entering a note, that note; else the
+event the cursor sits on (the highlighted one, after a click or an arrow); else the event just before the cursor.
 
 - `.` in entry mode, right after entering a note, dots that note and moves the cursor to its new end, so `4 C . D`
   enters a dotted C and then a quarter D. Anywhere else it toggles the dot of the entry duration (`4 . C` enters a

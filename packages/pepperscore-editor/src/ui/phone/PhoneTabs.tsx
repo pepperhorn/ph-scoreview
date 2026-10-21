@@ -153,7 +153,7 @@ function ValueRows() {
   );
 }
 
-/** Tie, slur, tuplet, beams and a dynamic; the articulations, lit when the last entered (or selected) note has them. */
+/** Tie, slur, tuplet, beams and a dynamic; the articulations, lit when the target note (selected, just entered, else the cursor note) has them. */
 function MarksRows() {
   const { store, togglePopover } = useUi();
   const target = useEditorStore(store, (s) => {
