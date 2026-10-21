@@ -54,7 +54,7 @@ The host API exposes only what the existing public surface already supports: the
 
 ### Editor licence key
 
-`pepperscore-editor/src/licence.ts` gates editing with an Ed25519 key (`maxStaves`). Inside MIT code it is advisory only. Either keep it as a soft limit, or replace it with an `editor-tool` entitlement (e.g. `pepperscore.editor.staves.unlimited`). This is an open question.
+`packages/pepperscore-editor/src/licence.ts` gates editing with an Ed25519 key (`maxStaves`). Inside MIT code it is advisory only. Either keep it as a soft limit, or replace it with an `editor-tool` entitlement (e.g. `pepperscore.editor.staves.unlimited`). This is an open question.
 
 ## Hosted embeds
 
@@ -87,7 +87,7 @@ Cloudflare              /lib/<version>/…            immutable shared player bu
 
 ## Phases
 
-1. **Done or in progress:** Verovio loaded as a separate replaceable file, plus third-party notices (LGPL compliance).
+1. **Done (#38):** Verovio loaded as a separate replaceable file, plus third-party notices (LGPL compliance).
 2. **Free PDF export** with the formatting overlay.
 3. **`@pepperhorn/app-sdk/plugins`** and pepperscore extension slots with a static first-party test plugin.
 4. **ph-apps collections and Flows;** Worker + B2 embed page; Classroom link and Sites embeds.
