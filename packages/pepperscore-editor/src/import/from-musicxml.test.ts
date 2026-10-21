@@ -120,6 +120,24 @@ test('clock contract: a pickup bar is padded and reported', () => {
   expect(dropped).toEqual([{ feature: 'pickup', count: 1, location: 'P1/m1' }, { feature: 'mid-bar tempo', count: 1, location: 'P1/m4' }]);
 });
 
+test('an ending keeps its written shape when it differs from the default', () => {
+  const attrs = '<attributes><divisions>2</divisions><time><beats>2</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>';
+  const xml = score(
+    `<measure number="1">${attrs}<barline location="left"><bar-style>heavy-light</bar-style><repeat direction="forward"/></barline>${n('C', 'half')}</measure>`
+    // A first ending left open before its repeat, a last ending closed although nothing repeats, and a default one.
+    + `<measure number="2"><barline location="left"><ending number="1" type="start">1.</ending></barline>${n('D', 'half')}`
+    + '<barline location="right"><bar-style>light-heavy</bar-style><ending number="1" type="discontinue"/><repeat direction="backward"/></barline></measure>'
+    + `<measure number="3"><barline location="left"><ending number="2" type="start">2.</ending></barline>${n('E', 'half')}`
+    + '<barline location="right"><ending number="2" type="stop"/></barline></measure>'
+    + `<measure number="4"><barline location="left"><ending number="3" type="start"/></barline>${n('F', 'half')}`
+    + '<barline location="right"><ending number="3" type="discontinue"/></barline></measure>',
+  );
+  const { document } = importMusicXml(xml);
+  expect(document.global.measures.map((g) => g.ending)).toEqual([undefined, { numbers: [1], open: true }, { numbers: [2], open: false }, { numbers: [3] }]);
+  const again = importMusicXml(compileToMusicXml(document));
+  expect(strip(again.document)).toEqual(strip(document));
+});
+
 const score = (measures: string) => `<?xml version="1.0"?><score-partwise><part-list><score-part id="P1"><part-name>X</part-name></score-part></part-list><part id="P1">${measures}</part></score-partwise>`;
 const n = (step: string, type: string, extra = '', voice = 1, duration = { quarter: 2, eighth: 1, half: 4 }[type]) =>
   `<note><pitch><step>${step}</step><octave>4</octave></pitch><duration>${duration}</duration><voice>${voice}</voice><type>${type}</type>${extra}</note>`;

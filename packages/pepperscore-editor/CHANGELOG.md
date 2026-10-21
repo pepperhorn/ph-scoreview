@@ -27,6 +27,10 @@ Phase 2: layouts, instrument swap and the design shells. `pepperscore-editor` st
 - The phone header returns focus to the editor after Play, Stop and the overflow menu, and before its collapse makes the first row inert.
 - Layout selectors show the layout kind; a swap on the Full score notes that Export writes the source part; Escape closes an open popover before the inspector drawer; the zoom readout is a plain label.
 
+### Fixed
+
+- Ending labels engrave as "1.", "2." and "1., 2." (the compiler writes the label as `<ending>` text; Verovio drew the bare number). An ending ends with a hook (`stop`) only when a repeat closes it; a final ending with no repeat after it is open (`discontinue`). `GlobalMeasure.ending.open` overrides this, and the importer sets it only where the file differs from that default.
+
 ### Known limitations
 
 - The compiler writes the concert key signature for transposing and swapped parts.

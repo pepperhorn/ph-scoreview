@@ -17,13 +17,26 @@ function sameEnding(a: GlobalMeasure['ending'], b: GlobalMeasure['ending']): boo
   return a !== undefined && b !== undefined && a.numbers.join(',') === b.numbers.join(',');
 }
 
+/**
+ * An `<ending>`: `number` drives playback and the text is the printed label ("1.", "1., 2."). Verovio takes the
+ * label from the stop element's text (else `number`) and draws it as written, so both ends carry it.
+ */
+function endingLeaf(ending: NonNullable<GlobalMeasure['ending']>, type: 'start' | 'stop' | 'discontinue'): string {
+  return leaf('ending', ending.numbers.map((n) => `${n}.`).join(', '), { number: ending.numbers.join(','), type });
+}
+
+/** An ending closed by a backward repeat gets an end hook (stop); any other is open (discontinue), unless `open` says otherwise. */
+function endingStopType(g: GlobalMeasure): 'stop' | 'discontinue' {
+  return (g.ending?.open ?? !g.repeatEnd) ? 'discontinue' : 'stop';
+}
+
 export function writeLeftBarline(doc: Document, index: number): string | undefined {
   const g = doc.global.measures[index];
   const endingStart = g.ending !== undefined && !sameEnding(doc.global.measures[index - 1]?.ending, g.ending);
   if (!g.repeatStart && !endingStart) return undefined;
   return el('barline', { location: 'left' }, [
     g.repeatStart && leaf('bar-style', 'heavy-light'),
-    endingStart && leaf('ending', undefined, { number: g.ending!.numbers.join(','), type: 'start' }),
+    endingStart && endingLeaf(g.ending!, 'start'),
     g.repeatStart && leaf('repeat', undefined, { direction: 'forward' }),
   ]);
 }
@@ -35,7 +48,7 @@ export function writeRightBarline(doc: Document, index: number): string | undefi
   if (!style && !endingStop && !g.repeatEnd) return undefined;
   return el('barline', { location: 'right' }, [
     style && leaf('bar-style', style),
-    endingStop && leaf('ending', undefined, { number: g.ending!.numbers.join(','), type: g.ending!.open ? 'discontinue' : 'stop' }),
+    endingStop && endingLeaf(g.ending!, endingStopType(g)),
     g.repeatEnd && leaf('repeat', undefined, { direction: 'backward', times: g.repeatEnd.times }),
   ]);
 }

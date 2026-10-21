@@ -174,6 +174,9 @@ export function buildViewMei(mei: string, spec: ViewSpec, measureLimit = Infinit
   const out: string[] = [];
   const open: string[] = [];
   let last = 0; let skip = 0; let groupOrdinal = 0; let measureIndex = 0; let measuresClosed = 0; let stoppedAt = -1;
+  // Where in `out` the run of `<ending>`/`<section>` start tags right before the next measure begins: a page break
+  // goes before them, so an ending that starts a line is drawn whole there and not continued from the line before.
+  let wrapperStart = -1;
   const closeMeasure = () => ++measuresClosed >= measureLimit;
   scan(mei, ({ closing, name, attributes, selfClosing, index, length }) => {
     if (!skip) out.push(mei.slice(last, index));
@@ -182,6 +185,7 @@ export function buildViewMei(mei: string, spec: ViewSpec, measureLimit = Infinit
     if (closing) {
       if (skip) { skip--; return; }
       open.pop();
+      wrapperStart = -1;
       out.push(tag);
       if (name === 'measure' && closeMeasure()) { stoppedAt = last; return true; }
       return;
@@ -215,9 +219,13 @@ export function buildViewMei(mei: string, spec: ViewSpec, measureLimit = Infinit
     }
     if (name === 'staffDef' || name === 'staffGrp') rewritten = withoutAttribute(withoutAttribute(rewritten, 'label'), 'label.abbr');
     if (name === 'measure') {
-      if (spec.breakEvery > 0 && measureIndex > 0 && (measureIndex + breakOffset) % spec.breakEvery === 0) out.push('<pb/>');
+      if (spec.breakEvery > 0 && measureIndex > 0 && (measureIndex + breakOffset) % spec.breakEvery === 0) {
+        if (wrapperStart >= 0) out.splice(wrapperStart, 0, '<pb/>'); else out.push('<pb/>');
+      }
       measureIndex++;
     }
+    if ((name === 'ending' || name === 'section') && !selfClosing) { if (wrapperStart < 0) wrapperStart = out.length; }
+    else wrapperStart = -1;
     out.push(rewritten);
     if (!selfClosing) open.push(/^<([^\s/>]+)/.exec(tag)![1]);
     else if (name === 'measure' && closeMeasure()) { stoppedAt = last; return true; }

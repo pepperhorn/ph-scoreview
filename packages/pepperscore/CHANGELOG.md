@@ -21,6 +21,10 @@
 - With no `highlights` set and none applied, the highlight effect does no DOM queries and does not subscribe to redraws.
 - Verovio is no longer bundled into the worker chunk. Its own unmodified files ship in `dist/verovio/` (with a licence comment and a `LICENSE`) and the worker imports them at runtime; host bundlers copy them like the worker chunks. Serve `.mjs` as JavaScript. The LICENSE's relink offer now points at upstream Verovio 6.3.0 source and `verovioBaseUrl`.
 
+### Fixed
+
+- An ending (volta) that starts a line is drawn whole on that line. The page break went inside the `<ending>`, so Verovio drew a stub on the line before and labelled the bracket "(1)" as a continuation.
+
 ## 0.2.0
 
 ### Added

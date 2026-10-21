@@ -123,15 +123,21 @@ export function readMeasure(reader: PartReader, el: XmlElement, index: number): 
   for (const state of ctx.sequences.values()) finishBeam(ctx, state);
   if (reader.ending) {
     if (!reader.ending.measures.includes(index)) reader.ending.measures.push(index);
-    if (endingStop) closeEnding(reader, endingStop === 'discontinue');
+    if (endingStop) closeEnding(reader, endingStop);
   }
 }
 
-export function closeEnding(reader: PartReader, open: boolean): void {
+/**
+ * Writes the ending being read onto its bars. `stop` is how it was written to end: `open` is kept only where it differs
+ * from the compiler's default (closed when a backward repeat ends it, else open). Without one, the default stands.
+ */
+export function closeEnding(reader: PartReader, stop?: 'stop' | 'discontinue'): void {
   const ending = reader.ending;
   if (!ending) return;
+  const last = reader.doc.global.measures[ending.measures[ending.measures.length - 1]];
+  const open = stop === undefined || (stop === 'discontinue') === !last.repeatEnd ? undefined : stop === 'discontinue';
   for (const m of ending.measures) {
-    reader.doc.global.measures[m].ending = { numbers: [...ending.numbers], ...(open ? { open: true } : {}) };
+    reader.doc.global.measures[m].ending = { numbers: [...ending.numbers], ...(open === undefined ? {} : { open }) };
   }
   reader.ending = undefined;
 }
@@ -564,7 +570,7 @@ function readBarline(ctx: MeasureContext, el: XmlElement): 'stop' | 'discontinue
   if (!ending) return undefined;
   const numbers = endingNumbers(ending.getAttribute('number'));
   if (type === 'start') {
-    if (reader.ending) closeEnding(reader, false);
+    if (reader.ending) closeEnding(reader);
     if (numbers.length) reader.ending = { numbers, measures: [ctx.index] };
     else reader.drop.add('ending', ctx.location);
     return undefined;
