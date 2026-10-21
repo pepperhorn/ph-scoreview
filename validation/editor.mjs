@@ -70,11 +70,18 @@ try {
     window.__paintObserver = new MutationObserver(seen);
     window.__paintObserver.observe(document.querySelector('.ps-editor'), { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
   });
+  // The desktop starts in Edit (select-first); the pill and the status line call it Edit, never Select.
+  const modePill = page.locator('.ps-canvas-head .ps-btn[aria-label="Toggle note entry"]');
+  assert.equal((await modePill.textContent()).trim(), 'Edit', 'the canvas pill says Edit');
+  assert.match(await page.locator('.ps-status-cursor').textContent(), /· edit$/, 'the status line says edit');
   await page.locator('.ps-editor').focus();
   for (const key of ['n', '4', 'c', 'd', 'e', 'f']) await page.keyboard.press(key);
   await waitForNotes(page, 4);
   assert.match(await musicXml(page), /<step>F<\/step>/, 'the handle compiles the entered F');
-  assert.equal(await page.locator('.ps-canvas-head .ps-btn[aria-label="Toggle note entry"]').getAttribute('aria-pressed'), 'true', 'the canvas header shows entry mode');
+  // The first note goes in the octave nearest the treble middle line (B4): C5, not C4 below the staff.
+  assert.match(await musicXml(page), /<step>C<\/step>\s*<octave>5<\/octave>/, 'the first C is C5 (nearest the middle line)');
+  assert.equal(await modePill.getAttribute('aria-pressed'), 'true', 'the canvas header shows entry mode');
+  assert.equal((await modePill.textContent()).trim(), 'Entry', 'the canvas pill says Entry');
 
   // 2. Undo removes the last note.
   await page.keyboard.press('Control+z');
@@ -120,6 +127,27 @@ try {
   await clickNote(page, 0);
   await page.waitForFunction(selector => document.querySelector(selector)?.classList.contains('ps-cursor'), NOTES, { timeout: 10000 });
   assert.match(await page.locator(NOTES).first().getAttribute('class'), /ps-selection/, 'the clicked note is selected');
+  // 3a. A click on a note's own glyphs off the notehead (its box centre: the stem side) selects that note, not the
+  // next one; a click in the staff space just right of a note puts the cursor on the note engraved nearest.
+  {
+    const cursorIndex = () => page.evaluate(selector => [...document.querySelectorAll(selector)].findIndex(note => note.classList.contains('ps-cursor')), NOTES);
+    for (const index of [1, 0, 2]) {
+      const box = await page.locator(NOTES).nth(index).boundingBox();
+      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+      await page.waitForFunction(([selector, index]) => document.querySelectorAll(selector)[index]?.classList.contains('ps-cursor'), [NOTES, index], { timeout: 10000 });
+      assert.equal(await cursorIndex(), index, `a click on note ${index}'s box centre highlights note ${index}`);
+      assert.match(await page.locator(NOTES).nth(index).getAttribute('class'), /ps-selection/, `the box click selects note ${index}`);
+    }
+    const head = await page.locator(`${NOTES} .notehead`).nth(1).boundingBox();
+    const next = await page.locator(`${NOTES} .notehead`).nth(2).boundingBox();
+    const box = await page.locator(NOTES).nth(1).boundingBox();
+    const x = box.x + box.width + Math.min(6, (next.x - box.x - box.width) / 3);
+    await page.mouse.click(x, head.y + head.height / 2);
+    await page.waitForFunction(selector => document.querySelectorAll(selector)[1]?.classList.contains('ps-cursor'), NOTES, { timeout: 10000 });
+    assert.equal(await cursorIndex(), 1, 'a click in the staff space just right of note 1 puts the cursor on note 1');
+    await clickNote(page, 0);
+    await page.waitForFunction(selector => document.querySelector(selector)?.classList.contains('ps-cursor'), NOTES, { timeout: 10000 });
+  }
 
   // 4. Popovers: k opens the key popover, a choice applies to the cursor bar, Escape closes it.
   await page.keyboard.press('k');
@@ -134,6 +162,11 @@ try {
       intersects: a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom };
   });
   assert.equal(overlap.intersects, false, `the key popover avoids the cursor bar (${JSON.stringify(overlap)})`);
+  // Key names use the glyphs (option values stay the fifths number).
+  assert.equal(await page.locator('.ps-popover-key .ps-select-fifths option[value="-3"]').textContent(), 'E♭ major', 'the key options read E♭ major');
+  assert.equal(await page.locator('.ps-popover-key .ps-select-fifths option[value="6"]').textContent(), 'F♯ major', 'the key options read F♯ major');
+  await page.selectOption('.ps-popover-key .ps-select-fifths', '-3');
+  await page.waitForFunction(() => /E♭ major/.test(document.querySelector('.ps-topbar .ps-btn[aria-label="Key signature"]')?.textContent ?? ''), null, { timeout: 5000 });
   await page.selectOption('.ps-popover-key .ps-select-fifths', '2');
   await page.keyboard.press('Escape');
   await page.locator('.ps-popover').waitFor({ state: 'detached' });

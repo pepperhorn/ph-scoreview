@@ -69,6 +69,9 @@ try {
   assert.equal(await page.locator('.ps-editor .ps-shell-desktop').count(), 0, 'a phone-sized container gets the phone shell only');
   assert.equal(await page.locator('.ps-editor .ps-rail, .ps-editor .ps-inspector, .ps-editor .ps-palette').count(), 0, 'no rail, inspector or palette on a phone');
   assert.equal(await page.evaluate(() => window.__viewerRemovals), 0, 'the viewer mounts once (no desktop shell first)');
+  // A new score on the phone starts in Entry (the piano keys enter notes straight away), not Edit.
+  assert.equal(await page.locator('.ps-editor').getAttribute('data-ps-mode'), 'enter', 'the phone starts a new score in Entry');
+  assert.equal((await page.locator('.ps-ptoolbar .ps-pmode').textContent()).trim(), 'Entry', 'the switch shows Entry at start');
 
   // 0. Ten more bars (the Bar tab's insert), so the Page view overflows and the canvas can scroll.
   await page.locator('.ps-ptab[data-tab="bar"]').tap();
@@ -184,6 +187,13 @@ try {
   await page.locator('.ps-piano button[aria-label="Piano E"]').tap();
   await page.waitForFunction(() => /<step>E<\/step>/.test(window.__editor.ref.current.getMusicXml()), null, { timeout: 10000 });
   assert.equal(await page.locator(NOTES).count(), 3, 'Edit repitched the tapped note; nothing was entered');
+  // A tap on a note's box centre (its stem side, off the notehead) highlights that note, not the next one.
+  for (const index of [1, 0]) {
+    await tapAt(page, NOTES, index);
+    await page.waitForFunction(([selector, index]) => document.querySelectorAll(selector)[index]?.classList.contains('ps-cursor'), [NOTES, index], { timeout: 10000 });
+    const lit = await page.evaluate(selector => [...document.querySelectorAll(selector)].map(note => note.classList.contains('ps-cursor')), NOTES);
+    assert.deepEqual(lit.map((on, i) => on ? i : -1).filter(i => i >= 0), [index], `a tap on note ${index}'s box centre highlights note ${index} only`);
+  }
   await page.locator('.ps-ptab[data-tab="value"]').tap();
   await tapAt(page, '.ps-editor .reader-note:is(.rest, .mRest)', 0); // the rest after the last note
   await page.waitForFunction(() => document.querySelector('.ps-editor')?.dataset.psMode === 'enter', null, { timeout: 10000 });
@@ -214,6 +224,9 @@ try {
   const [stripBox, toolbarBox] = [await rectOf(page, '.ps-ptoolbar .ps-pstrip'), await rectOf(page, '.ps-ptoolbar')];
   assert.ok(stripBox.left >= toolbarBox.left && stripBox.right <= toolbarBox.right && stripBox.top >= toolbarBox.top && stripBox.bottom <= toolbarBox.bottom,
     `the key strip lies inside the toolbar (${JSON.stringify({ stripBox, toolbarBox })})`);
+  assert.equal(await page.locator('.ps-pstrip .ps-select-fifths option[value="-3"]').textContent(), 'E♭ major', 'the key strip reads E♭ major');
+  await page.selectOption('.ps-pstrip .ps-select-fifths', '6');
+  await page.waitForFunction(() => /F♯ major/.test(document.querySelector('.ps-phead .ps-chip-key')?.textContent ?? ''), null, { timeout: 10000 });
   await page.selectOption('.ps-pstrip .ps-select-fifths', '2');
   await page.waitForFunction(() => /<fifths>2<\/fifths>/.test(window.__editor.ref.current.getMusicXml()), null, { timeout: 10000 });
   await page.locator('.ps-pstrip .ps-pstrip-apply').tap();
@@ -255,11 +268,22 @@ try {
   await page.waitForFunction(n => (window.__editor.ref.current.getMusicXml().match(/<pitch>/g) ?? []).length === n + 1, pitchesBefore, { timeout: 10000 });
 
   assert.equal(await page.evaluate(() => window.__viewerRemovals), 0, 'the viewer never remounted');
+  // 6c. New score from the overflow menu starts in Entry too, even after leaving it in Edit.
+  await page.evaluate(() => { window.confirm = () => true; });
+  await page.locator('.ps-ptoolbar .ps-pmode').tap();
+  assert.equal(await page.locator('.ps-editor').getAttribute('data-ps-mode'), 'select');
+  await page.locator('.ps-phead .ps-phead-crumb').tap();
+  await headerSettles(page, 'full');
+  await page.locator('.ps-phead-more').tap();
+  await page.getByRole('menuitem', { name: /New score/ }).tap();
+  await waitForNotes(page, 0);
+  await page.waitForFunction(() => document.querySelector('.ps-editor')?.dataset.psMode === 'enter', null, { timeout: 10000 });
   // 7. The Layout tab on the Tenor Sax + Piano fixture: row 1 toggles staves, row 2's swap chip opens the swap card
   // as an inline strip in the toolbar; Alto Sax at beginner highlights the moved notes.
   await page.evaluate(() => { window.confirm = () => true; });
   await page.evaluate(() => document.querySelector('.editor-demo-tenor').click()); // the demo hides its header buttons on a phone
   await page.waitForFunction(() => /Tenor Sax/.test(window.__editor.ref.current?.getMusicXml() ?? ''), null, { timeout: 10000 });
+  assert.equal(await page.locator('.ps-editor').getAttribute('data-ps-mode'), 'enter', 'an opened score starts in Entry on the phone');
   await page.locator('.ps-ptab[data-tab="layout"]').tap();
   assert.equal(await page.locator('.ps-prow-staves .ps-pchip-stave').count(), 3, 'one stave chip per staff');
   await page.locator('.ps-pchip-swap').tap();
@@ -278,7 +302,7 @@ try {
 
   assert.deepEqual(errors, [], 'no page or console errors');
   await context.close();
-  console.log(`Editor phone: one viewer mount, two-row header (${expanded}px) collapses to ${collapsed}px, a user scroll restores it and a clamp scroll does not, three-row Notes tab with a 390px piano (keys, black-key spelling, letters switch remembered), header Undo/Redo, toolbar Entry/Edit switch and tap-to-Edit/Entry, toolbar entry keeps it expanded, repeat start, tuplet/beam/dynamic, inline key strip in the toolbar, menu Escape and hold, Play/Stop keeps focus through the collapse, fixed toolbar, Layout tab stave chips and swap strip pass`);
+  console.log(`Editor phone: one viewer mount, two-row header (${expanded}px) collapses to ${collapsed}px, a user scroll restores it and a clamp scroll does not, three-row Notes tab with a 390px piano (keys, black-key spelling, letters switch remembered), header Undo/Redo, starts in Entry (new, opened and New score), toolbar Entry/Edit switch and tap-to-Edit/Entry (box-centre taps hit their own note), glyph key names, toolbar entry keeps it expanded, repeat start, tuplet/beam/dynamic, inline key strip in the toolbar, menu Escape and hold, Play/Stop keeps focus through the collapse, fixed toolbar, Layout tab stave chips and swap strip pass`);
 } finally {
   await browser.close();
   await server.close();
