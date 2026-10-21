@@ -575,6 +575,8 @@ try {
     // overlay beside the measures, so the measure's own bounds (click hit-testing, zoom anchor) do not change; the box
     // comes back after a redraw.
     const measureWidth = () => page.evaluate(root => document.querySelector(`${root} .score-system svg .measure`).getBoundingClientRect().width, fullChrome);
+    // The paint reveal scales .score-content back from 1.06 over 0.5s: compare widths only once it has settled.
+    await page.waitForFunction(root => { const content = document.querySelector(`${root} .score-content`); return content && !content.classList.contains('is-painting') && content.getAnimations().length === 0; }, fullChrome, { timeout: 5000 });
     const plainWidth = await measureWidth();
     const boxSelector = `${fullChrome} .score-system svg .ps-highlight-layer > rect.ps-measure-highlight[data-ps-class~="ps-cursor-measure"]`;
     const measureBox = () => page.evaluate(([root, selector]) => {
