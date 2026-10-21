@@ -9,6 +9,7 @@
 - Handle: `scrollToMeasure(index)` (draws the measure's system if needed and scrolls it into view) and `seekToMeasure(index)` (seeks to the measure's first performed occurrence).
 - Type exports `PepperScoreClickInfo` and `PepperScoreHighlight`.
 - `verovioBaseUrl` prop: engrave with another interface-compatible Verovio build (a directory laid out like the `verovio` package's `dist/`).
+- `paintTransition` prop (`'reveal'` default, or `'none'`): with `'none'`, a new `musicXml` or `abc` for a score already on screen is swapped in place, with no fade, loading overlay or scroll reset.
 - `dist/THIRD_PARTY_NOTICES.txt` (runtime dependencies, Verovio, the OFL fonts), linked as "Licences" in the full reader's options drawer.
 
 ### Changed

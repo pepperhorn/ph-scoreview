@@ -1,4 +1,4 @@
-// The score editor demo (apps/reader /editor): keyboard entry engraves, undo, a click puts the cursor on a note, the
+// The score editor demo (apps/reader /editor): keyboard entry engraves in place (no paint reveal, scroll kept), undo, a click puts the cursor on a note, the
 // ensemble fixture (5 staves) is refused, accidentals and chord entry,
 // the time popover applies on Enter, unsaved work is guarded, the desktop shell (rail keycaps, layout selector, popovers
 // beside the cursor bar, add/remove bar, title editing) works, the Layout tab's instrument swap highlights, reviews and
@@ -59,6 +59,17 @@ try {
   assert.equal(await page.locator('.ps-canvas-head button.ps-zoom, .ps-canvas-head button.ps-zoom-readout').count(), 0, 'the zoom readout is not a button');
 
   // 1. Keyboard entry: n (entry mode), 4 (quarter), c d e f.
+  // Edits swap the engraving in place (paintTransition "none"): from here, no edit may fade the score out, show the
+  // loading overlay or move the scroll position.
+  await page.waitForFunction(() => !document.querySelector('.ps-editor .score-content.is-painting, .ps-editor .score-loading'), null, { timeout: 30000 });
+  await page.evaluate(() => {
+    const viewport = document.querySelector('.ps-editor .score-viewport');
+    const flashes = window.__paintFlashes = [];
+    window.__scrollBefore = viewport.scrollTop;
+    const seen = () => { if (document.querySelector('.ps-editor .score-content.is-painting, .ps-editor .score-loading')) flashes.push(performance.now()); };
+    window.__paintObserver = new MutationObserver(seen);
+    window.__paintObserver.observe(document.querySelector('.ps-editor'), { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+  });
   await page.locator('.ps-editor').focus();
   for (const key of ['n', '4', 'c', 'd', 'e', 'f']) await page.keyboard.press(key);
   await waitForNotes(page, 4);
@@ -69,6 +80,9 @@ try {
   await page.keyboard.press('Control+z');
   await waitForNotes(page, 3);
   assert.doesNotMatch(await musicXml(page), /<step>F<\/step>/, 'undo removed the F');
+  const paint = await page.evaluate(() => { window.__paintObserver.disconnect(); return { flashes: window.__paintFlashes.length, scrollBefore: window.__scrollBefore, scrollAfter: document.querySelector('.ps-editor .score-viewport').scrollTop }; });
+  assert.equal(paint.flashes, 0, 'edits swap the engraving in place, with no paint reveal or loading overlay');
+  assert.equal(paint.scrollAfter, paint.scrollBefore, 'edits keep the scroll position');
 
   // 2b. Accidentals from the rail act on the last entered note (E); "Add to chord" makes letters add to its chord.
   await page.click('.ps-rail .ps-btn[aria-label="Sharp"]');

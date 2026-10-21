@@ -25,6 +25,7 @@ Phase 2: layouts, instrument swap and the design shells. `pepperscore-editor` st
 - The editor redraw gate in `validation/editor.mjs` defaults to 400 ms (fail at 2x), up from 250.
 - `ViewResult.movedNotes` (the moved note ids, collected by `applyLayout`); cursor moves no longer re-derive them.
 - A cursor move re-renders only the viewer (`EditorViewer`) and the parts of the shell that show the cursor; `renderCounts` exposes shell render counts for tests.
+- An edit no longer repaints the whole score with the fade and scale reveal: the viewer swaps the engraving in place (`paintTransition="none"`), with no loading overlay, and keeps the scroll position. Opening another score still reveals.
 - A layout switch, custom layout or stave toggle that hides the cursor's staff moves the cursor to the first drawn staff (same bar and tick) and clears the selection.
 - The phone header returns focus to the editor after Play, Stop and the overflow menu, and before its collapse makes the first row inert.
 - Accidentals, octave shifts and the other target edits act on the highlighted cursor note after a click (that missed the notehead) or an arrow, instead of the note before it; right after entering a note they still act on that note.
