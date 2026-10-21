@@ -4,7 +4,7 @@
 // beside the cursor bar, add/remove bar, title editing) works, the Layout tab's instrument swap highlights, reviews and
 // copies moved notes and a custom layout hides staves (moving the cursor to a drawn staff), five arrow-key moves render
 // the rail at most once, Escape closes a popover before the inspector drawer, the view follows the cursor (40 notes in
-// Endless at 1400x900 keep it in view; an in-view arrow move and a click do not scroll; Undo scrolls back to it), and the change-to-redraw latency the editor
+// Endless at 1400x900 keep it in view; an in-view arrow move, a click, a move during a momentum scroll and a move during playback do not scroll; Undo scrolls back to it), and the change-to-redraw latency the editor
 // logs stays under PS_EDITOR_RENDER_MS (default 400; a warning above it, a failure above twice it). Runs against the
 // build (npm run build first). BROWSER=chromium|firefox|webkit.
 import assert from 'node:assert/strict';
@@ -428,6 +428,50 @@ try {
     await page.waitForFunction(() => (window.__editor.ref.current.getMusicXml().match(/<pitch>/g) ?? []).length === 39, null, { timeout: 10000 });
     try { await cursorInView(); } catch { assert.fail(`Undo brought the cursor into view (scrollLeft ${await scrollLeft()})`); }
     assert.ok(await scrollLeft() > 400, 'Undo scrolled to the cursor');
+    // A reader's momentum scroll (one wheel, then scroll events for 1.5 s, as iOS does after a flick) is never fought:
+    // a cursor move 900 ms in (past the wheel's own 600 ms) does not scroll while the momentum runs.
+    await settledScrollLeft();
+    await page.evaluate(() => {
+      const viewport = document.querySelector('.ps-editor .score-viewport');
+      window.__followScrolls = 0;
+      const original = viewport.scrollTo.bind(viewport);
+      viewport.scrollTo = (...args) => { window.__followScrolls++; return original(...args); };
+      const start = viewport.scrollLeft, t0 = performance.now();
+      viewport.dispatchEvent(new WheelEvent('wheel', { deltaX: -40, bubbles: true }));
+      const step = () => {
+        const t = performance.now() - t0;
+        viewport.scrollLeft = Math.round(start * Math.max(0, 1 - t / 1500));
+        if (t < 1500) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    });
+    await page.waitForTimeout(900);
+    await page.keyboard.press('ArrowLeft');
+    await page.waitForTimeout(1000);
+    assert.equal(await page.evaluate(() => window.__followScrolls), 0, 'a cursor move during a momentum scroll does not scroll');
+    assert.equal(await settledScrollLeft(), 0, 'the momentum scroll ran to its end');
+    // Once it has stopped, a move follows again.
+    await page.waitForTimeout(700);
+    await page.keyboard.press('ArrowRight');
+    try { await cursorInView(); } catch { assert.fail(`after the momentum a move follows the cursor (scrollLeft ${await scrollLeft()})`); }
+    // Playback owns the view: a cursor move while playing does not scroll to the cursor (the playhead is in view).
+    await page.evaluate(() => document.querySelector('.ps-editor .score-viewport').scrollTo({ left: 0 }));
+    await page.waitForFunction(() => document.querySelector('.ps-editor .score-viewport').scrollLeft === 0, null, { timeout: 5000 });
+    const first = await page.evaluate(selector => {
+      const r = document.querySelector(`${selector} .notehead`).getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }, NOTES);
+    await page.mouse.click(first.x, first.y);
+    await page.waitForTimeout(700);
+    await page.locator('.ps-editor').focus();
+    await page.keyboard.press('Space');
+    await page.waitForSelector('.ps-editor .ps-btn-play.is-playing', { timeout: 10000 });
+    for (let i = 0; i < 9; i++) await page.keyboard.press('Control+ArrowRight');
+    await page.waitForTimeout(1200);
+    const duringPlayback = await scrollLeft();
+    await page.keyboard.press('Space');
+    await page.waitForSelector('.ps-editor .ps-btn-play:not(.is-playing)', { timeout: 10000 });
+    assert.equal(duringPlayback, 0, 'a cursor move during playback does not scroll away from the playhead');
     await wide.close();
   }
 

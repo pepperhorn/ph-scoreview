@@ -109,7 +109,7 @@ export type PepperScoreHandle = {
    * Scroll the least distance (plus `lead`) that brings the target `margin` inside the visible edges; nothing moves
    * when it is already there. Horizontally the notes (else the measure) must show; vertically their whole system
    * (or the notes, when the system is taller than the view). Draws the measure's system if needed. Smooth, unless the
-   * user prefers reduced motion. Resolves `true` when it scrolled.
+   * user prefers reduced motion. Does nothing while playback follows (it owns the view). Resolves `true` when it scrolled.
    */
   scrollIntoView(target: PepperScoreScrollTarget, options?: PepperScoreScrollOptions): Promise<boolean>;
 };
@@ -201,6 +201,11 @@ const readScoreRecord = (scoreDb: ScoreDb, source: FileSource) => Promise.race([
 const FOLLOW_SUSPEND_MS = 2500;
 /** A programmatic smooth scroll counts as in flight until it lands, or for at most this long. */
 const SCROLL_SETTLE_MS = 900;
+/**
+ * A scroll event this soon after the reader's last wheel, touch or scroll is theirs too (momentum after a flick, a
+ * smooth wheel scroll), so `scrollIntoView` keeps waiting until it has stopped.
+ */
+const MOMENTUM_GAP_MS = 200;
 /** Guidance added to the renderer's out-of-memory message. */
 const OOM_GUIDANCE = 'Close other tabs, or try again with smaller sections.';
 /** Shown when the renderer kept restarting under a draw (other readers on the page running out of memory). */
@@ -1003,20 +1008,30 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     const touched = () => { interactedAtRef.current = performance.now(); };
     const down = () => { touched(); pointerDownRef.current = true; };
     const up = () => { if (pointerDownRef.current) touched(); pointerDownRef.current = false; };
+    // Scrolling that carries on from the reader's own (iOS momentum after touchend, a smooth wheel scroll) is theirs
+    // while the events keep coming; a programmatic scroll in flight is not.
+    const scrolled = () => {
+      const now = performance.now(), programmatic = scrollTargetRef.current && now - scrollTargetRef.current.at <= SCROLL_SETTLE_MS;
+      if (!programmatic && now - interactedAtRef.current <= MOMENTUM_GAP_MS) interactedAtRef.current = now;
+    };
     const own = ['wheel', 'touchstart', 'touchmove', 'touchend'] as const;
     const release = ['pointerup', 'pointercancel', 'blur'] as const;
     for (const type of own) viewport.addEventListener(type, touched, { passive: true });
+    viewport.addEventListener('scroll', scrolled, { passive: true });
     viewport.addEventListener('pointerdown', down, { passive: true });
     for (const type of release) window.addEventListener(type, up, { passive: true });
     return () => {
       for (const type of own) viewport.removeEventListener(type, touched);
+      viewport.removeEventListener('scroll', scrolled);
       viewport.removeEventListener('pointerdown', down);
       for (const type of release) window.removeEventListener(type, up);
     };
   }, []);
   /** handle.scrollIntoView (see PepperScoreHandle). */
   const revealTarget = async (target: PepperScoreScrollTarget, options: PepperScoreScrollOptions = {}) => {
-    const interrupted = () => pointerDownRef.current || (options.interactedSince !== undefined && interactedAtRef.current >= options.interactedSince);
+    // Playback follow owns the view while it plays; the reader's own interaction always wins.
+    const interrupted = () => Boolean(playRef.current) || (clockRef.current ? clockFollowRef.current.playing : false)
+      || pointerDownRef.current || (options.interactedSince !== undefined && interactedAtRef.current >= options.interactedSince);
     const result = renderRef.current, canvas = canvasRef.current;
     if (!result || !canvas || interrupted()) return false;
     const index = target.measure ?? -1;
