@@ -4,8 +4,8 @@ import { createDocument } from '../model/create';
 import { eventStarts } from '../model/query';
 import type { Event, Pitch } from '../model/schema';
 import { helloDoc } from '../test-helpers';
-import { describeKey, handleKey, KEYMAP, type KeyContext } from './keymap';
-import { pitchForLetter } from './pitch-entry';
+import { describeKey, enterPitch, handleKey, KEYMAP, type KeyContext } from './keymap';
+import { pianoSpelling, pitchForLetter } from './pitch-entry';
 
 type Mods = { ctrl?: boolean; meta?: boolean; shift?: boolean; alt?: boolean; composing?: boolean };
 type FakeEvent = KeyboardEvent & { prevented: boolean };
@@ -502,4 +502,44 @@ test('Shift+Left from a cursor past the last event start anchors on the event be
   expect(store.getState().selection.ids).toEqual(['a2']);
   press('ArrowLeft', { shift: true });
   expect(store.getState().selection.ids).toEqual(['a2', 'a1']);
+});
+
+test('piano keys spell for the key: its signature first, else natural, else sharps in sharp keys and flats in flat keys', () => {
+  const names = (fifths: number) => Array.from({ length: 12 }, (_, pc) => pianoSpelling(pc, fifths)).map(({ step, alter }) => `${step}${['bb', 'b', '', '#', '##'][alter + 2]}`);
+  expect(names(0)).toEqual(['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']);
+  expect(names(-2)).toEqual(['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B']);
+  expect(names(6)).toEqual(['C', 'C#', 'D', 'D#', 'E', 'E#', 'F#', 'G', 'G#', 'A', 'A#', 'B']);
+  expect(names(-6)).toEqual(['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'Cb']);
+});
+
+test('enterPitch enters an exact alteration nearest the last pitch, and adds to the chord in chord mode', () => {
+  const { store, ctx, press } = setup();
+  const m1 = store.getState().document.global.measures[0].id;
+  store.dispatch(setKey, { measureId: m1, key: { fifths: 1 } });
+  for (const k of ['n', '4']) press(k);
+  enterPitch(ctx, 'F', 0); // F natural despite the F sharp in G major
+  enterPitch(ctx, 'C', -1); // C flat, nearest F4
+  expect([...pitches(bar(store)[0]), ...pitches(bar(store)[1])]).toEqual([P('F', 4), P('C', 5, -1)]);
+  store.dispatch(setChordMode, { on: true }, { record: false });
+  enterPitch(ctx, 'E', -1);
+  expect(pitches(bar(store)[1])).toEqual([P('C', 5, -1), P('E', 5, -1)]);
+  enterPitch(ctx, 'G'); // no alteration given: the key's
+  expect(pitches(bar(store)[1]).at(-1)).toEqual(P('G', 5));
+});
+
+test('in select (Edit) mode the toolbar letters, piano, durations and rest change the selected event instead of entering', () => {
+  const { store, ctx } = setup();
+  const run = (label: string) => KEYMAP.find((b) => b.label === label)!.action(ctx);
+  store.dispatch(setSelection, { ids: ['e2'] }, { record: false });
+  const before = bar(store).length;
+  run('Note A'); // nearest the old pitch (D5)
+  expect(pitches(bar(store)[1])).toEqual([P('A', 4)]);
+  enterPitch(ctx, 'F', 1);
+  expect(pitches(bar(store)[1])).toEqual([P('F', 4, 1)]);
+  expect(bar(store).length).toBe(before);
+  run('Eighth note');
+  expect(bar(store)[1].duration).toEqual({ base: 'eighth', dots: 0 });
+  expect(store.getState().cursor.duration).toEqual({ base: 'quarter', dots: 0 }); // the entry duration is unchanged
+  run('Rest');
+  expect(bar(store)[1].rest).toBe(true);
 });

@@ -1,6 +1,6 @@
 import {
   addChordNote, addSlur, breakBeam, deleteEvents, enterEvent, entryDot, entryDotChangesScore, setAccidental, stepSemitone, extendSelection, makeTuplet, moveCursor, escapeToSelect, setBeamGroup, setCursorDuration,
-  setEntryMode, shiftOctave, stepPitch, toggleArticulation, toggleDot, toggleTie,
+  setDuration, setEntryMode, setPitch, shiftOctave, stepPitch, toggleArticulation, toggleDot, toggleRest, toggleTie,
 } from '../engine/commands/index';
 import { findEvent, findNote } from '../engine/sequence-edit';
 import type { EditorStore } from '../engine/store';
@@ -40,23 +40,35 @@ function onNote(ctx: KeyContext, run: (noteId: string) => void): void {
   if (id) run(id);
 }
 
-function enterLetter(ctx: KeyContext, step: Pitch['step']): void {
-  if (state(ctx).cursor.chord) return chordLetter(ctx, step);
+/**
+ * `step` (with alteration `alter`, else the key signature's) as the letter keys and buttons enter it: in chord mode a
+ * note added to the target event's chord; in select (Edit) mode the target note repitched, in the octave nearest its
+ * old pitch; else a new note nearest the last entered pitch. The phone's piano keys use it too. (Typed letters reach
+ * it in entry mode only; the toolbar buttons in either mode.)
+ */
+export function enterPitch(ctx: KeyContext, step: Pitch['step'], alter?: number): void {
+  if (state(ctx).cursor.chord) return chordLetter(ctx, step, alter);
   const { document, cursor } = state(ctx);
+  const noteId = cursor.mode === 'select' ? targetNote(state(ctx)) : undefined;
+  const at = noteId ? findNote(document, noteId) : undefined;
+  if (noteId && at) {
+    const pitch = pitchForLetter(step, at.note.pitch, effectiveKey(document, at.measureIndex).fifths, alter);
+    return record(ctx, setPitch, { noteId, pitch });
+  }
   const fifths = effectiveKey(document, Math.max(measureIndex(document, cursor.measureId), 0)).fifths;
-  record(ctx, enterEvent, { pitch: pitchForLetter(step, cursor.lastPitch, fifths) });
+  record(ctx, enterEvent, { pitch: pitchForLetter(step, cursor.lastPitch, fifths, alter) });
 }
 
 /**
  * Adds `step` to the target event's chord, in the octave nearest its top note (an octave higher when
- * that pitch is already there) with the key signature's alteration; the cursor stays.
+ * that pitch is already there) with the key signature's alteration (or `alter`); the cursor stays.
  */
-function chordLetter(ctx: KeyContext, step: Pitch['step']): void {
+function chordLetter(ctx: KeyContext, step: Pitch['step'], alter?: number): void {
   onEvent(ctx, (eventId) => {
     const at = findEvent(state(ctx).document, eventId);
     const top = at?.event.notes?.at(-1)?.pitch;
     if (!at || !top) return;
-    const pitch = pitchForLetter(step, top, effectiveKey(state(ctx).document, at.measureIndex).fifths);
+    const pitch = pitchForLetter(step, top, effectiveKey(state(ctx).document, at.measureIndex).fifths, alter);
     const taken = at.event.notes!.some((n) => n.pitch.step === pitch.step && n.pitch.octave === pitch.octave && n.pitch.alter === pitch.alter);
     record(ctx, addChordNote, { eventId, pitch: taken ? { ...pitch, octave: pitch.octave + 1 } : pitch });
   });
@@ -91,13 +103,17 @@ function cycleBeams(ctx: KeyContext): void {
   } else record(ctx, autoBeamSequence, { partId, measureId, staff, voice });
 }
 
-const letter = (step: Pitch['step']): KeyBinding => ({ keys: [step], label: `Note ${step}`, group: 'pitch', mode: 'enter', action: (ctx) => enterLetter(ctx, step) });
+const letter = (step: Pitch['step']): KeyBinding => ({ keys: [step], label: `Note ${step}`, group: 'pitch', mode: 'enter', action: (ctx) => enterPitch(ctx, step) });
 const chordKey = (step: Pitch['step']): KeyBinding => ({ keys: [`Shift+${step}`], label: `Add ${step} to chord`, group: 'chord', action: (ctx) => chordLetter(ctx, step) });
 
 const DURATION_KEYS: DurationBase[] = ['32nd', '16th', 'eighth', 'quarter', 'half', 'whole'];
 const duration = (base: DurationBase, i: number): KeyBinding => ({
   keys: [String(i + 1)], label: `${base[0].toUpperCase()}${base.slice(1)} note`, group: 'duration', mode: 'enter',
-  action: (ctx) => move(ctx, setCursorDuration, { duration: { base, dots: 0 } }),
+  // In select (Edit) mode it resizes the target event (the toolbar buttons; typed digits reach it in entry mode only).
+  action: (ctx) => {
+    if (state(ctx).cursor.mode === 'select') onEvent(ctx, (eventId) => record(ctx, setDuration, { eventId, duration: { base, dots: 0 } }));
+    else move(ctx, setCursorDuration, { duration: { base, dots: 0 } });
+  },
 });
 
 const articulation = (keys: string[], label: string, value: Articulation): KeyBinding => ({
@@ -121,7 +137,11 @@ export const KEYMAP: KeyBinding[] = [
   },
   ...DURATION_KEYS.map(duration),
   ...(['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const).map(letter),
-  { keys: ['0'], label: 'Rest', group: 'entry', mode: 'enter', action: (ctx) => record(ctx, enterEvent, { rest: true }) },
+  {
+    keys: ['0'], label: 'Rest', group: 'entry', mode: 'enter',
+    // The toolbar button in select (Edit) mode turns the target event into a rest, or a rest back into a note.
+    action: (ctx) => (state(ctx).cursor.mode === 'select' ? onEvent(ctx, (eventId) => record(ctx, toggleRest, { eventId })) : record(ctx, enterEvent, { rest: true })),
+  },
   {
     keys: ['.'], label: 'Toggle dot', group: 'duration',
     action: (ctx) => {

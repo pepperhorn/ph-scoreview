@@ -1,11 +1,12 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { deleteMeasure, insertMeasure, setBarline, setChordMode, setClef, setEnding, setJump, setRepeatEnd, setTime, toggleMark, toggleRepeatStart } from '../../engine/commands/index';
 import { findEvent } from '../../engine/sequence-edit';
 import { effectiveClef, effectiveKey, effectiveTime } from '../../model/query';
 import { binding, usePosition, useRun, useUi, useDispatch } from '../controls';
-import { BeamGroup, ChordIcon, CurveSlur, CurveTie, Glyph, Icon, SMUFL } from '../icons';
+import { BeamGroup, ChordIcon, CurveSlur, CurveTie, Glyph, Icon, PianoIcon, SMUFL } from '../icons';
 import { targetEvent } from '../key-actions';
-import type { PopoverName } from '../keymap';
+import { enterPitch, type PopoverName } from '../keymap';
+import { pianoSpelling } from '../pitch-entry';
 import { ENDINGS, JUMPS, jumpValue, keyName } from '../Popover';
 import { VALUES } from '../Rail';
 import { BARLINES, CLEF_BUTTONS, MARKS, TIMES } from '../ScoreTab';
@@ -14,7 +15,7 @@ import { tempoAt } from '../TempoFields';
 import { LayoutStrip } from './LayoutStrip';
 import { useEditorStore } from '../useEditorStore';
 
-export type PhoneTab = 'value' | 'pitch' | 'bar' | 'score' | 'layout';
+export type PhoneTab = 'value' | 'marks' | 'bar' | 'score' | 'layout';
 
 type PBtnProps = { label: string; on?: boolean; text?: boolean; disabled?: boolean; className?: string; onClick?(): void; children: ReactNode };
 
@@ -40,55 +41,136 @@ export function PBtn({ label, on, text, disabled, className = '', onClick, child
 const PRow = ({ label, children }: { label: string; children: ReactNode }) => <div className="ps-prow" role="group" aria-label={label}>{children}</div>;
 const Spacer = () => <span className="ps-prow-spacer" />;
 
-/** Durations, dot and rest; the note letters; undo and redo. */
+/** How the Notes tab's third row enters pitches: a one-octave piano or the letter buttons. */
+export type EntryInput = 'piano' | 'letters';
+const ENTRY_INPUT_KEY = 'pepperscore-editor:phone-entry-input';
+function readEntryInput(): EntryInput {
+  try {
+    return globalThis.localStorage?.getItem(ENTRY_INPUT_KEY) === 'letters' ? 'letters' : 'piano';
+  } catch {
+    return 'piano';
+  }
+}
+function saveEntryInput(input: EntryInput): void {
+  try {
+    globalThis.localStorage?.setItem(ENTRY_INPUT_KEY, input);
+  } catch {
+    // Storage blocked (private mode, a sandboxed frame): the choice lasts for this session only.
+  }
+}
+
+const WHITE_KEYS = [0, 2, 4, 5, 7, 9, 11];
+/** Black keys by pitch class, each centred on the line after white key `after`. */
+const BLACK_KEYS = [{ pc: 1, after: 0 }, { pc: 3, after: 1 }, { pc: 6, after: 3 }, { pc: 8, after: 4 }, { pc: 10, after: 5 }];
+const ACCIDENTAL_TEXT: Record<number, string> = { [-2]: '𝄫', [-1]: '♭', 0: '', 1: '♯', 2: '𝄪' };
+const ACCIDENTAL_WORD: Record<number, string> = { [-2]: ' double flat', [-1]: ' flat', 0: '', 1: ' sharp', 2: ' double sharp' };
+
+/**
+ * One octave of piano keys, C to B. A key enters its pitch class as the letter buttons do (nearest the last note,
+ * or into the chord in chord mode), spelled for the cursor bar's key: the key signature's spelling, else the
+ * natural, else a sharp in sharp keys (and C major) or a flat in flat keys.
+ */
+function PianoKeys() {
+  const { ctx, editable, refocus } = useUi();
+  const { document, index } = usePosition();
+  const fifths = effectiveKey(document, index).fifths;
+  const key = (pc: number, after?: number) => {
+    const { step, alter } = pianoSpelling(pc, fifths);
+    const black = after !== undefined;
+    return (
+      <button
+        key={pc}
+        type="button"
+        className={`ps-piano-key ${black ? 'ps-piano-key-black' : 'ps-piano-key-white'}`}
+        style={black ? { left: `calc(${((after + 1) * 100) / 7}% - var(--ps-piano-black-w) / 2)` } : undefined}
+        aria-label={`Piano ${step}${ACCIDENTAL_WORD[alter]}`}
+        title={`${step}${ACCIDENTAL_TEXT[alter]}`}
+        data-pitch-class={pc}
+        disabled={!editable}
+        onClick={() => {
+          enterPitch(ctx, step, alter);
+          refocus();
+        }}
+      >
+        <span className="ps-piano-key-name">{step}{ACCIDENTAL_TEXT[alter]}</span>
+      </button>
+    );
+  };
+  return (
+    <div className="ps-piano" role="group" aria-label="Piano keyboard">
+      {WHITE_KEYS.map((pc) => key(pc))}
+      {BLACK_KEYS.map(({ pc, after }) => key(pc, after))}
+    </div>
+  );
+}
+
+/** Durations, dot and rest; accidentals, octave shifts and chord entry; then a piano octave or the letter buttons. */
 function ValueRows() {
   const { store } = useUi();
-  const cursor = useEditorStore(store, (s) => s.cursor);
-  const canUndo = useEditorStore(store, (s) => s.history.past.length > 0);
-  const canRedo = useEditorStore(store, (s) => s.history.future.length > 0);
+  const dispatch = useDispatch();
+  // Entry lights the entry duration; Edit the target event's, which the duration buttons change there.
+  const duration = useEditorStore(store, (s) => {
+    const id = s.cursor.mode === 'select' ? targetEvent(s) : undefined;
+    return (id && findEvent(s.document, id)?.event.duration) || s.cursor.duration;
+  });
+  const chord = useEditorStore(store, (s) => !!s.cursor.chord);
+  const [input, setInput] = useState<EntryInput>(readEntryInput);
+  const next: EntryInput = input === 'piano' ? 'letters' : 'piano';
+  const switchLabel = next === 'piano' ? 'Use piano keys' : 'Use letter buttons';
   return (
     <>
       <PRow label="Duration">
-        {VALUES.map((v) => <PBtn key={v.base} label={v.label} on={cursor.duration.base === v.base} className="ps-pencil"><Glyph c={v.c} alt={v.alt} className="ps-glyph-note" /></PBtn>)}
-        <PBtn label="Toggle dot" on={cursor.duration.dots > 0}><Glyph c={SMUFL.dot} alt="dot" className="ps-glyph-dot" /></PBtn>
+        {VALUES.map((v) => <PBtn key={v.base} label={v.label} on={duration.base === v.base} className="ps-pencil"><Glyph c={v.c} alt={v.alt} className="ps-glyph-note" /></PBtn>)}
+        <PBtn label="Toggle dot" on={duration.dots > 0}><Glyph c={SMUFL.dot} alt="dot" className="ps-glyph-dot" /></PBtn>
         <PBtn label="Rest"><Glyph c={SMUFL.restQuarter} alt="rest" className="ps-glyph-rest" /></PBtn>
       </PRow>
-      <PRow label="Pitch letters">
-        {(['C', 'D', 'E', 'F', 'G', 'A', 'B'] as const).map((step) => <PBtn key={step} label={`Note ${step}`} className="ps-pbtn-letter">{step}</PBtn>)}
-        <Spacer />
-        <PBtn label="Undo" disabled={!canUndo}><Icon name="undo" size={19} /></PBtn>
-        <PBtn label="Redo" disabled={!canRedo}><Icon name="redo" size={19} /></PBtn>
+      <PRow label="Accidentals, octave and chord">
+        <PBtn label="Sharp"><Glyph c={SMUFL.sharp} alt="♯" className="ps-glyph-acc" /></PBtn>
+        <PBtn label="Natural"><Glyph c={SMUFL.natural} alt="♮" className="ps-glyph-acc" /></PBtn>
+        <PBtn label="Flat"><Glyph c={SMUFL.flat} alt="♭" className="ps-glyph-acc" /></PBtn>
+        <PBtn label="Octave down" text className="ps-pbtn-octave"><Icon name="down" size={15} />8vb</PBtn>
+        <PBtn label="Octave up" text className="ps-pbtn-octave"><Icon name="up" size={15} />8va</PBtn>
+        <PBtn label="Add to chord" on={chord} className="ps-pbtn-chord" onClick={() => dispatch(setChordMode, { on: !chord }, { record: false })}><ChordIcon /></PBtn>
       </PRow>
+      <div className={`ps-prow ps-prow-entry ps-prow-entry-${input}`} role="group" aria-label={input === 'piano' ? 'Piano entry' : 'Pitch letters'}>
+        {input === 'piano'
+          ? <PianoKeys />
+          : (['C', 'D', 'E', 'F', 'G', 'A', 'B'] as const).map((step) => <PBtn key={step} label={`Note ${step}`} className="ps-pbtn-letter">{step}</PBtn>)}
+        <button
+          type="button"
+          className="ps-btn ps-pbtn ps-pbtn-entry-switch"
+          aria-label={switchLabel}
+          title={switchLabel}
+          onClick={() => {
+            setInput(next);
+            saveEntryInput(next);
+          }}
+        >
+          {next === 'piano' ? <PianoIcon /> : <span className="ps-entry-switch-abc">ABC</span>}
+        </button>
+      </div>
     </>
   );
 }
 
-/** Accidentals, chord entry and octave shifts; tie, slur, articulations, tuplet, beams and a dynamic at the last entered (or selected) note. */
-function PitchRows() {
+/** Tie, slur, tuplet, beams and a dynamic; the articulations, lit when the last entered (or selected) note has them. */
+function MarksRows() {
   const { store, togglePopover } = useUi();
-  const dispatch = useDispatch();
-  const chord = useEditorStore(store, (s) => !!s.cursor.chord);
   const target = useEditorStore(store, (s) => {
     const id = targetEvent(s);
     return id ? findEvent(s.document, id)?.event : undefined;
   });
   return (
     <>
-      <PRow label="Accidentals and octave">
-        <PBtn label="Sharp"><Glyph c={SMUFL.sharp} alt="♯" className="ps-glyph-acc" /></PBtn>
-        <PBtn label="Flat"><Glyph c={SMUFL.flat} alt="♭" className="ps-glyph-acc" /></PBtn>
-        <PBtn label="Natural"><Glyph c={SMUFL.natural} alt="♮" className="ps-glyph-acc" /></PBtn>
-        <PBtn label="Add to chord" on={chord} onClick={() => dispatch(setChordMode, { on: !chord }, { record: false })}><ChordIcon /></PBtn>
-        <PBtn label="Octave up" text><Icon name="up" size={15} />8va</PBtn>
-        <PBtn label="Octave down" text><Icon name="down" size={15} />8vb</PBtn>
-      </PRow>
-      <PRow label="Ties, slurs, articulations, tuplets, beams and dynamics">
+      <PRow label="Ties, slurs, tuplets, beams and dynamics">
         <PBtn label="Tie"><CurveTie /></PBtn>
         <PBtn label="Slur"><CurveSlur /></PBtn>
-        {ARTICULATIONS.map((a) => <PBtn key={a.value} label={a.label} on={!!target?.articulations?.includes(a.value)}><Glyph c={a.c} alt={a.alt} className="ps-glyph-artic" /></PBtn>)}
         <PBtn label="Tuplet (3)"><Glyph c={SMUFL.tuplet3} alt="3" className="ps-glyph-tuplet" /></PBtn>
         <PBtn label="Beam grouping 2/3/4/auto"><BeamGroup /></PBtn>
         <PBtn label="Dynamic" text className="ps-pbtn-field ps-pchip-dynamic" onClick={() => togglePopover('dynamic')}><span className="ps-chip-k">Dyn</span><Glyph c={SMUFL.mf} alt="mf" className="ps-glyph-dyn" /></PBtn>
+      </PRow>
+      <PRow label="Articulations">
+        {ARTICULATIONS.map((a) => <PBtn key={a.value} label={a.label} on={!!target?.articulations?.includes(a.value)}><Glyph c={a.c} alt={a.alt} className="ps-glyph-artic" /></PBtn>)}
       </PRow>
     </>
   );
@@ -169,11 +251,11 @@ function ScoreRows() {
   );
 }
 
-/** The button rows (at most two) of toolbar tab `tab`. */
+/** The button rows of toolbar tab `tab`: three on Notes (the last a piano or letters), at most two elsewhere. */
 export function PhoneTabRows({ tab }: { tab: PhoneTab }) {
   switch (tab) {
     case 'value': return <ValueRows />;
-    case 'pitch': return <PitchRows />;
+    case 'marks': return <MarksRows />;
     case 'bar': return <BarRows />;
     case 'score': return <ScoreRows />;
     case 'layout': return <LayoutStrip />;
