@@ -1,6 +1,6 @@
 import {
   addChordNote, addSlur, breakBeam, deleteEvents, enterEvent, entryDot, entryDotChangesScore, setAccidental, stepSemitone, extendSelection, makeTuplet, moveCursor, escapeToSelect, setBeamGroup, setCursorDuration,
-  restPitch, setDuration, setEntryMode, setPitch, shiftOctave, stepPitch, toggleArticulation, toggleDot, toggleRest, toggleTie,
+  cursorReferencePitch, restPitch, setDuration, setEntryMode, setPitch, shiftOctave, stepPitch, toggleArticulation, toggleDot, toggleRest, toggleTie,
 } from '../engine/commands/index';
 import { findEvent, findNote } from '../engine/sequence-edit';
 import type { EditorStore } from '../engine/store';
@@ -43,7 +43,8 @@ function onNote(ctx: KeyContext, run: (noteId: string) => void): void {
 /**
  * `step` (with alteration `alter`, else the key signature's) as the letter keys and buttons enter it: in chord mode a
  * note added to the target event's chord; in select (Edit) mode the target note repitched, in the octave nearest its
- * old pitch (a target rest pitched in place, nearest the last entered pitch or the middle line); else a new note nearest the last entered pitch. The phone's piano keys use it too. (Typed letters reach
+ * old pitch (a target rest pitched in place, nearest the last pitch entered on its staff or the middle line); else a new note nearest the
+ * last pitch entered on the cursor's staff, or its clef's middle line. The phone's piano keys use it too. (Typed letters reach
  * it in entry mode only; the toolbar buttons in either mode.)
  */
 export function enterPitch(ctx: KeyContext, step: Pitch['step'], alter?: number): void {
@@ -65,7 +66,7 @@ export function enterPitch(ctx: KeyContext, step: Pitch['step'], alter?: number)
     }
   }
   const fifths = effectiveKey(document, Math.max(measureIndex(document, cursor.measureId), 0)).fifths;
-  record(ctx, enterEvent, { pitch: pitchForLetter(step, cursor.lastPitch, fifths, alter) });
+  record(ctx, enterEvent, { pitch: pitchForLetter(step, cursorReferencePitch(state(ctx)), fifths, alter) });
 }
 
 /**
@@ -141,7 +142,7 @@ const popover = (key: string, label: string, name: PopoverName, mode?: 'select')
 export const KEYMAP: KeyBinding[] = [
   { keys: ['N'], label: 'Toggle note entry', group: 'entry', action: (ctx) => move(ctx, setEntryMode, { mode: state(ctx).cursor.mode === 'enter' ? 'select' : 'enter' }) },
   {
-    keys: ['Escape'], label: 'Select mode', group: 'entry',
+    keys: ['Escape'], label: 'Edit mode', group: 'entry',
     action: (ctx) => move(ctx, escapeToSelect, {}),
   },
   ...DURATION_KEYS.map(duration),

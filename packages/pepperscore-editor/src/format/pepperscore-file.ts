@@ -26,6 +26,7 @@ const CursorSchema = z.object({
   duration: DurationSchema,
   mode: z.enum(['select', 'enter']),
   lastPitch: PitchSchema.optional(),
+  lastPitchAt: z.object({ partId: z.string(), staff: z.number().int().min(1) }).optional(),
   entered: z.string().optional(),
   chord: z.boolean().optional(),
 });

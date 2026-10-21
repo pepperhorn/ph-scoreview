@@ -105,7 +105,7 @@ Above 760px wide (measured on the editor, not the window) the editor has the des
   Tempo chips that open popovers, undo and redo, Play, Save, Export, Open and a licence badge.
 - **Rail**: keycaps (56 x 52) for the value (whole to 32nd, dot), modify (rest, tie, slur), pitch (sharp, flat,
   natural, chord toggle) and group (tuplet, beam) tools, with legends taken from `KEYMAP`.
-- **Canvas header**: Entry / Select pill, "Part · bar N of M", the layout selector and Page / Endless.
+- **Canvas header**: Entry / Edit pill, "Part · bar N of M", the layout selector and Page / Endless.
 - **Inspector tabs**: Score (key, time, clef, barlines, repeats, endings, jumps, marks, tempo, insert/delete bar),
   Stave (articulations, dynamics, text, beam group) and Layout (staves, layouts, instrument swap).
 - **Popovers** are placed beside the cursor bar and never cover it: left, right, above, then below, clamped to the
@@ -128,8 +128,9 @@ At 760px wide or less (or with `forcePhone`) the editor switches to the phone sh
   sharp, natural, flat, 8vb, 8va and Add to chord; and a one-octave piano (black keys spelled for the key) or the C–B
   letter buttons, switched by the button at the end of the row and remembered. The others have two. The canvas is
   padded by the toolbar's measured height, so a taller tab never covers the score.
-- **Entry and Edit**: tapping a note in the score (or near it, so the cursor lands on it) switches to Edit, tapping a
-  rest or empty staff space to Entry. In Edit the letter and piano keys repitch the highlighted note (or pitch a
+- **Entry and Edit**: a new or opened score starts in Entry, so the piano keys enter notes straight away. Tapping a
+  note in the score (any part of it: notehead, stem, flag, accidental or dots; or the staff space nearest it, so the
+  cursor lands on it) switches to Edit, tapping a rest or empty staff space to Entry. In Edit the letter and piano keys repitch the highlighted note (or pitch a
   highlighted rest in place), the durations resize it within its bar and Rest makes it a rest.
 - **Inline strips**: Key, Time, Clef, Tempo, Dynamic and the swap card open as a strip in place of the button rows,
   not as a floating popover. Escape, the close button or Apply closes them.
@@ -142,28 +143,31 @@ Not on the phone yet: text on a stave (use the desktop shell).
 ## Keyboard
 
 Letter keys are case-insensitive; Cmd counts as Ctrl. Digit and symbol keys match the typed character,
-whatever Shift state produced it. Some keys only act in note entry mode (`N` toggles it) or in select mode.
+whatever Shift state produced it. Some keys only act in note entry mode (`N` toggles it) or in Edit mode (where clicks select;
+the editor calls it `select` internally). A new or opened score starts in Edit on the desktop, in Entry on a phone.
 
 Edits act on the target: the single selected event or note; else, right after entering a note, that note; else the
 event the cursor sits on (the highlighted one, after a click or an arrow); else the event just before the cursor.
 
 - `.` in entry mode, right after entering a note, dots that note and moves the cursor to its new end, so `4 C . D`
   enters a dotted C and then a quarter D. Anywhere else it toggles the dot of the entry duration (`4 . C` enters a
-  dotted C). In select mode it toggles the selected event's dot. Double dots are set from the toolbar only.
+  dotted C). In Edit mode it toggles the selected event's dot. Double dots are set from the toolbar only.
 - `+`, `_` and `=` sharpen, flatten and naturalise the target note (up to double sharps and flats);
   `Alt+ArrowUp/Down` move it a semitone, spelled as in the key, else natural, else with sharps going up and flats
   going down.
 - `Shift+A`–`Shift+G` add that letter to the target event's chord, in the octave nearest its top note and with the key
   signature's accidental, without moving the cursor. The toolbar's "Add to chord" toggle makes plain letters do the same.
-- Arrows and `Ctrl`+arrows select the event at the new cursor in select mode (entry mode clears the selection);
+- Arrows and `Ctrl`+arrows select the event at the new cursor in Edit mode (entry mode clears the selection);
   `Shift`+arrows extend the selection from its first event (or the event before the cursor), and moving back shrinks it.
+- `A`–`G` enter the letter in the octave nearest the last pitch entered on the cursor's staff; with none (a new
+  score, or the first note on another staff) nearest the clef's middle line, so a treble G is G4 and a bass G is G3.
 - `Escape` right after entering a note leaves entry mode with that note selected, so `C D E Esc Delete` deletes the E;
   otherwise it clears the selection.
 
 | Keys | Action | Mode |
 | --- | --- | --- |
 | N | Toggle note entry | Any |
-| Escape | Select mode | Any |
+| Escape | Edit mode | Any |
 | 1 | 32nd note | Note entry |
 | 2 | 16th note | Note entry |
 | 3 | Eighth note | Note entry |
@@ -211,12 +215,12 @@ event the cursor sits on (the highlighted one, after a click or an arrow); else 
 | Ctrl+5 | Tuplet (5) | Any |
 | Ctrl+6 | Tuplet (6) | Any |
 | Ctrl+7 | Tuplet (7) | Any |
-| B | Beam grouping 2/3/4/auto | Select |
+| B | Beam grouping 2/3/4/auto | Edit |
 | / | Break beam | Any |
-| D | Dynamic | Select |
+| D | Dynamic | Edit |
 | K | Key signature | Any |
 | Q | Time signature | Any |
-| C | Clef | Select |
+| C | Clef | Edit |
 | V | Ending | Any |
 | J | Jump | Any |
 | R | Cycle barline | Any |

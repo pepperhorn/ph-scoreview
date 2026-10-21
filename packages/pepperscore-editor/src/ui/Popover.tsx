@@ -5,17 +5,14 @@ import { effectiveClef, effectiveKey, effectiveTime, measureIndex } from '../mod
 import type { Clef, Dynamic, Jump } from '../model/schema';
 import { usePosition } from './controls';
 import { Icon, Kbd } from './icons';
+import { FIFTHS, keyName } from './key-names';
 import { describeKey, KEYMAP, type PopoverName } from './keymap';
 import { placePopover, type Rect } from './placement';
 import { TempoFields } from './TempoFields';
 import { relativeRect } from './useCanvasGeometry';
 import { useEditorStore } from './useEditorStore';
 
-const MAJOR = ['Cb', 'Gb', 'Db', 'Ab', 'Eb', 'Bb', 'F', 'C', 'G', 'D', 'A', 'E', 'B', 'F#', 'C#'];
-const MINOR = ['Ab', 'Eb', 'Bb', 'F', 'C', 'G', 'D', 'A', 'E', 'B', 'F#', 'C#', 'G#', 'D#', 'A#'];
-export const FIFTHS = Array.from({ length: 15 }, (_, i) => i - 7);
-export const keyName = (fifths: number, mode: 'major' | 'minor' = 'major') =>
-  `${(mode === 'minor' ? MINOR : MAJOR)[fifths + 7]} ${mode}`;
+export { FIFTHS, keyName };
 export const CLEFS: { value: Clef; label: string }[] = [
   { value: 'treble', label: 'Treble' }, { value: 'bass', label: 'Bass' }, { value: 'alto', label: 'Alto' },
   { value: 'tenor', label: 'Tenor' }, { value: 'treble8vb', label: 'Treble 8vb' }, { value: 'percussion', label: 'Percussion' },

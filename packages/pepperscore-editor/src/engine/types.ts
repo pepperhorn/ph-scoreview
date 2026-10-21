@@ -12,6 +12,8 @@ export type Cursor = {
   duration: Duration;
   mode: 'select' | 'enter';
   lastPitch?: Pitch;
+  /** The part and staff `lastPitch` was entered on: entry elsewhere ignores it (an untagged `lastPitch` counts everywhere). */
+  lastPitchAt?: { partId: string; staff: number };
   /** The event entry mode just entered; cleared when the cursor moves. Entry-mode `.` dots it while the cursor sits right after it. */
   entered?: string;
   /** "Add to chord": entry-mode letters add to the target event's chord instead of entering. */

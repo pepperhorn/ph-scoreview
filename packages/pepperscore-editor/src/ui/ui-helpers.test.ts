@@ -10,6 +10,7 @@ import { writePepperScoreFile } from '../format/pepperscore-file';
 import { checkStaffCap, readScoreText, sha256Hex } from './files';
 import { editorHighlights } from './highlights';
 import { KEYMAP } from './keymap';
+import { FIFTHS, keyName } from './key-names';
 
 const at = (doc: ReturnType<typeof helloDoc>, tick: number): Cursor => ({
   partId: doc.parts[0].id, staff: 1, voice: 1, measureId: doc.global.measures[0].id, tick, duration: { base: 'quarter', dots: 0 }, mode: 'enter',
@@ -40,11 +41,35 @@ describe('clickTarget', () => {
     expect(clickTarget(doc, { measureIndex: 0, fraction: 0.9, staff: 1, clientX: 0, clientY: 0 })?.cursor.tick).toBe(1920);
     expect(clickTarget(doc, { sourceId: 'unknown', clientX: 0, clientY: 0 })).toBeUndefined();
   });
+  it('maps a click in staff space to the event the viewer engraved nearest, not the time fraction', () => {
+    const doc = helloDoc();
+    // fraction 0.2 (tick 768) is nearer e2's start by time, but the viewer drew e1's notehead nearest the click
+    expect(clickTarget(doc, { measureIndex: 0, fraction: 0.2, staff: 1, nearestSourceId: 'n1', clientX: 0, clientY: 0 })).toMatchObject({ cursor: { tick: 0 }, selection: [], mode: 'select' });
+    expect(clickTarget(doc, { measureIndex: 0, fraction: 0.05, staff: 1, nearestSourceId: 'e3', clientX: 0, clientY: 0 })).toMatchObject({ cursor: { tick: 1920 }, selection: [], mode: 'enter' });
+    // a nearest note outside the clicked bar or staff (or unknown) falls back to the fraction
+    expect(clickTarget(doc, { measureIndex: 0, fraction: 0.2, staff: 1, nearestSourceId: 'unknown', clientX: 0, clientY: 0 })?.cursor.tick).toBe(960);
+    const piano = createDocument({ parts: [{ name: 'Piano', clef: 'treble', gmProgram: 1, staves: 2 }], measures: 1 });
+    const upper = piano.parts[0].measures[0].sequences.find((s) => s.staff === 1)!;
+    upper.content = [{ id: 'u1', type: 'event', duration: { base: 'quarter', dots: 0 }, notes: [{ id: 'un1', pitch: { step: 'C', octave: 5, alter: 0 } }] }, { id: 'u2', type: 'event', duration: { base: 'quarter', dots: 0 }, notes: [{ id: 'un2', pitch: { step: 'D', octave: 5, alter: 0 } }] }, { id: 'u3', type: 'event', duration: { base: 'half', dots: 0 }, rest: true }];
+    expect(clickTarget(piano, { measureIndex: 0, fraction: 0.2, staff: 2, nearestSourceId: 'un1', clientX: 0, clientY: 0 })?.cursor).toMatchObject({ staff: 2, tick: 0 });
+  });
   it('counts viewer staves through the layout parts and their staves', () => {
     const doc = createDocument({ parts: [{ name: 'Piano', clef: 'treble', gmProgram: 1, staves: 2 }, { name: 'Flute', clef: 'treble', gmProgram: 74 }], measures: 2 });
     expect(staffAt(doc, 2)).toEqual({ partId: doc.parts[0].id, staff: 2 });
     expect(staffAt(doc, 3)).toEqual({ partId: doc.parts[1].id, staff: 1 });
     expect(clickTarget(doc, { measureIndex: 1, fraction: 0.5, staff: 2, clientX: 0, clientY: 0 })?.cursor).toMatchObject({ partId: doc.parts[0].id, staff: 2, measureId: doc.global.measures[1].id, tick: 0 });
+  });
+});
+
+describe('keyName', () => {
+  it('spells key names with flat and sharp glyphs', () => {
+    expect(keyName(-3)).toBe('E♭ major');
+    expect(keyName(6)).toBe('F♯ major');
+    expect(keyName(0)).toBe('C major');
+    expect(keyName(-7)).toBe('C♭ major');
+    expect(keyName(7, 'minor')).toBe('A♯ minor');
+    expect(keyName(-6, 'minor')).toBe('E♭ minor');
+    expect(FIFTHS.map((f) => keyName(f)).join(' ')).not.toMatch(/[#b] /);
   });
 });
 
