@@ -5,7 +5,8 @@
 // header stays expanded while typing (each dispatch restarts the idle timer); a scroll the collapse itself causes (at the
 // bottom of the score) does not reopen it; the Bar tab's repeat start adds a forward repeat; the Marks tab has tuplet,
 // beam and Dyn (the dynamic strip); Escape closes the overflow menu, which holds the header open; Play then Stop leave
-// focus on the editor, so after the collapse keys still enter notes;
+// focus on the editor, so after the collapse keys still enter notes; typing 32 notes from the top keeps the cursor
+// between the header and the toolbar (the Page view follows it);
 // the Key chip opens an inline strip inside the toolbar; the toolbar stays put while the canvas scrolls; the Layout tab's
 // swap chip opens the instrument swap as an inline strip (/tmp/editor-phone-layout.png). Screenshots go to
 // /tmp/editor-phone.png (expanded), /tmp/editor-phone-collapsed.png and /tmp/editor-phone-notes.png (the Notes tab's
@@ -277,8 +278,27 @@ try {
   await page.keyboard.press('c');
   await page.waitForFunction(n => (window.__editor.ref.current.getMusicXml().match(/<pitch>/g) ?? []).length === n + 1, pitchesBefore, { timeout: 10000 });
 
+  // 6c. The view follows the cursor down the Page view: from the top of the score, 32 typed notes keep the cursor
+  // highlight below the header and above the toolbar after every bar.
+  await page.evaluate(() => { document.querySelector('.ps-editor .score-viewport').scrollTop = 0; });
+  const cursorClear = () => page.waitForFunction(() => {
+    const cursor = document.querySelector('.ps-editor [data-ps-highlight~="ps-cursor"], .ps-editor .ps-measure-highlight[data-ps-class~="ps-cursor-measure"]');
+    const header = document.querySelector('.ps-phead')?.getBoundingClientRect(), toolbar = document.querySelector('.ps-ptoolbar')?.getBoundingClientRect();
+    if (!cursor || !header || !toolbar) return false;
+    const c = cursor.getBoundingClientRect();
+    return c.height > 0 && c.top >= header.bottom - 1 && c.bottom <= toolbar.top + 1;
+  }, null, { timeout: 5000 });
+  const scrollTop = () => page.evaluate(() => document.querySelector('.ps-editor .score-viewport').scrollTop);
+  for (let i = 0; i < 32; i++) {
+    await page.keyboard.press('cdefgabc'[i % 8]);
+    await page.waitForFunction(n => (window.__editor.ref.current.getMusicXml().match(/<pitch>/g) ?? []).length === n, pitchesBefore + 2 + i, { timeout: 10000 });
+    if ((i + 1) % 4) continue;
+    try { await cursorClear(); } catch { assert.fail(`after bar ${(i + 1) / 4} the cursor is between the header and the toolbar (scrollTop ${await scrollTop()})`); }
+  }
+  assert.ok(await scrollTop() > 0, 'entry scrolled the Page view down with the cursor');
+
   assert.equal(await page.evaluate(() => window.__viewerRemovals), 0, 'the viewer never remounted');
-  // 6c. New score from the overflow menu starts in Entry too, even after leaving it in Edit.
+  // 6d. New score from the overflow menu starts in Entry too, even after leaving it in Edit.
   await page.evaluate(() => { window.confirm = () => true; });
   await page.locator('.ps-ptoolbar .ps-pmode').tap();
   assert.equal(await page.locator('.ps-editor').getAttribute('data-ps-mode'), 'select');
@@ -312,7 +332,7 @@ try {
 
   assert.deepEqual(errors, [], 'no page or console errors');
   await context.close();
-  console.log(`Editor phone: one viewer mount, two-row header (${expanded}px) collapses to ${collapsed}px, a user scroll restores it and a clamp scroll does not, three-row Notes tab with a 390px piano (keys, black-key spelling, letters switch remembered), header Undo/Redo, starts in Entry (new, opened and New score), toolbar Entry/Edit switch and tap-to-Edit/Entry (box-centre taps hit their own note), glyph key names, toolbar entry keeps it expanded, repeat start, tuplet/beam/dynamic, inline key strip in the toolbar, menu Escape and hold, Play/Stop keeps focus through the collapse, fixed toolbar, Layout tab stave chips and swap strip pass`);
+  console.log(`Editor phone: one viewer mount, two-row header (${expanded}px) collapses to ${collapsed}px, a user scroll restores it and a clamp scroll does not, three-row Notes tab with a 390px piano (keys, black-key spelling, letters switch remembered), header Undo/Redo, starts in Entry (new, opened and New score), toolbar Entry/Edit switch and tap-to-Edit/Entry (box-centre taps hit their own note), glyph key names, toolbar entry keeps it expanded, repeat start, tuplet/beam/dynamic, inline key strip in the toolbar, menu Escape and hold, Play/Stop keeps focus through the collapse, Page view follows the cursor above the toolbar, fixed toolbar, Layout tab stave chips and swap strip pass`);
 } finally {
   await browser.close();
   await server.close();

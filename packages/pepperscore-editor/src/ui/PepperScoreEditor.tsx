@@ -249,7 +249,9 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
   ), [editable, checking, props.licenceKey, banner]);
   const viewer = (
     <EditorViewer
-      viewerRef={viewerRef} store={store} editable={editable} view={phone ? 'vertical' : viewerMode} changedAt={changedAt}
+      viewerRef={viewerRef}
+      editorRef={rootRef}
+      store={store} editable={editable} view={phone ? 'vertical' : viewerMode} changedAt={changedAt}
       assetBaseUrl={props.assetBaseUrl} soundPack={props.soundPack} onElementClick={onElementClick} onReady={onReady} onPlay={onPlayed} onStop={onStopped}
     />
   );

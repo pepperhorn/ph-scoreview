@@ -4,7 +4,7 @@ import type { PepperScoreProps } from './components/PepperScore';
 
 export { PepperScore };
 export default PepperScore;
-export type { PepperScoreProps, PepperScoreHandle, PepperScoreReadyInfo, PepperScoreClickInfo, PepperScoreHighlight } from './components/PepperScore';
+export type { PepperScoreProps, PepperScoreHandle, PepperScoreReadyInfo, PepperScoreClickInfo, PepperScoreHighlight, PepperScoreInsets, PepperScoreScrollTarget, PepperScoreScrollOptions } from './components/PepperScore';
 export type { ChromePreset, PepperScoreControls } from './lib/chrome';
 export type { PepperScoreSettings } from './lib/prefs';
 export type { ExternalClock, ClockEvent } from './lib/clock';
