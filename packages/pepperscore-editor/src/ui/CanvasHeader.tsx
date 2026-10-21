@@ -7,7 +7,7 @@ import { useEditorStore } from './useEditorStore';
 
 export type ViewerMode = 'vertical' | 'endless';
 
-/** Above the score: the Entry/Select badge (click toggles), the position, the layout selector, Page/Endless, zoom and (medium widths) the inspector toggle. */
+/** Above the score: the Entry/Edit badge (click toggles), the position, the layout selector, Page/Endless, zoom and (medium widths) the inspector toggle. */
 export const CanvasHeader = memo(function CanvasHeader({ mode, onMode, inspectorOpen, onInspector }: { mode: ViewerMode; onMode(mode: ViewerMode): void; inspectorOpen: boolean; onInspector(): void }) {
   const { store, editable, refocus } = useUi();
   const run = useRun();
@@ -24,11 +24,11 @@ export const CanvasHeader = memo(function CanvasHeader({ mode, onMode, inspector
           className={`ps-btn ps-mode-pill ${entry ? 'is-entry' : 'is-select'}`}
           aria-label="Toggle note entry"
           aria-pressed={entry}
-          title={tip(entry ? 'Note entry: click for select mode' : 'Select mode: click for note entry', 'Toggle note entry')}
+          title={tip(entry ? 'Note entry: click for Edit mode' : 'Edit mode: click for note entry', 'Toggle note entry')}
           disabled={!editable}
           onClick={() => run('Toggle note entry')}
         >
-          <span className="ps-mode-dot" />{entry ? 'Entry' : 'Select'}
+          <span className="ps-mode-dot" />{entry ? 'Entry' : 'Edit'}
         </button>
         <span className="ps-crumb">{partName ? `${partName} · ` : ''}bar {index + 1} of {bars}</span>
       </div>

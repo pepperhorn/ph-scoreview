@@ -142,7 +142,7 @@ const popover = (key: string, label: string, name: PopoverName, mode?: 'select')
 export const KEYMAP: KeyBinding[] = [
   { keys: ['N'], label: 'Toggle note entry', group: 'entry', action: (ctx) => move(ctx, setEntryMode, { mode: state(ctx).cursor.mode === 'enter' ? 'select' : 'enter' }) },
   {
-    keys: ['Escape'], label: 'Select mode', group: 'entry',
+    keys: ['Escape'], label: 'Edit mode', group: 'entry',
     action: (ctx) => move(ctx, escapeToSelect, {}),
   },
   ...DURATION_KEYS.map(duration),

@@ -37,8 +37,8 @@ The design's `overlay`, `interactive`, `layout`, `getGeometry()` and `renderPage
   - Directions: `addDynamic`, `addWedge`, `addText`, `removeDirection`, `nudge` (offset in staff spaces).
   - Cursor and selection: `setCursor`, `moveCursor` (the selection becomes the event at the new cursor; cleared in entry mode), `escapeToSelect` (leaving entry mode right after an entry selects that note; otherwise clears the selection), `extendSelection` (anchor and head: the anchor stays first, or the event before the cursor when there is none; the run to the head is selected, so moving back shrinks it), `setEntryMode` (clears the just-entered marker), `setCursorDuration`, `setChordMode`, `setSelection`.
 - **Keymap** (`src/ui/keymap.ts`): one table, which also drives tooltips and the touch palette, in seven groups:
-  - entry: `N` entry mode, `Esc` select mode, `0` rest;
-  - duration: `1`–`6` (32nd…whole), `.` dot. In entry mode `.` right after entering an event dots that event and moves the cursor to its new end (`4 C . D` is a dotted C then a quarter D at 1440); otherwise it toggles the entry duration's dot. In select mode it toggles the target event's dot;
+  - entry: `N` entry mode, `Esc` Edit mode (`select` internally), `0` rest;
+  - duration: `1`–`6` (32nd…whole), `.` dot. In entry mode `.` right after entering an event dots that event and moves the cursor to its new end (`4 C . D` is a dotted C then a quarter D at 1440); otherwise it toggles the entry duration's dot. In Edit mode it toggles the target event's dot;
   - pitch: `A`–`G` (in the key, nearest octave; with "Add to chord" on they add to the target event's chord), `↑ ↓` step, `Ctrl+↑ ↓` octave, `Alt+↑ ↓` semitone, `+` sharp, `_` flat, `=` natural (on the target note, up to double accidentals);
   - chord: `Shift+A`–`Shift+G` add that letter to the target event's chord near its top note, in the key, without moving the cursor;
   - edit: `T` tie, `S` slur, `Shift+S` staccato, `-` tenuto, `>` accent, `^` marcato, `Ctrl+3/5/6/7` tuplet, `B` beam group cycle, `/` break beam, `Delete`/`Backspace`, `Ctrl+Z`, `Ctrl+Shift+Z`/`Ctrl+Y`;
