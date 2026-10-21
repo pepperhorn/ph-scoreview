@@ -68,7 +68,7 @@ export function eventsBeforeCursor(doc: Document, cursor: Cursor, count: number)
 
 /**
  * Replaces the selection with the event at the cursor (none: empty) in select mode; clears it in entry
- * mode, where commands target the event before the cursor. Arrows and Escape use it so a selection
+ * mode, where commands target the just-entered event, else the event at the cursor. Arrows and Escape use it so a selection
  * never outlives the cursor leaving it.
  */
 function selectAtCursor(draft: Editable): void {
