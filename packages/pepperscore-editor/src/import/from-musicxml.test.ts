@@ -28,6 +28,11 @@ test('round trip is a fixed point', () => {
   expect(imported).toBe(3);
 });
 
+test('the import has one transposing Full score layout of every part', () => {
+  const { document } = importMusicXml(compileToMusicXml(twoVoicePianoDoc()));
+  expect(document.layouts).toEqual([{ id: 'L1', name: 'Full score', kind: 'score', transposing: true, parts: document.parts.map((p) => ({ partId: p.id })), overrides: {} }]);
+});
+
 test('two voices via backup', () => {
   const xml = compileToMusicXml(twoVoicePianoDoc());
   const { document } = importMusicXml(xml);

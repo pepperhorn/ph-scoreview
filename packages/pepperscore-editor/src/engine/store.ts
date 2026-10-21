@@ -3,9 +3,11 @@ import { createStore } from 'zustand/vanilla';
 import { checkInvariants } from '../model/invariants';
 import type { Document } from '../model/schema';
 import { clampCursor } from './cursor-clamp';
+import { applyLayout, type ViewResult } from './layout/apply-layout';
+import { visibleStaves } from './layout/visible-staves';
 import { record, takeRedo, takeUndo } from './history';
 import { liveSelection } from './prune';
-import type { Command, Cursor, Editable, EditorState, HistoryEntry } from './types';
+import type { Command, Cursor, Editable, EditorState, HistoryEntry, Selection } from './types';
 
 enablePatches();
 
@@ -21,7 +23,19 @@ function initialCursor(document: Document): Cursor {
   };
 }
 
-const editableOf = (s: EditorState): Editable => ({ document: s.document, cursor: s.cursor, selection: s.selection });
+const editableOf = (s: EditorState): Editable => ({ document: s.document, cursor: s.cursor, selection: s.selection, activeLayoutId: s.activeLayoutId });
+
+/**
+ * A cursor on a staff layout `layoutId` does not draw (after a layout switch, a custom layout or a stave toggle)
+ * moves to the first drawn staff at the same bar and tick (voice 1), and the selection clears; otherwise both are
+ * returned as they are. A layout drawing nothing leaves them alone.
+ */
+function onDrawnStaff(doc: Document, layoutId: string, cursor: Cursor, selection: Selection): { cursor: Cursor; selection: Selection } {
+  const drawn = visibleStaves(doc, doc.layouts.find((l) => l.id === layoutId));
+  if (!drawn.length || drawn.some((s) => s.partId === cursor.partId && s.staff === cursor.staff)) return { cursor, selection };
+  const { entered: _entered, ...rest } = cursor;
+  return { cursor: clampCursor(doc, { ...rest, ...drawn[0], voice: 1 }), selection: selection.ids.length ? { ids: [] } : selection };
+}
 
 /**
  * `maxStaves` is the staff cap the invariant report checks (default 4); `cursor` and `activeLayoutId`
@@ -31,16 +45,25 @@ export type EditorStoreOptions = { maxStaves?: number; cursor?: Cursor; activeLa
 
 export function createEditorStore(document: Document, options: EditorStoreOptions = {}) {
   const check = (doc: Document) => checkInvariants(doc, { maxStaves: options.maxStaves });
-  const layoutId = document.layouts.some((l) => l.id === options.activeLayoutId) ? options.activeLayoutId : undefined;
-  const store = createStore<EditorState>()(() => ({
-    document,
-    cursor: options.cursor ? clampCursor(document, options.cursor) : initialCursor(document),
-    selection: { ids: [] },
-    history: { past: [], future: [] },
-    dirty: false,
-    activeLayoutId: layoutId ?? document.layouts[0]?.id ?? '',
-    invariantErrors: check(document),
-  }));
+  /** The layout `id` if `doc` has it, else the first; and its view, memoised on the document and layout id. */
+  let memo: { document: Document; layoutId: string; view: ViewResult } | undefined;
+  const layoutView = (doc: Document, id: string | undefined): { activeLayoutId: string; view: ViewResult } => {
+    const layoutId = doc.layouts.some((l) => l.id === id) ? id! : (doc.layouts[0]?.id ?? '');
+    if (memo?.document !== doc || memo.layoutId !== layoutId) memo = { document: doc, layoutId, view: applyLayout(doc, layoutId) };
+    return { activeLayoutId: layoutId, view: memo.view };
+  };
+  const store = createStore<EditorState>()(() => {
+    const layout = layoutView(document, options.activeLayoutId);
+    const cursor = options.cursor ? clampCursor(document, options.cursor) : initialCursor(document);
+    return {
+      document,
+      ...onDrawnStaff(document, layout.activeLayoutId, cursor, { ids: [] }),
+      history: { past: [], future: [] },
+      dirty: false,
+      ...layout,
+      invariantErrors: check(document),
+    };
+  });
 
   /** The history position last saved (or opened): the past stack's length and its top entry. */
   let saved: { length: number; top: HistoryEntry | undefined } = { length: 0, top: undefined };
@@ -54,10 +77,11 @@ export function createEditorStore(document: Document, options: EditorStoreOption
   const applyEntry = (patches: Patch[], history: EditorState['history']) => {
     const previous = store.getState().document;
     const next = applyPatches(editableOf(store.getState()), patches);
+    const layout = layoutView(next.document, next.activeLayoutId);
     store.setState({
       document: next.document,
-      cursor: clampCursor(next.document, next.cursor, previous),
-      selection: liveSelection(next.document, next.selection),
+      ...onDrawnStaff(next.document, layout.activeLayoutId, clampCursor(next.document, next.cursor, previous), liveSelection(next.document, next.selection)),
+      ...layout,
       history,
       dirty: dirtyAt(history),
       invariantErrors: check(next.document),
@@ -65,13 +89,15 @@ export function createEditorStore(document: Document, options: EditorStoreOption
   };
 
   return Object.assign(store, {
-    /** Runs `command` on a draft; recorded in history (record defaults true) unless it changed nothing. */
+    /** Runs `command` on a draft; recorded in history (record defaults true) unless it changed nothing or the command is never recorded. */
     dispatch<A>(command: Command<A>, args: A, options?: { record?: boolean }): void {
       const state = store.getState();
       const [next, patches, inverse] = produceWithPatches(editableOf(state), (draft) => command.run(draft, args));
       if (patches.length === 0) return;
-      const update: Partial<EditorState> = { ...next, invariantErrors: check(next.document) };
-      if (options?.record ?? true) {
+      const layout = layoutView(next.document, next.activeLayoutId);
+      // A layout change can leave the cursor on a staff it does not draw: repaired here, outside history.
+      const update: Partial<EditorState> = { ...next, ...layout, ...onDrawnStaff(next.document, layout.activeLayoutId, next.cursor, next.selection), invariantErrors: check(next.document) };
+      if (command.record !== false && (options?.record ?? true)) {
         const entry: HistoryEntry = { label: command.label, patches, inverse, coalesceKey: command.coalesceKey?.(args), at: Date.now() };
         update.history = record(state.history, entry);
         update.dirty = dirtyAt(update.history);

@@ -193,19 +193,36 @@ export const deleteMeasure: Command<{ measureId: string }> = {
   },
 };
 
-/** Cursor-only; dispatch with `{ record: false }`. */
+/** Cursor-only; never recorded. */
 export const setCursor: Command<Partial<Cursor>> = {
   label: 'Move cursor',
+  record: false,
   run: (draft, cursor) => {
     if (draft.cursor.entered !== undefined && !('entered' in cursor)) delete draft.cursor.entered;
     Object.assign(draft.cursor, cursor);
   },
 };
 
-/** Selection-only; dispatch with `{ record: false }`. */
+/** Selection-only; never recorded. */
 export const setSelection: Command<{ ids: string[] }> = {
   label: 'Select',
+  record: false,
   run: (draft, { ids }) => {
     draft.selection.ids = [...ids];
+  },
+};
+
+/** Sets the score's title and/or composer; a blank value removes it. Keys left out are unchanged. */
+export const setMeta: Command<{ title?: string; composer?: string }> = {
+  label: 'Edit score info',
+  run: (draft, args) => {
+    const meta = draft.document.meta;
+    for (const key of ['title', 'composer'] as const) {
+      const value = args[key];
+      if (value === undefined) continue;
+      const trimmed = value.trim();
+      if (!trimmed) delete meta[key];
+      else if (meta[key] !== trimmed) meta[key] = trimmed;
+    }
   },
 };

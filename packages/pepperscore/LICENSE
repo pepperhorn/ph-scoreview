@@ -21,20 +21,34 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ---
-The MIT License above covers the pepperscore component code. It does not cover
-Verovio.
+The MIT License above covers the pepperscore component code, including its
+Web Worker chunks in dist/assets/. It does not cover Verovio or the other
+third-party components listed in dist/THIRD_PARTY_NOTICES.txt.
 
-dist/assets/verovio.worker-*.js is a combined work: pepperscore's own worker
-code (MIT) bundled with the Verovio 6.3.0 music engraving library and its
-WebAssembly module (https://www.verovio.org/, Copyright (c) the Verovio
-contributors). Verovio is used unmodified and is licensed under the GNU Lesser
-General Public License, version 3 or (at your option) any later version
+Verovio is not compiled or bundled into pepperscore's code. pepperscore ships
+two unmodified files of the Verovio 6.3.0 music engraving library
+(https://www.verovio.org/, Copyright (c) Laurent Pugin and the Verovio
+contributors), taken from the npm package verovio@6.3.0, with only a licence
+comment added at the top of each:
+
+  dist/verovio/verovio-module.mjs  the WebAssembly module and its glue code
+  dist/verovio/verovio.mjs         the JavaScript toolkit
+  dist/verovio/LICENSE             their licence notice
+
+pepperscore's worker loads them at runtime. Verovio is licensed under the GNU
+Lesser General Public License, version 3 or (at your option) any later version
 (LGPL-3.0-or-later). Copies of the licenses are included in this package:
 
   LICENSES/LGPL-3.0.txt  GNU Lesser General Public License, version 3
   LICENSES/GPL-3.0.txt   GNU General Public License, version 3
 
-Verovio 6.3.0 source code: https://github.com/rism-digital/verovio/tree/version-6.3.0
-(also published on npm as verovio@6.3.0). You may replace the bundled Verovio
-with a compatible modified version by rebuilding this package from its source
-(https://github.com/pepperhorn/ph-scoreview) against your own verovio build.
+Corresponding source for Verovio 6.3.0:
+  https://github.com/rism-digital/verovio/tree/version-6.3.0
+  (git tag version-6.3.0; also published on npm as verovio@6.3.0)
+
+Replacing Verovio: you may use a modified or different, interface-compatible
+build of Verovio in place of the shipped files without rebuilding pepperscore.
+Either pass the URL of a directory holding your verovio-module.mjs and
+verovio.mjs (laid out like the verovio npm package's dist/ directory) as the
+`verovioBaseUrl` prop of PepperScore, or replace the two files in
+dist/verovio/ (or the copies your bundler emitted) with your own.

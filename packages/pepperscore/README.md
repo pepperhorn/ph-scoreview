@@ -1,6 +1,6 @@
 # pepperscore
 
-An embeddable, browser-only music score reader for React. It opens MusicXML (`.musicxml`, `.xml`), compressed MXL, MIDI, MEI and ABC. [Verovio](https://www.verovio.org/) 6.3 engraves the score in a Web Worker, with its WASM bundled, so the page never blocks on layout. Playback follows one performance timeline that handles ties, dynamics, repeats, tempo changes and percussion, with a playhead, note highlighting and follow-scrolling. You can use it as a full reader page with a header, drawer and mixer, or as small inline snippets, several to a page.
+An embeddable, browser-only music score reader for React. It opens MusicXML (`.musicxml`, `.xml`), compressed MXL, MIDI, MEI and ABC. [Verovio](https://www.verovio.org/) 6.3 engraves the score in a Web Worker, so the page never blocks on layout. Verovio ships with the package as its own, replaceable file (see [Verovio](#verovio)). Playback follows one performance timeline that handles ties, dynamics, repeats, tempo changes and percussion, with a playhead, note highlighting and follow-scrolling. You can use it as a full reader page with a header, drawer and mixer, or as small inline snippets, several to a page.
 
 ## Install
 
@@ -183,7 +183,7 @@ export default defineConfig({
 
 - Production builds (`astro build`) need nothing.
 - A plain Vite + React app needs nothing either, because Vite's dependency scan finds these from the app's entry. The same `include` is harmless there.
-- Do **not** add `optimizeDeps.exclude: ['pepperscore']`. It is not needed (the worker URLs survive pre-bundling with Vite 8), and with pnpm it breaks `react/jsx-runtime`.
+- Do **not** add `optimizeDeps.exclude: ['pepperscore']`. It is not needed (the worker and Verovio URLs survive pre-bundling with Vite 8), and with pnpm it breaks `react/jsx-runtime`.
 - Your layout should declare `<meta charset="utf-8">` (Astro's starter layouts do). Without it, the server-rendered frame of a `client:load`/`client:visible` island is decoded as Latin-1 and React reports a hydration mismatch.
 
 ## Props
@@ -203,6 +203,7 @@ export default defineConfig({
 | `settings` | `PepperScoreSettings` | | **Initial** reader settings: `noteNames`, `chordSymbols`, `inferChords`, `beatCounts`, `subdivisions` (booleans); `musicFont` (`'Bravura' \| 'Petaluma'`); `staveFont` (`'Sans' \| 'Serif' \| 'Mono'`); `barsPerLine` (`'auto' \| 1–8`, Vertical view; without a `zoom`, an explicit count also sets the on-load size: that many bars fill the width, see below); `zoom` (stave scale, `null` = device default; with a `zoom`, `barsPerLine` only sets the line breaks); `semitones` (−12…12); `concert` (concert vs written pitch); `overlap` (0–3 lines kept on a page turn). Changing a key in the prop re-applies that key. Drawer edits still work in between. With `persist` on, **a saved per-score record overrides `settings` and `view`** when that score is opened again. The record holds the settings, view, zoom, transposition, part sounds and hidden staves the reader stored for that exact file. |
 | `persist` | `string \| false` | `'pepperscore'` for `full`, `false` for `minimal`/`none` | Storage namespace, see below. `false` reads and writes nothing. |
 | `assetBaseUrl` | `string` | jsDelivr copy of `pepperscore-sounds-<soundPack>` | Root of a sounds-package layout. Relative values resolve against the page, and a missing trailing slash is added. |
+| `verovioBaseUrl` | `string` | the copy in `dist/verovio/` | A directory with an interface-compatible Verovio build to engrave with, laid out like the `verovio` npm package's `dist/` (`verovio-module.mjs`, `verovio.mjs`), e.g. `https://cdn.jsdelivr.net/npm/verovio@6.3.0/dist/`. Shared by every reader on the page: set it before the first score engraves. See [Verovio](#verovio). |
 | `soundPack` | `'core' \| 'complete'` | `'core'` | Picks the default `assetBaseUrl`. With your own `assetBaseUrl`, the `pack.json` found there decides which FluidR3 sounds exist. |
 | `soundSources` | `SoundSource[]` | `[]` | Your own sounds for specific programs or the drum kit, see below. |
 | `onReady` | `(info: { title, composer?, parts: { id, name }[], measures }) => void` | | Once per loaded score, after it is drawn. |
@@ -256,7 +257,7 @@ const clock: ExternalClock = {
 For hosts that build on the reader (selection, cursors, navigation):
 
 - **`onElementClick(info)`** fires for any click on the engraving, with every `chrome` and with or without a `clock`. `info` is `{ noteId?, sourceId?, measureIndex?, fraction?, staff?, clientX, clientY }`: the note hit (and its MusicXML `id`, when known), the zero-based measure, the 0–1 position across that measure, and the 1-based nearest staff. With a handler set, notes and measures show a pointer cursor.
-- **`highlights`**: `{ ids?, measures?, className }[]`. Each entry adds `className` to those notes (note or MusicXML ids) and measures (zero-based), re-applied after every draw. Built-in classes: `ps-cursor`, `ps-selection` (notes) and `ps-cursor-measure` (measures), coloured by `--ps-cursor` and `--ps-selection`.
+- **`highlights`**: `{ ids?, measures?, className }[]`. Each entry adds `className` to those notes (note or MusicXML ids) and measures (zero-based), re-applied after every draw. Built-in classes: `ps-cursor`, `ps-selection` and `ps-transposed` (notes) and `ps-cursor-measure` (measures), coloured by `--ps-cursor`, `--ps-selection` (ink blue `#2f6a9a`) and `--ps-transposed` (orange `#d9741c`). Every highlighted measure, whatever its class, also gets a dashed box: a `<rect class="ps-measure-highlight" data-ps-class="...">` in a `<g class="ps-highlight-layer">` overlay beside the measures (so the measure's own bounds are unchanged), a few pixels outside the measure, with a 2px screen-space stroke (`vector-effect: non-scaling-stroke`) in `--ps-cursor`. Restyle it per class with `.ps-measure-highlight[data-ps-class~="my-class"] { stroke: ... }`. The box is removed when the highlight is cleared and redrawn with the measure.
 - **`ref.scrollToMeasure(index)`** draws the measure's system if needed and scrolls it into view. **`ref.seekToMeasure(index)`** seeks to the measure's start, like `ref.seek` (with a `clock`, through `onSeek`).
 
 ### Chrome presets and `controls`
@@ -331,6 +332,14 @@ cp -rL node_modules/pepperscore-sounds-core public/pepperscore-sounds   # -L: pn
 
 Use the sounds package version that matches `SOUNDS_VERSION` (exported by this package). A base on another origin must send CORS headers (`Access-Control-Allow-Origin`), because fonts and sounds are fetched.
 
+### Verovio
+
+Verovio is not bundled into pepperscore's code. The package ships upstream's own files from `verovio@6.3.0`, unmodified apart from a licence comment, in `dist/verovio/` (`verovio-module.mjs`, about 7.3 MB with its WebAssembly inlined, and `verovio.mjs`, the toolkit), and the Verovio worker imports them at runtime when the first score engraves. Host bundlers (Vite, Astro) copy them as assets like the worker chunks, so nothing needs configuring.
+
+- Serve `.mjs` files as JavaScript (`text/javascript`). Most hosts do; a server that sends them as `application/octet-stream` makes the import fail, and the reader shows a "Could not load Verovio from …" error.
+- To engrave with another build (a modified Verovio, a newer compatible version, or a CDN copy), pass `verovioBaseUrl`, a directory holding both files. A cross-origin directory must send CORS headers. Or replace the files your bundler emitted.
+- The interface pepperscore expects: `verovio-module.mjs` default-exports an async factory returning the Emscripten module (`createVerovioModule`), and `verovio.mjs` exports `VerovioToolkit` and `enableLogToBuffer`, as in `verovio@6.3.0`.
+
 **If the assets cannot be loaded** (a wrong `assetBaseUrl`, or nothing published there yet), the reader keeps working: the score still engraves (Verovio's own glyphs; text glyphs fall back), playback runs silently with the usual "playing silently" notice and no error, and the console shows one warning naming the `assetBaseUrl` that failed. A failing `soundSources` entry of your own still reports through `onError`.
 
 ### Testing before the sounds packages are published
@@ -381,7 +390,9 @@ Drums use the Perfect Drums note files unless a source claims them. `soundSource
 The package licence is `MIT AND LGPL-3.0-or-later`:
 
 - **The pepperscore component code is MIT licensed** (see `LICENSE`).
-- **The bundled Verovio worker is LGPL-3.0-or-later.** `dist/assets/verovio.worker-*.js` bundles Verovio 6.3.0 ([source](https://github.com/rism-digital/verovio/tree/version-6.3.0)), unmodified, with its WebAssembly module. The LGPL-3.0 and GPL-3.0 texts ship in `LICENSES/LGPL-3.0.txt` and `LICENSES/GPL-3.0.txt`. Hosts that bundle pepperscore redistribute that worker chunk as is; keep these notices with it.
+- **The pepperscore worker chunks in `dist/assets/` are MIT licensed too**: they contain no Verovio code.
+- **Verovio is LGPL-3.0-or-later** and stays a separate file. `dist/verovio/` holds Verovio 6.3.0's own `verovio-module.mjs` and `verovio.mjs` (unmodified, with a licence comment added) and a `LICENSE`; the worker loads them at runtime, and you can swap in your own build with `verovioBaseUrl` (see [Verovio](#verovio)). Source: [rism-digital/verovio, tag version-6.3.0](https://github.com/rism-digital/verovio/tree/version-6.3.0). The LGPL-3.0 and GPL-3.0 texts ship in `LICENSES/`. Hosts that deploy pepperscore redistribute these files; keep their notices with them.
+- **Third-party notices**: `dist/THIRD_PARTY_NOTICES.txt` lists the runtime dependencies (MIT and ISC, with their licence texts), Verovio, the SIL OFL 1.1 music fonts Verovio embeds (Leipzig, Bravura, Gootville, Leland, Petaluma) and Poppins (OFL 1.1, through `@fontsource/poppins`). Host bundlers copy it as an asset, and the full reader's options drawer links it ("Licences", next to the soundfont credits).
 - **Sound packs** (`pepperscore-sounds-core`, `pepperscore-sounds-complete`): each asset set keeps its own license, listed in the package's `LICENSES.md`:
   - TimGM6mb.sf2: GPL-2.0
   - FluidR3 GM sample packs: CC BY 3.0 (attribution in `soundfonts/fluidr3/ATTRIBUTION.txt`)

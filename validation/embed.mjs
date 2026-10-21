@@ -1,5 +1,6 @@
 // PepperScore embedded in a host-styled page (apps/reader /embed-test): one full reader in a 600px box, minimal snippets
 // A (ABC, soundSources, settings.zoom), B (ensemble, 200px) and C (invalid XML), and an engraving-only Endless snippet.
+// Also /embed-missing-assets (an assetBaseUrl with nothing behind it) and /embed-verovio (a host-supplied Verovio).
 // Runs against the build. BROWSER=chromium|firefox|webkit.
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -10,7 +11,8 @@ import { root, serveDist } from './serve-dist.mjs';
 const engine = process.env.BROWSER || 'chromium';
 const launcher = { chromium, firefox, webkit }[engine];
 if (!launcher) throw new Error(`BROWSER must be chromium, firefox or webkit (got "${engine}")`);
-const server = await serveDist();
+// /custom-verovio/ stands in for a host's own Verovio build: the upstream files pepperscore ships in dist/verovio/.
+const server = await serveDist({ mounts: { '/custom-verovio/': join(root, 'packages/pepperscore/dist/verovio') } });
 const browser = await launcher.launch({ headless: true, ...(engine === 'chromium' ? { args: ['--no-sandbox'] } : {}) });
 const sounds = join(root, 'packages/pepperscore-sounds-complete');
 const inside = (outer, inner) => inner.left >= outer.left - 1 && inner.top >= outer.top - 1 && inner.right <= outer.right + 1 && inner.bottom <= outer.bottom + 1;
@@ -552,6 +554,58 @@ try {
     }, [fullChrome, noteId], { timeout: 5000 });
     await page.evaluate(() => window.__embed.setHighlights([]));
     await page.waitForFunction(root => !document.querySelector(`${root} .ps-selection`), fullChrome, { timeout: 5000 });
+    // ps-transposed colours the note orange (notehead fill).
+    await page.evaluate(noteId => window.__embed.setHighlights([{ ids: [noteId], className: 'ps-transposed' }]), noteId);
+    await page.waitForFunction(([root, noteId]) => document.querySelector(`${root} [data-note-id="${CSS.escape(noteId)}"]`)?.closest('.ps-transposed'), [fullChrome, noteId], { timeout: 5000 });
+    // Firefox applies the inherited fill to the <use> notehead a frame later than the class lands, so poll the computed
+    // style rather than reading it once.
+    const fillOf = ([root, noteId]) => {
+      const element = document.querySelector(`${root} [data-note-id="${CSS.escape(noteId)}"]`);
+      const head = element?.querySelector('.notehead') ?? element;
+      return head ? getComputedStyle(head).fill : '';
+    };
+    await page.waitForFunction(([root, noteId, expected]) => {
+      const element = document.querySelector(`${root} [data-note-id="${CSS.escape(noteId)}"]`);
+      const head = element?.querySelector('.notehead') ?? element;
+      return head && getComputedStyle(head).fill === expected;
+    }, [fullChrome, noteId, 'rgb(217, 116, 28)'], { timeout: 5000 }).catch(() => {});
+    const transposedFill = await page.evaluate(fillOf, [fullChrome, noteId]);
+    assert.equal(transposedFill, 'rgb(217, 116, 28)', `ps-transposed fills the notehead orange (got ${transposedFill})`);
+    // A measure highlight draws a dashed box with a screen-space stroke (an outline on the group was ~0.1px) in an
+    // overlay beside the measures, so the measure's own bounds (click hit-testing, zoom anchor) do not change; the box
+    // comes back after a redraw.
+    const measureWidth = () => page.evaluate(root => document.querySelector(`${root} .score-system svg .measure`).getBoundingClientRect().width, fullChrome);
+    const plainWidth = await measureWidth();
+    const boxSelector = `${fullChrome} .score-system svg .ps-highlight-layer > rect.ps-measure-highlight[data-ps-class~="ps-cursor-measure"]`;
+    const measureBox = () => page.evaluate(([root, selector]) => {
+      const rect = document.querySelector(selector);
+      if (!rect) return null;
+      const measure = document.querySelector(`${root} .score-system svg .measure`), style = getComputedStyle(rect);
+      const own = rect.getBoundingClientRect(), outer = measure.getBoundingClientRect();
+      const fresh = !rect.__seen; rect.__seen = true;
+      return { fresh, strokeWidth: parseFloat(style.strokeWidth), vectorEffect: style.vectorEffect, dash: style.strokeDasharray, fill: style.fill,
+        highlighted: measure.classList.contains('ps-cursor-measure'), outsideMeasure: !measure.contains(rect),
+        covers: own.left <= outer.left && own.right >= outer.right && own.top <= outer.top && own.bottom >= outer.bottom,
+        sameSvg: rect.ownerSVGElement === measure.ownerSVGElement, measureWidth: outer.width };
+    }, [fullChrome, boxSelector]);
+    await page.evaluate(() => window.__embed.setHighlights([{ measures: [0], className: 'ps-cursor-measure' }]));
+    await page.waitForFunction(selector => document.querySelector(selector), boxSelector, { timeout: 5000 });
+    const drawnBox = await measureBox();
+    assert.ok(drawnBox.highlighted && drawnBox.outsideMeasure && drawnBox.sameSvg, `measure 0 is highlighted, its box sits in an overlay of its svg: ${JSON.stringify(drawnBox)}`);
+    assert.equal(drawnBox.vectorEffect, 'non-scaling-stroke', `the box stroke does not scale: ${JSON.stringify(drawnBox)}`);
+    assert.ok(drawnBox.strokeWidth >= 1.5, `the box stroke is at least 1.5px on screen: ${JSON.stringify(drawnBox)}`);
+    assert.ok(drawnBox.dash !== 'none' && drawnBox.fill === 'none', `the box is dashed and unfilled: ${JSON.stringify(drawnBox)}`);
+    assert.ok(drawnBox.covers, `the box surrounds measure 0: ${JSON.stringify(drawnBox)}`);
+    assert.ok(Math.abs(drawnBox.measureWidth - plainWidth) <= 0.5, `the highlight leaves measure 0's bounds unchanged: ${plainWidth} -> ${drawnBox.measureWidth}`);
+    await page.evaluate(() => window.__embed.refs.full.current.transpose(2));
+    await page.waitForFunction(selector => { const rect = document.querySelector(selector); return rect && !rect.__seen; }, boxSelector, { timeout: 15000 });
+    const redrawnBox = await measureBox();
+    assert.ok(redrawnBox.fresh && redrawnBox.highlighted && redrawnBox.covers && redrawnBox.strokeWidth >= 1.5, `the box survives a redraw: ${JSON.stringify(redrawnBox)}`);
+    assert.equal(await page.locator(`${fullChrome} .ps-measure-highlight`).count(), 1, 'one box per highlighted measure');
+    await page.evaluate(() => window.__embed.refs.full.current.transpose(0));
+    await page.waitForFunction(selector => { const rect = document.querySelector(selector); return rect && !rect.__seen; }, boxSelector, { timeout: 15000 });
+    await page.evaluate(() => window.__embed.setHighlights([]));
+    await page.waitForFunction(root => !document.querySelector(`${root} .ps-measure-highlight, ${root} .ps-cursor-measure, ${root} .ps-highlight-layer, ${root} [data-ps-highlight]`), fullChrome, { timeout: 5000 });
     // A reader with neither a clock nor onElementClick does no work on a click (no layout reads).
     await page.locator('.embed-a .score-staves svg').first().waitFor({ timeout: 30000 });
     const layoutReads = await page.evaluate(() => {
@@ -602,5 +656,48 @@ try {
     await context.close();
   }
 
-  console.log(`${engine}: embedding (chrome presets, callbacks, host hooks, ref, settings, sounds and asset base, style isolation, containment, unique ids, focused keyboard, focus ring, landmark names, shared engine, persist, missing assets) passed`);
+  // 10. Verovio (LGPL) is a separate, replaceable file: the worker imports the copy shipped with pepperscore (emitted by
+  // the host build), or with `verovioBaseUrl` the host's copy instead; a base with no Verovio behind it fails with an
+  // error naming the URL. Checked on the server's log, since not every browser reports worker imports to Playwright.
+  {
+    const verovioFiles = () => server.requests.filter(path => /\.mjs$/.test(path));
+    const openVerovio = async query => {
+      const context = await browser.newContext({ viewport: { width: 1000, height: 700 } });
+      await context.route(/poppins/i, route => route.abort());
+      const page = await context.newPage();
+      const errors = [];
+      page.on('pageerror', error => errors.push(error.message));
+      server.requests.length = 0;
+      await page.goto(`${server.url}/embed-verovio${query}`);
+      return { context, page, errors };
+    };
+    {
+      const { context, page, errors } = await openVerovio('');
+      await rendered(page, '.pepperscore.embed-verovio');
+      const files = verovioFiles();
+      assert.ok(files.some(path => /^\/_astro\/verovio-module\.[\w-]+\.mjs$/.test(path)) && files.some(path => /^\/_astro\/verovio\.[\w-]+\.mjs$/.test(path)), `the worker imports the Verovio files the host build emitted: ${files}`);
+      assert.deepEqual(errors, []);
+      await context.close();
+    }
+    {
+      const { context, page, errors } = await openVerovio('?verovio=/custom-verovio/');
+      await rendered(page, '.pepperscore.embed-verovio');
+      assert.deepEqual(verovioFiles().sort(), ['/custom-verovio/verovio-module.mjs', '/custom-verovio/verovio.mjs'], 'with verovioBaseUrl the worker imports Verovio from there, and only from there');
+      assert.deepEqual((await page.evaluate(() => window.__verovioEvents)).filter(([kind]) => kind === 'error'), [], 'no onError');
+      assert.deepEqual(errors, []);
+      await context.close();
+    }
+    {
+      const { context, page, errors } = await openVerovio('?verovio=/no-verovio/');
+      await page.waitForFunction(() => window.__verovioEvents?.some(([kind]) => kind === 'error'), null, { timeout: 30000 });
+      const [, message] = (await page.evaluate(() => window.__verovioEvents)).find(([kind]) => kind === 'error');
+      assert.ok(message.includes(`${server.url}/no-verovio/verovio-module.mjs`), `the error names the Verovio URL: ${message}`);
+      assert.ok(server.requests.includes('/no-verovio/verovio-module.mjs'), 'the worker asked the configured base');
+      assert.equal(await page.locator('.embed-verovio .score-system svg').count(), 0, 'nothing engraved');
+      assert.deepEqual(errors, []);
+      await context.close();
+    }
+  }
+
+  console.log(`${engine}: embedding (chrome presets, callbacks, host hooks, ref, settings, sounds and asset base, style isolation, containment, unique ids, focused keyboard, focus ring, landmark names, shared engine, persist, missing assets, verovioBaseUrl) passed`);
 } finally { await browser.close(); await server.close(); }

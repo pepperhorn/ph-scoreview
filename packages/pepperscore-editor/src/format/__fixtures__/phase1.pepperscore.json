@@ -1,0 +1,116 @@
+{
+  "pepperscore": {
+    "version": 1
+  },
+  "meta": {
+    "title": "Hello",
+    "created": "2026-10-01T09:00:00.000Z",
+    "modified": "2026-10-01T09:30:00.000Z"
+  },
+  "document": {
+    "global": {
+      "measures": [
+        {
+          "id": "m1",
+          "time": {
+            "count": 4,
+            "unit": 4
+          },
+          "key": {
+            "fifths": 0
+          }
+        }
+      ]
+    },
+    "parts": [
+      {
+        "id": "p1",
+        "name": "Flute",
+        "instrument": {
+          "gmProgram": 74
+        },
+        "staves": 1,
+        "clefs": [
+          "treble"
+        ],
+        "measures": [
+          {
+            "id": "p1m1",
+            "sequences": [
+              {
+                "id": "p1m1s1v1",
+                "voice": 1,
+                "staff": 1,
+                "content": [
+                  {
+                    "id": "e1",
+                    "type": "event",
+                    "duration": {
+                      "base": "quarter",
+                      "dots": 0
+                    },
+                    "notes": [
+                      {
+                        "id": "n1",
+                        "pitch": {
+                          "step": "C",
+                          "octave": 5,
+                          "alter": 0
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "e2",
+                    "type": "event",
+                    "duration": {
+                      "base": "quarter",
+                      "dots": 0
+                    },
+                    "notes": [
+                      {
+                        "id": "n2",
+                        "pitch": {
+                          "step": "D",
+                          "octave": 5,
+                          "alter": 0
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "e3",
+                    "type": "event",
+                    "duration": {
+                      "base": "half",
+                      "dots": 0
+                    },
+                    "rest": true
+                  }
+                ]
+              }
+            ],
+            "beams": [],
+            "directions": []
+          }
+        ]
+      }
+    ],
+    "layouts": [
+      {
+        "id": "layout1",
+        "name": "Score",
+        "parts": [
+          {
+            "partId": "p1"
+          }
+        ],
+        "overrides": {}
+      }
+    ],
+    "style": {},
+    "meta": {
+      "title": "Hello"
+    }
+  }
+}
