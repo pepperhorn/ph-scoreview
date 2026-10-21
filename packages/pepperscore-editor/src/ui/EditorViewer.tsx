@@ -27,6 +27,8 @@ export type EditorViewerProps = {
 /**
  * The engraving: the active layout's view compiled 80 ms after the last change, with the cursor, selection and
  * moved-note highlights. It subscribes to the cursor and selection itself, so a cursor move re-renders only this.
+ * An edit swaps the engraving in place (`paintTransition="none"`): no fade, no loading overlay, scroll position kept.
+ * Opening another score remounts the session, so its first paint still reveals.
  */
 export const EditorViewer = memo(function EditorViewer({ viewerRef, store, editable, view: mode, changedAt, assetBaseUrl, soundPack, onElementClick, onReady, onPlay, onStop }: EditorViewerProps) {
   const document = useEditorStore(store, (s) => s.document);
@@ -59,6 +61,7 @@ export const EditorViewer = memo(function EditorViewer({ viewerRef, store, edita
       soundPack={soundPack}
       onElementClick={editable ? onElementClick : undefined}
       highlights={highlights}
+      paintTransition="none"
       onReady={onReady}
       onPlay={onPlay}
       onStop={onStop}

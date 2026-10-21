@@ -149,6 +149,13 @@ export type PepperScoreProps = {
   highlights?: PepperScoreHighlight[];
   /** Focus the reader on mount so page-turn keys work before any click. */
   autoFocus?: boolean;
+  /**
+   * How a new `musicXml` or `abc` replaces a score already on screen. `"reveal"` (default): fade out, show the loading
+   * overlay, scroll to the top and fade the new score in. `"none"`: keep the current engraving and scroll position until
+   * the new one replaces it in place, with no fade or overlay (for a host that edits the score it shows, like the
+   * editor). The first paint, other sources and setting changes (mode, font, transposition) always reveal.
+   */
+  paintTransition?: 'reveal' | 'none';
   ref?: React.Ref<PepperScoreHandle>;
 };
 /** The widest control gutter a viewport can spare: 42% of it, leaving the first system at least its 180px minimum (render.ts). */
@@ -183,7 +190,7 @@ const flag = (element: HTMLElement, key: 'psShort' | 'psTiny' | 'psWide', on: bo
 /** Where the viewport centre sits in a measure, so a re-layout can put that point back at the centre. */
 type ZoomAnchor = { index: number; fx: number; fy: number };
 
-export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: preset = 'full', controls, view, height, className, ariaLabel, settings, persist, assetBaseUrl, verovioBaseUrl, soundPack = 'core', soundSources, onReady, onPlay, onStop, onError, clock, audio: withAudio = true, onSeek, onTimeUpdate, onElementClick, highlights, autoFocus, ref }: PepperScoreProps) {
+export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: preset = 'full', controls, view, height, className, ariaLabel, settings, persist, assetBaseUrl, verovioBaseUrl, soundPack = 'core', soundSources, onReady, onPlay, onStop, onError, clock, audio: withAudio = true, onSeek, onTimeUpdate, onElementClick, highlights, autoFocus, paintTransition = 'reveal', ref }: PepperScoreProps) {
   const chrome = useMemo(() => resolveChrome(preset, controls), [preset, controls?.mixer, controls?.openFile, controls?.drawer, controls?.transport, controls?.viewToggle, controls?.zoom]);
   /** A host clock always shows the playhead (ivories uses chrome="none" with a clock). */
   const playhead = chrome.playhead || Boolean(clock);
@@ -268,6 +275,10 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const savedViewRef = useRef<ScoreView | undefined>(undefined);
   /** The next render is a zoom commit: no paint reveal or loading overlay, and the anchor measure is kept centred. */
   const quietRenderRef = useRef(false);
+  /** The next render swaps an edited source in place (`paintTransition: "none"`): no paint reveal or loading overlay. */
+  const inPlaceRenderRef = useRef(false);
+  const paintTransitionRef = useRef(paintTransition);
+  paintTransitionRef.current = paintTransition;
   const zoomAnchorRef = useRef<ZoomAnchor | null>(null);
   const previewOriginRef = useRef<{ x: number; y: number } | null>(null);
   /** A pointer is pressed on the stave scale slider. */
@@ -432,8 +443,11 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   // A host clock owns the playhead: a transpose keeps it at the clock's time (it does not rebuild the timeline, so nothing would repaint it).
   const changePitch = (patch: Partial<Prefs>) => { if (!clockRef.current) stop(true); update(patch); };
   const transposeBy = (delta: number) => changePitch({ semitones: clampSemitones(prefs.semitones + delta) });
-  /** Show a score with its saved record (if any). The saved zoom applies only on the device class it was chosen on. */
-  const loadScore = (next: Score, nextSource: FileSource, saved: FileState | null) => {
+  /**
+   * Show a score with its saved record (if any). The saved zoom applies only on the device class it was chosen on.
+   * `inPlace` replaces the score on screen without the paint reveal and keeps the scroll position.
+   */
+  const loadScore = (next: Score, nextSource: FileSource, saved: FileState | null, inPlace = false) => {
     const device = deviceClass();
     savedViewRef.current = saved?.view;
     const zoom = saved?.view?.zoomDevice === device ? saved.view.zoom : null;
@@ -442,7 +456,9 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
       if (!state) return part;
       return { ...part, instrument: state.instrument, gmSoundfont: state.gmSoundfont || (state.instrument === part.instrument ? part.gmSoundfont : instrumentDetails(state.instrument).soundfont || undefined) };
     }) } : next;
-    stop(true); setPainting(true); setPickerPartId(null); setScore(restored); setScoreRevision(value => value + 1); setSource(nextSource); setLoaded(true);
+    stop(true); setPickerPartId(null); setScore(restored);
+    if (inPlace) inPlaceRenderRef.current = true;
+    else setPainting(true); setScoreRevision(value => value + 1); setSource(nextSource); setLoaded(true);
     setHiddenIds(saved ? next.parts.filter(part => saved.parts[part.id]?.visible === false).map(part => part.id) : []);
     setTrackVolumes(saved ? Object.fromEntries(next.parts.map(part => [part.id, saved.parts[part.id]?.volume ?? 100])) : {});
     setError('');
@@ -452,21 +468,25 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     const host = hostPrefsRef.current;
     const hostResets: Partial<Prefs> = Object.fromEntries((['zoom', 'semitones', 'scorePitch'] as const).filter(key => host[key] !== undefined).map(key => [key, host[key]]));
     setPrefs(prev => saved ? { ...prev, ...saved.settings, zoom } : { ...prev, bpm: clampBpm(Math.round(next.tempo)), zoom: null, semitones: 0, keyFlip: false, scorePitch: next.parts.some(part => part.pitchBasis === 'concert') ? 'concert' : 'written', ...hostResets });
-    viewportRef.current?.scrollTo({ left: 0, top: 0 });
+    if (!inPlace) viewportRef.current?.scrollTo({ left: 0, top: 0 });
     setDrawer(false);
   };
+  /** A supplied text source replaces a painted score in place (`paintTransition: "none"`). */
+  const swapsInPlace = () => paintTransitionRef.current === 'none' && hasPaintedRef.current;
   /** Import supplied MusicXML text (read and identified in the import worker, like a file). */
   const readMusicXml = async (text: string) => {
     const run = ++importRunRef.current;
+    const inPlace = swapsInPlace();
     setReady(true);
-    startOpening(); stop(true); setPainting(true);
+    startOpening(); stop(true);
+    if (!inPlace) setPainting(true);
     try {
       const job = importMusicXmlText(text, 'MusicXML', channelRef.current);
       const src = await job.source;
       const [saved, next] = await Promise.all([readScoreRecord(storageRef.current.scoreDb, src), job.score]);
       if (run !== importRunRef.current) return;
       if (next.document) await prepareEngraving(next.document);
-      if (run === importRunRef.current) loadScore(next, src, saved);
+      if (run === importRunRef.current) loadScore(next, src, saved, inPlace);
     } catch (e) {
       if (run === importRunRef.current) { setPainting(false); showError(e, 'Could not read the supplied MusicXML.'); }
     }
@@ -537,7 +557,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     if (musicXml) { void readMusicXml(musicXml); return () => { importRunRef.current++; }; }
     if (file) { void readFile(file); return () => { importRunRef.current++; }; }
     if (scoreUrl) { void readUrl(scoreUrl); return () => { importRunRef.current++; }; }
-    if (abc) { void readAbc(abc); return () => { importRunRef.current++; }; }
+    if (abc) { void readAbc(abc, true); return () => { importRunRef.current++; }; }
   }, [musicXml, file, scoreUrl, abc]);
   // Host settings and view: a changed key is applied again (unchanged keys keep the reader's own edits).
   useEffect(() => {
@@ -570,15 +590,16 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     storage.dismissReopen();
   };
   const forgetLast = () => { setReopenOffer(null); setLastFileInfo(null); void storage.lastFile.forget(); };
-  const readAbc = async (text: string) => {
+  const readAbc = async (text: string, supplied = false) => {
     const run = ++importRunRef.current;
+    const inPlace = supplied && swapsInPlace();
     setReady(true);
     startOpening();
-    setPainting(true);
+    if (!inPlace) setPainting(true);
     try {
       const src = textSource('abc', text, 'Pasted ABC');
       const [next, saved] = await Promise.all([parseAbc(text), readScoreRecord(storageRef.current.scoreDb, src)]);
-      if (run === importRunRef.current) loadScore(next, src, saved);
+      if (run === importRunRef.current) loadScore(next, src, saved, inPlace);
     } catch (e) { if (run === importRunRef.current) { setPainting(false); setError(e instanceof Error ? e.message : 'Could not read ABC notation.'); } }
   };
   const loadSample = async () => {
@@ -766,10 +787,12 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     const generation = ++renderRunRef.current;
     let timer = 0;
     let frame = 0;
-    // A zoom commit keeps the current score on screen until the new layout replaces it in place.
-    const quiet = quietRenderRef.current;
+    // A zoom commit (or an in-place source swap) keeps the current score on screen until the new layout replaces it.
+    const zoomCommit = quietRenderRef.current;
+    const quiet = zoomCommit || inPlaceRenderRef.current;
     quietRenderRef.current = false;
-    const anchor = quiet ? zoomAnchorRef.current : null;
+    inPlaceRenderRef.current = false;
+    const anchor = zoomCommit ? zoomAnchorRef.current : null;
     zoomAnchorRef.current = null;
     if (!quiet) setPainting(true);
     const draw = async () => {
