@@ -31,6 +31,7 @@ import { addDrumFallback, loadPlayers, type AudioPlayer } from '../lib/sound-pla
 import { ensureMusicFonts } from '../lib/asset-fonts';
 import type { ExternalClock } from '../lib/clock';
 import { measureSeekSeconds, noteSeekSeconds } from '../lib/playback/clock-time';
+import { nearestNote, noteInBox } from '../lib/hit-test';
 
 /** Short key name for readouts: 'Gb', 'C#m'. */
 const keyName = (key: SpellingKey) => `${key.tonic}${key.mode === 'minor' ? 'm' : ''}`;
@@ -1197,13 +1198,12 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     // The hit measure's drawn notes with their boxes and notehead centres (client px).
     const drawn = hit && result ? result.points.filter(point => point.measure === hit.index && point.element?.isConnected).map(point => {
       const element = point.element!;
-      const head = (element.querySelector('.notehead') ?? element).getBoundingClientRect();
-      return { point, box: element.getBoundingClientRect(), x: head.left + head.width / 2 };
+      const heads = Array.from(element.querySelectorAll('.notehead'), head => head.getBoundingClientRect());
+      return { point, box: element.getBoundingClientRect(), heads };
     }) : [];
-    const nearestX = <T extends { x: number }>(items: T[]) => items.reduce<T | undefined>((best, item) => !best || Math.abs(item.x - event.clientX) < Math.abs(best.x - event.clientX) ? item : best, undefined);
     // A click inside a note's drawn box (its stem, flag, accidental, dots, or the gaps between them, not only the ink
-    // under the pointer) hits that note; overlapping boxes go to the nearest notehead.
-    if (!noteId) noteId = nearestX(drawn.filter(({ box }) => box.width && event.clientX >= box.left - NOTE_HIT_SLOP && event.clientX <= box.right + NOTE_HIT_SLOP && event.clientY >= box.top - NOTE_HIT_SLOP && event.clientY <= box.bottom + NOTE_HIT_SLOP))?.point.id;
+    // under the pointer) hits that note; overlapping boxes go to the nearest notehead (stacked voices split by y).
+    if (!noteId) noteId = noteInBox(drawn, event.clientX, event.clientY, NOTE_HIT_SLOP)?.point.id;
     const sourceOf = (id: string) => score.document?.identity?.noteIdToSourceId?.[id] ?? id;
     if (callbacks.current.onElementClick) {
       const rect = hit?.element?.getBoundingClientRect();
@@ -1216,7 +1216,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
         staff = system.staffCenters.reduce((best, centre, i) => Math.abs(centre - y) < Math.abs(system.staffCenters[best] - y) ? i : best, 0) + 1;
       }
       // Staff space: the note or rest on the clicked staff whose notehead is nearest across the bar.
-      const nearest = noteId || staff === undefined ? undefined : nearestX(drawn.filter(({ point }) => point.part === staff! - 1))?.point.id;
+      const nearest = noteId || staff === undefined ? undefined : nearestNote(drawn.filter(({ point }) => point.part === staff! - 1), event.clientX, event.clientY)?.point.id;
       callbacks.current.onElementClick({
         noteId, sourceId: noteId ? sourceOf(noteId) : undefined,
         measureIndex: hit?.index, fraction: rect?.width ? Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)) : undefined,
