@@ -224,7 +224,13 @@ try {
       for (const label of [...nodes(doc, 'label'), ...nodes(doc, 'labelAbbr')]) label.remove();
       for (const definition of [...nodes(doc, 'staffDef'), ...nodes(doc, 'staffGrp')]) { definition.removeAttribute('label'); definition.removeAttribute('label.abbr'); }
       for (const item of [...nodes(doc, 'sb'), ...nodes(doc, 'pb'), ...nodes(doc, 'pgHead'), ...nodes(doc, 'pgFoot')]) item.remove();
-      if (breakEvery > 0) for (let index = breakEvery; index < measures.length; index += breakEvery) measures[index].parentNode.insertBefore(doc.createElementNS(MEI, 'pb'), measures[index]);
+      // A break before an ending's (or section's) first measure goes before the ending, so it is not split across lines.
+      const breakTarget = element => {
+        let target = element;
+        while (['ending', 'section'].includes(target.parentNode.localName) && target.parentNode.firstElementChild === target) target = target.parentNode;
+        return target;
+      };
+      if (breakEvery > 0) for (let index = breakEvery; index < measures.length; index += breakEvery) { const target = breakTarget(measures[index]); target.parentNode.insertBefore(doc.createElementNS(MEI, 'pb'), target); }
       if (hidden.size) {
         const removed = new Set();
         const drop = element => { for (const item of [element, ...element.getElementsByTagName('*')]) { const id = xmlIdOf(item); if (id) removed.add(id); } element.remove(); };
@@ -271,7 +277,7 @@ try {
     const failures = [];
     let cases = 0;
     for (const [name, baseline] of [['crafted', crafted], ['sample', sample]]) {
-      for (const breakEvery of [0, 2]) for (const hidden of [[], ['2'], ['1', '2'], ['3']]) for (const chords of [true, false]) {
+      for (const breakEvery of [0, 1, 2]) for (const hidden of [[], ['2'], ['1', '2'], ['3']]) for (const chords of [true, false]) {
         cases++;
         const expected = reference(baseline, breakEvery, new Set(hidden), chords);
         const actual = parse(buildViewMei(baseline, { breakEvery, hiddenStaves: hidden, chordSymbols: chords }));

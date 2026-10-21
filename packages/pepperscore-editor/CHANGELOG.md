@@ -33,6 +33,10 @@ Phase 2: layouts, instrument swap and the design shells. `pepperscore-editor` st
 - In select (Edit) mode the toolbar's letter buttons and piano keys repitch the target note (nearest its old octave) instead of entering one, duration buttons resize the target event, and Rest toggles it to a rest. On a target rest a letter or piano key pitches it in place (its duration kept, the cursor still). A longer duration stops at the barline. Typed letters and digits are unchanged (entry mode only). The duration buttons (phone and desktop rail) show the target event's duration in Edit (`shownDuration`).
 - Layout selectors show the layout kind; a swap on the Full score notes that Export writes the source part; Escape closes an open popover before the inspector drawer; the zoom readout is a plain label.
 
+### Fixed
+
+- Ending labels engrave as "1.", "2." and "1., 2." (the compiler writes the label as `<ending>` text; Verovio drew the bare number). An ending ends with a hook (`stop`) only when a repeat closes it; a final ending with no repeat after it is open (`discontinue`). `GlobalMeasure.ending.open` overrides this, and the importer sets it only where the file differs from that default.
+
 ### Known limitations
 
 - The compiler writes the concert key signature for transposing and swapped parts.

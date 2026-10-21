@@ -1,8 +1,9 @@
 import { enableLog, enableLogToBuffer, LOG_WARNING, VerovioToolkit } from 'verovio/esm';
 import createVerovioModule from 'verovio/wasm';
+import { buildViewMei } from '../../../pepperscore/src/lib/notation/mei-view';
 import { musicXmlTextNavigation } from '../../../pepperscore/src/lib/notation/navigation';
 import { createDocument } from '../model/create';
-import { parseDocument, type Event, type Note } from '../model/schema';
+import { parseDocument, type Document, type Event, type Note } from '../model/schema';
 import { featuresDoc, fixedIds, helloDoc, navigationDoc, twoVoicePianoDoc } from '../test-helpers';
 import { compileToMusicXml } from './to-musicxml';
 
@@ -242,10 +243,10 @@ test('barlines, endings and navigation words', () => {
   expect(m(1)).toContain('<direction placement="above"><direction-type><segno/></direction-type><sound segno="segno0"/></direction>');
   expect(m(1)).toContain('<direction placement="above"><direction-type><words font-weight="bold">Andante</words></direction-type><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>96</per-minute></metronome></direction-type><sound tempo="96"/></direction>');
   expect(m(2)).toContain('<measure number="2"><barline location="left"><bar-style>heavy-light</bar-style><repeat direction="forward"/></barline>');
-  expect(m(3)).toContain('<barline location="left"><ending number="1" type="start"/></barline>');
-  expect(m(3)).toContain('<barline location="right"><bar-style>light-heavy</bar-style><ending number="1" type="stop"/><repeat direction="backward" times="2"/></barline></measure>');
-  expect(m(4)).toContain('<barline location="left"><ending number="2" type="start"/></barline>');
-  expect(m(4)).toContain('<direction placement="above"><direction-type><words>To Coda</words></direction-type><sound tocoda="coda5"/></direction><barline location="right"><ending number="2" type="discontinue"/></barline></measure>');
+  expect(m(3)).toContain('<barline location="left"><ending number="1" type="start">1.</ending></barline>');
+  expect(m(3)).toContain('<barline location="right"><bar-style>light-heavy</bar-style><ending number="1" type="stop">1.</ending><repeat direction="backward" times="2"/></barline></measure>');
+  expect(m(4)).toContain('<barline location="left"><ending number="2" type="start">2.</ending></barline>');
+  expect(m(4)).toContain('<direction placement="above"><direction-type><words>To Coda</words></direction-type><sound tocoda="coda5"/></direction><barline location="right"><ending number="2" type="discontinue">2.</ending></barline></measure>');
   expect(m(5)).toContain('<direction placement="above"><direction-type><words>D.S. al Coda</words></direction-type><sound dalsegno="segno0"/></direction><barline location="right"><bar-style>light-light</bar-style></barline></measure>');
   expect(m(6)).toContain('<direction placement="above"><direction-type><coda/></direction-type><sound coda="coda5"/></direction>');
   expect(m(6)).toContain('<barline location="right"><bar-style>light-heavy</bar-style></barline></measure>');
@@ -255,13 +256,82 @@ test('barlines, endings and navigation words', () => {
   long.global.measures[1].ending = { numbers: [1, 2] }; long.global.measures[2].ending = { numbers: [1, 2] }; long.global.measures[2].repeatEnd = {};
   long.global.measures[0].fine = true; long.global.measures[2].jump = { type: 'dc', target: 'fine' };
   const lx = compileToMusicXml(long);
-  expect(squash(measureXml(lx, 2))).toContain('<ending number="1,2" type="start"/>');
+  expect(squash(measureXml(lx, 2))).toContain('<ending number="1,2" type="start">1., 2.</ending>');
   expect(squash(measureXml(lx, 2))).not.toContain('type="stop"');
   expect(squash(measureXml(lx, 3))).not.toContain('type="start"');
-  expect(squash(measureXml(lx, 3))).toContain('<ending number="1,2" type="stop"/>');
+  expect(squash(measureXml(lx, 3))).toContain('<ending number="1,2" type="stop">1., 2.</ending>');
   expect(squash(measureXml(lx, 1))).toContain('<direction placement="above"><direction-type><words>Fine</words></direction-type><sound fine="yes"/></direction>');
   expect(squash(measureXml(lx, 3))).toContain('<words>D.C. al Fine</words></direction-type><sound dacapo="yes"/>');
 });
+
+/** Bar 7: repeat start, ending 1 and repeat end; bar 8: ending 2 (the QA score). */
+function endingsDoc(): Document {
+  const doc = fixedIds(createDocument({ parts: [{ name: 'Pno', clef: 'treble', gmProgram: 1 }], measures: 8 }));
+  const g = doc.global.measures;
+  g[6].repeatStart = true; g[6].ending = { numbers: [1] }; g[6].repeatEnd = {};
+  g[7].ending = { numbers: [2] };
+  return doc;
+}
+/** Bars 3-4: ending "1., 2." closed by a repeat played three times; bar 5: ending 3. */
+function thirdEndingDoc(): Document {
+  const doc = fixedIds(createDocument({ parts: [{ name: 'Pno', clef: 'treble', gmProgram: 1 }], measures: 6 }));
+  const g = doc.global.measures;
+  g[1].repeatStart = true;
+  g[2].ending = { numbers: [1, 2] }; g[3].ending = { numbers: [1, 2] }; g[3].repeatEnd = { times: 3 };
+  g[4].ending = { numbers: [3] };
+  return doc;
+}
+
+test('ending labels read "1." and the last ending is open unless a repeat closes it', () => {
+  const xml = compileToMusicXml(endingsDoc());
+  const m = (n: number) => squash(measureXml(xml, n));
+  expect(m(7)).toContain('<barline location="left"><bar-style>heavy-light</bar-style><ending number="1" type="start">1.</ending><repeat direction="forward"/></barline>');
+  expect(m(7)).toContain('<ending number="1" type="stop">1.</ending><repeat direction="backward"/>');
+  expect(m(8)).toContain('<barline location="left"><ending number="2" type="start">2.</ending></barline>');
+  expect(m(8)).toContain('<ending number="2" type="discontinue">2.</ending>');
+  expect(m(8)).not.toContain('type="stop"');
+
+  const third = compileToMusicXml(thirdEndingDoc());
+  const t = (n: number) => squash(measureXml(third, n));
+  expect(t(3)).toContain('<ending number="1,2" type="start">1., 2.</ending>');
+  expect(t(4)).toContain('<ending number="1,2" type="stop">1., 2.</ending><repeat direction="backward" times="3"/>');
+  expect(t(5)).toContain('<ending number="3" type="start">3.</ending>');
+  expect(t(5)).toContain('<ending number="3" type="discontinue">3.</ending>');
+});
+
+test('an explicit open flag overrides the inferred ending shape', () => {
+  const doc = endingsDoc();
+  doc.global.measures[6].ending = { numbers: [1], open: true };
+  doc.global.measures[7].ending = { numbers: [2], open: false };
+  const xml = compileToMusicXml(doc);
+  expect(squash(measureXml(xml, 7))).toContain('<ending number="1" type="discontinue">1.</ending>');
+  expect(squash(measureXml(xml, 8))).toContain('<ending number="2" type="stop">2.</ending>');
+});
+
+test('Verovio engraves ending labels "1." and "2." with a closed first and an open last bracket', async () => {
+  const module = await createVerovioModule();
+  enableLogToBuffer(true, module);
+  enableLog(LOG_WARNING, module);
+  const tk = new VerovioToolkit(module);
+  const endings = (doc: Document) => {
+    expect(tk.loadData(compileToMusicXml(doc))).toBeTruthy();
+    return [...tk.getMEI().matchAll(/<ending [^>]*>/g)].map(([tag]) => ({ n: /\bn="([^"]*)"/.exec(tag)?.[1], lendsym: /\blendsym="([^"]*)"/.exec(tag)?.[1] }));
+  };
+  expect(endings(endingsDoc())).toEqual([{ n: '1.', lendsym: 'angledown' }, { n: '2.', lendsym: 'none' }]);
+  expect(endings(thirdEndingDoc())).toEqual([{ n: '1., 2.', lendsym: 'angledown' }, { n: '3.', lendsym: 'none' }]);
+  expect(tk.getLog()).toBe('');
+
+  // Through the viewer's MEI view, with bar 7 (ending 1) first on its line: Verovio writes "(n)" for an ending
+  // continued from an earlier system, so the line break must come before the ending, not inside it.
+  tk.resetOptions(); tk.setOptions({ breaks: 'none', xmlIdChecksum: true });
+  tk.loadData(compileToMusicXml(endingsDoc()));
+  const view = buildViewMei(tk.getMEI(), { breakEvery: 6, hiddenStaves: [], chordSymbols: true });
+  tk.resetOptions(); tk.setOptions({ breaks: 'encoded', pageWidth: 2000, adjustPageHeight: true, header: 'none', footer: 'none', xmlIdChecksum: true });
+  tk.loadData(view);
+  const labels = Array.from({ length: tk.getPageCount() }, (_, page) => tk.renderToSVG(page + 1))
+    .map((svg) => svg.split(/class="ending\b/).slice(1).map((part) => /<tspan font-size="[^"]*">([^<]*)<\/tspan>/.exec(part)?.[1] ?? ''));
+  expect(labels).toEqual([[], ['1.', '2.']]);
+}, 30_000);
 
 test('viewer navigation reads compiled repeats', () => {
   const doc = createDocument({ parts: [{ name: 'Fl', clef: 'treble', gmProgram: 74 }], measures: 6 });
