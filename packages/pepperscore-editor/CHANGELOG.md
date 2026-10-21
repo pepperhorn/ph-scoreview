@@ -25,6 +25,7 @@ Phase 2: layouts, instrument swap and the design shells. `pepperscore-editor` st
 - A cursor move re-renders only the viewer (`EditorViewer`) and the parts of the shell that show the cursor; `renderCounts` exposes shell render counts for tests.
 - A layout switch, custom layout or stave toggle that hides the cursor's staff moves the cursor to the first drawn staff (same bar and tick) and clears the selection.
 - The phone header returns focus to the editor after Play, Stop and the overflow menu, and before its collapse makes the first row inert.
+- Accidentals, octave shifts and the other target edits act on the highlighted cursor note after a click (that missed the notehead) or an arrow, instead of the note before it; right after entering a note they still act on that note.
 - Layout selectors show the layout kind; a swap on the Full score notes that Export writes the source part; Escape closes an open popover before the inspector drawer; the zoom readout is a plain label.
 
 ### Known limitations

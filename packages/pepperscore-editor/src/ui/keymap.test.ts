@@ -6,6 +6,7 @@ import type { Event, Pitch } from '../model/schema';
 import { helloDoc } from '../test-helpers';
 import { describeKey, handleKey, KEYMAP, type KeyContext } from './keymap';
 import { pitchForLetter } from './pitch-entry';
+import { clickTarget } from './click-mapping';
 
 type Mods = { ctrl?: boolean; meta?: boolean; shift?: boolean; alt?: boolean; composing?: boolean };
 type FakeEvent = KeyboardEvent & { prevented: boolean };
@@ -187,7 +188,7 @@ test('Space on a focused button and IME composition are not consumed', () => {
   expect(handleKey(keyEvent('n', {}, { tagName: 'BUTTON' }), ctx)).toBe(true);
 });
 
-test('t ties the last note to the next equal pitch; s slurs the last two entered', () => {
+test('t ties the cursor note to the next equal pitch; s slurs the two before the cursor', () => {
   const { store, press } = setup();
   press('n');
   press('c');
@@ -195,10 +196,10 @@ test('t ties the last note to the next equal pitch; s slurs the last two entered
   press('ArrowLeft');
   press('ArrowLeft');
   expect(store.getState().cursor.tick).toBe(0);
-  press('ArrowRight');
-  press('t');
+  press('t'); // the cursor (highlighted) note: the first C
   const [first, second] = bar(store);
   expect(first.notes![0].tie).toEqual({ target: second.notes![0].id });
+  press('ArrowRight');
   press('ArrowRight');
   press('s');
   expect(bar(store)[0].slurs).toMatchObject([{ target: second.id }]);
@@ -239,13 +240,13 @@ test('arrows move by event across bars; Ctrl by measure; Shift extends the selec
   expect(store.getState().history.past).toEqual([]);
 });
 
-test('Delete turns the selection (or the last event) into rests; Space plays; Escape leaves entry mode', () => {
+test('Delete turns the selection (or the cursor event) into rests; Space plays; Escape leaves entry mode', () => {
   const { store, press, plays } = setup(twoBars());
   store.dispatch(setSelection, { ids: ['a2', 'a3'] }, { record: false });
   press('Delete');
   expect(bar(store).map((e) => !!e.rest)).toEqual([false, true, false]);
   store.dispatch(setSelection, { ids: [] }, { record: false });
-  store.dispatch(setCursor, { tick: 960 }, { record: false });
+  store.dispatch(setCursor, { tick: 0 }, { record: false });
   press('Backspace');
   expect(bar(store).map((e) => !!e.rest)).toEqual([true, false]);
   press(' ');
@@ -438,7 +439,7 @@ test('Ctrl+arrows select the event at the new cursor; Escape in select mode clea
   expect(store.getState().selection.ids).toEqual([]);
 });
 
-test('in entry mode arrows clear the selection so the target stays the event before the cursor', () => {
+test('in entry mode arrows clear the selection so the target is the event at the cursor', () => {
   const { store, press } = setup(twoBars());
   press('n');
   store.dispatch(setSelection, { ids: ['a1'] }, { record: false });
@@ -502,4 +503,67 @@ test('Shift+Left from a cursor past the last event start anchors on the event be
   expect(store.getState().selection.ids).toEqual(['a2']);
   press('ArrowLeft', { shift: true });
   expect(store.getState().selection.ids).toEqual(['a2', 'a1']);
+});
+
+/** What a click on bar 1 that misses the noteheads does (PepperScoreEditor.onElementClick): cursor onto the nearest event, no selection. */
+function clickBar(store: EditorStore, fraction: number) {
+  const target = clickTarget(store.getState().document, { measureIndex: 0, fraction, staff: 1, clientX: 0, clientY: 0 })!;
+  store.dispatch(setCursor, target.cursor, { record: false });
+  store.dispatch(setSelection, { ids: target.selection }, { record: false });
+}
+
+test('accidentals and octaves act on the highlighted (cursor) note after a click in entry mode, not the note before it', () => {
+  const { store, press } = setup(twoBars());
+  press('n');
+  clickBar(store, 0.3); // the D at tick 960 glows (ps-cursor); the C is before it
+  expect(store.getState().cursor.tick).toBe(960);
+  expect(store.getState().selection.ids).toEqual([]);
+  press('+');
+  expect(pitches(bar(store)[1])).toEqual([P('D', 4, 1)]);
+  expect(pitches(bar(store)[0])).toEqual([P('C', 4)]);
+  press('ArrowUp', { ctrl: true });
+  expect(pitches(bar(store)[1])).toEqual([P('D', 5, 1)]);
+});
+
+test('accidentals act on the cursor note in select mode with no selection', () => {
+  const { store, press } = setup(twoBars());
+  clickBar(store, 0.55); // the E at 1920
+  press('_');
+  expect(pitches(bar(store)[2])).toEqual([P('E', 4, -1)]);
+  expect(pitches(bar(store)[1])).toEqual([P('D', 4)]);
+});
+
+test('after arrowing onto a note in entry mode, accidentals act on that note', () => {
+  const { store, press } = setup(twoBars());
+  press('n');
+  press('ArrowRight'); // onto the D
+  press('+');
+  expect(pitches(bar(store)[1])).toEqual([P('D', 4, 1)]);
+  expect(pitches(bar(store)[0])).toEqual([P('C', 4)]);
+});
+
+test('in entry mode, tapping a notehead after entering notes retargets accidentals and octaves to the tapped note', () => {
+  const { store, press } = setup(createDocument({ parts: [{ name: 'Flute', clef: 'treble', gmProgram: 74 }], measures: 2 }));
+  for (const k of ['n', '4', 'c', 'd', 'e']) press(k);
+  const d = bar(store)[1];
+  const target = clickTarget(store.getState().document, { sourceId: d.notes![0].id, measureIndex: 0, fraction: 0.3, staff: 1, clientX: 0, clientY: 0 })!;
+  store.dispatch(setCursor, target.cursor, { record: false });
+  store.dispatch(setSelection, { ids: target.selection }, { record: false });
+  expect(store.getState().cursor.mode).toBe('enter');
+  press('_');
+  press('ArrowDown', { ctrl: true });
+  expect(pitches(bar(store)[1])).toEqual([P('D', 3, -1)]);
+  expect(pitches(bar(store)[2])).toEqual([P('E', 4)]);
+  expect(pitches(bar(store)[0])).toEqual([P('C', 4)]);
+});
+
+test('right after entering over existing notes, accidentals still act on the note just entered, not the cursor note after it', () => {
+  const { store, press } = setup(twoBars());
+  press('n');
+  clickBar(store, 0); // on the C
+  press('g'); // overwrites the C; the cursor moves onto the D
+  expect(store.getState().cursor.tick).toBe(960);
+  press('+');
+  expect(pitches(bar(store)[0])).toEqual([P('G', 3, 1)]);
+  expect(pitches(bar(store)[1])).toEqual([P('D', 4)]);
 });
