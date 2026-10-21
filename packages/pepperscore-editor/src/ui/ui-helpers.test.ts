@@ -1,3 +1,6 @@
+import { createEditorStore } from '../engine/store';
+import { setEntryMode, setSelection } from '../engine/commands/index';
+import { shownDuration } from './key-actions';
 import { createDocument } from '../model/create';
 import type { Cursor } from '../engine/types';
 import { helloDoc } from '../test-helpers';
@@ -84,5 +87,24 @@ describe('toolbar bindings', () => {
     const labels = ['Undo', 'Redo', 'Toggle note entry', 'Toggle dot', 'Rest', 'Tie', 'Slur', 'Staccato', 'Tenuto', 'Accent', 'Marcato', 'Tuplet (3)', 'Key signature', 'Time signature', 'Clef', 'Text', 'Play'];
     const missing = labels.filter((label) => label !== 'Text' && !KEYMAP.some((b) => b.label === label));
     expect(missing).toEqual([]);
+  });
+});
+
+describe('clickTarget mode for a tap that misses the notehead', () => {
+  it('implies Edit when the cursor snaps onto a note, Entry when it snaps onto a rest', () => {
+    const doc = helloDoc();
+    expect(clickTarget(doc, { measureIndex: 0, fraction: 0.3, staff: 1, clientX: 0, clientY: 0 })).toMatchObject({ cursor: { tick: 960 }, selection: [], mode: 'select' });
+    expect(clickTarget(doc, { measureIndex: 0, fraction: 0.6, staff: 1, clientX: 0, clientY: 0 })).toMatchObject({ cursor: { tick: 1920 }, mode: 'enter' });
+  });
+});
+
+describe('shownDuration (the duration the rail and the phone Notes tab light)', () => {
+  it('is the entry duration in entry mode, the target event duration in select (Edit) mode, where the buttons resize it', () => {
+    const store = createEditorStore(helloDoc());
+    store.dispatch(setEntryMode, { mode: 'enter' }, { record: false });
+    store.dispatch(setSelection, { ids: ['e3'] }, { record: false });
+    expect(shownDuration(store.getState())).toEqual({ base: 'quarter', dots: 0 });
+    store.dispatch(setEntryMode, { mode: 'select' }, { record: false });
+    expect(shownDuration(store.getState())).toEqual({ base: 'half', dots: 0 });
   });
 });

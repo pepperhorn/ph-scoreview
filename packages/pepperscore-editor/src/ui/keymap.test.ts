@@ -543,3 +543,31 @@ test('in select (Edit) mode the toolbar letters, piano, durations and rest chang
   run('Rest');
   expect(bar(store)[1].rest).toBe(true);
 });
+
+test('in Edit mode a letter or piano key on a rest pitches that rest in place: its duration kept, the cursor still, one undo step', () => {
+  const { store, ctx } = setup();
+  store.dispatch(setCursor, { tick: 1920 }, { record: false });
+  store.dispatch(setSelection, { ids: ['e3'] }, { record: false });
+  const cursor = store.getState().cursor;
+  const undoDepth = store.getState().history.past.length;
+  KEYMAP.find((b) => b.label === 'Note A')!.action(ctx);
+  const third = bar(store)[2];
+  expect(third).toMatchObject({ id: 'e3', duration: { base: 'half', dots: 0 } });
+  expect(third.rest).toBeUndefined();
+  expect(pitches(third)).toEqual([P('A', 4)]); // nearest the last entered pitch, else the middle line (B4)
+  expect(bar(store)).toHaveLength(3);
+  expect(store.getState().cursor).toMatchObject({ mode: 'select', tick: cursor.tick, measureId: cursor.measureId });
+  expect(store.getState().history.past.length).toBe(undoDepth + 1);
+  enterPitch(ctx, 'B', -1);
+  expect(pitches(bar(store)[2])).toEqual([P('B', 4, -1)]);
+});
+
+test('in Edit mode a longer duration stops at the barline (tied within the bar); the next bar is untouched', () => {
+  const { store, ctx } = setup(twoBars());
+  store.dispatch(setSelection, { ids: ['a3'] }, { record: false });
+  KEYMAP.find((b) => b.label === 'Whole note')!.action(ctx);
+  const total = eventStarts(store.getState().document.parts[0].measures[0].sequences[0], 3840).reduce((sum, s) => sum + s.ticks, 0);
+  expect(total).toBe(3840);
+  expect(pitches(bar(store)[0])).toEqual([P('C', 4)]);
+  expect(bar(store, 1).map((e) => e.id)).toEqual(['b1', 'b2', 'b3', 'b4']);
+});

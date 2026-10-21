@@ -1,6 +1,6 @@
 import {
   addChordNote, addSlur, breakBeam, deleteEvents, enterEvent, entryDot, entryDotChangesScore, setAccidental, stepSemitone, extendSelection, makeTuplet, moveCursor, escapeToSelect, setBeamGroup, setCursorDuration,
-  setDuration, setEntryMode, setPitch, shiftOctave, stepPitch, toggleArticulation, toggleDot, toggleRest, toggleTie,
+  restPitch, setDuration, setEntryMode, setPitch, shiftOctave, stepPitch, toggleArticulation, toggleDot, toggleRest, toggleTie,
 } from '../engine/commands/index';
 import { findEvent, findNote } from '../engine/sequence-edit';
 import type { EditorStore } from '../engine/store';
@@ -43,17 +43,26 @@ function onNote(ctx: KeyContext, run: (noteId: string) => void): void {
 /**
  * `step` (with alteration `alter`, else the key signature's) as the letter keys and buttons enter it: in chord mode a
  * note added to the target event's chord; in select (Edit) mode the target note repitched, in the octave nearest its
- * old pitch; else a new note nearest the last entered pitch. The phone's piano keys use it too. (Typed letters reach
+ * old pitch (a target rest pitched in place, nearest the last entered pitch or the middle line); else a new note nearest the last entered pitch. The phone's piano keys use it too. (Typed letters reach
  * it in entry mode only; the toolbar buttons in either mode.)
  */
 export function enterPitch(ctx: KeyContext, step: Pitch['step'], alter?: number): void {
   if (state(ctx).cursor.chord) return chordLetter(ctx, step, alter);
   const { document, cursor } = state(ctx);
-  const noteId = cursor.mode === 'select' ? targetNote(state(ctx)) : undefined;
-  const at = noteId ? findNote(document, noteId) : undefined;
-  if (noteId && at) {
-    const pitch = pitchForLetter(step, at.note.pitch, effectiveKey(document, at.measureIndex).fifths, alter);
-    return record(ctx, setPitch, { noteId, pitch });
+  if (cursor.mode === 'select') {
+    const noteId = targetNote(state(ctx));
+    const at = noteId ? findNote(document, noteId) : undefined;
+    if (noteId && at) {
+      const pitch = pitchForLetter(step, at.note.pitch, effectiveKey(document, at.measureIndex).fifths, alter);
+      return record(ctx, setPitch, { noteId, pitch });
+    }
+    // A target rest takes the pitch in place (its duration kept, the cursor still), not a new note entered at the cursor.
+    const eventId = targetEvent(state(ctx));
+    const rest = eventId ? findEvent(document, eventId) : undefined;
+    if (eventId && rest?.event.rest && !rest.event.grace) {
+      const pitch = pitchForLetter(step, restPitch(state(ctx), rest), effectiveKey(document, rest.measureIndex).fifths, alter);
+      return record(ctx, toggleRest, { eventId, pitch });
+    }
   }
   const fifths = effectiveKey(document, Math.max(measureIndex(document, cursor.measureId), 0)).fifths;
   record(ctx, enterEvent, { pitch: pitchForLetter(step, cursor.lastPitch, fifths, alter) });

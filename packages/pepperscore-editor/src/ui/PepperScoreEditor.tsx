@@ -177,7 +177,8 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
       if (!target) return;
       store.dispatch(setCursor, target.cursor, { record: false });
       store.dispatch(setSelection, { ids: target.selection }, { record: false });
-      // On a phone a tap also picks the mode: a note to edit it (Edit), a rest or empty staff space to enter (Entry).
+      // On a phone a tap also picks the mode: a note (or a near miss that lands the cursor on one) to edit it (Edit), a
+      // rest (an empty bar, past the last note) to enter (Entry).
       // The desktop keeps its mode, where typed letters mean different things in each.
       if (phoneRef.current) store.dispatch(setEntryMode, { mode: target.mode }, { record: false });
       refocus();

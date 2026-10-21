@@ -2,6 +2,7 @@ import { memo, type ReactNode } from 'react';
 import { setChordMode } from '../engine/commands/index';
 import { binding, useDispatch, useRun, useUi } from './controls';
 import { BeamGroup, ChordIcon, CurveSlur, CurveTie, Glyph, SMUFL } from './icons';
+import { shownDuration } from './key-actions';
 import { countRender } from './render-counts';
 import { useEditorStore } from './useEditorStore';
 
@@ -49,8 +50,9 @@ export const Rail = memo(function Rail() {
   const dispatch = useDispatch();
   // Memoised, with no props, and subscribed only to what the keycaps light up (the value, dot and chord state), so
   // cursor moves do not re-render the rail (validation/editor.mjs counts its renders across arrow-key moves).
-  const base = useEditorStore(store, (s) => s.cursor.duration.base);
-  const dotted = useEditorStore(store, (s) => s.cursor.duration.dots > 0);
+  // In select mode the duration keycaps resize the target event, so they light its duration.
+  const base = useEditorStore(store, (s) => shownDuration(s).base);
+  const dotted = useEditorStore(store, (s) => shownDuration(s).dots > 0);
   const chord = useEditorStore(store, (s) => !!s.cursor.chord);
   return (
     <aside className="ps-rail" aria-label="Note entry tools">

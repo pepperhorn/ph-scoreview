@@ -128,8 +128,9 @@ At 760px wide or less (or with `forcePhone`) the editor switches to the phone sh
   sharp, natural, flat, 8vb, 8va and Add to chord; and a one-octave piano (black keys spelled for the key) or the C–B
   letter buttons, switched by the button at the end of the row and remembered. The others have two. The canvas is
   padded by the toolbar's measured height, so a taller tab never covers the score.
-- **Entry and Edit**: tapping a note in the score switches to Edit, tapping a rest or empty staff space to Entry. In
-  Edit the letter and piano keys repitch the highlighted note, the durations resize it and Rest makes it a rest.
+- **Entry and Edit**: tapping a note in the score (or near it, so the cursor lands on it) switches to Edit, tapping a
+  rest or empty staff space to Entry. In Edit the letter and piano keys repitch the highlighted note (or pitch a
+  highlighted rest in place), the durations resize it within its bar and Rest makes it a rest.
 - **Inline strips**: Key, Time, Clef, Tempo, Dynamic and the swap card open as a strip in place of the button rows,
   not as a floating popover. Escape, the close button or Apply closes them.
 - **Page view is forced**: the phone shell always shows the score in Page view (Endless shows a single bar at 390px).

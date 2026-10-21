@@ -131,6 +131,11 @@ try {
   // The piano (the default entry row) fits the 390px screen: 7 white and 5 black keys, all finger-sized.
   assert.equal(await page.locator('.ps-piano .ps-piano-key-white').count(), 7);
   assert.equal(await page.locator('.ps-piano .ps-piano-key-black').count(), 5);
+  // In pitch order in the DOM, so focus and screen readers walk the keyboard C, C sharp, D...
+  assert.deepEqual(
+    await page.locator('.ps-piano .ps-piano-key').evaluateAll(keys => keys.map(key => key.getAttribute('aria-label'))),
+    ['C', 'C sharp', 'D', 'D sharp', 'E', 'F', 'F sharp', 'G', 'G sharp', 'A', 'A sharp', 'B'].map(name => `Piano ${name}`),
+  );
   const toolbarRect = await rectOf(page, '.ps-ptoolbar');
   for (const key of await page.locator('.ps-piano .ps-piano-key, .ps-pbtn-entry-switch').all()) {
     const box = await key.boundingBox();

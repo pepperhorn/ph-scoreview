@@ -4,7 +4,7 @@ import { findEvent } from '../../engine/sequence-edit';
 import { effectiveClef, effectiveKey, effectiveTime } from '../../model/query';
 import { binding, usePosition, useRun, useUi, useDispatch } from '../controls';
 import { BeamGroup, ChordIcon, CurveSlur, CurveTie, Glyph, Icon, PianoIcon, SMUFL } from '../icons';
-import { targetEvent } from '../key-actions';
+import { shownDuration, targetEvent } from '../key-actions';
 import { enterPitch, type PopoverName } from '../keymap';
 import { pianoSpelling } from '../pitch-entry';
 import { ENDINGS, JUMPS, jumpValue, keyName } from '../Popover';
@@ -59,9 +59,13 @@ function saveEntryInput(input: EntryInput): void {
   }
 }
 
-const WHITE_KEYS = [0, 2, 4, 5, 7, 9, 11];
-/** Black keys by pitch class, each centred on the line after white key `after`. */
-const BLACK_KEYS = [{ pc: 1, after: 0 }, { pc: 3, after: 1 }, { pc: 6, after: 3 }, { pc: 8, after: 4 }, { pc: 10, after: 5 }];
+/**
+ * The twelve keys in pitch order, so focus and screen readers go C, C sharp, D...; a black key (absolutely placed,
+ * outside the white keys' flex row) is centred on the line after white key `after`.
+ */
+const KEYS: { pc: number; after?: number }[] = [
+  { pc: 0 }, { pc: 1, after: 0 }, { pc: 2 }, { pc: 3, after: 1 }, { pc: 4 }, { pc: 5 }, { pc: 6, after: 3 }, { pc: 7 }, { pc: 8, after: 4 }, { pc: 9 }, { pc: 10, after: 5 }, { pc: 11 },
+];
 const ACCIDENTAL_TEXT: Record<number, string> = { [-2]: '𝄫', [-1]: '♭', 0: '', 1: '♯', 2: '𝄪' };
 const ACCIDENTAL_WORD: Record<number, string> = { [-2]: ' double flat', [-1]: ' flat', 0: '', 1: ' sharp', 2: ' double sharp' };
 
@@ -98,8 +102,7 @@ function PianoKeys() {
   };
   return (
     <div className="ps-piano" role="group" aria-label="Piano keyboard">
-      {WHITE_KEYS.map((pc) => key(pc))}
-      {BLACK_KEYS.map(({ pc, after }) => key(pc, after))}
+      {KEYS.map(({ pc, after }) => key(pc, after))}
     </div>
   );
 }
@@ -109,10 +112,7 @@ function ValueRows() {
   const { store } = useUi();
   const dispatch = useDispatch();
   // Entry lights the entry duration; Edit the target event's, which the duration buttons change there.
-  const duration = useEditorStore(store, (s) => {
-    const id = s.cursor.mode === 'select' ? targetEvent(s) : undefined;
-    return (id && findEvent(s.document, id)?.event.duration) || s.cursor.duration;
-  });
+  const duration = useEditorStore(store, shownDuration);
   const chord = useEditorStore(store, (s) => !!s.cursor.chord);
   const [input, setInput] = useState<EntryInput>(readEntryInput);
   const next: EntryInput = input === 'piano' ? 'letters' : 'piano';

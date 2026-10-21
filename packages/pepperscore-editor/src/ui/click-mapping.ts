@@ -6,8 +6,9 @@ import type { Document } from '../model/schema';
 import { visibleStaves } from '../engine/layout/visible-staves';
 
 /**
- * `mode` is the mode a click implies (the phone shell switches to it): a pitched note is for editing (`select`);
- * a rest, or staff space with no note under the tap (past the last note, an empty bar), is for entry (`enter`).
+ * `mode` is the mode a click implies (the phone shell switches to it): a pitched note, hit or the one a click that
+ * missed its notehead puts the cursor on, is for editing (`select`); a rest (past the last note, an empty bar) is for
+ * entry (`enter`).
  */
 export type ClickTarget = { cursor: Partial<Cursor>; selection: string[]; mode: Cursor['mode'] };
 
@@ -50,7 +51,10 @@ export function clickTarget(doc: Document, info: PepperScoreClickInfo, layoutId?
   const barTicks = measureTicks(effectiveTime(doc, index));
   const target = (info.fraction ?? 0) * barTicks;
   const seq = pm && sequenceFor(pm, where.staff, 1);
+  const starts = seq ? eventStarts(seq, barTicks).filter((s) => !s.event.grace) : [];
   let tick = 0;
-  for (const start of seq ? eventStarts(seq, barTicks) : []) if (Math.abs(start.tick - target) < Math.abs(tick - target)) tick = start.tick;
-  return { cursor: { partId: where.partId, staff: where.staff, voice: 1, measureId: doc.global.measures[index].id, tick }, selection: [], mode: 'enter' };
+  for (const start of starts) if (Math.abs(start.tick - target) < Math.abs(tick - target)) tick = start.tick;
+  // The cursor lands on (and highlights) the event at `tick`: a note there is edited, as if its notehead were hit.
+  const pitched = !!starts.find((s) => s.tick === tick)?.event.notes?.length;
+  return { cursor: { partId: where.partId, staff: where.staff, voice: 1, measureId: doc.global.measures[index].id, tick }, selection: [], mode: pitched ? 'select' : 'enter' };
 }
