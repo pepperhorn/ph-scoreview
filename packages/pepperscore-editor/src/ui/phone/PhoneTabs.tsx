@@ -63,7 +63,7 @@ function ValueRows() {
   );
 }
 
-/** Accidentals, chord entry and octave shifts; tie, slur, articulations, tuplet, beams and a dynamic at the last entered (or selected) note. */
+/** Accidentals, chord entry and octave shifts; tie, slur, articulations, tuplet, beams and a dynamic at the target note (selected, just entered, else the cursor note). */
 function PitchRows() {
   const { store, togglePopover } = useUi();
   const dispatch = useDispatch();
