@@ -29,10 +29,20 @@ const rectOf = (page, selector) => page.locator(selector).evaluate(element => { 
 const headerHeight = async page => (await rectOf(page, '.ps-phead')).height;
 /** Taps the centre of the `index`th match of `selector` in the engraving (its SVG takes the pointer events). */
 async function tapAt(page, selector, index) {
-  const target = page.locator(selector).nth(index);
-  await target.scrollIntoViewIfNeeded();
-  const box = await target.boundingBox();
-  await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+  // A redraw (a toolbar tab change resizing the canvas, say) can replace the element mid-scroll: find it again.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const target = page.locator(selector).nth(index);
+      await target.scrollIntoViewIfNeeded({ timeout: 5000 });
+      const box = await target.boundingBox();
+      if (!box) throw new Error(`${selector} #${index} has no box`);
+      await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+      return;
+    } catch (error) {
+      if (attempt >= 4 || !/not attached|no box|Timeout/.test(String(error))) throw error;
+      await pause(250);
+    }
+  }
 }
 /** Waits until the header is expanded (two rows) or collapsed (the strip), its height transition included. */
 const headerSettles = (page, state, timeout = 2000) => page.waitForFunction(state => {
