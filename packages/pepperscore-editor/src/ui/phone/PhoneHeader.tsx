@@ -52,18 +52,20 @@ export type PhoneHeaderProps = PhoneMenuProps & {
 };
 
 /**
- * The phone header, two rows: brand, title and composer, Play and the overflow menu; then the Entry/Select
- * badge, the position, the layout chip and the key, time and tempo chips (their popovers open as inline strips
- * in the toolbar). Collapsed (`data-header="collapsed"` on the shell) it is a 28px strip: mode dot, position, key.
+ * The phone header, for occasional controls (the constant ones sit in the toolbar, within reach), two rows: brand,
+ * title and composer, Undo and Redo, Play and the overflow menu; then the position, the layout chip and the key, time
+ * and tempo chips (their popovers open as inline strips in the toolbar). Collapsed (`data-header="collapsed"` on the
+ * shell) it is a 28px strip: position and key.
  */
 export const PhoneHeader = memo(function PhoneHeader({ collapsed, wake, playing, onPlay, menuOpen, setMenuOpen, ...menu }: PhoneHeaderProps) {
   const { store, editable, togglePopover, refocus } = useUi();
   const run = useRun();
   const { index, bars } = useCursorBar();
   const document = useEditorStore(store, (s) => s.document);
-  const entry = useEditorStore(store, (s) => s.cursor.mode === 'enter');
   const layouts = useEditorStore(store, (s) => s.document.layouts);
   const activeLayoutId = useEditorStore(store, (s) => s.activeLayoutId);
+  const canUndo = useEditorStore(store, (s) => s.history.past.length > 0);
+  const canRedo = useEditorStore(store, (s) => s.history.future.length > 0);
   const key = effectiveKey(document, index);
   const time = effectiveTime(document, index);
   const tempo = tempoAt(document, index);
@@ -86,6 +88,14 @@ export const PhoneHeader = memo(function PhoneHeader({ collapsed, wake, playing,
             <h1 className={`ps-score-title ps-phead-title ${document.meta.title ? '' : 'is-empty'}`.trim()}>{document.meta.title || 'Untitled score'}</h1>
             {document.meta.composer && <p className="ps-score-composer ps-phead-composer">{document.meta.composer}</p>}
           </div>
+          <div className="ps-phead-history" role="group" aria-label="History">
+            <button type="button" className="ps-btn ps-icon-btn ps-phead-undo" aria-label="Undo" title="Undo" disabled={!editable || !canUndo} onClick={() => run('Undo')}>
+              <Icon name="undo" size={17} />
+            </button>
+            <button type="button" className="ps-btn ps-icon-btn ps-phead-redo" aria-label="Redo" title="Redo" disabled={!editable || !canRedo} onClick={() => run('Redo')}>
+              <Icon name="redo" size={17} />
+            </button>
+          </div>
           <button type="button" className={`ps-btn ps-btn-play ps-phead-play ${playing ? 'is-playing' : ''}`.trim()} aria-label={playing ? 'Stop' : 'Play'} onClick={() => { onPlay(); refocus(); }}>
             <Icon name={playing ? 'stop' : 'play'} size={14} />
           </button>
@@ -94,9 +104,6 @@ export const PhoneHeader = memo(function PhoneHeader({ collapsed, wake, playing,
           </button>
         </div>
         <div className="ps-phead-meta" aria-label="Score settings">
-          <button type="button" className={`ps-btn ps-mode-pill ps-phead-mode ${entry ? 'is-entry' : 'is-select'}`} aria-label="Toggle note entry" aria-pressed={entry} disabled={!editable} onClick={() => run('Toggle note entry')}>
-            <span className="ps-mode-dot" /><span className="ps-mode-text">{entry ? 'Entry' : 'Select'}</span>
-          </button>
           <span className="ps-phead-crumb">bar {index + 1} of {bars}</span>
           <label className="ps-btn ps-chip ps-pchip ps-chip-layout" title="Layout">
             <select

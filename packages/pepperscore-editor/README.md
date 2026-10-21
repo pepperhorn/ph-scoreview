@@ -118,13 +118,19 @@ Above 760px wide (measured on the editor, not the window) the editor has the des
 
 At 760px wide or less (or with `forcePhone`) the editor switches to the phone shell:
 
-- **Two-row header** (78px) with the brand, title, composer, Play and an overflow menu (Save, Export, Open, New score)
-  on row 1, and the mode badge, "bar N of M", the layout chip and the Key / Time / Tempo chips on row 2. After 4
-  seconds without input it collapses to a 28px strip (mode dot, position, key chip); a touch, wheel or pointer down on
+- **Two-row header** (78px) for occasional controls: the brand, title, composer, Undo, Redo, Play and an overflow menu
+  (Save, Export, Open, New score) on row 1, and "bar N of M", the layout chip and the Key / Time / Tempo chips on row 2.
+  After 4 seconds without input it collapses to a 28px strip (position, key chip); a touch, wheel or pointer down on
   the canvas, a header tap or a document change brings it back; scrolling caused by playback or by the collapse itself
   does not. The body padding follows the header height, so nothing jumps.
-- **Tabbed toolbar** pinned to the bottom: tabs Value, Pitch, Bar, Score and Layout, and two 44px rows of buttons. The
-  toolbar never changes height when you change tab or open a strip.
+- **Tabbed toolbar** pinned to the bottom, for the constant controls: the **Entry / Edit** switch (on every tab), then
+  tabs Notes, Marks, Bar, Score and Layout over rows of 44px buttons. Notes has three rows: durations, dot and rest;
+  sharp, natural, flat, 8vb, 8va and Add to chord; and a one-octave piano (black keys spelled for the key) or the C–B
+  letter buttons, switched by the button at the end of the row and remembered. The others have two. The canvas is
+  padded by the toolbar's measured height, so a taller tab never covers the score.
+- **Entry and Edit**: tapping a note in the score (or near it, so the cursor lands on it) switches to Edit, tapping a
+  rest or empty staff space to Entry. In Edit the letter and piano keys repitch the highlighted note (or pitch a
+  highlighted rest in place), the durations resize it within its bar and Rest makes it a rest.
 - **Inline strips**: Key, Time, Clef, Tempo, Dynamic and the swap card open as a strip in place of the button rows,
   not as a floating popover. Escape, the close button or Apply closes them.
 - **Page view is forced**: the phone shell always shows the score in Page view (Endless shows a single bar at 390px).
@@ -138,7 +144,8 @@ Not on the phone yet: text on a stave (use the desktop shell).
 Letter keys are case-insensitive; Cmd counts as Ctrl. Digit and symbol keys match the typed character,
 whatever Shift state produced it. Some keys only act in note entry mode (`N` toggles it) or in select mode.
 
-Edits act on the target: the single selected event or note, else (in entry mode) the event just before the cursor.
+Edits act on the target: the single selected event or note; else, right after entering a note, that note; else the
+event the cursor sits on (the highlighted one, after a click or an arrow); else the event just before the cursor.
 
 - `.` in entry mode, right after entering a note, dots that note and moves the cursor to its new end, so `4 C . D`
   enters a dotted C and then a quarter D. Anywhere else it toggles the dot of the entry duration (`4 . C` enters a

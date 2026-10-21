@@ -142,10 +142,18 @@ export const entryDot: Command<Record<string, never>> = {
   },
 };
 
-/** Note → rest (its notes, slurs and articulations go); rest → note at the last entered pitch or the middle line. */
-export const toggleRest: Command<{ eventId: string }> = {
+/** The pitch a rest turns into by default: the last entered pitch, else the middle line of the staff's clef. */
+export function restPitch(draft: Editable, at: EventAt): Pitch {
+  return draft.cursor.lastPitch ?? MIDDLE_LINE[effectiveClef(at.part, at.measureIndex, at.seq.staff)];
+}
+
+/**
+ * Note → rest (its notes, slurs and articulations go); rest → note at `pitch`, else `restPitch` (the last entered
+ * pitch or the middle line).
+ */
+export const toggleRest: Command<{ eventId: string; pitch?: Pitch }> = {
   label: 'Toggle rest',
-  run: (draft, { eventId }) => {
+  run: (draft, { eventId, pitch: given }) => {
     const at = findEvent(draft.document, eventId);
     if (!at || at.event.grace) return;
     const event = at.event;
@@ -156,7 +164,7 @@ export const toggleRest: Command<{ eventId: string }> = {
       settle(draft, at);
       return;
     }
-    const pitch = draft.cursor.lastPitch ?? MIDDLE_LINE[effectiveClef(at.part, at.measureIndex, at.seq.staff)];
+    const pitch = given ?? restPitch(draft, at);
     delete event.rest;
     event.notes = [{ id: newId(), pitch: { ...pitch } }];
     if (event.fullMeasure) {

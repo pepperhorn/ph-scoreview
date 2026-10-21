@@ -14,6 +14,8 @@ Phase 2: layouts, instrument swap and the design shells. `pepperscore-editor` st
 - Phone shell: two-row header that collapses from 78px to 28px, tabbed bottom toolbar, inline strips instead of popovers, overflow menu. Always shows Page view.
 - `forcePhone` prop (choose the shell explicitly; default: phone at 760px or less).
 - `npm run test:editor-phone` (390x844 touch run: header collapse, toolbar geometry, strips, layouts).
+- Phone Notes tab (was Value), three rows: durations, dot and rest; sharp, natural, flat, 8vb, 8va and Add to chord; then a one-octave piano (7 white, 5 black keys) or the C–B letter buttons, switched by the button at the row's end and remembered in `localStorage`. A piano key is spelled for the cursor bar's key (its signature's spelling, else the natural, else sharps in sharp keys and C, flats in flat keys) and enters like a letter (chord mode included). `enterPitch` (keymap) and `pianoSpelling` (pitch entry) back it.
+- Phone Entry/Edit switch in the toolbar's tab strip, on every tab and strip (it was Entry/Select in the header): the mode as a word and a colour. Tapping a note in the score (or a near miss that puts the cursor on one) switches to Edit; tapping a rest or empty staff space switches to Entry (`ClickTarget.mode`; the desktop keeps its mode on click). The piano keys are in pitch order for focus and screen readers.
 
 ### Changed
 
@@ -26,6 +28,9 @@ Phase 2: layouts, instrument swap and the design shells. `pepperscore-editor` st
 - An edit no longer repaints the whole score with the fade and scale reveal: the viewer swaps the engraving in place (`paintTransition="none"`), with no loading overlay, and keeps the scroll position. Opening another score still reveals.
 - A layout switch, custom layout or stave toggle that hides the cursor's staff moves the cursor to the first drawn staff (same bar and tick) and clears the selection.
 - The phone header returns focus to the editor after Play, Stop and the overflow menu, and before its collapse makes the first row inert.
+- Accidentals, octave shifts and the other target edits act on the highlighted cursor note after a click (that missed the notehead) or an arrow, instead of the note before it; right after entering a note they still act on that note.
+- Phone: Undo and Redo move from the Notes tab to the header (disabled with nothing to undo or redo); the Pitch tab becomes Marks (tie, slur, tuplet, beams, dynamic; the articulations), its accidentals, octave and chord buttons now on Notes.
+- In select (Edit) mode the toolbar's letter buttons and piano keys repitch the target note (nearest its old octave) instead of entering one, duration buttons resize the target event, and Rest toggles it to a rest. On a target rest a letter or piano key pitches it in place (its duration kept, the cursor still). A longer duration stops at the barline. Typed letters and digits are unchanged (entry mode only). The duration buttons (phone and desktop rail) show the target event's duration in Edit (`shownDuration`).
 - Layout selectors show the layout kind; a swap on the Full score notes that Export writes the source part; Escape closes an open popover before the inspector drawer; the zoom readout is a plain label.
 
 ### Known limitations

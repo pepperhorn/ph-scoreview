@@ -292,9 +292,10 @@
 .ps-editor .ps-phead-composer { flex: 0 1000 auto; min-width: 0; margin: 0; font-size: 11px; cursor: default; }
 .ps-editor .ps-phead-play { flex: none; width: 34px; height: 34px; padding: 0; justify-content: center; }
 .ps-editor .ps-phead-more { flex: none; width: 32px; }
+.ps-editor .ps-phead-history { display: flex; flex: none; gap: 0; }
+.ps-editor .ps-phead-history .ps-icon-btn { width: 36px; height: 34px; }
 .ps-editor .ps-phead-meta { display: flex; align-items: center; gap: 6px; flex: none; height: 22px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .ps-editor .ps-phead-meta::-webkit-scrollbar { display: none; }
-.ps-editor .ps-phead-mode { flex: none; height: 22px; padding: 0 8px 0 7px; gap: 5px; font-size: 9px; }
 .ps-editor .ps-phead-crumb { flex: none; margin-right: 2px; font-size: 11px; color: var(--ps-ink-3); white-space: nowrap; }
 .ps-editor .ps-pchip { flex: none; height: 22px; padding: 0 8px; gap: 4px; font-size: 10.5px; transition: opacity .16s ease; }
 .ps-editor .ps-pchip .ps-chip-k { font-size: 8px; letter-spacing: .1em; }
@@ -302,11 +303,10 @@
 .ps-editor .ps-chip-layout { padding: 0 6px 0 8px; border-color: rgba(52, 86, 66, .3); background: var(--ps-accent-soft); color: var(--ps-accent); }
 .ps-editor .ps-chip-layout .ps-layout-select-input { max-width: 110px; color: inherit; font-size: 10.5px; }
 .ps-editor .ps-chip-layout .ps-icon { margin-left: -2px; pointer-events: none; }
-/* Collapsed: a 28px strip of the mode dot, the position and the key chip; a tap anywhere on it expands it. */
+/* Collapsed: a 28px strip of the position and the key chip; a tap anywhere on it expands it. */
 .ps-editor .ps-shell-phone[data-header=collapsed] .ps-phead { padding-top: 3px; padding-bottom: 3px; gap: 0; cursor: pointer; }
 .ps-editor .ps-shell-phone[data-header=collapsed] .ps-phead-main { margin-top: -34px; opacity: 0; pointer-events: none; }
-.ps-editor .ps-shell-phone[data-header=collapsed] .ps-phead-mode { width: 22px; padding: 0; justify-content: center; }
-.ps-editor .ps-shell-phone[data-header=collapsed] .ps-mode-text, .ps-editor .ps-shell-phone[data-header=collapsed] .ps-pchip:not(.ps-chip-key) { display: none; }
+.ps-editor .ps-shell-phone[data-header=collapsed] .ps-pchip:not(.ps-chip-key) { display: none; }
 @media (prefers-reduced-motion: reduce) { .ps-editor .ps-phead, .ps-editor .ps-phone-body, .ps-editor .ps-phead-main { transition: none; } }
 
 /* Overflow menu, under the header's right edge. */
@@ -323,16 +323,24 @@
 .ps-editor .ps-shell-phone .ps-status { gap: 12px; min-height: 26px; padding: 0 10px; }
 .ps-editor .ps-shell-phone :is(.ps-status-cursor, .ps-status-saved, .ps-status-diagnostics) { display: none; }
 
-/* Toolbar: a 30px tab strip over at most two rows of 44px targets. */
+/* Toolbar: a 32px strip (the Entry/Edit switch, the tabs, the score check) over rows of 44px targets. */
 .ps-editor .ps-ptoolbar { position: absolute; z-index: 30; right: 0; bottom: 0; left: 0; padding-bottom: env(safe-area-inset-bottom, 0px); border-top: 1px solid var(--ps-line); background: var(--ps-paper); box-shadow: 0 -6px 18px rgba(40, 56, 46, .06); }
-.ps-editor .ps-ptabs { display: flex; align-items: stretch; height: 30px; padding: 0 6px; border-bottom: 1px solid #ecebe6; }
+.ps-editor .ps-ptabs { display: flex; align-items: stretch; height: 32px; padding: 0 6px; border-bottom: 1px solid #ecebe6; }
+.ps-editor .ps-ptabs-list { display: flex; flex: 1 1 auto; align-items: stretch; min-width: 0; }
+/* The mode switch, always in reach: Entry is the accent with a lit dot, Edit amber; the word says which. */
+.ps-editor .ps-pmode { display: inline-flex; flex: none; align-self: center; align-items: center; justify-content: center; gap: 6px; min-width: 70px; height: 28px; margin-right: 4px; padding: 0 11px 0 9px; border: 1px solid transparent; border-radius: 999px; background: var(--ps-accent); color: #fff; font: 700 11px var(--ps-sans); letter-spacing: .08em; text-transform: uppercase; }
+.ps-editor .ps-pmode:not(:disabled):hover { transform: none; }
+.ps-editor .ps-pmode.is-edit { border-color: #e7c48d; background: #fdf1dc; color: #9a5a0b; }
+.ps-editor .ps-pmode.is-edit .ps-mode-dot { background: #d98a1c; box-shadow: none; }
+.ps-editor:not([data-ps-editable]) .ps-pmode { border-color: transparent; background: #b9b2a5; color: #fff; }
 .ps-editor .ps-ptab { position: relative; flex: 1 1 0; padding: 0 2px; border: 0; background: transparent; color: var(--ps-ink-4); font: 500 11.5px var(--ps-sans); cursor: pointer; }
 .ps-editor .ps-ptab.is-on { color: var(--ps-accent); font-weight: 600; }
 .ps-editor .ps-ptab.is-on::after { content: ''; position: absolute; right: 22%; bottom: -1px; left: 22%; height: 2px; border-radius: 2px; background: var(--ps-accent); }
 .ps-editor .ps-ptabs-check { display: inline-flex; align-items: center; gap: 5px; padding: 0 4px 0 8px; border: 0; background: transparent; font-size: 9.5px; font-weight: 700; letter-spacing: .06em; color: #2f7a4c; }
 .ps-editor .ps-ptabs-check.is-problem { color: var(--ps-highlight-error); }
 .ps-editor .ps-ptabs-check.is-problem .ps-status-dot { background: var(--ps-highlight-error); box-shadow: 0 0 0 3px rgba(194, 65, 12, .16); }
-/* Two rows tall whatever the tab or strip shows, so switching never resizes the canvas. */
+/* At least two rows tall whatever the tab or strip shows; Notes adds its entry row (the canvas padding follows the
+   toolbar's measured height, --ps-toolbar-h). */
 .ps-editor .ps-prows { display: flex; flex-direction: column; gap: 5px; min-height: 106px; padding: 6px 6px 7px; }
 .ps-editor .ps-prow { display: flex; align-items: center; gap: 3px; height: 44px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .ps-editor .ps-prow::-webkit-scrollbar { display: none; }
@@ -351,6 +359,21 @@
 .ps-editor .ps-pbtn .ps-glyph-dyn { font-size: 24px; transform: translateY(2px); }
 .ps-editor .ps-pbtn .ps-glyph-mm { font-size: 17px; transform: translateY(3px); }
 .ps-editor .ps-pselect { flex: none; width: auto; height: 44px; border-radius: 10px; }
+/* Notes tab entry row: letter buttons, or one piano octave (taller, for black keys a finger can hit), then the switch. */
+.ps-editor .ps-prow-entry { gap: 4px; }
+.ps-editor .ps-prow-entry-piano { height: 78px; }
+.ps-editor .ps-pbtn-entry-switch { width: 40px; color: var(--ps-ink-3); }
+.ps-editor .ps-prow-entry-piano .ps-pbtn-entry-switch { height: 100%; }
+.ps-editor .ps-entry-switch-abc { font: 600 10.5px var(--ps-sans); letter-spacing: .04em; }
+.ps-editor .ps-piano { --ps-piano-black-w: 32px; position: relative; display: flex; flex: 1 1 auto; gap: 2px; min-width: 0; height: 100%; }
+.ps-editor .ps-piano-key { display: flex; align-items: flex-end; justify-content: center; padding: 0 0 6px; cursor: pointer; font-family: var(--ps-sans); touch-action: manipulation; }
+.ps-editor .ps-piano-key-white { flex: 1 1 0; min-width: 0; height: 100%; border: 1px solid #d6d2c8; border-bottom-width: 3px; border-radius: 0 0 8px 8px; background: linear-gradient(180deg, #f3f1ec, #fff 18%); color: var(--ps-ink-3); font-size: 12px; font-weight: 600; }
+.ps-editor .ps-piano-key-black { position: absolute; z-index: 1; top: 0; width: var(--ps-piano-black-w); height: 48px; padding-bottom: 5px; border: 1px solid #1f2622; border-radius: 0 0 6px 6px; background: linear-gradient(180deg, #2a322d, #3c4640); color: rgba(255, 255, 255, .82); box-shadow: 0 2px 3px rgba(20, 26, 22, .3); font-size: 9.5px; font-weight: 600; }
+.ps-editor .ps-piano-key-white:not(:disabled):active { background: linear-gradient(180deg, #e3ece6, #f2f7f3); border-bottom-color: var(--ps-accent); color: var(--ps-accent); }
+.ps-editor .ps-piano-key-black:not(:disabled):active { background: var(--ps-accent-deep); }
+.ps-editor .ps-piano-key:focus-visible { outline: 2px solid var(--ps-accent); outline-offset: -2px; }
+.ps-editor .ps-piano-key:disabled { opacity: .5; cursor: default; }
+.ps-editor .ps-piano-key-name { pointer-events: none; line-height: 1; }
 .ps-editor .ps-pnote { flex: 1 1 auto; min-width: 120px; padding: 0 4px; font-size: 11px; line-height: 1.3; color: var(--ps-ink-4); white-space: normal; }
 /* An inline strip: one row of the popover's fields, an Apply and a close button. */
 .ps-editor .ps-pstrip { gap: 8px; padding-left: 2px; }

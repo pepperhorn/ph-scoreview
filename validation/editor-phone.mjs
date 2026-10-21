@@ -1,12 +1,15 @@
 // The score editor's phone shell (apps/reader /editor at 390x844 on a touch device): the two-row header collapses to a
-// 28px strip after 4 s idle and a canvas scroll restores it; tapping Value -> quarter -> C enters a note and the header
-// stays expanded while typing (each dispatch restarts the idle timer); a scroll the collapse itself causes (at the
-// bottom of the score) does not reopen it; the Bar tab's repeat start adds a forward repeat; the Pitch tab has tuplet,
+// 28px strip after 4 s idle and a canvas scroll restores it; the Notes tab is three rows (durations; accidentals, octave
+// and chord; a one-octave piano that fits 390px, switchable to letter buttons and remembered), and tapping quarter ->
+// piano C enters a note, the black key C sharp, the letters' D; the header's Undo and Redo step through history; the
+// header stays expanded while typing (each dispatch restarts the idle timer); a scroll the collapse itself causes (at the
+// bottom of the score) does not reopen it; the Bar tab's repeat start adds a forward repeat; the Marks tab has tuplet,
 // beam and Dyn (the dynamic strip); Escape closes the overflow menu, which holds the header open; Play then Stop leave
 // focus on the editor, so after the collapse keys still enter notes;
 // the Key chip opens an inline strip inside the toolbar; the toolbar stays put while the canvas scrolls; the Layout tab's
 // swap chip opens the instrument swap as an inline strip (/tmp/editor-phone-layout.png). Screenshots go to
-// /tmp/editor-phone.png (expanded) and /tmp/editor-phone-collapsed.png. Runs against the build (npm run build first).
+// /tmp/editor-phone.png (expanded), /tmp/editor-phone-collapsed.png and /tmp/editor-phone-notes.png (the Notes tab's
+// piano). Runs against the build (npm run build first).
 // BROWSER=chromium|firefox|webkit.
 import assert from 'node:assert/strict';
 import { chromium, firefox, webkit } from 'playwright-core';
@@ -24,6 +27,13 @@ const musicXml = page => page.evaluate(() => window.__editor.ref.current.getMusi
 const pause = ms => new Promise(done => setTimeout(done, ms));
 const rectOf = (page, selector) => page.locator(selector).evaluate(element => { const r = element.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height }; });
 const headerHeight = async page => (await rectOf(page, '.ps-phead')).height;
+/** Taps the centre of the `index`th match of `selector` in the engraving (its SVG takes the pointer events). */
+async function tapAt(page, selector, index) {
+  const target = page.locator(selector).nth(index);
+  await target.scrollIntoViewIfNeeded();
+  const box = await target.boundingBox();
+  await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+}
 /** Waits until the header is expanded (two rows) or collapsed (the strip), its height transition included. */
 const headerSettles = (page, state, timeout = 2000) => page.waitForFunction(state => {
   const header = document.querySelector('.ps-phead'), shell = document.querySelector('.ps-shell-phone');
@@ -106,18 +116,78 @@ try {
 
   // 3. Value -> quarter -> C enters a note; the dispatches keep the header expanded past the 4 s idle time.
   await page.locator('.ps-ptab[data-tab="value"]').tap();
+  // The Entry/Edit switch sits in the toolbar (not the header), in reach on every tab.
+  assert.equal(await page.locator('.ps-phead [aria-label="Toggle note entry"]').count(), 0, 'no mode switch in the header');
+  const modeSwitch = page.locator('.ps-ptoolbar .ps-pmode[aria-label="Toggle note entry"]');
+  if (await page.locator('.ps-editor').getAttribute('data-ps-mode') !== 'enter') await modeSwitch.tap();
+  assert.equal((await modeSwitch.textContent()).trim(), 'Entry', 'the switch shows Entry');
   const quarter = page.locator('.ps-ptoolbar button[aria-label="Quarter note"]');
   const size = await quarter.boundingBox();
   assert.ok(size.width >= 44 && size.height >= 44, `toolbar buttons are 44px targets (${size.width}x${size.height})`);
   const rows = await page.locator('.ps-prows .ps-prow').count();
-  assert.ok(rows <= 2, `at most two button rows (${rows})`);
+  assert.equal(rows, 3, `the Notes tab has three rows (${rows})`);
+  for (const label of ['Sharp', 'Natural', 'Flat', 'Octave down', 'Octave up', 'Add to chord']) assert.equal(await page.locator(`.ps-prows button[aria-label="${label}"]`).count(), 1, `the Notes tab has ${label}`);
+  assert.equal(await page.locator('.ps-prows button[aria-label="Undo"], .ps-prows button[aria-label="Redo"]').count(), 0, 'Undo and Redo moved to the header');
+  // The piano (the default entry row) fits the 390px screen: 7 white and 5 black keys, all finger-sized.
+  assert.equal(await page.locator('.ps-piano .ps-piano-key-white').count(), 7);
+  assert.equal(await page.locator('.ps-piano .ps-piano-key-black').count(), 5);
+  // In pitch order in the DOM, so focus and screen readers walk the keyboard C, C sharp, D...
+  assert.deepEqual(
+    await page.locator('.ps-piano .ps-piano-key').evaluateAll(keys => keys.map(key => key.getAttribute('aria-label'))),
+    ['C', 'C sharp', 'D', 'D sharp', 'E', 'F', 'F sharp', 'G', 'G sharp', 'A', 'A sharp', 'B'].map(name => `Piano ${name}`),
+  );
+  const toolbarRect = await rectOf(page, '.ps-ptoolbar');
+  for (const key of await page.locator('.ps-piano .ps-piano-key, .ps-pbtn-entry-switch').all()) {
+    const box = await key.boundingBox();
+    const black = await key.evaluate(element => element.classList.contains('ps-piano-key-black'));
+    assert.ok(box.x >= toolbarRect.left && box.x + box.width <= toolbarRect.right + 0.5, `a piano key lies within the screen (${JSON.stringify(box)})`);
+    assert.ok(box.height >= 44 && box.width >= (black ? 30 : 38), `piano keys are finger-sized (${box.width}x${box.height})`);
+  }
+  // The toolbar's measured height pads the canvas, so the taller Notes tab never covers the score.
+  const bodyPadding = await page.locator('.ps-phone-body').evaluate(element => parseFloat(getComputedStyle(element).paddingBottom));
+  assert.ok(Math.abs(bodyPadding - toolbarRect.height) <= 1, `the canvas is padded by the toolbar height (${bodyPadding} vs ${toolbarRect.height})`);
   await quarter.tap();
   await pause(3000);
-  await page.locator('.ps-ptoolbar button[aria-label="Note C"]').tap();
+  await page.locator('.ps-piano button[aria-label="Piano C"]').tap();
   await waitForNotes(page, 1);
   assert.match(await musicXml(page), /<step>C<\/step>/, 'the tapped C is in the score');
+  await page.screenshot({ path: '/tmp/editor-phone-notes.png' });
   await pause(2000);
   assert.ok((await headerHeight(page)) > 60, 'the header stays expanded while typing (5 s after the first tap, 2 s after the last)');
+  // A black key in C major enters C sharp.
+  await page.locator('.ps-piano button[aria-label="Piano C sharp"]').tap();
+  await waitForNotes(page, 2);
+  assert.match(await musicXml(page), /<step>C<\/step>\s*<alter>1<\/alter>/, 'the black key entered C sharp');
+  // The header's Undo removes it, Redo restores it.
+  await headerSettles(page, 'full');
+  const undo = page.locator('.ps-phead .ps-phead-undo');
+  assert.equal(await undo.isEnabled(), true, 'Undo is enabled after an edit');
+  await undo.tap();
+  await waitForNotes(page, 1);
+  await headerSettles(page, 'full');
+  await page.locator('.ps-phead .ps-phead-redo').tap();
+  await waitForNotes(page, 2);
+  // The switch shows letter buttons instead, remembered across a reload's storage read.
+  await page.locator('.ps-pbtn-entry-switch[aria-label="Use letter buttons"]').tap();
+  assert.equal(await page.locator('.ps-piano').count(), 0, 'the letter buttons replace the piano');
+  assert.equal(await page.evaluate(() => localStorage.getItem('pepperscore-editor:phone-entry-input')), 'letters', 'the choice is stored');
+  await page.locator('.ps-ptoolbar button[aria-label="Note D"]').tap();
+  await waitForNotes(page, 3);
+  await page.locator('.ps-pbtn-entry-switch[aria-label="Use piano keys"]').tap();
+  await page.locator('.ps-piano').waitFor();
+
+  // 3b. Tapping a note in the score switches to Edit (the toolbar switch says so), where a piano key repitches that
+  // note instead of entering one; tapping a rest in an empty bar switches back to Entry.
+  await tapAt(page, `${NOTES} .notehead`, 0);
+  await page.waitForFunction(() => document.querySelector('.ps-editor')?.dataset.psMode === 'select', null, { timeout: 10000 });
+  assert.equal((await page.locator('.ps-ptoolbar .ps-pmode').textContent()).trim(), 'Edit', 'the switch shows Edit');
+  await page.locator('.ps-piano button[aria-label="Piano E"]').tap();
+  await page.waitForFunction(() => /<step>E<\/step>/.test(window.__editor.ref.current.getMusicXml()), null, { timeout: 10000 });
+  assert.equal(await page.locator(NOTES).count(), 3, 'Edit repitched the tapped note; nothing was entered');
+  await page.locator('.ps-ptab[data-tab="value"]').tap();
+  await tapAt(page, '.ps-editor .reader-note:is(.rest, .mRest)', 0); // the rest after the last note
+  await page.waitForFunction(() => document.querySelector('.ps-editor')?.dataset.psMode === 'enter', null, { timeout: 10000 });
+  assert.equal((await page.locator('.ps-ptoolbar .ps-pmode').textContent()).trim(), 'Entry', 'the switch shows Entry');
 
   // 4. The Bar tab's repeat start toggles a forward repeat on the cursor bar.
   await page.locator('.ps-ptab[data-tab="bar"]').tap();
@@ -128,9 +198,9 @@ try {
   await repeat.tap();
   await page.waitForFunction(() => !/<repeat direction="forward"/.test(window.__editor.ref.current.getMusicXml()), null, { timeout: 10000 });
 
-  // 4b. The Pitch tab has tuplet and beam keycaps, and its Dyn chip opens the dynamic strip.
-  await page.locator('.ps-ptab[data-tab="pitch"]').tap();
-  for (const label of ['Tuplet (3)', 'Beam grouping 2/3/4/auto', 'Dynamic']) assert.equal(await page.locator(`.ps-ptoolbar button[aria-label="${label}"]`).count(), 1, `the Pitch tab has ${label}`);
+  // 4b. The Marks tab has tie, slur, tuplet, beam and articulation keycaps, and its Dyn chip opens the dynamic strip.
+  await page.locator('.ps-ptab[data-tab="marks"]').tap();
+  for (const label of ['Tie', 'Slur', 'Tuplet (3)', 'Beam grouping 2/3/4/auto', 'Dynamic', 'Staccato']) assert.equal(await page.locator(`.ps-ptoolbar button[aria-label="${label}"]`).count(), 1, `the Marks tab has ${label}`);
   await page.locator('.ps-ptoolbar button[aria-label="Dynamic"]').tap();
   await page.locator('.ps-ptoolbar .ps-pstrip[aria-label="Dynamic"]').waitFor();
   await page.locator('.ps-pstrip .ps-pstrip-close').tap();
@@ -154,7 +224,7 @@ try {
   await strip.waitFor({ state: 'detached' });
 
   // 6. The overflow menu focuses its first item and holds the header open; Escape closes it without leaving entry mode.
-  await page.locator('.ps-phead').tap();
+  await page.locator('.ps-phead .ps-phead-crumb').tap(); // the header's centre now lands on the key chip
   await headerSettles(page, 'full');
   const mode = await page.locator('.ps-editor').getAttribute('data-ps-mode');
   await page.locator('.ps-phead-more').tap();
@@ -170,7 +240,7 @@ try {
   // never strands it: 4.5 s later the root still has focus, entry mode holds and c enters a note.
   await page.locator('.ps-phead .ps-phead-crumb').tap();
   await headerSettles(page, 'full');
-  if (await page.locator('.ps-editor').getAttribute('data-ps-mode') !== 'enter') await page.locator('.ps-phead-mode').tap();
+  if (await page.locator('.ps-editor').getAttribute('data-ps-mode') !== 'enter') await page.locator('.ps-ptoolbar .ps-pmode').tap();
   assert.equal(await page.locator('.ps-editor').getAttribute('data-ps-mode'), 'enter');
   const pitchesBefore = ((await musicXml(page)).match(/<pitch>/g) ?? []).length;
   await page.locator('.ps-phead-play').tap();
@@ -208,7 +278,7 @@ try {
 
   assert.deepEqual(errors, [], 'no page or console errors');
   await context.close();
-  console.log(`Editor phone: one viewer mount, two-row header (${expanded}px) collapses to ${collapsed}px, a user scroll restores it and a clamp scroll does not, toolbar entry keeps it expanded, repeat start, tuplet/beam/dynamic, inline key strip in the toolbar, menu Escape and hold, Play/Stop keeps focus through the collapse, fixed toolbar, Layout tab stave chips and swap strip pass`);
+  console.log(`Editor phone: one viewer mount, two-row header (${expanded}px) collapses to ${collapsed}px, a user scroll restores it and a clamp scroll does not, three-row Notes tab with a 390px piano (keys, black-key spelling, letters switch remembered), header Undo/Redo, toolbar Entry/Edit switch and tap-to-Edit/Entry, toolbar entry keeps it expanded, repeat start, tuplet/beam/dynamic, inline key strip in the toolbar, menu Escape and hold, Play/Stop keeps focus through the collapse, fixed toolbar, Layout tab stave chips and swap strip pass`);
 } finally {
   await browser.close();
   await server.close();
