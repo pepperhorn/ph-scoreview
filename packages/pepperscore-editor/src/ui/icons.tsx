@@ -82,6 +82,15 @@ export const ChordIcon = () => (
   </svg>
 );
 
+/** A mini keyboard (two black keys over three white), the phone's switch to piano entry. */
+export const PianoIcon = () => (
+  <svg className="ps-curve ps-curve-piano" width="24" height="22" viewBox="0 0 24 22" aria-hidden="true">
+    <rect x="1" y="1" width="22" height="20" rx="2" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    <path d="M8.3 12v9M15.7 12v9" stroke="currentColor" strokeWidth="1.3" />
+    <g fill="currentColor"><rect x="6" y="1" width="4.6" height="11" rx="1" /><rect x="13.4" y="1" width="4.6" height="11" rx="1" /></g>
+  </svg>
+);
+
 export function Kbd({ children }: { children: ReactNode }) {
   return <kbd className="ps-kbd">{children}</kbd>;
 }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react';
 import type { PepperScoreClickInfo, PepperScoreHandle } from 'pepperscore';
 import { compileToMusicXml } from '../compile/to-musicxml';
-import { setCursor, setSelection } from '../engine/commands/index';
+import { setCursor, setEntryMode, setSelection } from '../engine/commands/index';
 import type { EditorStore } from '../engine/store';
 import { importMusicXml } from '../import/from-musicxml';
 import { DEFAULT_MAX_STAVES, readOnlyMessage } from '../licence';
@@ -145,6 +145,8 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
 
   useLeaveGuard(store);
   const phone = useIsPhone(rootRef, props.forcePhone);
+  const phoneRef = useRef(phone);
+  phoneRef.current = phone;
 
   const refocus = useCallback(() => rootRef.current?.focus({ preventScroll: true }), []);
   const closePopover = useCallback(() => {
@@ -175,6 +177,10 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
       if (!target) return;
       store.dispatch(setCursor, target.cursor, { record: false });
       store.dispatch(setSelection, { ids: target.selection }, { record: false });
+      // On a phone a tap also picks the mode: a note (or a near miss that lands the cursor on one) to edit it (Edit), a
+      // rest (an empty bar, past the last note) to enter (Entry).
+      // The desktop keeps its mode, where typed letters mean different things in each.
+      if (phoneRef.current) store.dispatch(setEntryMode, { mode: target.mode }, { record: false });
       refocus();
     },
     [store, refocus],

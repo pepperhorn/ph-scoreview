@@ -1,3 +1,6 @@
+import { createEditorStore } from '../engine/store';
+import { setEntryMode, setSelection } from '../engine/commands/index';
+import { shownDuration } from './key-actions';
 import { createDocument } from '../model/create';
 import type { Cursor } from '../engine/types';
 import { helloDoc } from '../test-helpers';
@@ -16,10 +19,18 @@ describe('clickTarget', () => {
   it('puts the cursor on the event of a clicked note and selects it', () => {
     const doc = helloDoc();
     const target = clickTarget(doc, { sourceId: 'n2', measureIndex: 0, clientX: 0, clientY: 0 });
-    expect(target).toEqual({ cursor: { partId: doc.parts[0].id, staff: 1, voice: 1, measureId: doc.global.measures[0].id, tick: 960 }, selection: ['e2'] });
+    expect(target).toEqual({ cursor: { partId: doc.parts[0].id, staff: 1, voice: 1, measureId: doc.global.measures[0].id, tick: 960 }, selection: ['e2'], mode: 'select' });
   });
   it('resolves a rest by its event id', () => {
     expect(clickTarget(helloDoc(), { sourceId: 'e3', clientX: 0, clientY: 0 })?.cursor.tick).toBe(1920);
+  });
+  it('implies Edit (select) for a note, Entry for a rest or staff space past the last note or in an empty bar', () => {
+    const doc = helloDoc();
+    expect(clickTarget(doc, { sourceId: 'n1', clientX: 0, clientY: 0 })?.mode).toBe('select');
+    expect(clickTarget(doc, { sourceId: 'e3', clientX: 0, clientY: 0 })?.mode).toBe('enter');
+    expect(clickTarget(doc, { measureIndex: 0, fraction: 0.9, staff: 1, clientX: 0, clientY: 0 })).toMatchObject({ cursor: { tick: 1920 }, mode: 'enter' });
+    const empty = createDocument({ parts: [{ name: 'Flute', clef: 'treble', gmProgram: 74 }], measures: 2 });
+    expect(clickTarget(empty, { measureIndex: 1, fraction: 0.5, staff: 1, clientX: 0, clientY: 0 })?.mode).toBe('enter');
   });
   it('maps a click in a measure to the nearest event start', () => {
     const doc = helloDoc();
@@ -76,5 +87,24 @@ describe('toolbar bindings', () => {
     const labels = ['Undo', 'Redo', 'Toggle note entry', 'Toggle dot', 'Rest', 'Tie', 'Slur', 'Staccato', 'Tenuto', 'Accent', 'Marcato', 'Tuplet (3)', 'Key signature', 'Time signature', 'Clef', 'Text', 'Play'];
     const missing = labels.filter((label) => label !== 'Text' && !KEYMAP.some((b) => b.label === label));
     expect(missing).toEqual([]);
+  });
+});
+
+describe('clickTarget mode for a tap that misses the notehead', () => {
+  it('implies Edit when the cursor snaps onto a note, Entry when it snaps onto a rest', () => {
+    const doc = helloDoc();
+    expect(clickTarget(doc, { measureIndex: 0, fraction: 0.3, staff: 1, clientX: 0, clientY: 0 })).toMatchObject({ cursor: { tick: 960 }, selection: [], mode: 'select' });
+    expect(clickTarget(doc, { measureIndex: 0, fraction: 0.6, staff: 1, clientX: 0, clientY: 0 })).toMatchObject({ cursor: { tick: 1920 }, mode: 'enter' });
+  });
+});
+
+describe('shownDuration (the duration the rail and the phone Notes tab light)', () => {
+  it('is the entry duration in entry mode, the target event duration in select (Edit) mode, where the buttons resize it', () => {
+    const store = createEditorStore(helloDoc());
+    store.dispatch(setEntryMode, { mode: 'enter' }, { record: false });
+    store.dispatch(setSelection, { ids: ['e3'] }, { record: false });
+    expect(shownDuration(store.getState())).toEqual({ base: 'quarter', dots: 0 });
+    store.dispatch(setEntryMode, { mode: 'select' }, { record: false });
+    expect(shownDuration(store.getState())).toEqual({ base: 'half', dots: 0 });
   });
 });

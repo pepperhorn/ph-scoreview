@@ -4,6 +4,7 @@ import { applyAutoBeam } from '../engine/autobeam';
 import { findEvent, findNote, findSequence } from '../engine/sequence-edit';
 import type { Command, EditorState } from '../engine/types';
 import { measureIndex } from '../model/query';
+import type { Duration } from '../model/durations';
 import type { GlobalMeasure } from '../model/schema';
 
 /** An event id from a selected event or note id. */
@@ -30,6 +31,15 @@ export function targetNote(state: EditorState): string | undefined {
   if (ids.length === 1 && findNote(state.document, ids[0])) return ids[0];
   const eventId = targetEvent(state);
   return eventId ? findEvent(state.document, eventId)?.event.notes?.at(-1)?.id : undefined;
+}
+
+/**
+ * The duration the duration buttons light: the target event's in select (Edit) mode, where they resize it; else the
+ * entry duration. The same object while neither changes, so it suits a store selector.
+ */
+export function shownDuration(state: EditorState): Duration {
+  const id = state.cursor.mode === 'select' ? targetEvent(state) : undefined;
+  return (id && findEvent(state.document, id)?.event.duration) || state.cursor.duration;
 }
 
 /** Two selected events in time order, else the two most recent events before the cursor. */
