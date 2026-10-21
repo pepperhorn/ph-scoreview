@@ -67,6 +67,26 @@ export type PepperScoreClickInfo = {
 };
 /** Adds `className` to the drawn notes (`ids`: note or source ids) and measures (`measures`: zero-based indexes); re-applied after every draw. */
 export type PepperScoreHighlight = { ids?: string[]; measures?: number[]; className: string };
+/** CSS pixels from each edge. */
+export type PepperScoreInsets = { top?: number; right?: number; bottom?: number; left?: number };
+/** What `scrollIntoView` reveals: the drawn notes (note or source ids, like `highlights`), else the measure (zero-based). */
+export type PepperScoreScrollTarget = { ids?: string[]; measure?: number };
+export type PepperScoreScrollOptions = {
+  /** Keep the target at least this far inside the visible edges (a number for every edge). Default 0. */
+  margin?: number | PepperScoreInsets;
+  /**
+   * When a scroll is needed, go this share (0..1) of the visible extent past the least scroll, in the direction of
+   * travel, so what follows is in view too (the target always stays inside the margins). Default 0.
+   */
+  lead?: number;
+  /** Client coordinates the target must also stay inside, e.g. the space between a host's overlays. */
+  bounds?: PepperScoreInsets;
+  /**
+   * A `performance.now()` time: do nothing if the reader has scrolled, wheeled, touched or pressed on the score
+   * since then (or a pointer is still down on it), so a reader's own scrolling or click is never overridden.
+   */
+  interactedSince?: number;
+};
 export type PepperScoreHandle = {
   /** Start playback (no-op while playing, when the chrome loads no audio, or with a `clock`). */
   play(): Promise<void>;
@@ -85,6 +105,13 @@ export type PepperScoreHandle = {
   scrollToMeasure(index: number): Promise<void>;
   /** `seek` to the start of a measure (its first performed occurrence). */
   seekToMeasure(index: number): void;
+  /**
+   * Scroll the least distance (plus `lead`) that brings the target `margin` inside the visible edges; nothing moves
+   * when it is already there. Horizontally the notes (else the measure) must show; vertically their whole system
+   * (or the notes, when the system is taller than the view). Draws the measure's system if needed. Smooth, unless the
+   * user prefers reduced motion. Resolves `true` when it scrolled.
+   */
+  scrollIntoView(target: PepperScoreScrollTarget, options?: PepperScoreScrollOptions): Promise<boolean>;
 };
 export type PepperScoreProps = {
   /** Score sources; the first present wins, in this order. */
@@ -145,6 +172,8 @@ export type PepperScoreProps = {
   onTimeUpdate?(seconds: number): void;
   /** Any click on the engraving (every chrome, with or without a clock): the note, measure and staff it hit. */
   onElementClick?(info: PepperScoreClickInfo): void;
+  /** Every draw landed (the first paint, a re-layout, an in-place swap), with `highlights` already applied. */
+  onRender?(): void;
   /** Classes to add to notes and measures (for a host's selection or cursor; see the `ps-*` classes in styles.css). */
   highlights?: PepperScoreHighlight[];
   /** Focus the reader on mount so page-turn keys work before any click. */
@@ -190,7 +219,7 @@ const flag = (element: HTMLElement, key: 'psShort' | 'psTiny' | 'psWide', on: bo
 /** Where the viewport centre sits in a measure, so a re-layout can put that point back at the centre. */
 type ZoomAnchor = { index: number; fx: number; fy: number };
 
-export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: preset = 'full', controls, view, height, className, ariaLabel, settings, persist, assetBaseUrl, verovioBaseUrl, soundPack = 'core', soundSources, onReady, onPlay, onStop, onError, clock, audio: withAudio = true, onSeek, onTimeUpdate, onElementClick, highlights, autoFocus, paintTransition = 'reveal', ref }: PepperScoreProps) {
+export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: preset = 'full', controls, view, height, className, ariaLabel, settings, persist, assetBaseUrl, verovioBaseUrl, soundPack = 'core', soundSources, onReady, onPlay, onStop, onError, clock, audio: withAudio = true, onSeek, onTimeUpdate, onElementClick, onRender, highlights, autoFocus, paintTransition = 'reveal', ref }: PepperScoreProps) {
   const chrome = useMemo(() => resolveChrome(preset, controls), [preset, controls?.mixer, controls?.openFile, controls?.drawer, controls?.transport, controls?.viewToggle, controls?.zoom]);
   /** A host clock always shows the playhead (ivories uses chrome="none" with a clock). */
   const playhead = chrome.playhead || Boolean(clock);
@@ -203,8 +232,8 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     return { ...mapped, ...(view ? { mode: viewToMode(view) } : {}) };
   }, [settingsKey, view]);
   const hostPrefsRef = useRef(hostPrefs);
-  const callbacks = useRef({ onReady, onPlay, onStop, onError, onSeek, onTimeUpdate, onElementClick });
-  callbacks.current = { onReady, onPlay, onStop, onError, onSeek, onTimeUpdate, onElementClick };
+  const callbacks = useRef({ onReady, onPlay, onStop, onError, onSeek, onTimeUpdate, onElementClick, onRender });
+  callbacks.current = { onReady, onPlay, onStop, onError, onSeek, onTimeUpdate, onElementClick, onRender };
   const clockRef = useRef(clock);
   clockRef.current = clock;
   const natural = !height && preset !== 'full';
@@ -321,6 +350,9 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   /** Destination of the last programmatic smooth scroll, so a turn or follow during it builds on where it lands. */
   const scrollTargetRef = useRef<{ top: number; left: number; at: number } | null>(null);
   const userScrollAtRef = useRef(-Infinity);
+  /** The reader's last scroll, wheel, touch or press on the viewport (`scrollIntoView`'s `interactedSince`), and whether a pointer is down. */
+  const interactedAtRef = useRef(-Infinity);
+  const pointerDownRef = useRef(false);
   const assetBase = useMemo(() => resolveAssetBase(assetBaseUrl, soundPack), [assetBaseUrl, soundPack]);
   // This reader's Verovio channel (opened in an effect and closed in its cleanup, so StrictMode's remount gets a new one):
   // its imports and renders never supersede another reader's on the shared worker.
@@ -963,6 +995,76 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     viewport.addEventListener('scroll', landed, { passive: true });
     return () => { viewport.removeEventListener('wheel', manual); viewport.removeEventListener('pointerdown', scrollbar); viewport.removeEventListener('scroll', landed); };
   }, []);
+  // Any wheel, touch or press on the viewport (scrollbar, notes, empty space) is the reader's own interaction for
+  // `scrollIntoView`; playback follow keeps its narrower test above.
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const touched = () => { interactedAtRef.current = performance.now(); };
+    const down = () => { touched(); pointerDownRef.current = true; };
+    const up = () => { if (pointerDownRef.current) touched(); pointerDownRef.current = false; };
+    const own = ['wheel', 'touchstart', 'touchmove', 'touchend'] as const;
+    const release = ['pointerup', 'pointercancel', 'blur'] as const;
+    for (const type of own) viewport.addEventListener(type, touched, { passive: true });
+    viewport.addEventListener('pointerdown', down, { passive: true });
+    for (const type of release) window.addEventListener(type, up, { passive: true });
+    return () => {
+      for (const type of own) viewport.removeEventListener(type, touched);
+      viewport.removeEventListener('pointerdown', down);
+      for (const type of release) window.removeEventListener(type, up);
+    };
+  }, []);
+  /** handle.scrollIntoView (see PepperScoreHandle). */
+  const revealTarget = async (target: PepperScoreScrollTarget, options: PepperScoreScrollOptions = {}) => {
+    const interrupted = () => pointerDownRef.current || (options.interactedSince !== undefined && interactedAtRef.current >= options.interactedSince);
+    const result = renderRef.current, canvas = canvasRef.current;
+    if (!result || !canvas || interrupted()) return false;
+    const index = target.measure ?? -1;
+    if (index >= 0) await result.ensureSystem(result.systemOfMeasure(index));
+    const viewport = viewportRef.current;
+    if (!viewport || renderRef.current !== result || interrupted()) return false;
+    // The same lookup as `highlights`: a note by id, its chord as the unit.
+    const notes = (target.ids ?? []).flatMap(id => {
+      const element = result.point(id)?.element ?? canvas.querySelector(`[data-note-id="${CSS.escape(id)}"]`) ?? canvas.querySelector(`#${CSS.escape(id)}`);
+      return element ? [element.closest('.chord') ?? element] : [];
+    });
+    const measure = index >= 0 ? result.measure(index)?.element : undefined;
+    const elements = notes.length ? notes : measure ? [measure] : [];
+    if (!elements.length) return false;
+    const rects = elements.map(element => element.getBoundingClientRect());
+    const own = { left: Math.min(...rects.map(r => r.left)), right: Math.max(...rects.map(r => r.right)), top: Math.min(...rects.map(r => r.top)), bottom: Math.max(...rects.map(r => r.bottom)) };
+    if (!(own.right > own.left || own.bottom > own.top)) return false;
+    const margin = typeof options.margin === 'number' ? { top: options.margin, right: options.margin, bottom: options.margin, left: options.margin } : options.margin ?? {};
+    const bounds = options.bounds ?? {};
+    const rect = viewport.getBoundingClientRect();
+    const left = rect.left + viewport.clientLeft, top = rect.top + viewport.clientTop;
+    const box = {
+      left: Math.max(left, bounds.left ?? -Infinity) + (margin.left ?? 0),
+      right: Math.min(left + viewport.clientWidth, bounds.right ?? Infinity) - (margin.right ?? 0),
+      top: Math.max(top, bounds.top ?? -Infinity) + (margin.top ?? 0),
+      bottom: Math.min(top + viewport.clientHeight, bounds.bottom ?? Infinity) - (margin.bottom ?? 0),
+    };
+    if (!(box.right > box.left && box.bottom > box.top)) return false;
+    // Vertically the target's whole system shows when it fits.
+    const block = elements[0].closest('.score-system')?.getBoundingClientRect();
+    const rows = block && block.bottom - block.top <= box.bottom - box.top ? { top: Math.min(block.top, own.top), bottom: Math.max(block.bottom, own.bottom) } : own;
+    const lead = Math.max(0, Math.min(1, options.lead ?? 0));
+    // The least move that brings [start, end] inside [lo, hi], plus the lead, never pushing start past lo (or end past hi).
+    const shift = (start: number, end: number, lo: number, hi: number) => {
+      const room = hi - lo;
+      if (end - start >= room) return start < lo || start > hi ? start - lo : 0;
+      if (end > hi) return Math.min(end - hi + lead * room, start - lo);
+      if (start < lo) return Math.max(start - lo - lead * room, end - hi);
+      return 0;
+    };
+    const toLeft = Math.max(0, Math.min(viewport.scrollWidth - viewport.clientWidth, viewport.scrollLeft + shift(own.left, own.right, box.left, box.right)));
+    const toTop = Math.max(0, Math.min(viewport.scrollHeight - viewport.clientHeight, viewport.scrollTop + shift(rows.top, rows.bottom, box.top, box.bottom)));
+    if (Math.abs(toLeft - viewport.scrollLeft) < 1 && Math.abs(toTop - viewport.scrollTop) < 1) return false;
+    scrollViewport({ left: toLeft, top: toTop });
+    return true;
+  };
+  const revealTargetRef = useRef(revealTarget);
+  revealTargetRef.current = revealTarget;
   // Keys act on the focused reader only: the handler sits on the root, so another instance (or the host page) never turns this one.
   const onRootKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Escape' && pickerPartId) { setPickerPartId(null); return; }
@@ -1297,6 +1399,8 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
       for (const rect of boxes.values()) { const layer = rect.parentElement; rect.remove(); if (layer && !layer.childElementCount) layer.remove(); }
     };
   }, [highlights, loaded, drawTick]);
+  // After the highlights effect, so a host reading them (or the new layout) sees this draw's.
+  useEffect(() => { if (drawTick) callbacks.current.onRender?.(); }, [drawTick]);
   const wasPlayingRef = useRef(false);
   useEffect(() => {
     if (playing && !wasPlayingRef.current) callbacks.current.onPlay?.();
@@ -1350,6 +1454,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
       result.measure(index)?.element?.scrollIntoView({ block: 'center', inline: 'center', behavior: scrollBehavior() });
     },
     seekToMeasure: index => seekToMeasureRef.current(Number(index)),
+    scrollIntoView: (target, options) => revealTargetRef.current(target ?? {}, options),
   }), [chrome.audio]);
   // Unmount: release only this reader's players and track gains; the shared AudioContext and Verovio worker stay for other readers.
   useEffect(() => () => { importRunRef.current++; playRunRef.current++; renderRef.current?.dispose(); if (playRef.current) { cancelAnimationFrame(playRef.current.frame); clearInterval(playRef.current.interval); } scheduledStopsRef.current.splice(0).forEach(item => item.stop()); audioRef.current?.players.forEach(players => players.forEach(p => p.dispose())); audioRef.current?.trackGains.forEach(gain => gain.disconnect()); audioRef.current = null; releasePlayback(playbackOwner); }, []);

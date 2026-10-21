@@ -3,7 +3,8 @@
 // the time popover applies on Enter, unsaved work is guarded, the desktop shell (rail keycaps, layout selector, popovers
 // beside the cursor bar, add/remove bar, title editing) works, the Layout tab's instrument swap highlights, reviews and
 // copies moved notes and a custom layout hides staves (moving the cursor to a drawn staff), five arrow-key moves render
-// the rail at most once, Escape closes a popover before the inspector drawer, and the change-to-redraw latency the editor
+// the rail at most once, Escape closes a popover before the inspector drawer, the view follows the cursor (40 notes in
+// Endless at 1400x900 keep it in view; an in-view arrow move and a click do not scroll; Undo scrolls back to it), and the change-to-redraw latency the editor
 // logs stays under PS_EDITOR_RENDER_MS (default 400; a warning above it, a failure above twice it). Runs against the
 // build (npm run build first). BROWSER=chromium|firefox|webkit.
 import assert from 'node:assert/strict';
@@ -362,6 +363,74 @@ try {
     await medium.close();
   }
 
+  // 8c. The view follows the cursor (1400x900, Endless): 40 typed notes (Ode to Joy) keep the cursor highlight inside
+  // the viewport after every bar; an arrow move that stays in view does not scroll; a click on a note near the right
+  // edge does not scroll; Undo brings the cursor back into view after the reader scrolled away.
+  {
+    const wide = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    const page = await wide.newPage();
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto(`${server.url}/editor`);
+    await page.waitForSelector('.ps-editor .score-system svg', { timeout: 60000 });
+    await page.click('.ps-view-toggle .ps-seg-item:has-text("Endless")');
+    await page.waitForFunction(() => document.querySelector('.ps-editor .reader-area')?.classList.contains('ps-landscape') && !document.querySelector('.ps-editor .score-content.is-painting, .ps-editor .score-loading'), null, { timeout: 30000 });
+    const scrollLeft = () => page.evaluate(() => document.querySelector('.ps-editor .score-viewport').scrollLeft);
+    /** scrollLeft once a smooth scroll has landed (unchanged for 300 ms). */
+    const settledScrollLeft = () => page.evaluate(() => new Promise(done => {
+      const viewport = document.querySelector('.ps-editor .score-viewport');
+      let last = viewport.scrollLeft, since = performance.now();
+      const tick = () => {
+        if (viewport.scrollLeft !== last) { last = viewport.scrollLeft; since = performance.now(); }
+        if (performance.now() - since >= 300) done(last); else requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }));
+    /** The cursor highlight (the cursor notes, else the cursor bar's box) lies wholly inside the viewport. */
+    const cursorInView = () => page.waitForFunction(() => {
+      const viewport = document.querySelector('.ps-editor .score-viewport');
+      const cursor = document.querySelector('.ps-editor [data-ps-highlight~="ps-cursor"], .ps-editor .ps-measure-highlight[data-ps-class~="ps-cursor-measure"]');
+      if (!viewport || !cursor) return false;
+      const v = viewport.getBoundingClientRect(), c = cursor.getBoundingClientRect();
+      return c.width > 0 && c.left >= v.left - 1 && c.right <= v.left + viewport.clientWidth + 1 && c.top >= v.top - 1 && c.bottom <= v.top + viewport.clientHeight + 1;
+    }, null, { timeout: 5000 });
+    await page.locator('.ps-editor').focus();
+    for (const key of ['n', '4']) await page.keyboard.press(key);
+    const ode = 'eefggfedccdeeddeefggfedccdedccddecdefecdefedcdgeefggfedccdedcc';
+    for (let i = 0; i < 40; i++) {
+      await page.keyboard.press(ode[i]);
+      await page.waitForFunction(n => (window.__editor.ref.current.getMusicXml().match(/<pitch>/g) ?? []).length === n, i + 1, { timeout: 10000 });
+      if ((i + 1) % 4) continue;
+      try { await cursorInView(); } catch { assert.fail(`after bar ${(i + 1) / 4} the cursor is in the viewport (scrollLeft ${await scrollLeft()})`); }
+    }
+    const followed = await settledScrollLeft();
+    assert.ok(followed > 400, `entry scrolled the view along with the cursor (scrollLeft ${followed})`);
+    // An arrow move that stays in view leaves the view alone (no re-centring on every keystroke).
+    await page.keyboard.press('ArrowLeft');
+    await page.waitForTimeout(400);
+    assert.equal(await settledScrollLeft(), followed, 'an arrow move inside the view does not scroll');
+    // Back to the start; a click on the rightmost note in view (inside the follow margin) must not scroll.
+    await page.evaluate(() => document.querySelector('.ps-editor .score-viewport').scrollTo({ left: 0 }));
+    await page.waitForFunction(() => document.querySelector('.ps-editor .score-viewport').scrollLeft === 0, null, { timeout: 5000 });
+    const position = await page.locator('.ps-status-cursor').textContent();
+    const rightmost = await page.evaluate(selector => {
+      const viewport = document.querySelector('.ps-editor .score-viewport').getBoundingClientRect();
+      const heads = [...document.querySelectorAll(`${selector} .notehead`)].map(head => head.getBoundingClientRect()).filter(r => r.right < viewport.right - 4);
+      const r = heads.sort((a, b) => b.right - a.right)[0];
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2, edge: viewport.right - r.right };
+    }, NOTES);
+    await page.mouse.click(rightmost.x, rightmost.y);
+    await page.waitForFunction(before => document.querySelector('.ps-status-cursor')?.textContent !== before, position, { timeout: 5000 });
+    await page.waitForTimeout(1000);
+    assert.equal(await scrollLeft(), 0, `a click (on a note ${Math.round(rightmost.edge)}px from the right edge) does not scroll`);
+    // Undo restores the cursor to the end of the score, far out of view: the view follows it.
+    await page.locator('.ps-editor').focus();
+    await page.keyboard.press('Control+z');
+    await page.waitForFunction(() => (window.__editor.ref.current.getMusicXml().match(/<pitch>/g) ?? []).length === 39, null, { timeout: 10000 });
+    try { await cursorInView(); } catch { assert.fail(`Undo brought the cursor into view (scrollLeft ${await scrollLeft()})`); }
+    assert.ok(await scrollLeft() > 400, 'Undo scrolled to the cursor');
+    await wide.close();
+  }
+
   assert.ok(renderTimes.length > 0, 'the editor reported its change-to-redraw time');
   // A new score source skips the viewer's redraw fade, so an edit engraves well inside a quarter second. Slow machines
   // (CI) get a warning above PS_EDITOR_RENDER_MS and fail only above twice it.
@@ -369,7 +438,7 @@ try {
   if (slow.length) console.warn(`Editor: ${slow.length} change-to-redraw time(s) at or over ${RENDER_MS} ms: ${slow.join(', ')}`);
   assert.ok(renderTimes.every(ms => ms < 2 * RENDER_MS), `every change-to-redraw time is under ${2 * RENDER_MS} ms (got ${renderTimes.join(', ')})`);
   assert.deepEqual(errors, [], 'no page or console errors');
-  console.log(`Editor: shell (keycaps, layout selector, popover placement, add/remove bar, title edit and cancel, medium-width inspector drawer), Layout tab (swap to Alto Sax beginner, moved-note highlights and status, Review, Make a copy and undo, piano-only custom layout and its clicks), entry, undo, accidentals and chord entry, click cursor, key and time popovers, export, save and reopen, unsaved-work guard, staff cap (open and initial) and read-only pass (the phone shell: validation/editor-phone.mjs) (render ms: ${renderTimes.join(', ')})`);
+  console.log(`Editor: shell (keycaps, layout selector, popover placement, add/remove bar, title edit and cancel, medium-width inspector drawer), Layout tab (swap to Alto Sax beginner, moved-note highlights and status, Review, Make a copy and undo, piano-only custom layout and its clicks), entry, undo, accidentals and chord entry, click cursor, follow the cursor (Endless entry, arrow, click, Undo), key and time popovers, export, save and reopen, unsaved-work guard, staff cap (open and initial) and read-only pass (the phone shell: validation/editor-phone.mjs) (render ms: ${renderTimes.join(', ')})`);
 } finally {
   await browser.close();
   await server.close();

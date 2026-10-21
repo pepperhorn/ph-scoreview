@@ -1,4 +1,4 @@
-import type { PepperScoreHighlight } from 'pepperscore';
+import type { PepperScoreHighlight, PepperScoreScrollTarget } from 'pepperscore';
 import { eventAtCursor } from '../engine/commands/cursor';
 import { findEvent, findNote } from '../engine/sequence-edit';
 import type { ViewResult } from '../engine/layout/apply-layout';
@@ -33,4 +33,15 @@ export function editorHighlights(doc: Document, cursor: Cursor, selection: Selec
   });
   if (selected.length) out.push({ ids: selected, className: 'ps-selection' });
   return out;
+}
+
+/**
+ * What following the cursor keeps in view: the event under the cursor (the `ps-cursor` notes), else the cursor's
+ * measure (the `ps-cursor-measure` box). The measure also lets the viewer draw that system first.
+ */
+export function cursorScrollTarget(doc: Document, cursor: Cursor): PepperScoreScrollTarget {
+  const atCursor = eventAtCursor(doc, cursor);
+  const event = atCursor ? findEvent(doc, atCursor)?.event : undefined;
+  const index = measureIndex(doc, cursor.measureId);
+  return { ...(event ? { ids: idsOf(event) } : {}), ...(index >= 0 ? { measure: index } : {}) };
 }
