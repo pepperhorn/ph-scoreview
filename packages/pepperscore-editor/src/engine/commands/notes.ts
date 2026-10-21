@@ -2,7 +2,7 @@ import { BASE_TICKS, DURATION_BASES, durationTicks, measureTicks, type Duration 
 import { restEvent } from '../../model/create';
 import { newId } from '../../model/ids';
 import { effectiveClef, effectiveTime, eventStarts, measureIndex, sequenceFor } from '../../model/query';
-import type { Articulation, Clef, Event, Pitch, Sequence, Tuplet } from '../../model/schema';
+import type { Articulation, Clef, Event, Part, Pitch, Sequence, Tuplet } from '../../model/schema';
 import { applyAutoBeam, splitBeamsAtRests } from '../autobeam';
 import { splitEvent } from '../refill';
 import {
@@ -55,7 +55,10 @@ export const enterEvent: Command<{ pitch?: Pitch; rest?: boolean }> = {
     settle(draft, ctx);
     applyAutoBeam(ctx.pm, ctx.seq, ctx.time);
 
-    if (!rest) cursor.lastPitch = { ...pitch! };
+    if (!rest) {
+      cursor.lastPitch = { ...pitch! };
+      cursor.lastPitchAt = { partId: part.id, staff: cursor.staff };
+    }
     cursor.entered = event.id;
     const next = cursor.tick + length;
     if (next < ctx.barTicks - TICK_EPSILON) cursor.tick = next;
@@ -142,9 +145,26 @@ export const entryDot: Command<Record<string, never>> = {
   },
 };
 
-/** The pitch a rest turns into by default: the last entered pitch, else the middle line of the staff's clef. */
+/**
+ * The pitch entry on `staff` of `part` at bar `index` aims near: the last entered pitch when it was entered on that
+ * part and staff, else the middle line of the staff's clef there (so a first treble G is G4, a bass G is G3).
+ */
+export function referencePitch(state: Pick<Editable, 'cursor'>, part: Part, index: number, staff: number): Pitch {
+  const { lastPitch, lastPitchAt } = state.cursor;
+  if (lastPitch && (!lastPitchAt || (lastPitchAt.partId === part.id && lastPitchAt.staff === staff))) return lastPitch;
+  return MIDDLE_LINE[effectiveClef(part, index, staff)];
+}
+
+/** The pitch entry at the cursor aims near (see `referencePitch`); the middle line of treble when the cursor is lost. */
+export function cursorReferencePitch(state: Pick<Editable, 'document' | 'cursor'>): Pitch {
+  const part = state.document.parts.find((p) => p.id === state.cursor.partId);
+  if (!part) return state.cursor.lastPitch ?? MIDDLE_LINE.treble;
+  return referencePitch(state, part, Math.max(measureIndex(state.document, state.cursor.measureId), 0), state.cursor.staff);
+}
+
+/** The pitch a rest turns into by default: the last pitch entered on its staff, else the middle line of the staff's clef. */
 export function restPitch(draft: Editable, at: EventAt): Pitch {
-  return draft.cursor.lastPitch ?? MIDDLE_LINE[effectiveClef(at.part, at.measureIndex, at.seq.staff)];
+  return referencePitch(draft, at.part, at.measureIndex, at.seq.staff);
 }
 
 /**
