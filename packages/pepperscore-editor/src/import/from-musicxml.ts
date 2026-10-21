@@ -51,7 +51,7 @@ export function importMusicXml(text: string, { maxStaves = STAFF_LIMIT }: { maxS
       while (doc.global.measures.length <= index) doc.global.measures.push({ id: `m${doc.global.measures.length + 1}` });
       readMeasure(reader, measureEl, index);
     });
-    closeEnding(reader, false);
+    closeEnding(reader);
     for (const pending of reader.ties.values()) for (const { location } of pending) drop.add('tie', location);
     for (const open of reader.slurs.values()) for (const { location } of open) drop.add('slur', location);
   });

@@ -10,6 +10,9 @@ declare module 'verovio/esm' {
     loadData(data: string): number;
     getPageCount(): number;
     renderToSVG(page?: number): string;
+    getMEI(options?: Record<string, unknown>): string;
+    setOptions(options: Record<string, unknown>): void;
+    resetOptions(): void;
     /** The buffered log since the last call (with `enableLogToBuffer`); reading clears it. */
     getLog(): string;
   }
