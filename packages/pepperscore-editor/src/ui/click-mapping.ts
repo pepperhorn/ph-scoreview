@@ -23,10 +23,24 @@ export function staffAt(doc: Document, viewerStaff: number, layoutId?: string): 
 }
 
 /**
+ * The start tick of the event the viewer drew nearest a staff-space click (`nearestSourceId`), when it is in the
+ * clicked bar (`index`) and staff (`where`); undefined when the viewer did not supply one (an older viewer) or it
+ * lies elsewhere.
+ */
+function engravedTick(doc: Document, info: PepperScoreClickInfo, index: number, where: { partId: string; staff: number }): number | undefined {
+  if (!info.nearestSourceId) return undefined;
+  const located = locateEvent(doc, noteToEvent(doc).get(info.nearestSourceId) ?? info.nearestSourceId);
+  if (!located || located.measureIndex !== index || doc.parts[located.partIndex].id !== where.partId) return undefined;
+  const seq = doc.parts[located.partIndex].measures[index].sequences[located.sequenceIndex];
+  return seq.staff === where.staff ? located.tick : undefined;
+}
+
+/**
  * Where a click on the engraving puts the cursor. A hit note's `sourceId` is the MusicXML id of its
  * first pitch, which is a model note id (a rest's is its event id): the cursor moves onto that
- * event and selects it. Otherwise a click in a measure moves the cursor to the event start nearest
- * the click in that staff's voice 1, and clears the selection. `doc` is the document (not the layout's view: its
+ * event and selects it. Otherwise a click in a measure moves the cursor to the voice-1 event start nearest the
+ * event the viewer engraved nearest the click (`nearestSourceId`; engraved x is not proportional to time), else
+ * nearest the click's time `fraction` across the bar, in that staff, and clears the selection. `doc` is the document (not the layout's view: its
  * staves are renumbered) and `layoutId` the active layout the engraving shows.
  */
 export function clickTarget(doc: Document, info: PepperScoreClickInfo, layoutId?: string): ClickTarget | undefined {
@@ -49,7 +63,7 @@ export function clickTarget(doc: Document, info: PepperScoreClickInfo, layoutId?
   if (!where) return undefined;
   const pm = doc.parts.find((p) => p.id === where.partId)?.measures[index];
   const barTicks = measureTicks(effectiveTime(doc, index));
-  const target = (info.fraction ?? 0) * barTicks;
+  const target = engravedTick(doc, info, index, where) ?? (info.fraction ?? 0) * barTicks;
   const seq = pm && sequenceFor(pm, where.staff, 1);
   const starts = seq ? eventStarts(seq, barTicks).filter((s) => !s.event.grace) : [];
   let tick = 0;

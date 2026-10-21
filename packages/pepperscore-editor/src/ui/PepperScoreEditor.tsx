@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from 'react';
+import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type Ref } from 'react';
 import type { PepperScoreClickInfo, PepperScoreHandle } from 'pepperscore';
 import { compileToMusicXml } from '../compile/to-musicxml';
 import { setCursor, setEntryMode, setSelection } from '../engine/commands/index';
@@ -147,6 +147,14 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
   const phone = useIsPhone(rootRef, props.forcePhone);
   const phoneRef = useRef(phone);
   phoneRef.current = phone;
+  // The phone starts each new or opened score in Entry: its always-visible piano keys then enter notes rather than
+  // repitch a lone rest. Decided once per session, when the shell is first measured; the desktop stays select-first.
+  const startModeSet = useRef(false);
+  useLayoutEffect(() => {
+    if (phone === null || startModeSet.current) return;
+    startModeSet.current = true;
+    if (phone) store.dispatch(setEntryMode, { mode: 'enter' }, { record: false });
+  }, [phone, store]);
 
   const refocus = useCallback(() => rootRef.current?.focus({ preventScroll: true }), []);
   const closePopover = useCallback(() => {

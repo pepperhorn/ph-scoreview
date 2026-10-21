@@ -93,7 +93,7 @@ export const moveCursor: Command<{ by: 'event' | 'measure'; delta: number }> = {
  * Cursor and selection only; never recorded.
  */
 export const escapeToSelect: Command<Record<string, never>> = {
-  label: 'Select mode',
+  label: 'Edit mode',
   record: false,
   run: (draft) => {
     const last = draft.cursor.mode === 'enter' && draft.cursor.entered !== undefined ? eventsBeforeCursor(draft.document, draft.cursor, 1)[0] : undefined;

@@ -546,6 +546,22 @@ try {
     assert.equal(click[2].noteId, noteId, `the click reports the note: ${JSON.stringify(click[2])}`);
     assert.equal(click[2].measureIndex, 0, `the click reports measure 0: ${JSON.stringify(click[2])}`);
     assert.ok(click[2].fraction >= 0 && click[2].fraction <= 1 && click[2].staff >= 1, `fraction and staff: ${JSON.stringify(click[2])}`);
+    // A click anywhere in the note's drawn box (its stem side, off the notehead) also reports the note; a click in
+    // the staff space just past the box reports no note but the nearest engraved one (nearestNoteId).
+    {
+      const clicks = async () => (await events(page)).filter(([kind]) => kind === 'click');
+      const noteBox = await note.boundingBox();
+      const before = (await clicks()).length;
+      await page.mouse.click(noteBox.x + noteBox.width / 2, noteBox.y + noteBox.height / 2);
+      await page.waitForFunction(n => window.__events.filter(([kind]) => kind === 'click').length > n, before, { timeout: 5000 });
+      assert.equal((await clicks()).at(-1)[2].noteId, noteId, `a click in the note's box reports the note: ${JSON.stringify((await clicks()).at(-1)[2])}`);
+      await page.mouse.click(noteBox.x + noteBox.width + 4, box.y + box.height / 2);
+      await page.waitForFunction(n => window.__events.filter(([kind]) => kind === 'click').length > n + 1, before, { timeout: 5000 });
+      const space = (await clicks()).at(-1)[2];
+      assert.equal(space.noteId, undefined, `a click past the note's box hits no note: ${JSON.stringify(space)}`);
+      assert.equal(space.nearestNoteId, noteId, `a click just past the note reports it as the nearest: ${JSON.stringify(space)}`);
+      assert.ok(space.nearestSourceId, `the nearest note's source id: ${JSON.stringify(space)}`);
+    }
     assert.equal(await page.locator(fullChrome).getAttribute('data-ps-clickable'), '');
     await page.evaluate(noteId => window.__embed.setHighlights([{ ids: [noteId], className: 'ps-selection' }]), noteId);
     await page.waitForFunction(([root, noteId]) => {

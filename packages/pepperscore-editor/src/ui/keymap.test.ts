@@ -58,21 +58,21 @@ test('4 then c enters a quarter C; ArrowUp raises it to D; Ctrl+z undoes', () =>
   press('4');
   expect(store.getState().cursor.duration).toEqual({ base: 'quarter', dots: 0 });
   expect(press('c')).toBe(true);
-  expect(bar(store)[0]).toMatchObject({ duration: { base: 'quarter', dots: 0 }, notes: [{ pitch: P('C', 4) }] });
-  expect(store.getState().cursor).toMatchObject({ tick: 960, lastPitch: P('C', 4) });
+  expect(bar(store)[0]).toMatchObject({ duration: { base: 'quarter', dots: 0 }, notes: [{ pitch: P('C', 5) }] });
+  expect(store.getState().cursor).toMatchObject({ tick: 960, lastPitch: P('C', 5) });
   press('ArrowUp');
-  expect(bar(store)[0].notes![0].pitch).toEqual(P('D', 4));
+  expect(bar(store)[0].notes![0].pitch).toEqual(P('D', 5));
   press('ArrowUp', { ctrl: true });
+  expect(bar(store)[0].notes![0].pitch).toEqual(P('D', 6));
+  press('z', { ctrl: true });
+  expect(bar(store)[0].notes![0].pitch).toEqual(P('D', 5));
+  press('z', { meta: true });
+  expect(bar(store)[0].notes![0].pitch).toEqual(P('C', 5));
+  press('Z', { ctrl: true, shift: true });
   expect(bar(store)[0].notes![0].pitch).toEqual(P('D', 5));
   press('z', { ctrl: true });
-  expect(bar(store)[0].notes![0].pitch).toEqual(P('D', 4));
-  press('z', { meta: true });
-  expect(bar(store)[0].notes![0].pitch).toEqual(P('C', 4));
-  press('Z', { ctrl: true, shift: true });
-  expect(bar(store)[0].notes![0].pitch).toEqual(P('D', 4));
-  press('z', { ctrl: true });
   press('y', { ctrl: true });
-  expect(bar(store)[0].notes![0].pitch).toEqual(P('D', 4));
+  expect(bar(store)[0].notes![0].pitch).toEqual(P('D', 5));
 });
 
 test('a key in an input, textarea or contentEditable target is not consumed', () => {
@@ -130,7 +130,7 @@ test('in enter mode c and d enter notes; 0 enters a rest; . dots the last event'
   press('n');
   press('d');
   press('0');
-  expect(bar(store).slice(0, 2)).toMatchObject([{ notes: [{ pitch: P('D', 4) }] }, { rest: true }]);
+  expect(bar(store).slice(0, 2)).toMatchObject([{ notes: [{ pitch: P('D', 5) }] }, { rest: true }]);
   press('.');
   expect(bar(store)[1].duration).toEqual({ base: 'quarter', dots: 1 });
   expect(popovers).toEqual([]);
@@ -355,16 +355,16 @@ test('+ sharpens, _ flattens (to double accidentals at most), = restores the nat
   const { store, press } = setup();
   for (const k of ['n', '4', 'c']) press(k);
   expect(press('+', { shift: true })).toBe(true);
-  expect(pitches(bar(store)[0])).toEqual([P('C', 4, 1)]);
+  expect(pitches(bar(store)[0])).toEqual([P('C', 5, 1)]);
   press('+');
   press('+');
-  expect(pitches(bar(store)[0])).toEqual([P('C', 4, 2)]);
+  expect(pitches(bar(store)[0])).toEqual([P('C', 5, 2)]);
   press('=');
-  expect(pitches(bar(store)[0])).toEqual([P('C', 4)]);
+  expect(pitches(bar(store)[0])).toEqual([P('C', 5)]);
   press('_', { shift: true });
   press('_');
   press('_');
-  expect(pitches(bar(store)[0])).toEqual([P('C', 4, -2)]);
+  expect(pitches(bar(store)[0])).toEqual([P('C', 5, -2)]);
   expect(press('-')).toBe(true); // still tenuto
   expect(bar(store)[0].articulations).toEqual(['tenuto']);
 });
@@ -392,11 +392,11 @@ test('Shift+letter adds that letter to the target event chord, near its top note
   const cursor = store.getState().cursor;
   expect(press('F', { shift: true })).toBe(true);
   expect(press('A', { shift: true })).toBe(true);
-  expect(pitches(bar(store)[0])).toEqual([P('D', 4), P('F', 4, 1), P('A', 4)]);
-  press('D', { shift: true }); // nearest the top note A4
-  expect(pitches(bar(store)[0])).toEqual([P('D', 4), P('F', 4, 1), P('A', 4), P('D', 5)]);
-  press('A', { shift: true }); // A4 is already there: an octave above
-  expect(pitches(bar(store)[0])).toEqual([P('D', 4), P('F', 4, 1), P('A', 4), P('D', 5), P('A', 5)]);
+  expect(pitches(bar(store)[0])).toEqual([P('D', 5), P('F', 5, 1), P('A', 5)]);
+  press('D', { shift: true }); // nearest the top note A5
+  expect(pitches(bar(store)[0])).toEqual([P('D', 5), P('F', 5, 1), P('A', 5), P('D', 6)]);
+  press('A', { shift: true }); // A5 is already there: an octave above
+  expect(pitches(bar(store)[0])).toEqual([P('D', 5), P('F', 5, 1), P('A', 5), P('D', 6), P('A', 6)]);
   expect(store.getState().cursor).toEqual(cursor);
   expect(press('S', { shift: true })).toBe(true); // Shift+S stays staccato
   expect(bar(store)[0].articulations).toEqual(['staccato']);
@@ -409,11 +409,11 @@ test('with "Add to chord" on, plain letters add to the chord instead of entering
   const cursor = store.getState().cursor;
   press('e');
   press('g');
-  expect(pitches(bar(store)[0])).toEqual([P('C', 4), P('E', 4), P('G', 4)]);
+  expect(pitches(bar(store)[0])).toEqual([P('C', 5), P('E', 5), P('G', 5)]);
   expect(store.getState().cursor.tick).toBe(cursor.tick);
   store.dispatch(setChordMode, { on: false }, { record: false });
   press('d');
-  expect(pitches(bar(store)[1])).toEqual([P('D', 4)]);
+  expect(pitches(bar(store)[1])).toEqual([P('D', 5)]);
 });
 
 test('plain arrows replace the selection with the event at the cursor: click C, three rights, Delete deletes F', () => {
@@ -518,6 +518,7 @@ test('enterPitch enters an exact alteration nearest the last pitch, and adds to 
   const m1 = store.getState().document.global.measures[0].id;
   store.dispatch(setKey, { measureId: m1, key: { fifths: 1 } });
   for (const k of ['n', '4']) press(k);
+  store.dispatch(setCursor, { lastPitch: P('C', 4) }, { record: false });
   enterPitch(ctx, 'F', 0); // F natural despite the F sharp in G major
   enterPitch(ctx, 'C', -1); // C flat, nearest F4
   expect([...pitches(bar(store)[0]), ...pitches(bar(store)[1])]).toEqual([P('F', 4), P('C', 5, -1)]);
@@ -620,9 +621,9 @@ test('in entry mode, tapping a notehead after entering notes retargets accidenta
   expect(store.getState().cursor.mode).toBe('enter');
   press('_');
   press('ArrowDown', { ctrl: true });
-  expect(pitches(bar(store)[1])).toEqual([P('D', 3, -1)]);
-  expect(pitches(bar(store)[2])).toEqual([P('E', 4)]);
-  expect(pitches(bar(store)[0])).toEqual([P('C', 4)]);
+  expect(pitches(bar(store)[1])).toEqual([P('D', 4, -1)]);
+  expect(pitches(bar(store)[2])).toEqual([P('E', 5)]);
+  expect(pitches(bar(store)[0])).toEqual([P('C', 5)]);
 });
 
 test('right after entering over existing notes, accidentals still act on the note just entered, not the cursor note after it', () => {
@@ -632,6 +633,37 @@ test('right after entering over existing notes, accidentals still act on the not
   press('g'); // overwrites the C; the cursor moves onto the D
   expect(store.getState().cursor.tick).toBe(960);
   press('+');
-  expect(pitches(bar(store)[0])).toEqual([P('G', 3, 1)]);
+  expect(pitches(bar(store)[0])).toEqual([P('G', 4, 1)]);
   expect(pitches(bar(store)[1])).toEqual([P('D', 4)]);
+});
+
+describe('the octave of the first entered note', () => {
+  const blank = (clef: 'treble' | 'bass') => createDocument({ parts: [{ name: 'Part', clef, gmProgram: 1 }], measures: 2 });
+  test('with no last pitch a letter enters the octave nearest the clef middle line (treble G is G4, bass G is G3)', () => {
+    const treble = setup(blank('treble'));
+    for (const k of ['n', '4', 'g']) treble.press(k);
+    expect(bar(treble.store)[0].notes![0].pitch).toEqual(P('G', 4));
+    const bass = setup(blank('bass'));
+    for (const k of ['n', '4', 'g', 'f']) bass.press(k);
+    expect(bar(bass.store).slice(0, 2).map((e) => e.notes![0].pitch)).toEqual([P('G', 3), P('F', 3)]);
+  });
+  test('the piano keys (enterPitch) use the middle line too', () => {
+    const { store, ctx, press } = setup(blank('treble'));
+    press('n');
+    enterPitch(ctx, 'G', -1);
+    expect(bar(store)[0].notes![0].pitch).toEqual(P('G', 4, -1));
+  });
+  test('the last pitch only carries within its part and staff; another staff starts from its own middle line', () => {
+    const doc = createDocument({ parts: [{ name: 'Piano', clef: 'treble', gmProgram: 1, staves: 2 }], measures: 2 });
+    const { store, press } = setup(doc);
+    for (const k of ['n', '4', 'c', 'e']) press(k); // C5 E5 in the treble staff
+    store.dispatch(setCursor, { staff: 2, tick: 0 }, { record: false });
+    press('c');
+    const lower = eventStarts(store.getState().document.parts[0].measures[0].sequences.find((s) => s.staff === 2)!, 3840).map((s) => s.event);
+    expect(lower[0].notes![0].pitch).toEqual(P('C', 3));
+    // back on the treble staff the bass pitch does not pull the octave down
+    store.dispatch(setCursor, { staff: 1, tick: 1920 }, { record: false });
+    press('g');
+    expect(bar(store)[2].notes![0].pitch).toEqual(P('G', 4));
+  });
 });

@@ -38,7 +38,7 @@ export const StatusLine = memo(function StatusLine({ savedAt, onReport }: { save
       )}
       {view.diagnostics.length > 0 && <span className="ps-status-diagnostics" title={view.diagnostics.join('\n')}>{view.diagnostics.length} range note{view.diagnostics.length > 1 ? 's' : ''}</span>}
       <span className="ps-status-cursor">
-        {partName} · bar {index + 1}, beat {beat} · {DURATION_NAMES[cursor.duration.base]}{dots} · {cursor.mode === 'enter' ? 'entry' : 'select'}{cursor.chord ? ' · chord' : ''}
+        {partName} · bar {index + 1}, beat {beat} · {DURATION_NAMES[cursor.duration.base]}{dots} · {cursor.mode === 'enter' ? 'entry' : 'edit'}{cursor.chord ? ' · chord' : ''}
       </span>
       {savedAt && <span className="ps-status-saved">Saved locally · {time(savedAt)}</span>}
     </footer>
