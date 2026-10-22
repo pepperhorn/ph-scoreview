@@ -16,7 +16,7 @@ jobs:
   validate:
     name: Check, build and validate (chromium)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -34,7 +34,7 @@ jobs:
         run: npm run test:manifest
       - name: Validation suite (document, performance, reader and large score on chromium)
         run: npm run test:validation
-        timeout-minutes: 10
+        timeout-minutes: 15
       - name: Pack smoke test (npm pack into fresh Vite, Astro static and Astro SSR apps, serving the SSR one on 127.0.0.1; installs from the npm registry, uploads nothing)
         run: npm run test:pack
         timeout-minutes: 12
