@@ -57,9 +57,9 @@ export function assignFrets(events: FretEvent[], options?: FretOptions): FretRes
 - Events are solved in onset order (a stable sort: same onset keeps layer order) and ringing strings are looked up across voices, so a held note in one layer keeps its string.
 - Segment at rests of ≥ 2 beats. Target: 2,000 events in under 50 ms.
 
-## Preprocessing (follow-up)
+## Preprocessing
 
-`scripts/tab-bake.mjs <in.musicxml> [--tuning …] [--capo n] [--add-tab-staff]` writes `<technical><string>/<fret>` onto notes using the same solver, and can add a TAB staff. That lets a batch job or Directus flow make the library TAB-ready ahead of time; the reader then treats those fingerings as fixed.
+`scripts/tab-bake.mjs <in.musicxml|.mxl|dir> [--tuning …] [--capo n] [--parts …] [--add-tab-staff]` (`npm run tab:bake`, options in the root README; tests in `validation/tab-bake.mjs`) writes `<technical><string>/<fret>` onto notes using the same solver, and can add a TAB staff. That lets a batch job or Directus flow make the library TAB-ready ahead of time; the reader then treats those fingerings as fixed.
 
 ## Hosts
 
