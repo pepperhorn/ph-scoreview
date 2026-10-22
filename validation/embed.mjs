@@ -227,6 +227,10 @@ try {
     await page.locator('.embed-full .drawer-handle').click();
     await page.locator('.embed-full button[role=switch][aria-label="Note names"]').click();
     assert.equal(await page.locator('.embed-full button[role=switch][aria-label="Note names"]').getAttribute('aria-checked'), 'true');
+    // settings.annotationSizes: the host's note name size shows in the drawer and on the engraving.
+    assert.equal(await page.locator('.embed-full [role=group][aria-label="Note names size"] button', { hasText: /^lg$/ }).getAttribute('aria-pressed'), 'true', 'settings.annotationSizes sets the drawer size');
+    await page.waitForFunction(() => document.querySelector('.embed-full .score-system svg .note-label') && !document.querySelector('.embed-full .score-content.is-painting'), null, { timeout: 60000 });
+    assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.embed-full .score-system svg .note-label')).fontSize), '18px', 'settings.annotationSizes noteNames lg draws 1.2x note names');
     await page.locator('.embed-full button[aria-label="Close options"]').first().click();
     await page.locator('.embed-full input[type=file]').setInputFiles(new URL('./fixtures/ensemble.musicxml', import.meta.url).pathname);
     await page.waitForFunction(() => document.querySelector('.embed-full .score-meta h1')?.textContent !== 'A little room to play' && document.querySelector('.embed-full .score-system svg') && !document.querySelector('.embed-full .score-loading') && !document.querySelector('.embed-full .score-content.is-painting'), null, { timeout: 60000 });

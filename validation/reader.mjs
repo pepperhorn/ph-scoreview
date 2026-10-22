@@ -1451,6 +1451,80 @@ try {
   await focusContext.close();
   console.log(`${engine}: stave focus passed`);
 
+  // Options drawer: the cards use the width (side by side on desktop, one column on a phone), and every text add-on
+  // has an xs-xl size (regular by default, today's size) that the engraving follows and the reader remembers.
+  {
+    const settle = target => target.waitForFunction(() => !document.querySelector('.score-loading') && document.querySelector('.score-system svg') && !document.querySelector('.score-content').getAnimations().length, null, { timeout: 60000 });
+    const drawerLayout = target => target.evaluate(() => {
+      const grid = document.querySelector('.drawer-grid'); const drawer = document.querySelector('.bottom-drawer');
+      const cards = [...grid.querySelectorAll(':scope > .drawer-panel')].map(card => card.getBoundingClientRect());
+      return { columns: getComputedStyle(grid).gridTemplateColumns.split(' ').length, rows: new Set(cards.map(card => Math.round(card.top))).size, cards: cards.length, scrolls: drawer.scrollHeight > drawer.clientHeight + 1 };
+    });
+    const fontOf = (target, selector) => target.evaluate(selector => { const text = document.querySelector(`.score-system svg ${selector}`); return text ? getComputedStyle(text).fontSize : null; }, selector);
+    const sizeContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const wide = await sizeContext.newPage();
+    await wide.goto(url); await settle(wide);
+    await wide.getByRole('button', { name: 'Options', exact: true }).click();
+    const desktop = await drawerLayout(wide);
+    assert.ok(desktop.columns >= 2, `The drawer shows at least two columns at 1440px (${JSON.stringify(desktop)})`);
+    assert.equal(desktop.rows, 1, `All drawer cards sit side by side at 1440px (${JSON.stringify(desktop)})`);
+    assert.equal(desktop.scrolls, false, 'The drawer does not scroll at 1440px');
+    assert.equal(await wide.getByRole('group', { name: 'Note names size' }).count(), 0, 'A size control is hidden while its add-on is off');
+    await wide.getByRole('switch', { name: 'Note names', exact: true }).click();
+    await wide.getByRole('switch', { name: 'Beat counts', exact: true }).click();
+    await settle(wide);
+    const sizes = wide.getByRole('group', { name: 'Note names size' });
+    assert.deepEqual(await sizes.getByRole('button').allTextContents(), ['xs', 'sm', 'md', 'rg', 'lg', 'xl'], 'Six size steps, smallest first');
+    assert.equal(await sizes.getByRole('button', { name: 'rg', exact: true }).getAttribute('aria-pressed'), 'true', 'Regular is the default size');
+    assert.equal(await fontOf(wide, '.note-label'), '15px', 'Regular note names keep their size');
+    assert.equal(await fontOf(wide, '.count-label'), '13px', 'Regular counts keep their size');
+    const laneGap = () => wide.evaluate(() => {
+      const svg = document.querySelector('.score-system svg'); const x = svg.querySelector('.note-label').getAttribute('x');
+      const at = selector => [...svg.querySelectorAll(selector)].filter(text => text.getAttribute('x') === x).map(text => text.getBoundingClientRect());
+      const names = at('.note-label'); const count = at('.count-label')[0];
+      return count.top - Math.max(...names.map(rect => rect.bottom));
+    });
+    const regularGap = await laneGap();
+    await sizes.getByRole('button', { name: 'xl', exact: true }).click();
+    await settle(wide);
+    assert.equal(await fontOf(wide, '.note-label'), '21.75px', 'Extra large note names are 1.45 times regular');
+    assert.equal(await fontOf(wide, '.count-label'), '13px', 'Counts keep their own size');
+    // Text boxes include the font's line gap, so regular rows already overlap slightly; an extra large row keeps that spacing.
+    const largeGap = await laneGap();
+    assert.ok(largeGap >= regularGap - 1, `Extra large note names keep clear of the count row (gap ${regularGap} -> ${largeGap})`);
+    await wide.getByRole('group', { name: 'Beat counts size' }).getByRole('button', { name: 'xs', exact: true }).click();
+    await settle(wide);
+    assert.equal(await fontOf(wide, '.count-label'), '9.1px', 'Extra small counts are 0.7 times regular');
+    // Source chord symbols are sized by Verovio (MEI rend fontsize), so it keeps them clear of the notes.
+    await wide.locator('input[type=file]').setInputFiles(resolve(root, 'validation/fixtures/expressive.musicxml'));
+    await settle(wide);
+    await wide.getByRole('button', { name: 'Options', exact: true }).click();
+    if (await wide.getByRole('switch', { name: 'Chord symbols', exact: true }).getAttribute('aria-checked') !== 'true') await wide.getByRole('switch', { name: 'Chord symbols', exact: true }).click();
+    await wide.waitForFunction(() => document.querySelector('.score-system svg .harm'), null, { timeout: 30000 }); await settle(wide);
+    const harmSize = () => wide.evaluate(() => Number.parseFloat([...document.querySelectorAll('.score-system svg .harm tspan[font-size]')].at(-1).getAttribute('font-size')));
+    const regularHarm = await harmSize();
+    await wide.getByRole('group', { name: 'Chord symbols size' }).getByRole('button', { name: 'xl', exact: true }).click();
+    await wide.waitForFunction(regular => Number.parseFloat([...document.querySelectorAll('.score-system svg .harm tspan[font-size]')].at(-1)?.getAttribute('font-size')) > regular * 1.3, regularHarm, { timeout: 30000 });
+    const largeHarm = await harmSize();
+    assert.ok(Math.abs(largeHarm / regularHarm - 1.45) < .02, `Extra large source chord symbols are 1.45 times regular (${regularHarm} -> ${largeHarm})`);
+    // Sizes are remembered (global prefs and the score's record).
+    await wide.waitForTimeout(800);
+    await wide.reload(); await settle(wide);
+    await wide.getByRole('button', { name: 'Options', exact: true }).click();
+    assert.equal(await wide.getByRole('group', { name: 'Note names size' }).getByRole('button', { name: 'xl', exact: true }).getAttribute('aria-pressed'), 'true', 'The note name size survives a reload');
+    assert.equal(await wide.getByRole('group', { name: 'Beat counts size' }).getByRole('button', { name: 'xs', exact: true }).getAttribute('aria-pressed'), 'true', 'The count size survives a reload');
+    await sizeContext.close();
+    const phoneContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const phone = await phoneContext.newPage();
+    await phone.goto(url); await settle(phone);
+    await phone.getByRole('button', { name: 'Options', exact: true }).click();
+    const mobile = await drawerLayout(phone);
+    assert.equal(mobile.columns, 1, `The drawer stacks to one column at 390px (${JSON.stringify(mobile)})`);
+    assert.equal(mobile.rows, mobile.cards, 'Every card has its own row at 390px');
+    await phoneContext.close();
+    console.log(`${engine}: options drawer layout and annotation sizes passed`);
+  }
+
   // Endless with real (non-overlay) scrollbars: a vertical scrollbar appearing must not narrow the viewport, or the
   // width change re-engraves, the scrollbar goes, and the score re-engraves forever. Headless Chromium hides
   // scrollbars by default, so this needs its own browser.
