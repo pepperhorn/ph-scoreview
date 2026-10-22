@@ -1,9 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 ### Added
 
+- Text add-on sizes. Note names, chord symbols (source and inferred), beat counts and count subdivisions each have a size: `xs`, `sm`, `md`, `rg`, `lg` or `xl` (0.7x to 1.45x). `rg` (regular) is the default and draws exactly the earlier size. Hosts set them with `settings.annotationSizes` (`{ noteNames?, chordSymbols?, beatCounts?, subdivisions? }`, type `PepperScoreAnnotationSizes`; `AnnotationSize` is exported too); the full reader's options drawer has a segmented size control beside each add-on's switch while it is on. Lane rows and offsets grow with the labels, and source chord symbols are sized by Verovio (MEI `<rend fontsize>`), so it spaces them. Sizes are saved in the global prefs and in each score's record (`namesSize`, `chordSymbolsSize`, `countsSize`, `subdivisionsSize`; optional on read, so earlier records read as `rg`).
 - `onElementClick(info)` (`PepperScoreClickInfo`): every click on the engraving, with every chrome, reports the note (`noteId`, `sourceId`), measure (`measureIndex`), position across it (`fraction`), nearest staff (`staff`) and `clientX`/`clientY`. With a `clock`, `onSeek` still fires as before. While it is set, notes and measures show a pointer cursor.
 - `highlights` prop (`PepperScoreHighlight[]`): host classes on notes and measures, re-applied after every draw. New styles `ps-cursor`, `ps-selection` and `ps-cursor-measure` (`--ps-cursor`, `--ps-selection`).
 - Handle: `scrollToMeasure(index)` (draws the measure's system if needed and scrolls it into view) and `seekToMeasure(index)` (seeks to the measure's first performed occurrence).
@@ -17,6 +18,7 @@
 
 ### Changed
 
+- The options drawer uses the reader's width: its cards (Reading, a new Annotations card holding the add-on switches and sizes, Pitch and ABC notation) sit in as many ~272px columns as fit, so on a desktop they sit side by side and the drawer is short; on a phone they stack in one column.
 - A highlighted measure (`highlights` with `measures`, any class) now shows a dashed box: a `.ps-measure-highlight` `<rect>` (in a `.ps-highlight-layer` overlay, so measure bounds are unchanged) with a 2px non-scaling stroke in `--ps-cursor`. The old `ps-cursor-measure` CSS outline was drawn in viewBox units and was nearly invisible.
 - New highlight class `ps-transposed` (`--ps-transposed`, default `#d9741c`) for notes.
 - `ps-selection` defaults to ink blue `#2f6a9a` (was green `#1f9d55`), so it does not clash with `ps-transposed`.
