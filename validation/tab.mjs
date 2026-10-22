@@ -17,6 +17,7 @@ const fixture = name => readFileSync(new URL(`./fixtures/${name}`, import.meta.u
 const fixturePath = name => new URL(`./fixtures/${name}`, import.meta.url).pathname;
 const STAVES = fixture('guitar-tab-staves.musicxml'), PARTS = fixture('guitar-tab-parts.musicxml'), NOTATION = fixture('guitar-notation.musicxml'), ENSEMBLE = fixture('ensemble.musicxml');
 const OCTAVE = fixture('guitar-octave-tab.musicxml'), CLARINET = fixture('guitar-tab-clarinet.musicxml'), VOICES = fixture('guitar-voices.musicxml'), TAB_ONLY = fixture('guitar-tab-only.musicxml'), REPEAT = fixture('guitar-repeat-fermata.musicxml');
+const UNISON = fixture('guitar-unison.musicxml');
 const DRUMS = '<?xml version="1.0"?><score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Drums</part-name></score-part></part-list><part id="P1"><measure number="1"><attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>percussion</sign></clef></attributes><note><unpitched><display-step>C</display-step><display-octave>5</display-octave></unpitched><duration>4</duration><type>whole</type></note></measure></part></score-partwise>';
 const TUNING = [40, 45, 50, 55, 59, 64];
 /** A TAB note's sounding pitch (course 1 is the highest string). */
@@ -199,7 +200,23 @@ try {
   const held = voices.tabNotes.find(note => note.id === 'v2-1-tabn');
   assert.ok(held, 'The held note is fingered');
   for (const note of voices.tabNotes.filter(note => note.id.startsWith('v1-'))) assert.notEqual(note.course, held.course, `${note.id} is not on the held note's string (${JSON.stringify(voices.tabNotes)})`);
-  console.log('TAB: voices are fingered in time order passed');
+  // Notes starting together in two voices are one chord (different strings); a unison across voices is one string,
+  // held as long as the longer note, and a tie continuation in either voice keeps that fingering.
+  const voiceNote = id => voices.tabNotes.find(note => note.id === `${id}-tabn`);
+  assert.notEqual(voiceNote('v1-1').course, held.course, 'Notes starting together in two voices are on different strings');
+  const unison = await call('engraveTab', UNISON, { view: 'tab' });
+  const u = id => unison.tabNotes.find(note => note.id === `${id}-tabn`);
+  assert.ok(u('a1') && u('b1'), `Both unison notes are drawn (${JSON.stringify(unison.tabNotes)})`);
+  assert.deepEqual([u('b1').course, u('b1').fret], [u('a1').course, u('a1').fret], 'A unison across voices has one string and fret');
+  assert.notEqual(u('a2').course, u('a1').course, 'G4 avoids the string of the unison E4 still held in voice 2');
+  assert.deepEqual([u('d1').course, u('d1').fret], [u('c1').course, u('c1').fret], 'A unison whose voice 1 note is tied: one string and fret');
+  const heldD = unison.staffNotes['101'].filter(note => !note.visible);
+  assert.deepEqual(heldD.map(note => [note.course, note.fret]), [[u('c1').course, u('c1').fret]], 'The tie continuation of the unison is held on its string');
+  for (const note of unison.tabNotes) assert.equal(pitchOf(note), { a1: 64, a2: 67, a3: 69, b1: 64, b2: 45, c1: 62, c3: 67, d1: 62, d2: 59, d3: 43 }[note.id.replace(/-tabn$/, '')], `${note.id} sounds its pitch`);
+  // MEI tab.course without tab.fret on a notation note (a string-only fingering) fixes the string, not the fret.
+  const stringOnly = await call('injectTabMei', '<mei><music><body><mdiv><score><scoreDef><staffGrp><staffDef n="1" lines="5"/></staffGrp></scoreDef><section><measure n="1"><staff n="1"><layer n="1"><note xml:id="s1" pname="e" oct="4" dur="4" tab.course="3"/><note xml:id="s2" pname="e" oct="4" dur="4"/></layer></staff></measure></section></score></mdiv></body></music></mei>', { generate: ['1'], retarget: {}, tuning: TUNING, capo: 0, fixed: true });
+  assert.ok(/<note xml:id="s1-tabn" tab.course="3" tab.fret="9"\/>/.test(stringOnly), `tab.course alone is a string constraint (${stringOnly.match(/<note xml:id="s1-tabn"[^>]*>/)?.[0]})`);
+  console.log('TAB: voices are fingered in time order, same-onset voices are one chord, unisons share a string passed');
 
   // 12. A TAB-only score (no notation partner): transposed, its frets are re-fingered to sound the transposed pitches.
   const tabOnly = { plain: await call('engraveTab', TAB_ONLY, { view: 'notation' }), moved: await call('engraveTab', TAB_ONLY, { view: 'notation', semitones: 2 }) };

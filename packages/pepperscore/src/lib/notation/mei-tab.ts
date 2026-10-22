@@ -21,7 +21,7 @@
  * `refret` re-fingers imported TAB staves that double no notation staff (a TAB-only score) when the view transposes:
  * their notes' sounding pitches (the staff's `<tuning>` plus fret) move by the given semitones and are solved again.
  */
-import { assignFrets, STANDARD_TUNING, type FretEvent, type FretPos, type FretResult } from '../tab/fret-assign';
+import { assignNoteFrets, STANDARD_TUNING, type FretFixed, type FretNote, type FretPos, type FretResult } from '../tab/fret-assign';
 import { attributeOf, scan } from './mei-view';
 
 export type TabSpec = {
@@ -66,9 +66,9 @@ const PITCH_NAMES: [string, string?][] = [['c'], ['c', 's'], ['d'], ['e', 'f'], 
 const escapeId = (id: string) => id.replace(/[&<>"]/g, '');
 const idAttr = (id: string, suffix: string) => id ? ` xml:id="${escapeId(id)}${suffix}"` : '';
 
-type NoteRec = { id: string; midi: number | null; fixed?: FretPos; continuation: boolean; tieStart: boolean; extend: number; dur: number;
-  /** The note a tie continuation continues (its string and fret are reused, invisibly). */
-  from?: NoteRec };
+type NoteRec = { id: string; midi: number | null; fixed?: FretFixed; continuation: boolean; tieStart: boolean; dur: number;
+  /** A tie continuation's fingering: the string and fret of the note it continues (drawn invisibly). */
+  held?: FretResult };
 type EventRec = { onset: number; dur: number; notes: NoteRec[] };
 /** `courses`: an imported TAB staff's open-string pitches by course number (course 1 is the highest). */
 type StaffInfo = { ppq?: number; semi: number; courses?: Map<number, number> };
@@ -235,8 +235,10 @@ function collect(mei: string, spec: TabSpec): { staves: Map<string, EventRec[]>;
       if (id && generate.has(staff)) ids.add(id);
       const tie = attributeOf(attributes, 'tie') || '';
       const course = Number(attributeOf(attributes, 'tab.course')), fret = Number(attributeOf(attributes, 'tab.fret'));
-      const fixed = spec.fixed && generate.has(staff) && course >= 1 && Number.isInteger(fret) && attributeOf(attributes, 'tab.fret') !== null ? { string: course, fret } : undefined;
-      const rec: NoteRec = { id, midi: null, fixed, continuation: /[mt]/.test(tie), tieStart: /[im]/.test(tie), extend: 0, dur: event.dur };
+      // `tab.course` alone (a string number without a fret) fixes the string; the solver picks the fret.
+      const hasFret = Number.isInteger(fret) && attributeOf(attributes, 'tab.fret') !== null;
+      const fixed = spec.fixed && generate.has(staff) && Number.isInteger(course) && course >= 1 ? (hasFret ? { string: course, fret } : { string: course }) : undefined;
+      const rec: NoteRec = { id, midi: null, fixed, continuation: /[mt]/.test(tie), tieStart: /[im]/.test(tie), dur: event.dur };
       event.notes.push(rec);
       note = { rec, attributes, event, inChord: !!chord };
       if (selfClosing) finishNote();
@@ -259,44 +261,32 @@ function collect(mei: string, spec: TabSpec): { staves: Map<string, EventRec[]>;
 }
 
 /**
- * Pass 2: solve each staff (tie continuations extend the note they continue and are not fingered again). Events are
- * solved in time order across layers (stable for events at one onset), so a note held in one voice keeps its string
- * while another voice moves.
+ * Pass 2: solve each staff with the solver's note-level helper (tab/fret-assign.ts assignNoteFrets, shared with
+ * scripts/tab-bake.mjs): every layer together in time order, notes starting together in any layer one event, a unison
+ * across layers one string, tie continuations extending the note they continue (and not fingered again).
  */
 function solve(staves: Map<string, EventRec[]>, tieStarts: Set<string>, tieEnds: Set<string>, info: Map<string, StaffInfo>, spec: TabSpec, memory: FretMemory | undefined): Map<string, FretResult> {
   const frets = new Map<string, FretResult>();
   const tuning = tuningOf(spec.tuning), capo = capoOf(spec.capo);
   for (const [n, events] of staves) {
-    const open = new Map<number, NoteRec>();
-    const fretEvents: FretEvent[] = [];
-    const owners: NoteRec[][] = [];
-    for (const event of events) {
-      const notes: NoteRec[] = [];
-      for (const rec of event.notes) {
-        if (rec.midi === null) continue;
-        const continued = rec.continuation || tieEnds.has(rec.id);
-        const from = continued ? open.get(rec.midi) : undefined;
-        if (from) { from.extend += rec.dur; rec.continuation = true; rec.from = from; }
-        else { rec.continuation = false; notes.push(rec); }
-        if (rec.tieStart || tieStarts.has(rec.id)) open.set(rec.midi, from ?? rec);
-        else if (from) open.delete(rec.midi);
-      }
-      if (!notes.length) continue;
-      owners.push(notes);
-      fretEvents.push({ onset: event.onset, durations: notes.map(rec => rec.dur), pitches: notes.map(rec => rec.midi!), fixed: notes.map(rec => memory?.get(rec.id) ?? rec.fixed) });
+    const recs: NoteRec[] = [];
+    const notes: FretNote[] = [];
+    for (const event of events) for (const rec of event.notes) {
+      recs.push(rec);
+      notes.push({ onset: event.onset, duration: rec.dur, pitch: rec.midi, tieStart: rec.tieStart || tieStarts.has(rec.id), tieStop: rec.continuation || tieEnds.has(rec.id), fixed: memory?.get(rec.id) ?? rec.fixed });
     }
-    // Durations include the tied continuations, so a held note's string stays busy.
-    fretEvents.forEach((event, index) => { event.durations = owners[index].map(rec => rec.dur + rec.extend); });
-    // Layers follow one another in the document: put every event in time order (Array.prototype.sort is stable).
-    const order = fretEvents.map((_, index) => index).sort((a, b) => fretEvents[a].onset - fretEvents[b].onset);
     // An imported TAB staff keeps its own tuning (no capo); generated staves use the view's.
     const own = n in (spec.refret ?? {}) && info.get(n)?.courses ? tuningFromCourses(info.get(n)!.courses!) : null;
-    const results = assignFrets(order.map(index => fretEvents[index]), own ? { tuning: own, capo: 0 } : { tuning, capo });
-    results.forEach((row, at) => row.forEach((result, position) => {
-      const rec = owners[order[at]][position];
+    const results = assignNoteFrets(notes, own ? { tuning: own, capo: 0 } : { tuning, capo });
+    results.forEach(({ result, continuation }, index) => {
+      const rec = recs[index];
+      rec.continuation = continuation;
+      if (!result) return;
+      // A continuation is drawn with the fingering of the note it continues.
+      if (continuation) { rec.held = result; return; }
       frets.set(rec.id, result);
       if (memory && rec.id && 'string' in result && !memory.has(rec.id)) memory.set(rec.id, { string: result.string, fret: result.fret });
-    }));
+    });
   }
   return frets;
 }
@@ -327,7 +317,7 @@ export function injectTab(mei: string, spec: TabSpec, memory?: FretMemory): stri
   const frets = collected ? solve(staves, tieStarts, tieEnds, info, spec, memory) : new Map<string, FretResult>();
   /** Tie continuations, with the fingering of the note each continues. */
   const continuations = new Map<string, FretResult | undefined>();
-  for (const events of staves.values()) for (const event of events) for (const rec of event.notes) if (rec.continuation) continuations.set(rec.id, rec.from ? frets.get(rec.from.id) : undefined);
+  for (const events of staves.values()) for (const event of events) for (const rec of event.notes) if (rec.continuation) continuations.set(rec.id, rec.held);
   const tuning = tuningOf(spec.tuning), capo = capoOf(spec.capo);
   const tuningElement = tuningXml(tuning, capo);
   /** Generated TAB staff numbers (an event moved onto one is attached to the TAB clone of its note). */

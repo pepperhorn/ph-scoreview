@@ -24,7 +24,9 @@
 
 export const STANDARD_TUNING = [40, 45, 50, 55, 59, 64];
 export interface FretPos { string: number; fret: number }          // string 1 = highest
-export interface FretEvent { onset: number; durations: number[]; pitches: number[]; fixed?: (FretPos | undefined)[] } // quarter notes, MIDI
+/** A fixed fingering, or a string only (a circled string number: the solver picks the fret on that string). */
+export interface FretFixed { string: number; fret?: number }
+export interface FretEvent { onset: number; durations: number[]; pitches: number[]; fixed?: (FretFixed | undefined)[] } // quarter notes, MIDI
 export interface FretOptions { tuning?: number[]; capo?: number; maxFret?: number; octaveFold?: boolean }
 export type FretResult = (FretPos & { shifted?: number }) | { unplayable: true };
 
@@ -129,7 +131,7 @@ export function assignFrets(events: FretEvent[], options: FretOptions = {}): Fre
         if (mask & (1 << t)) continue;
         const f = p - openTop[t];
         if (f < 0 || f > frets) continue;
-        if (fixedT[j] >= 0 && f !== fixedFret[j]) continue;
+        if (fixedFret[j] >= 0 && f !== fixedFret[j]) continue;
         let lo = minF, hi = maxF;
         if (f > 0) {
           if (f < lo) lo = f; if (f > hi) hi = f;
@@ -220,8 +222,10 @@ export function assignFrets(events: FretEvent[], options: FretOptions = {}): Fre
       let fixedT = -1, fixedFret = -1;
       const fx = event.fixed?.[orig];
       if (fx) {
-        const t = Math.floor(fx.string) - 1, f = Math.floor(fx.fret);
-        if (t >= 0 && t < nStr && f >= 0 && f <= frets && openTop[t] + f === pitch) { fixedT = t; fixedFret = f; }
+        // A string with no fret (or a fret that is not a number) fixes the string only: the fret follows from the pitch.
+        const t = Math.floor(fx.string) - 1, given = fx.fret !== undefined && fx.fret !== null && Number.isFinite(fx.fret);
+        const f = given ? Math.floor(fx.fret!) : pitch - (openTop[t] ?? NaN);
+        if (t >= 0 && t < nStr && f >= 0 && f <= frets && openTop[t] + f === pitch) { fixedT = t; fixedFret = given ? f : -1; }
       }
       notes.push({ pitch, orig, shifted, fixedT, fixedFret });
     });
@@ -349,4 +353,84 @@ export function assignFrets(events: FretEvent[], options: FretOptions = {}): Fre
   }
   finishSegment();
   return results;
+}
+
+// --- Notes to events ---------------------------------------------------------------------------------------------------
+
+/** One written note of a staff (any voice or layer): onset and duration in quarter notes, sounding MIDI pitch. */
+export interface FretNote { onset: number; duration: number; pitch: number | null; tieStart?: boolean; tieStop?: boolean; fixed?: FretFixed }
+/** Per written note: its fingering (a tie continuation gets the fingering of the note it continues). */
+export interface FretNoteResult { result?: FretResult; continuation: boolean }
+
+const ONSET_EPS = 1e-6;
+
+/**
+ * Finger the notes of one staff, every voice together. Shared by the reader (mei-tab.ts) and the bake
+ * (scripts/tab-bake.mjs) so both give the same fingerings for the same notes.
+ * - Notes starting together are one event, whatever their voice: they sound at once, so they need different strings.
+ * - A unison (the same pitch starting together in two voices) is one string: one solver note, ringing as long as the
+ *   longest of them (ties included); every written note of it gets that fingering.
+ * - A tie continuation (`tieStop` with a tie open on its pitch) is not fingered again: it extends the note it continues
+ *   and takes its fingering. With nothing open (a chunk starting mid-tie) it is fingered as a note.
+ * - Notes without a pitch get no result. The input order only breaks ties between equal onsets.
+ */
+export function assignNoteFrets(notes: FretNote[], options: FretOptions = {}): FretNoteResult[] {
+  const out: FretNoteResult[] = notes.map(() => ({ continuation: false }));
+  const order = notes.map((_, index) => index)
+    .filter(index => { const note = notes[index]; return note.pitch !== null && Number.isFinite(note.pitch) && Number.isFinite(note.onset); })
+    .sort((a, b) => notes[a].onset - notes[b].onset || a - b);
+  /** The solver note (event, position) of each written note; continuations point at the note they continue. */
+  const slotOf = new Map<number, [number, number]>();
+  /** Open ties by pitch: the slot of the note they continue. */
+  const open = new Map<number, [number, number]>();
+  const events: FretEvent[] = [];
+  /** Latest end (onset + duration) of each solver note, per event. */
+  const ends: number[][] = [];
+  const end = (note: FretNote) => note.onset + (Number.isFinite(note.duration) ? Math.max(0, note.duration) : 0);
+  for (let k = 0; k < order.length;) {
+    const onset = notes[order[k]].onset;
+    let stop = k;
+    while (stop < order.length && Math.abs(notes[order[stop]].onset - onset) < ONSET_EPS) stop++;
+    const group = order.slice(k, stop);
+    k = stop;
+    // Continuations, against the ties open before this onset.
+    const continued: number[] = [];
+    for (const index of group) {
+      const note = notes[index];
+      const slot = note.tieStop ? open.get(note.pitch!) : undefined;
+      if (!slot) continue;
+      slotOf.set(index, slot);
+      out[index].continuation = true;
+      continued.push(index);
+      ends[slot[0]][slot[1]] = Math.max(ends[slot[0]][slot[1]], end(note));
+    }
+    for (const index of continued) if (!notes[index].tieStart) open.delete(notes[index].pitch!);
+    for (const index of continued) if (notes[index].tieStart) open.set(notes[index].pitch!, slotOf.get(index)!);
+    // New notes: one event, a unison is one solver note.
+    let event: FretEvent | undefined;
+    const byPitch = new Map<number, number>();
+    for (const index of group) {
+      if (out[index].continuation) continue;
+      const note = notes[index], pitch = note.pitch!;
+      if (!event) { event = { onset, durations: [], pitches: [], fixed: [] }; events.push(event); ends.push([]); }
+      const e = events.length - 1;
+      let position = byPitch.get(pitch);
+      if (position === undefined) {
+        position = event.pitches.length;
+        byPitch.set(pitch, position);
+        event.pitches.push(pitch);
+        event.fixed!.push(note.fixed);
+        ends[e].push(end(note));
+      } else {
+        ends[e][position] = Math.max(ends[e][position], end(note));
+        if (!event.fixed![position]) event.fixed![position] = note.fixed;
+      }
+      slotOf.set(index, [e, position]);
+      if (note.tieStart) open.set(pitch, [e, position]);
+    }
+  }
+  events.forEach((event, e) => { event.durations = ends[e].map(at => at - event.onset); });
+  const results = assignFrets(events, options);
+  for (const [index, [e, position]] of slotOf) out[index].result = results[e][position];
+  return out;
 }
