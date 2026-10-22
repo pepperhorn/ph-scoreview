@@ -1,6 +1,7 @@
 import { isGmSoundfont, type InstrumentId, type Score } from './score';
 import { STAVE_SCALE_FLOOR, STAVE_SCALE_MAX, type DeviceClass } from './stave-scale';
-import { BARS_PER_LINE_MAX, BARS_PER_LINE_MIN } from './prefs';
+import { BARS_PER_LINE_MAX, BARS_PER_LINE_MIN, clampBpm, clampCapo, MAX_BPM, MIN_BPM, STANDARD_TAB_TUNING, validTabTuning, validTabView } from './prefs';
+import type { TabView } from './tab/tab-parts';
 
 export type FileSource = { name: string; size: number; sha256: string; format: string };
 export type FileSettings = {
@@ -9,7 +10,13 @@ export type FileSettings = {
   counts: boolean; subdivisions: boolean; annotationFont: 'Sans' | 'Serif' | 'Mono'; bpm: number; semitones: number; scorePitch: 'written' | 'concert';
   /** Spell the transposed view in the enharmonic key (F# major shown as Gb major); optional on read, default false. */
   keyFlip: boolean;
+  /** TAB view, tuning (open-string MIDI, low to high) and capo; always written (see `SavedSettings` for reading). */
+  tabView: TabView; tabTuning: number[]; capo: number;
 };
+/** Settings added after version 2 shipped: a record without them (or with unusable ones) leaves the reader's own. */
+export type LateSettingKey = 'tabView' | 'tabTuning' | 'capo';
+/** Settings as read from a saved record. */
+export type SavedSettings = Omit<FileSettings, LateSettingKey> & Partial<Pick<FileSettings, LateSettingKey>>;
 /** Saved view: an absolute stave scale and the device class it was chosen on (see stave-scale.ts). */
 export type ScoreView = { zoom: number; zoomDevice: DeviceClass };
 export type PartState = { visible: boolean; instrument: InstrumentId; gmSoundfont?: string; volume?: number };
@@ -19,16 +26,14 @@ export type FileState = {
   source: FileSource;
   /** Epoch ms of the last time the score was opened; the store keeps the most recent records. */
   lastOpened: number;
-  settings: FileSettings;
+  settings: SavedSettings;
   parts: Record<string, PartState>;
   view?: ScoreView;
 };
 /** The localStorage v1 record: zoom was a multiplier of the width fit and lived in settings. */
 export type FileStateV1 = { version: 1; source: FileSource; settings: FileSettings & { zoom: number }; parts: Record<string, PartState> };
 
-export const MIN_BPM = 30, MAX_BPM = 240;
-/** The reader's BPM control range; saved and source tempos outside it are clamped. */
-export const clampBpm = (bpm: number) => Math.max(MIN_BPM, Math.min(MAX_BPM, bpm));
+export { clampBpm, MAX_BPM, MIN_BPM };
 /** The localStorage key of a v1 record; `prefix` is the reader's persist namespace (score-db keyPrefix). */
 export const legacyStorageKey = (hash: string, prefix = 'scoreflow') => `${prefix}-file-v1:${hash}`;
 const instruments = new Set<InstrumentId>(['piano', 'guitar', 'bassguitar', 'double-bass', 'drum-kit', 'alto-saxophone', 'tenor-saxophone', 'bari-saxophone', 'flute', 'clarinet', 'trumpet', 'trombone', 'violin', 'viola', 'cello', 'microphone']);
@@ -133,7 +138,7 @@ export function textSource(format: string, text: string, name: string): FileSour
 
 const validZoom = (zoom: unknown): zoom is number => typeof zoom === 'number' && Number.isFinite(zoom) && zoom >= STAVE_SCALE_FLOOR && zoom <= STAVE_SCALE_MAX;
 /** Validate and normalise shared v1/v2 fields in place; false when the record is unusable. */
-function validSettingsAndParts(state: { settings: FileSettings; parts: Record<string, PartState> }): boolean {
+function validSettingsAndParts(state: { settings: SavedSettings; parts: Record<string, PartState> }): boolean {
   const settings = state.settings;
   if (!settings || !state.parts || typeof state.parts !== 'object') return false;
   if (!['portrait', 'landscape'].includes(settings.mode) || !['Bravura', 'Petaluma'].includes(settings.notationFont)) return false;
@@ -146,10 +151,17 @@ function validSettingsAndParts(state: { settings: FileSettings; parts: Record<st
   if (settings.scorePitch !== undefined && !['written', 'concert'].includes(settings.scorePitch)) return false;
   if (settings.keyFlip !== undefined && typeof settings.keyFlip !== 'boolean') return false;
   if (settings.annotationFont !== undefined && !['Sans', 'Serif', 'Mono'].includes(settings.annotationFont)) return false;
+  // TAB settings came after version 2 shipped: a missing or unusable one is left out, so applying the record keeps the
+  // reader's current value (a host's initial view, or the drawer's tuning) instead of resetting it.
+  const late: Partial<Pick<FileSettings, LateSettingKey>> = {};
+  if (validTabView(settings.tabView)) late.tabView = settings.tabView;
+  if (validTabTuning(settings.tabTuning)) late.tabTuning = [...settings.tabTuning];
+  if (typeof settings.capo === 'number' && Number.isFinite(settings.capo)) late.capo = clampCapo(settings.capo);
   if (['names', 'chordSymbols', 'inferChordSymbols', 'counts', 'subdivisions'].some(key => typeof settings[key as keyof FileSettings] !== 'boolean')) return false;
   Object.values(state.parts).forEach(part => { part.instrument = legacyInstruments[part.instrument] || part.instrument; });
   if (Object.values(state.parts).some(part => typeof part.visible !== 'boolean' || !instruments.has(part.instrument) || (part.gmSoundfont !== undefined && !isGmSoundfont(part.gmSoundfont)) || (part.volume !== undefined && (!Number.isInteger(part.volume) || part.volume < 0 || part.volume > 100)))) return false;
-  state.settings = { ...settings, annotationFont: settings.annotationFont ?? 'Sans', semitones: settings.semitones ?? 0, scorePitch: settings.scorePitch ?? 'written', keyFlip: settings.keyFlip ?? false };
+  const { tabView: _view, tabTuning: _tuning, capo: _capo, ...rest } = settings;
+  state.settings = { ...rest, annotationFont: settings.annotationFont ?? 'Sans', semitones: settings.semitones ?? 0, scorePitch: settings.scorePitch ?? 'written', keyFlip: settings.keyFlip ?? false, ...late } as SavedSettings;
   return true;
 }
 
@@ -197,7 +209,9 @@ export function readFileState(source: FileSource): FileStateV1 | null {
 export function buildFileState(source: FileSource, settings: FileSettings, score: Score, hiddenIds: string[], volumes: Record<string, number> = {}, view?: ScoreView, lastOpened = Date.now()): FileState {
   const hidden = new Set(hiddenIds);
   const parts: FileState['parts'] = {};
-  for (const part of score.parts) parts[part.id] = { visible: !hidden.has(part.id), instrument: part.instrument, ...(part.gmSoundfont ? { gmSoundfont: part.gmSoundfont } : {}), volume: volumes[part.id] ?? 100 };
-  const { mode, notationFont, barsPerLine, overlap, names, chordSymbols, inferChordSymbols, counts, subdivisions, annotationFont, bpm, semitones, scorePitch, keyFlip } = settings;
-  return { version: 2, source, lastOpened, settings: { mode, notationFont, barsPerLine, overlap, names, chordSymbols, inferChordSymbols, counts, subdivisions, annotationFont, bpm: clampBpm(bpm), semitones, scorePitch, keyFlip: !!keyFlip }, parts, ...(view ? { view } : {}) };
+  // A TAB part that doubles a guitar is saved with the guitar's visibility (the reader lists and hides the guitar).
+  for (const part of score.parts) parts[part.id] = { visible: !hidden.has(part.tabOf ?? part.id), instrument: part.instrument, ...(part.gmSoundfont ? { gmSoundfont: part.gmSoundfont } : {}), volume: volumes[part.id] ?? 100 };
+  const { mode, notationFont, barsPerLine, overlap, names, chordSymbols, inferChordSymbols, counts, subdivisions, annotationFont, bpm, semitones, scorePitch, keyFlip, tabView, tabTuning, capo } = settings;
+  return { version: 2, source, lastOpened, settings: { mode, notationFont, barsPerLine, overlap, names, chordSymbols, inferChordSymbols, counts, subdivisions, annotationFont, bpm: clampBpm(bpm), semitones, scorePitch, keyFlip: !!keyFlip,
+    tabView: validTabView(tabView) ? tabView : 'notation', tabTuning: validTabTuning(tabTuning) ? [...tabTuning] : [...STANDARD_TAB_TUNING], capo: clampCapo(capo) }, parts, ...(view ? { view } : {}) };
 }

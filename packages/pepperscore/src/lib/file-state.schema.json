@@ -134,6 +134,23 @@
         "keyFlip": {
           "type": "boolean",
           "description": "Spell the transposed view in the enharmonic key (e.g. Gb major instead of F# major). Optional; readers default it to false."
+        },
+        "tabView": {
+          "enum": ["notation", "tab", "both"],
+          "description": "Which staves guitar parts show: notation, TAB or both. Optional; a reader without it keeps its current view."
+        },
+        "tabTuning": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0, "maximum": 127 },
+          "minItems": 4,
+          "maxItems": 8,
+          "description": "Open-string MIDI pitches of generated TAB, low to high (4 to 8 strings). Optional; a reader without it keeps its current tuning (standard [40, 45, 50, 55, 59, 64] by default)."
+        },
+        "capo": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 12,
+          "description": "Capo fret of generated TAB (frets are relative to it). Optional; a reader without it keeps its current capo."
         }
       }
     },

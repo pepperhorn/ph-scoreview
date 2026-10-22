@@ -157,7 +157,7 @@ try {
   const started = Date.now();
   const cases = [];
   for (let semitones = -12; semitones <= 12; semitones++) for (const flip of [false, true]) for (const view of ['written', 'concert']) cases.push({ semitones, flip, view });
-  const fixtures = [['generated chromatic score', chromaticScore()], ['B♭ trumpet in Ab beside a piano in Gb', trumpetAndPiano()], ['A minor to C major', minorToMajor()], ...readdirSync(new URL('./fixtures/', import.meta.url)).filter(name => name.endsWith('.musicxml')).map(name => [name, readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8')])];
+  const fixtures = [['generated chromatic score', chromaticScore()], ['B♭ trumpet in Ab beside a piano in Gb', trumpetAndPiano()], ['A minor to C major', minorToMajor()], ...readdirSync(new URL('./fixtures/', import.meta.url)).filter(name => name.endsWith('.musicxml') && name !== 'guitar-tab-only.musicxml' /* no noteheads to spell */).map(name => [name, readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8')])];
   for (const [name, xml] of fixtures) {
     const result = await page.evaluate(async ({ xml, cases }) => {
       const { checkView } = await import('/validation/transpose-harness.ts');

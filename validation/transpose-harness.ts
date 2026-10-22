@@ -139,6 +139,9 @@ function readMei(text: string, impliedNatural = false): MeiRead {
       else { const staff = element.closest('staff')?.getAttribute('n'); if (staff) setKey(staff, fifths, mode); }
       continue;
     }
+    // A TAB staff's notes (in a tabGrp) have strings and frets, not written pitches; the reader hides an imported TAB
+    // staff in transposed views and generates TAB instead (validation/tab.mjs checks those frets).
+    if (name === 'note' && element.closest('tabGrp')) continue;
     if (name === 'note') {
       const staff = element.closest('staff')?.getAttribute('n') || '';
       const layer = element.closest('layer')?.getAttribute('n') || '';

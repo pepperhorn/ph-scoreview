@@ -104,7 +104,7 @@ try {
       // Desktop tab order follows the registry and never lands on the hidden More toggle.
       await hydrate.getByRole('button', { name: 'Stop playback', exact: true }).focus();
       const order = [await hydrate.evaluate(() => document.activeElement.closest('[data-header-control]')?.dataset.headerControl)];
-      for (let step = 0; step < 12; step++) {
+      for (let step = 0; step < 16; step++) {
         await hydrate.keyboard.press('Tab');
         const focused = await hydrate.evaluate(() => ({ id: document.activeElement.closest('[data-header-control]')?.dataset.headerControl, more: document.activeElement.classList.contains('header-more-toggle') }));
         assert.equal(focused.more, false, 'The hidden More toggle is not in the desktop tab order');
@@ -112,7 +112,7 @@ try {
         if (focused.id !== order.at(-1)) order.push(focused.id);
       }
       // The key flip is aria-disabled (not disabled) on the C major sample, so it stays in the tab order with its explanation.
-      assert.deepEqual(order, ['stop', 'play', 'openFile', 'mode', 'bpm', 'transpose', 'keyFlip', 'bars', 'staveScale', 'mixer'], 'Desktop tab order follows the header registry');
+      assert.deepEqual(order, ['stop', 'play', 'openFile', 'mode', 'tab', 'bpm', 'transpose', 'keyFlip', 'bars', 'staveScale', 'mixer'], 'Desktop tab order follows the header registry');
     }
     assert.deepEqual(hydrateErrors, []);
     await hydrateContext.close();

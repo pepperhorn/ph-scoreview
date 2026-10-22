@@ -195,12 +195,12 @@ export default defineConfig({
 | `scoreUrl` | `string` | | A score to download. Relative URLs resolve against the page. Cross-origin URLs need CORS. |
 | `abc` | `string` | | ABC notation. |
 | `chrome` | `'full' \| 'minimal' \| 'none'` | `'full'` | See the chrome table below. |
-| `controls` | `{ transport?, viewToggle?, openFile?, mixer?, drawer?, zoom? }` (booleans) | from `chrome` | Per-control overrides of the preset, see below. |
+| `controls` | `{ transport?, viewToggle?, openFile?, mixer?, drawer?, zoom?, tabToggle? }` (booleans) | from `chrome` | Per-control overrides of the preset, see below. |
 | `view` | `'vertical' \| 'endless'` | saved or `'vertical'` | Vertical scrolls down, Endless scrolls sideways. Changing the prop re-applies it. |
 | `height` | `string` | natural | `"fill"`: the parent's height. Any CSS length (`"420px"`, `"60vh"`, `"100dvh"`) fixes it. Omitted: `full` fills its parent with a 480px floor, and `minimal`/`none` take the height of their score. |
 | `className` | `string` | | Extra classes on the `.pepperscore` root. |
 | `ariaLabel` | `string` | `"Score: <title>"`, or `"Score reader"` | Accessible name of the reader's landmark region. By default it is `Score: ` and the loaded score's title, or `Score reader` while there is no titled score. Give each snippet on a page a distinct name when titles repeat. |
-| `settings` | `PepperScoreSettings` | | **Initial** reader settings: `noteNames`, `chordSymbols`, `inferChords`, `beatCounts`, `subdivisions` (booleans); `musicFont` (`'Bravura' \| 'Petaluma'`); `staveFont` (`'Sans' \| 'Serif' \| 'Mono'`); `barsPerLine` (`'auto' \| 1–8`, Vertical view; without a `zoom`, an explicit count also sets the on-load size: that many bars fill the width, see below); `zoom` (stave scale, `null` = device default; with a `zoom`, `barsPerLine` only sets the line breaks); `semitones` (−12…12); `concert` (concert vs written pitch); `overlap` (0–3 lines kept on a page turn). Changing a key in the prop re-applies that key. Drawer edits still work in between. With `persist` on, **a saved per-score record overrides `settings` and `view`** when that score is opened again. The record holds the settings, view, zoom, transposition, part sounds and hidden staves the reader stored for that exact file. |
+| `settings` | `PepperScoreSettings` | | **Initial** reader settings: `noteNames`, `chordSymbols`, `inferChords`, `beatCounts`, `subdivisions` (booleans); `musicFont` (`'Bravura' \| 'Petaluma'`); `staveFont` (`'Sans' \| 'Serif' \| 'Mono'`); `barsPerLine` (`'auto' \| 1–8`, Vertical view; without a `zoom`, an explicit count also sets the on-load size: that many bars fill the width, see below); `zoom` (stave scale, `null` = device default; with a `zoom`, `barsPerLine` only sets the line breaks); `semitones` (−12…12); `concert` (concert vs written pitch); `keyFlip` (spell a transposed view in the enharmonic key, for example Gb major for F# major); `bpm` (initial tempo, 30–240; the score's own tempo otherwise); `overlap` (0–3 lines kept on a page turn); `tabView`, `tabTuning`, `capo` (guitar TAB, see [Guitar TAB](#guitar-tab)). Changing a key in the prop re-applies that key. Drawer edits still work in between. With `persist` on, **a saved per-score record overrides `settings` and `view`** when that score is opened again. The record holds the settings, view, zoom, transposition, part sounds and hidden staves the reader stored for that exact file. |
 | `persist` | `string \| false` | `'pepperscore'` for `full`, `false` for `minimal`/`none` | Storage namespace, see below. `false` reads and writes nothing. |
 | `assetBaseUrl` | `string` | jsDelivr copy of `pepperscore-sounds-<soundPack>` | Root of a sounds-package layout. Relative values resolve against the page, and a missing trailing slash is added. |
 | `verovioBaseUrl` | `string` | the copy in `dist/verovio/` | A directory with an interface-compatible Verovio build to engrave with, laid out like the `verovio` npm package's `dist/` (`verovio-module.mjs`, `verovio.mjs`), e.g. `https://cdn.jsdelivr.net/npm/verovio@6.3.0/dist/`. Shared by every reader on the page: set it before the first score engraves. See [Verovio](#verovio). |
@@ -284,8 +284,24 @@ For hosts that build on the reader (selection, cursors, navigation):
 | `mixer` | The track mixer, plus the part icons, instrument picker and stave eyes. |
 | `zoom` | The stave-scale slider, pinch zoom and the page arrows row. |
 | `drawer` | The bottom drawer and its handle. |
+| `tabToggle` | The Notation / TAB / Both switch, in the header (in the More panel on a phone) and in the drawer. With the drawer on, the header copy is left out between 761 and 1260px, where the full header has no room for it. It shows only for a score with a pitched part. |
 
-The header appears when any of `transport`, `viewToggle`, `openFile`, `mixer` or `zoom` is on. For example, `<PepperScore chrome="minimal" controls={{ viewToggle: true }} … />` keeps the compact play button and adds a small header with only the view toggle.
+The header appears when any of `transport`, `viewToggle`, `openFile`, `mixer`, `zoom` or `tabToggle` is on. For example, `<PepperScore chrome="minimal" controls={{ viewToggle: true }} … />` keeps the compact play button and adds a small header with only the view toggle.
+
+### Guitar TAB
+
+`settings.tabView` sets which staves guitar parts show: `'notation'` (default), `'tab'` or `'both'`. Readers switch with `controls.tabToggle` (on in `full`).
+
+| Setting | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `tabView` | `'notation' \| 'tab' \| 'both'` | `'notation'` | Notation only, TAB only (the notation staff is hidden and its chord symbols, tempo and directions move onto the TAB staff), or both. |
+| `tabTuning` | `number[]` | `[40, 45, 50, 55, 59, 64]` | Open-string MIDI pitches, low to high, of generated TAB (EADGBE). |
+| `capo` | `0`–`12` | `0` | Capo fret of generated TAB. Frets are relative to it. |
+
+- **A score with a TAB staff** (MusicXML `<clef><sign>TAB</sign>` with `<staff-details>`, as MuseScore and Guitar Pro export) shows that staff in the TAB and Both views. The reader treats it as a view of its notation part: it is played once, has no note-name or count lanes, and the part controls and mixer list the instrument once.
+- **Any other score** gets TAB generated from its pitches: for every guitar part (General MIDI programs 25–32, the guitar sound, or "guitar" in the part name), or else for the first pitched part's top staff. A fingering solver picks strings and frets for the whole passage (open strings, few position shifts, playable stretches). Notes out of range are moved by an octave. Chord notes that cannot all be fretted lose doubled notes first, then inner voices. MusicXML `<technical><string>`/`<fret>` on a note is kept as a fixed fingering.
+- **Transposed views** regenerate TAB from the transposed pitches. An imported TAB staff is hidden then, because its frets no longer match.
+- Tied continuations keep their rhythm on the TAB staff but show no fret.
 
 ### `persist`
 
