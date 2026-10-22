@@ -4,6 +4,7 @@
 
 ### Added
 
+- `pepperscore/audio`: the reader's audio engine as a framework-free subpath (`dist/audio.js` + `audio.d.ts`), so other apps on the page share one `AudioContext`, one playback owner and the same sounds. Exports `getSharedAudio`, `resumeAudio`, `claimPlayback`, `releasePlayback`, `loadInstrument(program | name | 'drums', { assetBaseUrl, soundPack, sources, context, destination, notes })`, `loadDrumKit`, `createMetronome({ voice: 'woodblock' | 'drum-machine' | 'click', gain })` and their types (`Instrument`, `AudioPlayer`, `Metronome`, `MetronomeVoice`, ...). Instruments resolve exactly as the reader does (sources, the pack's FluidR3 sound, TimGM6mb.sf2; drums from Perfect Drums plus TimGM6mb's kit), all from the asset base. The main entry's exports are unchanged, and both entries import the same chunk for the shared state. See README, "Shared audio engine".
 - Text add-on sizes. Note names, chord symbols (source and inferred), beat counts and count subdivisions each have a size: `xs`, `sm`, `md`, `rg`, `lg` or `xl` (0.7x to 1.45x). `rg` (regular) is the default and draws exactly the earlier size. Hosts set them with `settings.annotationSizes` (`{ noteNames?, chordSymbols?, beatCounts?, subdivisions? }`, type `PepperScoreAnnotationSizes`; `AnnotationSize` is exported too); the full reader's options drawer has a segmented size control beside each add-on's switch while it is on. Lane rows and offsets grow with the labels, and source chord symbols are sized by Verovio (MEI `<rend fontsize>`), so it spaces them. Sizes are saved in the global prefs and in each score's record (`namesSize`, `chordSymbolsSize`, `countsSize`, `subdivisionsSize`; optional on read, so earlier records read as `rg`).
 - `onElementClick(info)` (`PepperScoreClickInfo`): every click on the engraving, with every chrome, reports the note (`noteId`, `sourceId`), measure (`measureIndex`), position across it (`fraction`), nearest staff (`staff`) and `clientX`/`clientY`. With a `clock`, `onSeek` still fires as before. While it is set, notes and measures show a pointer cursor.
 - `highlights` prop (`PepperScoreHighlight[]`): host classes on notes and measures, re-applied after every draw. New styles `ps-cursor`, `ps-selection` and `ps-cursor-measure` (`--ps-cursor`, `--ps-selection`).
@@ -29,6 +30,7 @@
 
 ### Fixed
 
+- Stopping playback now cancels SF2 (TimGM6mb and `kind: 'sf2'` source) notes already scheduled more than 200 ms ahead. smplr queues those in its own scheduler, and its argument-less `stop()` only stops sounding voices, so a queued note could still play after Stop. Each SF2 note now keeps its own stop handle (with a unique id: smplr's handle stopped every voice of the same pitch) and `stop()` calls them all.
 - An ending (volta) that starts a line is drawn whole on that line. The page break went inside the `<ending>`, so Verovio drew a stub on the line before and labelled the bracket "(1)" as a continuation.
 
 ## 0.2.0

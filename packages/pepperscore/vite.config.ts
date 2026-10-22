@@ -43,12 +43,15 @@ const runtimeFiles: Plugin = {
   },
 };
 
-/** Library mode: one ESM entry, one stylesheet, the two workers as separate chunks, and the runtime files above. */
+/** Library mode: two ESM entries, one stylesheet, the two workers as separate chunks, and the runtime files above. */
 export default defineConfig({
   base: './',
   plugins: [runtimeFiles],
   build: {
-    lib: { entry: fileURLToPath(new URL('./src/index.ts', import.meta.url)), formats: ['es'], fileName: () => 'index.js', cssFileName: 'style' },
+    // Two entries: the reader (index.js) and the framework-free audio engine (audio.js, `pepperscore/audio`). Code both
+    // use (audio-engine's shared AudioContext and playback owner) lands in one shared chunk, so the two never hold
+    // separate copies of that state.
+    lib: { entry: { index: fileURLToPath(new URL('./src/index.ts', import.meta.url)), audio: fileURLToPath(new URL('./src/audio.ts', import.meta.url)) }, formats: ['es'], fileName: (_format, name) => `${name}.js`, cssFileName: 'style' },
     outDir: 'dist',
     emptyOutDir: true,
     sourcemap: true,

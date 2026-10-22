@@ -380,6 +380,52 @@ Drums use the Perfect Drums note files unless a source claims them. `soundSource
 />
 ```
 
+## Shared audio engine (`pepperscore/audio`)
+
+The reader's audio engine is also a small, framework-free subpath (no React), so other music apps on the same page (a piano visualiser, a practice tool) share one `AudioContext`, one "who is playing" slot and the same sounds as every `PepperScore`:
+
+```ts
+import { claimPlayback, createMetronome, getSharedAudio, loadInstrument, releasePlayback, resumeAudio } from 'pepperscore/audio';
+
+const shared = getSharedAudio();              // { context, master } or null without Web Audio
+await resumeAudio(shared!.context);           // from a user gesture; resolves false if audio cannot start
+
+const piano = await loadInstrument(1, { assetBaseUrl: '/pepperscore-sounds/' });   // GM program, FluidR3 name or 'drums'
+const metronome = await createMetronome({ voice: 'woodblock', assetBaseUrl: '/pepperscore-sounds/' });
+
+const owner = { stop: () => { piano.stop(); metronome.stop(); } };
+claimPlayback(owner);                         // stops any PepperScore (or other owner) that is playing
+const t = shared!.context.currentTime + .1;
+for (let beat = 0; beat < 4; beat++) metronome.tick({ time: t + beat * .5, beat });   // beat 0 is accented
+const stopNote = piano.start({ note: 60, time: t, duration: 1, velocity: 90 });
+// later: stopNote() stops (or cancels) that note; owner.stop() stops everything still sounding or scheduled
+releasePlayback(owner);                       // when your playback ends
+```
+
+| Export | Signature | |
+| --- | --- | --- |
+| `getSharedAudio` | `() => { context: AudioContext; master: DynamicsCompressorNode } \| null` | The page's audio graph, created on first use. Readers play through `master`. |
+| `resumeAudio` | `(context) => Promise<boolean>` | Resume with a bounded wait (a pending `resume()` never hangs your code). |
+| `claimPlayback` / `releasePlayback` | `(owner: { stop(): void }) => void` | One player at a time: claiming stops the previous owner. A reader claims it when it starts playing, so your app and the readers never play over each other. |
+| `loadInstrument` | `(sound: number \| string, options?) => Promise<Instrument>` | `sound`: GM program 1-128, FluidR3 name (`'acoustic_grand_piano'`) or `'drums'`. |
+| `loadDrumKit` | `(options?) => Promise<Instrument>` | `loadInstrument('drums', options)`. |
+| `createMetronome` | `(options?) => Promise<Metronome>` | See below. |
+| `METRONOME_VOICES`, `SOUNDS_VERSION`, `defaultAssetBaseUrl` | | Constants. |
+
+Options (`InstrumentOptions`): `assetBaseUrl`, `soundPack` (`'core'` default, `'complete'`) and `sources` (`SoundSource[]`) work exactly like the reader's `assetBaseUrl`, `soundPack` and `soundSources` props. `context` and `destination` default to the shared context and its master compressor. `notes` lists the notes to load before the promise resolves (default 21-108 for an instrument, none for the kit; call `loadNotes(notes)` for more, since a note that is not loaded starts silently).
+
+An `Instrument` is an `AudioPlayer` (`start({ note, time, duration, velocity, destination? }) => stop`, `stop()`, `dispose()`, `loadNotes(notes)`, `covers(note)`) plus `context`, `output` (its volume `GainNode`) and `plan` (which source plays it). `stop()` stops every sounding note **and cancels every scheduled one**. A note's `destination` is honoured by sample-pack and note-file sounds. SF2 sounds always play through `output`.
+
+Sounds resolve exactly as in the reader (above): your `sources`, then the pack's FluidR3 sound, then `TimGM6mb.sf2`. Drums use Perfect Drums, with TimGM6mb's kit for the notes it lacks. Every built-in file comes from `assetBaseUrl`, so a self-hosted base means no requests to any other host.
+
+**Metronome.** `createMetronome({ voice?, gain?, ...InstrumentOptions })` returns `{ voice, output, tick({ time, beat, accent? }) => stop, setVoice(voice), stop(), dispose() }`. `beat` counts from 0 within the bar, and beat 0 is accented (louder, or higher for synth sounds) unless `accent` says otherwise. `gain` defaults to a gentle 0.5.
+
+| Voice | Beat 1 | Other beats | Source |
+| --- | --- | --- | --- |
+| `'woodblock'` (default) | GM hi wood block (76) | GM low wood block (77) | The drum kit (Perfect Drums has no wood blocks, so TimGM6mb's kit plays them). Without a kit wood block: a soft synthesized knock. |
+| `'drum-machine'` | Kick (36) | Closed hi-hat (42) | The drum kit (Perfect Drums). Without a kit: synthesized ticks. |
+| `'click'` | Soft high tick | Soft tick | Synthesized, short and quiet. Loads nothing. |
+
 ## Known v1 limits
 
 - **`deviceClass()` uses a viewport media query.** Layout sizes come from the reader's root element, but the choice between "desktop" (a fine pointer and a viewport wider than 850px) and "compact" defaults still queries the viewport. That choice sets the default stave scale and the large-file notice wording. So a narrow reader on a wide desktop page gets desktop defaults.
