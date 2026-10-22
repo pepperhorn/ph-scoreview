@@ -302,6 +302,7 @@ The header appears when any of `transport`, `viewToggle`, `openFile`, `mixer`, `
 - **Any other score** gets TAB generated from its pitches: for every guitar part (General MIDI programs 25–32, the guitar sound, or "guitar" in the part name), or else for the first pitched part's top staff. A fingering solver picks strings and frets for the whole passage (open strings, few position shifts, playable stretches). Notes out of range are moved by an octave. Chord notes that cannot all be fretted lose doubled notes first, then inner voices. MusicXML `<technical><string>`/`<fret>` on a note is kept as a fixed fingering.
 - **Transposed views** regenerate TAB from the transposed pitches. An imported TAB staff is hidden then, because its frets no longer match.
 - Tied continuations keep their rhythm on the TAB staff but show no fret.
+- **Baked fingerings.** The repository's `npm run tab:bake` (`scripts/tab-bake.mjs`, see the root README) writes the solver's string/fret onto a score's notes ahead of time, and can add a TAB staff. The reader keeps those fingerings as they are.
 
 ### `persist`
 

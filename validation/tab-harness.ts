@@ -130,6 +130,9 @@ export async function engraveTab(source: Source, test: ViewCase) {
   return result;
 }
 
+/** TAB injection on an MEI document as is (no Verovio). */
+export const injectTabMei = (mei: string, spec: Parameters<typeof injectTab>[1]) => injectTab(mei, spec);
+
 /** Host settings → reader prefs → saved per-score record → read back. */
 export function settingsRoundTrip(settings: PepperScoreSettings, xml: string) {
   const score = parseMusicXml(xml);

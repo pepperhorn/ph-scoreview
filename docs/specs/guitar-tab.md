@@ -54,12 +54,13 @@ export function assignFrets(events: FretEvent[], options?: FretOptions): FretRes
 - Node cost: open bonus, gentle pull to low positions, a body penalty past fret 12 (squared), a stretch penalty `(span)^1.5`, muted interior strings, a tiny high-string tie-break.
 - Transition: `(shiftFixed + shiftDist·|Δpos|) / (1 + gapRelief·gapBeats)`.
 - Out of range: octave-fold (`shifted = ±12k`) or `unplayable`. Chords with too many notes drop doubled notes, then inner voices. Never fail the whole score.
-- Events are solved in onset order (a stable sort: same onset keeps layer order) and ringing strings are looked up across voices, so a held note in one layer keeps its string.
+- Notes are turned into events by `assignNoteFrets` (shared by the reader and the bake): notes starting together in any voice or layer are one event (they need different strings), a unison across voices is one solver note held as long as the longest of them, and tie continuations extend the note they continue. Events are solved in onset order and ringing strings are looked up across voices, so a held note in one layer keeps its string.
+- A fixed fingering may be a string alone (a circled string number, MEI `tab.course` without `tab.fret`): the string is kept and the solver picks the fret. Verovio drops a MusicXML `<string>` without a `<fret>`, so the reader only sees it once baked.
 - Segment at rests of ≥ 2 beats. Target: 2,000 events in under 50 ms.
 
-## Preprocessing (follow-up)
+## Preprocessing
 
-`scripts/tab-bake.mjs <in.musicxml> [--tuning …] [--capo n] [--add-tab-staff]` writes `<technical><string>/<fret>` onto notes using the same solver, and can add a TAB staff. That lets a batch job or Directus flow make the library TAB-ready ahead of time; the reader then treats those fingerings as fixed.
+`scripts/tab-bake.mjs <in.musicxml|.mxl|dir> [--tuning …] [--capo n] [--parts …] [--add-tab-staff]` (`npm run tab:bake`, options in the root README; tests in `validation/tab-bake.mjs`) writes `<technical><string>/<fret>` onto notes using the same solver and the same note-to-event rules as the reader, and can add a TAB staff. A string number already on a note is never changed (only its fret is filled in). Without `--tuning` the part's own `<staff-tuning>` (its TAB staff's first) is used; a different `--tuning`/`--capo` rewrites the part's `<staff-tuning>`/`<capo>`. The output never replaces the input unless `--in-place` is given; a `.mxl` output name writes a MusicXML container; ISO-8859-1, windows-1252 and US-ASCII files are written back in their encoding (other non-UTF encodings are refused). That lets a batch job or Directus flow make the library TAB-ready ahead of time; the reader then treats those fingerings as fixed.
 
 ## Hosts
 

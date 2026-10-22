@@ -2,7 +2,7 @@
 // "Fingering solver"), run in Node: the module is pure TypeScript with no imports, so Node's type stripping loads it.
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
-import { assignFrets, STANDARD_TUNING } from '../packages/pepperscore/src/lib/tab/fret-assign.ts';
+import { assignFrets, assignNoteFrets, STANDARD_TUNING } from '../packages/pepperscore/src/lib/tab/fret-assign.ts';
 
 let checks = 0;
 const eq = (actual, expected, message) => { checks++; assert.deepEqual(actual, expected, message); };
@@ -12,6 +12,8 @@ const ok = (value, message) => { checks++; assert.ok(value, message); };
 const melody = pitches => pitches.map((pitch, i) => ({ onset: i, durations: [1], pitches: [pitch] }));
 /** Plain [string, fret] pairs for compact comparisons. */
 const pairs = results => results.map(r => ('unplayable' in r ? 'x' : [r.string, r.fret]));
+/** The sounding pitch of a result in standard tuning. */
+const pitchOfResult = r => STANDARD_TUNING[6 - r.string] + r.fret;
 
 // --- Interface basics ------------------------------------------------------------------------------------------
 eq(STANDARD_TUNING, [40, 45, 50, 55, 59, 64], 'standard tuning E A D G B E');
@@ -123,6 +125,51 @@ eq(assignFrets([{ onset: 0, durations: [], pitches: [] }]), [[]], 'an empty even
   eq(out[4], { string: 2, fret: 5 }, 'fixed note inside a chord');
   ok(out.every(r => !('unplayable' in r)), 'rest of the chord still placed');
   eq(new Set(out.map(r => r.string)).size, 5, 'distinct strings');
+  // A string-only constraint (a circled string number): the string is fixed, the solver picks the fret.
+  const [[s]] = assignFrets([{ onset: 0, durations: [1], pitches: [64], fixed: [{ string: 3 }] }]);
+  eq(s, { string: 3, fret: 9 }, 'string-only: E4 on the G string');
+  const [[s5]] = assignFrets([{ onset: 0, durations: [1], pitches: [52], fixed: [{ string: 5 }] }]);
+  eq(s5, { string: 5, fret: 7 }, 'string-only: E3 on the A string');
+  const [[sx]] = assignFrets([{ onset: 0, durations: [1], pitches: [40], fixed: [{ string: 1 }] }]);
+  eq(sx, { string: 6, fret: 0 }, 'an impossible string-only constraint is ignored');
+  const [chordS] = assignFrets([{ onset: 0, durations: c.map(() => 1), pitches: c, fixed: [{ string: 6 }, undefined, undefined, undefined, undefined] }]);
+  eq(chordS[0], { string: 6, fret: 8 }, 'string-only inside a chord: C3 on the low E string');
+  eq(new Set(chordS.map(r => r.string)).size, 5, 'string-only chord: distinct strings');
+}
+
+// --- Note-level helper: same-onset notes of every voice are one event; unisons; ties ----------------------------------
+{
+  const res = out => out.map(r => r.result && ('unplayable' in r.result ? 'x' : [r.result.string, r.result.fret]));
+  // Voice 1: E4 G4 A4(half); voice 2: E4(half) A2(half). The two E4s are one string held for two beats, so G4 at
+  // beat 2 cannot use it; A4 and A2 at beat 3 are one event.
+  const unison = [
+    { onset: 0, duration: 1, pitch: 64 }, { onset: 1, duration: 1, pitch: 67 }, { onset: 2, duration: 2, pitch: 69 },
+    { onset: 0, duration: 2, pitch: 64 }, { onset: 2, duration: 2, pitch: 45 },
+  ];
+  const out = assignNoteFrets(unison);
+  eq(out[0].result, out[3].result, 'unison across voices: one string and fret for both');
+  ok(out[1].result.string !== out[0].result.string, `G4 avoids the unison E4 still held in voice 2 (${JSON.stringify(res(out))})`);
+  ok(out.every(r => !r.continuation), 'no continuations');
+  for (const [i, note] of unison.entries()) eq(pitchOfResult(out[i].result), note.pitch, `unison: note ${i} sounds its pitch`);
+  // The same, the shorter E4 tied over into beat 2: the tie continuation takes the unison's fingering.
+  const tied = [
+    { onset: 0, duration: 1, pitch: 64, tieStart: true }, { onset: 1, duration: 1, pitch: 64, tieStop: true }, { onset: 2, duration: 1, pitch: 67 },
+    { onset: 0, duration: 1, pitch: 64 }, { onset: 1, duration: 1, pitch: 59 },
+  ];
+  const t = assignNoteFrets(tied);
+  ok(t[1].continuation && !t[0].continuation && !t[3].continuation, 'the tie stop is a continuation');
+  eq([t[1].result, t[3].result], [t[0].result, t[0].result], 'continuation and unison take the tied note\'s fingering');
+  ok(t[4].result.string !== t[0].result.string, 'B3 at beat 2 avoids the tied E4');
+  // The order the voices come in does not matter.
+  const reversed = assignNoteFrets([...unison].reverse()).reverse();
+  eq(res(reversed), res(out), 'voices in either order give the same fingerings');
+  // A continuation with nothing open (a chunk starting mid-tie) is fingered as a note.
+  const lone = assignNoteFrets([{ onset: 0, duration: 1, pitch: 64, tieStop: true }]);
+  ok(!lone[0].continuation && lone[0].result.string, 'a continuation with no tie start is fingered');
+  eq(assignNoteFrets([{ onset: 0, duration: 1, pitch: null }]), [{ continuation: false }], 'an unpitched note gets no result');
+  // Same-onset notes of two voices are one chord: the reader and the bake agree (assignFrets over one merged event).
+  const merged = assignNoteFrets([{ onset: 0, duration: 1, pitch: 40 }, { onset: 0, duration: 4, pitch: 50 }]);
+  eq(res(merged), pairs(assignFrets([{ onset: 0, durations: [1, 4], pitches: [40, 50] }])[0]), 'two voices at one onset are one event');
 }
 
 // --- Ringing strings are not reused ----------------------------------------------------------------------------------

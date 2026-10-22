@@ -27,6 +27,7 @@ The repository is an npm workspace:
 | `npm run build` | The library (`packages/pepperscore/dist/`), then the static site (`apps/reader/dist/`) |
 | `npm run sounds:core` | Regenerates `packages/pepperscore-sounds-core` (Git-ignored files) from the complete pack |
 | `npm run pack:local` | Builds and writes `pepperscore-<version>.tgz` and `pepperscore-sounds-core-<version>.tgz` into the Git-ignored `.packs/`, for installing into another project by path (`pnpm add /path/to/.packs/pepperscore-0.1.0.tgz`) |
+| `npm run tab:bake -- <score>` | Writes guitar string/fret fingerings into MusicXML ahead of time, optionally adding a TAB staff. See [Preprocessing guitar TAB](#preprocessing-guitar-tab) |
 | `npm run test:manifest` | Verifies the bundled GM sound packs |
 | `npm run test:api` | Chrome presets, control overrides and settings mapping (Node); also checks the library never reads `window.location` |
 | `npm run test:css` | Every library CSS rule is scoped under `.pepperscore`, with no fixed positioning or viewport units |
@@ -37,10 +38,35 @@ The repository is an npm workspace:
 | `npm run test:editor-browser` | The `/editor` demo in Chromium: keyboard entry, undo, click to cursor, popovers, export, save and reopen, staff cap, read-only and the touch palette; each edit must engrave in under 250 ms. Run `npm run build` first |
 | `npm run test:pack` | Packs `pepperscore`, checks the tarball (build output, licence files, `MIT AND LGPL-3.0-or-later`), installs it into fresh Vite + React, Astro static (`client:only`) and Astro SSR (`output: 'server'`, `@astrojs/node`, `client:visible`) apps and builds them, checking the worker chunks, the Verovio files (copied byte for byte), `THIRD_PARTY_NOTICES.txt` and stylesheet. It imports pepperscore in plain Node (no `window`, `document`, storage or location reads), then starts the built SSR server on 127.0.0.1 and asserts a 200 page with the server-rendered island. `PACK_SMOKE_HOSTS=vite,astro,astro-ssr` picks hosts. **Needs the network** (installs from the npm registry); publishes nothing |
 | `npm run test:validation` | Tracked suites (all of the above except `test:pack`, plus): `test:document` (source retention, formats, identities), `test:parser-diff` (the streaming MusicXML reader against the former DOM importer), `test:score-db`, `test:performance` (playback timeline), `test:reader` (the built reader in Chromium) and `test:large` (a ~5 MB orchestral score). Run `npm run build` first. |
+| `npm run test:tab-bake` | `tab:bake` in Node: fingerings match the reader's solver, idempotence, the added TAB staff in Verovio and the reader's parser, a transposing part, `.mxl` and batch input (part of `test:validation`) |
 | `npm run test:reader:firefox`, `npm run test:reader:webkit` | Reader suite in Firefox or WebKit (`npm run test:browsers` installs the Playwright engines) |
 | `npm run test:example` | Local-only check of the Cielito Lindo MusicXML in Chromium; needs the Git-ignored `examples/` and `tests/` files |
 
 CI (`.github/workflows/ci.yml`) runs check, build, the manifest check, `test:validation` in Chromium and `test:pack`. It also runs the reader, chunked-engraving and embedding suites in Firefox and WebKit. The browser suites make no remote requests (the demo and test pages pass a local `assetBaseUrl`); `test:pack` is the only step that needs the network. The small original fixtures in `validation/fixtures/` are tracked. Private scores stay in the ignored directories.
+
+## Preprocessing guitar TAB
+
+`scripts/tab-bake.mjs` makes scores TAB-ready before they are served, for a batch job or a Directus flow. It runs the reader's fingering solver (`packages/pepperscore/src/lib/tab/fret-assign.ts`, loaded through Node's type stripping, so Node 22.18+) and writes `<notations><technical><string>`/`<fret>` onto every note of the target parts. The reader treats baked fingerings as fixed: they are used as they are, for generated TAB and as constraints for the notes around them.
+
+```bash
+npm run tab:bake -- song.musicxml -o song.tab.musicxml            # fingerings only
+npm run tab:bake -- song.mxl --tuning drop_d --capo 2 --add-tab-staff
+npm run tab:bake -- scores/ --out-dir baked/ --parts all --dry-run  # batch: report only
+```
+
+| Option | Meaning |
+| --- | --- |
+| `-o <file>` | Output file. Default `<name>.tab.<ext>` next to the input. A `.mxl` name writes a MusicXML container (from `.musicxml` input too); a `.musicxml`/`.xml` name writes plain XML (`.mxl` in unzips). |
+| `--out-dir <dir>` | Output directory, required for a directory input (searched recursively for `.musicxml`, `.xml` and `.mxl`; relative paths kept). |
+| `--tuning <t>` | `standard`, `drop_d`, `half_step_down`, `open_g`, `open_d`, `dadgad` or MIDI pitches low to high (`40,45,50,55,59,64`). Default: the part's own `<staff-tuning>` (its TAB staff's first), else standard; a different `--tuning` rewrites that `<staff-tuning>` so the written frets stay right. Use the tuning the reader will use (`settings.tabTuning`): a fingering that does not fit the reader's tuning is re-solved. |
+| `--capo <n>` | Capo fret (default: the part's `<capo>`, else 0). Frets are written relative to it, as the reader expects. |
+| `--parts <p>` | `guitar` (default: GM programs 25–32 or "guitar" in the part or instrument name), `all` pitched parts, or part IDs (`P1,P3`). |
+| `--add-tab-staff` | Also add a TAB staff to each processed one-staff part: `<staves>2</staves>`, a TAB clef, `<staff-details>` with the tuning (and capo), and a copy of the notes on staff 2 after a `<backup>` (voices +4, slurs, lyrics, stems, grace and cue notes left off). This is the Guitar Pro / MuseScore layout the reader shows as an imported TAB staff and plays once. |
+| `--overwrite-existing` | Re-solve notes that already have string/fret (otherwise kept and used as fixed constraints) and process parts that already have a TAB staff (otherwise skipped). |
+| `--in-place` | Write over the input. Without it, an output (`-o` or `--out-dir`) that is the input itself is refused. |
+| `--dry-run` | Print the summary only. |
+
+Notes are solved per staff in time order across voices, with the reader's own rules (notes starting together in any voice are one hand shape, a unison across voices one string), so the bake writes what the reader would draw; a string number without a fret is kept and only its fret is filled in; tie continuations taking the fingering of the note they continue, grace and cue notes left unfingered, and `<transpose>` applied so frets follow the sounding pitch. Notes out of range are folded by an octave (counted as "folded"); chord notes the solver cannot place are left untouched and listed as unplayable. The file is edited as text, so everything else, including the XML declaration, DOCTYPE, comments and formatting, stays byte for byte (in the file's encoding: UTF-8, UTF-16, ISO-8859-1, windows-1252 or US-ASCII; others are refused), and baking twice changes nothing. Limits: `score-timewise` is not supported; a divisions change in the middle of a measure can mistime that measure's TAB copy (a warning is printed); `--add-tab-staff` skips parts that already have more than one staff.
 
 ## Reading
 
