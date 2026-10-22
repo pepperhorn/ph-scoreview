@@ -3,8 +3,9 @@
  * decides from its Score which notation staves get a generated TAB staff, which imported TAB staves show, and what is
  * hidden; the Verovio worker then injects the TAB staves (notation/mei-tab.ts).
  */
-import type { Part, Score } from '../score';
+import type { Measure, Part, Pitch, Score, ScoreNote } from '../score';
 import type { TabSpec } from '../notation/mei-tab';
+import type { PartState } from '../file-state';
 
 export type TabView = 'notation' | 'tab' | 'both';
 /** A generated TAB staff's number: 100 + its notation staff's number. */
@@ -13,8 +14,15 @@ export const tabStaffNumber = (n: string) => String(100 + Number(n));
 const isTabPart = (part: Part) => part.clef === 'tab' || part.measures.some(measure => measure.clef === 'tab');
 const sourceOf = (id: string) => id.replace(/-\d+$/, '');
 const pitched = (part: Part) => part.clef !== 'percussion' && !part.tab && part.measures.some(measure => measure.notes.some(note => note.pitches.some(pitch => !pitch.unpitched)));
+/**
+ * A pitch as it sounds: a written part's MIDI plus its transposition (a guitar is written an octave above sounding; a
+ * TAB staff is at sounding pitch), so a notation part and the TAB part that doubles it compare equal.
+ */
+const soundingOf = (part: Part, measure: Measure, pitch: Pitch) => pitch.midi + (part.clef === 'percussion' || part.pitchBasis === 'concert' ? 0 : (measure.transposition || part.transposition)?.semitones ?? 0);
+/** A note's onset and sounding pitches as one key (`measure:start:midis`, or `r` for a rest). */
+export const soundingKeyOf = (part: Part, measure: Measure, note: ScoreNote) => `${measure.index}:${Math.round(note.start * 96)}:${note.rest ? 'r' : note.pitches.map(pitch => soundingOf(part, measure, pitch)).sort((a, b) => a - b).join(',')}`;
 /** A part's sounding notes as `measure:start:midi` keys (to tell whether a TAB part doubles another part). */
-const noteKeys = (part: Part) => part.measures.flatMap(measure => measure.notes.flatMap(note => note.grace ? [] : note.pitches.map(pitch => `${measure.index}:${Math.round(note.start * 96)}:${pitch.midi}`)));
+const noteKeys = (part: Part) => part.measures.flatMap(measure => measure.notes.flatMap(note => note.grace ? [] : note.pitches.map(pitch => `${measure.index}:${Math.round(note.start * 96)}:${soundingOf(part, measure, pitch)}`)));
 
 /**
  * Flag TAB parts (`tab`) and link each to the notation part it doubles (`tabOf`): a sibling staff of the same
@@ -69,10 +77,23 @@ export type TabPlan = {
 };
 
 /**
- * Plan a view: `staffOf` maps parts to baseline staff numbers, `hiddenIds` are parts the reader hid, `stale` is true
- * when the view moves pitches (imported `tab.fret`s no longer match, so imported TAB is replaced by generated TAB).
+ * The reader parts a saved record hides (`parts`: saved part states by ID). Only parts the reader lists can be hidden:
+ * a TAB part that doubles a guitar never is (an older reader listed it), and a guitar whose notation was hidden while
+ * its TAB part showed stays shown (the guitar was being read from its TAB).
  */
-export function planTab(score: Score, staffOf: Map<string, string>, view: TabView, options: { tuning: number[]; capo: number; stale: boolean; hiddenIds?: Set<string> }): TabPlan {
+export function hiddenReaderParts(score: Score, parts: Record<string, PartState | undefined>): string[] {
+  const tabOf = new Map(score.parts.filter(part => part.tabOf).map(part => [part.tabOf!, part.id]));
+  return score.parts.filter(part => !part.tabOf && parts[part.id]?.visible === false && parts[tabOf.get(part.id) ?? '']?.visible !== true).map(part => part.id);
+}
+
+/**
+ * Plan a view: `staffOf` maps parts to baseline staff numbers, `hiddenIds` are parts the reader hid, `stale` is true
+ * when the view moves sounding pitches (transposition: imported `tab.fret`s no longer match, so imported TAB is replaced
+ * by generated TAB and a TAB-only staff is re-fingered). A concert view moves written notes to the pitches they already
+ * sound, so it never makes TAB stale. `sounding` lists staves whose spelled notes are at sounding pitch (their
+ * `trans.semi` no longer applies).
+ */
+export function planTab(score: Score, staffOf: Map<string, string>, view: TabView, options: { tuning: number[]; capo: number; stale: boolean; semitones?: number; sounding?: string[]; hiddenIds?: Set<string> }): TabPlan {
   const hiddenIds = options.hiddenIds ?? new Set<string>();
   const plan: TabPlan = { hidden: [], added: [], display: new Map(), importedFor: new Map() };
   const imported = score.parts.filter(part => part.tabOf);
@@ -95,6 +116,15 @@ export function planTab(score: Score, staffOf: Map<string, string>, view: TabVie
     }
   }
   for (const part of imported) if (!used.has(part)) hide(staffOf.get(part.id));
-  if (generate.length || Object.keys(retarget).length) plan.spec = { generate, retarget, tuning: options.tuning, capo: options.capo, fixed: !options.stale };
+  // A TAB staff that doubles nothing (a TAB-only score) shows in every view; transposed, its frets are solved again.
+  const refret: Record<string, number> = {};
+  if (options.stale && options.semitones) for (const part of score.parts) {
+    const n = staffOf.get(part.id);
+    if (part.tab && !part.tabOf && n) refret[n] = options.semitones;
+  }
+  const sounding = (options.sounding ?? []).filter(n => generate.includes(n));
+  if (generate.length || Object.keys(retarget).length || Object.keys(refret).length) {
+    plan.spec = { generate, retarget, tuning: options.tuning, capo: options.capo, fixed: !options.stale, ...(sounding.length ? { sounding } : {}), ...(Object.keys(refret).length ? { refret } : {}) };
+  }
   return plan;
 }

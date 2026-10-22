@@ -65,6 +65,7 @@ interface Layer {
   notes: Note[];          // sorted high→low, all playable notes of the event before dropping
   onset: number;
   end: number;            // onset + longest duration
+  reach: number;          // the latest end of this layer and every earlier one in the segment
 }
 
 export function assignFrets(events: FretEvent[], options: FretOptions = {}): FretResult[][] {
@@ -252,7 +253,10 @@ export function assignFrets(events: FretEvent[], options: FretOptions = {}): Fre
     let q = layers.length ? argminPosition(layers.length - 1) : -1;
     for (let li = layers.length - 1; li >= 0 && q >= 0; li--) {
       const layer = layers[li];
-      if (layer.end <= onset + EPS) break; // nothing from here back can still ring (ends are non-decreasing in practice)
+      // Nothing from here back can still ring. `reach`, not `end`: with several voices a short note can follow a
+      // longer one that is still held.
+      if (layer.reach <= onset + EPS) break;
+      if (layer.end <= onset + EPS) { q = bestPrev[li * P + q]; continue; }
       const shape = layer.plan.shapes[bestShape[li * P + q]];
       const durs = events[layer.event].durations ?? [];
       for (let j = 0; j < layer.plan.kept.length; j++) {
@@ -339,7 +343,7 @@ export function assignFrets(events: FretEvent[], options: FretOptions = {}): Fre
     const durs = event.durations ?? [];
     let maxDur = 0;
     for (const note of notes) maxDur = Math.max(maxDur, durs[note.orig] ?? 0);
-    layers.push({ event: ei, plan: eventPlan, notes, onset, end: onset + maxDur });
+    layers.push({ event: ei, plan: eventPlan, notes, onset, end: onset + maxDur, reach: Math.max(onset + maxDur, layers.at(-1)?.reach ?? -Infinity) });
     prevOnset = onset;
     prevEnd = onset + maxDur;
   }

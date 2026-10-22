@@ -12,8 +12,8 @@ import { indexMusicXml, sliceMusicXml } from '../packages/pepperscore/src/lib/no
 import { planStaves } from '../packages/pepperscore/src/lib/render';
 import { scoreForView } from '../packages/pepperscore/src/lib/transpose';
 import { buildBaseTimeline } from '../packages/pepperscore/src/lib/playback/timeline';
-import { canShowTab, type TabView } from '../packages/pepperscore/src/lib/tab/tab-parts';
-import { defaults, sanitizeSavedPrefs, settingsToPrefs, type PepperScoreSettings } from '../packages/pepperscore/src/lib/prefs';
+import { canShowTab, hiddenReaderParts, type TabView } from '../packages/pepperscore/src/lib/tab/tab-parts';
+import { defaults, sanitizeSavedPrefs, settingsToPrefs, type PepperScoreSettings, type Prefs } from '../packages/pepperscore/src/lib/prefs';
 import { buildFileState, parseFileState, textSource } from '../packages/pepperscore/src/lib/file-state';
 import type { Score } from '../packages/pepperscore/src/lib/score';
 
@@ -56,8 +56,9 @@ export async function parts(source: Source) {
   };
 }
 
-export type ViewCase = { view: TabView; semitones?: number; capo?: number; tuning?: number[]; chordSymbols?: boolean; hidden?: string[]; slices?: number };
+export type ViewCase = { view: TabView; semitones?: number; capo?: number; tuning?: number[]; chordSymbols?: boolean; hidden?: string[]; slices?: number; pitch?: 'written' | 'concert' };
 type TabNote = { id: string; course: number; fret: number };
+type StaffNote = TabNote & { visible: boolean };
 
 function readDrawn(mei: string, svg: string) {
   const staves = [...new Set([...svg.matchAll(/<g [^>]*class="staff"[^>]*data-n="(\d+)"/g)].map(match => match[1]))];
@@ -74,13 +75,34 @@ function readDrawn(mei: string, svg: string) {
     notesByStaff[n] = (notesByStaff[n] || 0) + (body.match(/<g [^>]*class="note"/g) || []).length;
   }
   const harm = [...mei.matchAll(/<harm\b[^>]*\sstaff="([^"]*)"/g)].map(match => match[1]);
-  return { staves, tabGroups, tabNotes, notesByStaff, harm, drawnHarm: (svg.match(/class="harm"/g) || []).length, svgTabGroups: (svg.match(/class="tabGrp"/g) || []).length };
+  // Every TAB note (generated or imported) per staff, in document order, and each staff's line count (MEI and drawn).
+  const staffNotes: Record<string, StaffNote[]> = {};
+  for (const [, n, body] of mei.matchAll(/<staff\b[^>]*\sn="(\d+)"[^>]*>([\s\S]*?)<\/staff>/g)) {
+    for (const [, attributes] of body.matchAll(/<note\b([^>]*?)\/?>/g)) {
+      const course = /\stab\.course="(\d+)"/.exec(attributes)?.[1], fret = /\stab\.fret="(\d+)"/.exec(attributes)?.[1];
+      if (!course || !fret) continue;
+      (staffNotes[n] ||= []).push({ id: /\sxml:id="([^"]*)"/.exec(attributes)?.[1] || '', course: Number(course), fret: Number(fret), visible: !/\svisible="false"/.test(attributes) });
+    }
+  }
+  const staffLines = Object.fromEntries([...mei.matchAll(/<staffDef\b([^>]*)>/g)].map(([, attributes]) => [/\sn="(\d+)"/.exec(attributes)?.[1], Number(/\slines="(\d+)"/.exec(attributes)?.[1] || 5)]));
+  const drawnLines: Record<string, number> = {};
+  for (const part of svg.split(/(?=<g [^>]*class="staff")/).slice(1)) {
+    const n = /data-n="(\d+)"/.exec(part)?.[1]; if (!n || n in drawnLines) continue;
+    // Staff lines are horizontal paths before the staff's first child group (TAB lines are drawn in segments).
+    const lines = part.slice(0, part.search(/<g\b(?![^>]*class="staff")/) >>> 0);
+    drawnLines[n] = new Set([...lines.matchAll(/<path d="M-?[\d.]+ (-?[\d.]+) L-?[\d.]+ (-?[\d.]+)"/g)].filter(match => match[1] === match[2]).map(match => match[1])).size;
+  }
+  /** TAB groups whose duration symbol (stem) is drawn, by ID. */
+  const stems = [...svg.matchAll(/<g id="([^"]*)" class="tabGrp">\s*<g [^>]*class="tabDurSym">\s*<g [^>]*class="stem"/g)].map(match => match[1]);
+  const count = (pattern: RegExp) => (svg.match(pattern) || []).length;
+  return { staves, tabGroups, tabNotes, notesByStaff, harm, drawnHarm: count(/class="harm"/g), svgTabGroups: count(/class="tabGrp"/g),
+    staffNotes, staffLines, drawnLines, stems, fermatas: count(/class="fermata"/g), repeats: count(/class="(?:mRpt|mRpt2|beatRpt|multiRpt|halfmRpt)"/g) };
 }
 
 /** Engrave one TAB view of a score (whole, or in `slices` measures per chunk with one fret memory, as the worker does). */
 export async function engraveTab(source: Source, test: ViewCase) {
   const { score, baseline } = await prepare(source);
-  const view = scoreForView(score, 'written', test.semitones ?? 0, false);
+  const view = scoreForView(score, test.pitch ?? 'written', test.semitones ?? 0, false);
   const plan = planStaves(scanBaseline(baseline), view, new Set(test.hidden ?? []), { view: test.view, tuning: test.tuning, capo: test.capo });
   const target = await verovio();
   const options = { breaks: 'none', xmlIdChecksum: true, pageWidth: 60000, adjustPageHeight: true, svgAdditionalAttribute: ['staff@n'] };
@@ -115,14 +137,40 @@ export function settingsRoundTrip(settings: PepperScoreSettings, xml: string) {
   const source = textSource('musicxml', xml, 'tab.musicxml');
   const saved = JSON.parse(JSON.stringify(buildFileState(source, prefs, score, [])));
   const read = parseFileState(saved, source.sha256);
-  // A record saved before the TAB settings existed reads with their defaults.
+  // A record saved before the TAB settings existed (or with unusable ones) leaves them out, so the reader's current
+  // values stand when the record is applied ({ ...prefs, ...record.settings }).
   const legacy = structuredClone(saved); delete legacy.settings.tabView; delete legacy.settings.tabTuning; delete legacy.settings.capo;
   const invalid = structuredClone(saved); invalid.settings.tabView = 'lute'; invalid.settings.tabTuning = [40, 'x']; invalid.settings.capo = 30;
+  const current = { ...defaults, tabView: 'both' as const, tabTuning: [38, 45, 50, 55, 59, 64], capo: 5 };
+  const tabKeys = ({ tabView, tabTuning, capo }: Partial<Prefs>) => ({ tabView, tabTuning, capo });
+  const fractional = structuredClone(saved); fractional.settings.capo = 2.6;
   return {
     mapped: settingsToPrefs(settings),
     read: read && { tabView: read.settings.tabView, tabTuning: read.settings.tabTuning, capo: read.settings.capo, bpm: read.settings.bpm, keyFlip: read.settings.keyFlip },
-    legacy: (({ tabView, tabTuning, capo }) => ({ tabView, tabTuning, capo }))(parseFileState(legacy, source.sha256)!.settings),
-    invalid: (({ tabView, tabTuning, capo }) => ({ tabView, tabTuning, capo }))(parseFileState(invalid, source.sha256)!.settings),
+    legacy: tabKeys({ ...current, ...parseFileState(legacy, source.sha256)!.settings }),
+    legacyKeys: ['tabView', 'tabTuning', 'capo'].filter(key => key in parseFileState(legacy, source.sha256)!.settings),
+    invalid: tabKeys({ ...current, ...parseFileState(invalid, source.sha256)!.settings }),
+    fractional: parseFileState(fractional, source.sha256)!.settings.capo,
     sanitized: (({ tabView, tabTuning, capo, bpm }) => ({ tabView, tabTuning, capo, bpm }))(sanitizeSavedPrefs({ tabView: 'x', tabTuning: 'EADGBE', capo: -1, bpm: 900 })),
+    sanitizedCapo: sanitizeSavedPrefs({ capo: 2.6 }).capo,
+    sanitizedTunings: [[40, 45, 50], [28, 33, 38, 43], [35, 40, 45, 50, 55, 59, 64], [1, 2, 3, 4, 5, 6, 7, 8, 9]].map(tabTuning => sanitizeSavedPrefs({ tabTuning }).tabTuning.length),
   };
+}
+
+/** Staves per system when no Score part maps to a baseline staff (the reader then shows every part, as before TAB). */
+export async function unmappedStaffCount(source: Source) {
+  const { score, baseline } = await prepare(source);
+  const info = scanBaseline(baseline);
+  const unmapped = { ...info, groups: [], staffDefs: [...info.staffDefs.map(def => ({ ...def, id: `unmapped-${def.id}` })), { ...info.staffDefs[0], n: '99', id: 'unmapped-extra' }] };
+  const plan = planStaves(unmapped, score, new Set(), { view: 'notation' });
+  return { staffCount: plan.staffCount, parts: score.parts.length, visible: plan.visibleParts.length };
+}
+
+/** The reader parts hidden when a score opens with a saved record whose part states are `states` (by part ID). */
+export async function restoredHidden(source: Source, states: Record<string, boolean>) {
+  const { score } = await prepare(source);
+  const parts = Object.fromEntries(Object.entries(states).map(([id, visible]) => [id, { visible, instrument: 'guitar' as const, volume: 100 }]));
+  const hidden = hiddenReaderParts(score, parts);
+  const saved = buildFileState(textSource('musicxml', 'x', 'x.musicxml'), defaults, score, hidden);
+  return { hidden, saved: Object.fromEntries(Object.entries(saved.parts).map(([id, state]) => [id, state.visible])) };
 }

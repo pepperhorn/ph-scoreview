@@ -154,6 +154,16 @@ eq(assignFrets([{ onset: 0, durations: [], pitches: [] }]), [[]], 'an empty even
     { onset: 1, durations: [1], pitches: [40] },
   ]).map(r => r[0]);
   eq(pairs(forced), [[6, 0], [6, 0]], 'low E has nowhere else to go');
+  // Two voices, events in time order: voice 2 holds D3 (from beat 0) under voice 1's E2 A2 E3 G3. Notes that end
+  // earlier (A2) come between, so ringing is looked up past them: E3 at beat 2 must not take the held D3's string.
+  const voices = assignFrets([
+    { onset: 0, durations: [1], pitches: [40] },
+    { onset: 0, durations: [4], pitches: [50] },
+    { onset: 1, durations: [1], pitches: [45] },
+    { onset: 2, durations: [1], pitches: [52] },
+    { onset: 3, durations: [1], pitches: [55] },
+  ]).map(r => r[0]);
+  ok([2, 3, 4].every(i => voices[i].string !== voices[1].string), `voice 1 avoids the held voice 2 string (${JSON.stringify(pairs(voices))})`);
 }
 
 // --- Determinism ---------------------------------------------------------------------------------------------------

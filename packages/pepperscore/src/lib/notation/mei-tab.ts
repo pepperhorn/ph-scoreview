@@ -8,14 +8,20 @@
  * a note or chord becomes a `tabGrp` (same duration) with a `tabDurSym` and one `note tab.course tab.fret` per pitch;
  * beams, tuplets and rests are kept; grace notes, lyrics, clefs and everything else are dropped. IDs get a `-tab`
  * suffix (`${note}-tabn` for the TAB note of a single note, whose `tabGrp` takes `${note}-tab`), so the reader finds
- * the TAB event of a Score note by its source ID. Tie continuations keep their duration but show no fret.
+ * the TAB event of a Score note by its source ID. Tie continuations keep their rhythm (the `tabGrp` and its stem) and
+ * show no fret: their TAB note, on the string of the note they continue, is invisible. Measure and beat repeats are
+ * copied, so the repeat sign shows on the TAB staff too.
  *
- * Frets come from the fingering solver (tab/fret-assign.ts), run over each staff's whole document so it sees the
- * passage, not one measure. `tab.course`/`tab.fret` already on notation notes (MusicXML `<technical>` string/fret) are
- * fixed constraints. `retarget` moves staff-bound text (chord symbols, tempo, directions) of a notation staff that the
- * view hides onto its TAB staff.
+ * Frets come from the fingering solver (tab/fret-assign.ts), run over each staff's whole document in time order (all
+ * layers) so it sees the passage, not one measure. `tab.course`/`tab.fret` already on notation notes (MusicXML
+ * `<technical>` string/fret) are fixed constraints. `retarget` moves staff-bound text (chord symbols, tempo,
+ * directions, fermatas) of a notation staff that the view hides onto its TAB staff; an event attached to a note
+ * (`startid`) is attached to that note's TAB event.
+ *
+ * `refret` re-fingers imported TAB staves that double no notation staff (a TAB-only score) when the view transposes:
+ * their notes' sounding pitches (the staff's `<tuning>` plus fret) move by the given semitones and are solved again.
  */
-import { assignFrets, type FretEvent, type FretPos, type FretResult } from '../tab/fret-assign';
+import { assignFrets, STANDARD_TUNING, type FretEvent, type FretPos, type FretResult } from '../tab/fret-assign';
 import { attributeOf, scan } from './mei-view';
 
 export type TabSpec = {
@@ -29,6 +35,13 @@ export type TabSpec = {
   capo: number;
   /** Use `tab.course`/`tab.fret` already on notation notes as fixed fingerings (false when the view moved pitches). */
   fixed: boolean;
+  /**
+   * Generated staves whose notes are already at sounding pitch (the concert view of a transposing part): their
+   * `trans.semi` was applied by spelling and must not be applied again.
+   */
+  sounding?: string[];
+  /** Imported TAB staves (no notation partner) to re-finger, by staff `@n`: the semitones their pitches move. */
+  refret?: Record<string, number>;
 };
 
 /** Fingerings by notation note `xml:id`, kept across chunk documents so a note keeps its fret wherever it is drawn. */
@@ -45,14 +58,20 @@ const KEPT_CONTAINERS = new Set(['beam', 'tuplet']);
 const UNWRAPPED = new Set(['bTrem', 'fTrem', 'ligature', 'choice', 'orig', 'reg', 'sic', 'corr', 'supplied', 'add', 'subst']);
 /** Control events that move to the TAB staff when their notation staff is hidden. */
 const RETARGETED = new Set(['harm', 'tempo', 'dir', 'repeatMark', 'fermata']);
+/** Measure and beat repeats: copied onto the TAB staff (a whole-measure one fills its measure like a measure rest). */
+const MEASURE_REPEATS = new Set(['mRpt', 'mRpt2', 'multiRpt']);
+const REPEATS = new Set([...MEASURE_REPEATS, 'beatRpt', 'halfmRpt']);
 
 const PITCH_NAMES: [string, string?][] = [['c'], ['c', 's'], ['d'], ['e', 'f'], ['e'], ['f'], ['f', 's'], ['g'], ['a', 'f'], ['a'], ['b', 'f'], ['b']];
 const escapeId = (id: string) => id.replace(/[&<>"]/g, '');
 const idAttr = (id: string, suffix: string) => id ? ` xml:id="${escapeId(id)}${suffix}"` : '';
 
-type NoteRec = { id: string; midi: number | null; fixed?: FretPos; continuation: boolean; tieStart: boolean; extend: number; dur: number };
+type NoteRec = { id: string; midi: number | null; fixed?: FretPos; continuation: boolean; tieStart: boolean; extend: number; dur: number;
+  /** The note a tie continuation continues (its string and fret are reused, invisibly). */
+  from?: NoteRec };
 type EventRec = { onset: number; dur: number; notes: NoteRec[] };
-type StaffInfo = { ppq?: number; semi: number };
+/** `courses`: an imported TAB staff's open-string pitches by course number (course 1 is the highest). */
+type StaffInfo = { ppq?: number; semi: number; courses?: Map<number, number> };
 
 function durationOf(attributes: string, ppq: number | undefined, tuplets: number[]): number {
   const ppqValue = Number(attributeOf(attributes, 'dur.ppq'));
@@ -71,6 +90,17 @@ const midiOf = (attributes: string, childAccid: { written?: string; gestural?: s
   return 12 * (oct + 1) + STEP_PC[pname] + (ALTER[accid] ?? 0) + semi;
 };
 
+/** A capo as a whole fret 0-24, and a tuning of 1 to 31 strings (the solver's limit); others give standard tuning. */
+const capoOf = (capo: unknown) => typeof capo === 'number' && Number.isFinite(capo) ? Math.max(0, Math.min(24, Math.round(capo))) : 0;
+const tuningOf = (tuning: unknown) => Array.isArray(tuning) && tuning.length >= 1 && tuning.length <= 31 && tuning.every(pitch => Number.isInteger(pitch) && pitch >= 0 && pitch <= 127) ? tuning as number[] : STANDARD_TUNING;
+/** A course's open-string tuning, low to high, from a staff's `<course>`s (course 1 is the highest). */
+const tuningFromCourses = (courses: Map<number, number>) => {
+  if (!courses.size) return null;
+  const count = Math.max(...courses.keys());
+  const tuning = Array.from({ length: count }, (_, index) => courses.get(count - index));
+  return tuning.every((pitch): pitch is number => pitch !== undefined) ? tuning : null;
+};
+
 /** Course pitches for a tuning (course 1 = the highest string), as MEI `<course>`s. */
 function tuningXml(tuning: number[], capo: number): string {
   return `<tuning>${[...tuning].reverse().map((midi, index) => {
@@ -81,14 +111,19 @@ function tuningXml(tuning: number[], capo: number): string {
 }
 
 /**
- * Pass 1: each generated staff's events in document order, onsets in quarter notes from the document start (measure
- * lengths from their layers, an empty or measure-rest measure from the meter).
+ * Pass 1: each collected staff's events in document order, onsets in quarter notes from the document start (measure
+ * lengths from their layers, an empty or measure-rest measure from the meter). Notation staves (`generate`) read
+ * pitches from `pname`/`oct` (plus `trans.semi` unless already sounding); imported TAB staves (`refret`) from their
+ * tuning and frets, moved by the view's semitones. `ids` are the notes and chords a TAB clone exists for.
  */
-function collect(mei: string, generate: Set<string>, useFixed: boolean): { staves: Map<string, EventRec[]>; tieStarts: Set<string>; tieEnds: Set<string>; info: Map<string, StaffInfo> } {
-  const staves = new Map<string, EventRec[]>([...generate].map(n => [n, []]));
+function collect(mei: string, spec: TabSpec): { staves: Map<string, EventRec[]>; tieStarts: Set<string>; tieEnds: Set<string>; info: Map<string, StaffInfo>; ids: Set<string> } {
+  const generate = new Set(spec.generate), refret = spec.refret ?? {}, sounding = new Set(spec.sounding ?? []);
+  const collected = new Set([...generate, ...Object.keys(refret)]);
+  const staves = new Map<string, EventRec[]>([...collected].map(n => [n, []]));
   const info = new Map<string, StaffInfo>();
   const tieStarts = new Set<string>();
   const tieEnds = new Set<string>();
+  const ids = new Set<string>();
   let meter = 4;
   let meterCount = 4, meterUnit = 4;
   const setMeter = (attributes: string, prefix: string) => {
@@ -99,6 +134,8 @@ function collect(mei: string, generate: Set<string>, useFixed: boolean): { stave
   };
   let measureStart = 0, measureLength = 0, measureRest = false, inMeasure = false;
   let staff: string | null = null; let staffDepth = 0;
+  /** The imported TAB staffDef whose `<course>`s are being read. */
+  let reading: { entry: StaffInfo; courses: Map<number, number> } | null = null;
   let cursor = 0;
   const tuplets: number[] = [];
   let chord: EventRec | null = null; let chordGrace = false;
@@ -106,12 +143,17 @@ function collect(mei: string, generate: Set<string>, useFixed: boolean): { stave
   let graceDepth = 0;
   const finishNote = () => {
     if (!note) return;
-    const semi = info.get(staff!)?.semi ?? 0;
-    note.rec.midi = midiOf(note.attributes, note, semi);
+    const staffInfo = info.get(staff!);
+    if (staff! in refret) {
+      const course = Number(attributeOf(note.attributes, 'tab.course')), fret = Number(attributeOf(note.attributes, 'tab.fret'));
+      const open = staffInfo?.courses?.get(course);
+      note.rec.midi = open !== undefined && Number.isInteger(fret) && fret >= 0 && attributeOf(note.attributes, 'tab.fret') !== null ? open + fret + refret[staff!] : null;
+    } else note.rec.midi = midiOf(note.attributes, note, staffInfo?.semi ?? 0);
     note = null;
   };
   scan(mei, ({ closing, name, attributes, selfClosing }) => {
     if (closing) {
+      if (name === 'staffDef') { if (reading?.courses.size) reading.entry.courses = reading.courses; reading = null; return; }
       if (name === 'measure') {
         inMeasure = false;
         measureStart += measureLength > 0 && !measureRest ? measureLength : Math.max(measureLength, meter);
@@ -120,7 +162,7 @@ function collect(mei: string, generate: Set<string>, useFixed: boolean): { stave
       if (!staff) return;
       if (graceDepth) { graceDepth--; return; }
       if (name === 'note') finishNote();
-      else if (name === 'chord') { if (chord && !chordGrace) cursor += chord.dur; chord = null; }
+      else if (name === 'chord' || name === 'tabGrp') { if (chord && !chordGrace) cursor += chord.dur; chord = null; }
       else if (name === 'tuplet') tuplets.pop();
       else if (name === 'layer') measureLength = Math.max(measureLength, cursor);
       else if (name === 'staff' && --staffDepth === 0) staff = null;
@@ -131,12 +173,21 @@ function collect(mei: string, generate: Set<string>, useFixed: boolean): { stave
     if (name === 'staffDef') {
       setMeter(attributes, 'meter.');
       const n = attributeOf(attributes, 'n') || '';
-      if (generate.has(n)) {
+      if (collected.has(n)) {
         const previous = info.get(n);
         const ppq = Number(attributeOf(attributes, 'ppq'));
         const semi = attributeOf(attributes, 'trans.semi');
-        info.set(n, { ppq: ppq > 0 ? ppq : previous?.ppq, semi: semi !== null ? Number(semi) || 0 : previous?.semi ?? 0 });
+        // A staff spelled at sounding pitch (concert view) already applied its transposition.
+        const entry: StaffInfo = { ppq: ppq > 0 ? ppq : previous?.ppq, semi: sounding.has(n) ? 0 : semi !== null ? Number(semi) || 0 : previous?.semi ?? 0, courses: previous?.courses };
+        info.set(n, entry);
+        if (n in refret && !selfClosing) reading = { entry, courses: new Map() };
       }
+      return;
+    }
+    if (name === 'course' && reading) {
+      const course = Number(attributeOf(attributes, 'n'));
+      const midi = midiOf(attributes, {}, 0);
+      if (course >= 1 && midi !== null) reading.courses.set(course, midi);
       return;
     }
     if (name === 'measure') { inMeasure = true; measureLength = 0; measureRest = false; return; }
@@ -147,7 +198,7 @@ function collect(mei: string, generate: Set<string>, useFixed: boolean): { stave
     }
     if (name === 'staff' && !staff) {
       const n = attributeOf(attributes, 'n') || '';
-      if (generate.has(n) && !selfClosing) { staff = n; staffDepth = 1; }
+      if (collected.has(n) && !selfClosing) { staff = n; staffDepth = 1; }
       return;
     }
     if (!staff) return;
@@ -162,11 +213,13 @@ function collect(mei: string, generate: Set<string>, useFixed: boolean): { stave
       if (!selfClosing) tuplets.push(numbase / num);
       return;
     }
-    if (name === 'chord') {
+    if (name === 'chord' || name === 'tabGrp') {
       chordGrace = attributeOf(attributes, 'grace') !== null;
       if (chordGrace) { if (!selfClosing) graceDepth = 1; return; }
       chord = { onset: measureStart + cursor, dur: durationOf(attributes, ppq, tuplets), notes: [] };
       events.push(chord);
+      const id = attributeOf(attributes, 'xml:id');
+      if (id && generate.has(staff)) ids.add(id);
       if (selfClosing) { cursor += chord.dur; chord = null; }
       return;
     }
@@ -179,9 +232,10 @@ function collect(mei: string, generate: Set<string>, useFixed: boolean): { stave
         cursor += event.dur;
       }
       const id = attributeOf(attributes, 'xml:id') || '';
+      if (id && generate.has(staff)) ids.add(id);
       const tie = attributeOf(attributes, 'tie') || '';
       const course = Number(attributeOf(attributes, 'tab.course')), fret = Number(attributeOf(attributes, 'tab.fret'));
-      const fixed = useFixed && course >= 1 && Number.isInteger(fret) && attributeOf(attributes, 'tab.fret') !== null ? { string: course, fret } : undefined;
+      const fixed = spec.fixed && generate.has(staff) && course >= 1 && Number.isInteger(fret) && attributeOf(attributes, 'tab.fret') !== null ? { string: course, fret } : undefined;
       const rec: NoteRec = { id, midi: null, fixed, continuation: /[mt]/.test(tie), tieStart: /[im]/.test(tie), extend: 0, dur: event.dur };
       event.notes.push(rec);
       note = { rec, attributes, event, inChord: !!chord };
@@ -194,18 +248,25 @@ function collect(mei: string, generate: Set<string>, useFixed: boolean): { stave
       if (gestural !== null) note.gestural = gestural;
       return;
     }
-    if (RESTS.has(name)) {
-      if (name === 'mRest' || name === 'mSpace' || name === 'multiRest') measureRest = true;
+    if (RESTS.has(name) || REPEATS.has(name)) {
+      if (name === 'mRest' || name === 'mSpace' || name === 'multiRest' || MEASURE_REPEATS.has(name)) measureRest = true;
+      else if (name === 'halfmRpt') cursor += meter / 2;
+      else if (name === 'beatRpt') cursor += 4 / meterUnit;
       else cursor += durationOf(attributes, ppq, tuplets);
     }
   });
-  return { staves, tieStarts, tieEnds, info };
+  return { staves, tieStarts, tieEnds, info, ids };
 }
 
-/** Pass 2: solve each staff (tie continuations extend the note they continue and are not fingered again). */
-function solve(staves: Map<string, EventRec[]>, tieStarts: Set<string>, tieEnds: Set<string>, spec: TabSpec, memory: FretMemory | undefined): Map<string, FretResult> {
+/**
+ * Pass 2: solve each staff (tie continuations extend the note they continue and are not fingered again). Events are
+ * solved in time order across layers (stable for events at one onset), so a note held in one voice keeps its string
+ * while another voice moves.
+ */
+function solve(staves: Map<string, EventRec[]>, tieStarts: Set<string>, tieEnds: Set<string>, info: Map<string, StaffInfo>, spec: TabSpec, memory: FretMemory | undefined): Map<string, FretResult> {
   const frets = new Map<string, FretResult>();
-  for (const events of staves.values()) {
+  const tuning = tuningOf(spec.tuning), capo = capoOf(spec.capo);
+  for (const [n, events] of staves) {
     const open = new Map<number, NoteRec>();
     const fretEvents: FretEvent[] = [];
     const owners: NoteRec[][] = [];
@@ -215,7 +276,7 @@ function solve(staves: Map<string, EventRec[]>, tieStarts: Set<string>, tieEnds:
         if (rec.midi === null) continue;
         const continued = rec.continuation || tieEnds.has(rec.id);
         const from = continued ? open.get(rec.midi) : undefined;
-        if (from) { from.extend += rec.dur; rec.continuation = true; }
+        if (from) { from.extend += rec.dur; rec.continuation = true; rec.from = from; }
         else { rec.continuation = false; notes.push(rec); }
         if (rec.tieStart || tieStarts.has(rec.id)) open.set(rec.midi, from ?? rec);
         else if (from) open.delete(rec.midi);
@@ -226,9 +287,13 @@ function solve(staves: Map<string, EventRec[]>, tieStarts: Set<string>, tieEnds:
     }
     // Durations include the tied continuations, so a held note's string stays busy.
     fretEvents.forEach((event, index) => { event.durations = owners[index].map(rec => rec.dur + rec.extend); });
-    const results = assignFrets(fretEvents, { tuning: spec.tuning, capo: spec.capo });
-    results.forEach((row, index) => row.forEach((result, at) => {
-      const rec = owners[index][at];
+    // Layers follow one another in the document: put every event in time order (Array.prototype.sort is stable).
+    const order = fretEvents.map((_, index) => index).sort((a, b) => fretEvents[a].onset - fretEvents[b].onset);
+    // An imported TAB staff keeps its own tuning (no capo); generated staves use the view's.
+    const own = n in (spec.refret ?? {}) && info.get(n)?.courses ? tuningFromCourses(info.get(n)!.courses!) : null;
+    const results = assignFrets(order.map(index => fretEvents[index]), own ? { tuning: own, capo: 0 } : { tuning, capo });
+    results.forEach((row, at) => row.forEach((result, position) => {
+      const rec = owners[order[at]][position];
       frets.set(rec.id, result);
       if (memory && rec.id && 'string' in result && !memory.has(rec.id)) memory.set(rec.id, { string: result.string, fret: result.fret });
     }));
@@ -238,21 +303,35 @@ function solve(staves: Map<string, EventRec[]>, tieStarts: Set<string>, tieEnds:
 
 const durAttributes = (attributes: string) => ['dur', 'dots', 'dur.ppq'].map(name => { const value = attributeOf(attributes, name); return value !== null ? ` ${name}="${value}"` : ''; }).join('');
 const tabNote = (id: string, result: FretResult | undefined) => result && 'string' in result ? `<note${idAttr(id, '')} tab.course="${result.string}" tab.fret="${result.fret}"/>` : '';
+/** A tie continuation's TAB note: on the string it continues, invisible, so its tabGrp keeps its stem. */
+const heldNote = (result: FretResult | undefined) => result && 'string' in result ? `<note tab.course="${result.string}" tab.fret="${result.fret}" visible="false"/>` : '';
+/** Replace (or add) an attribute on a start tag. */
+const withAttribute = (tag: string, name: string, value: string) => {
+  const pattern = new RegExp(`(\\s${name.replace('.', '\\.')}\\s*=\\s*)(?:"[^"]*"|'[^']*')`);
+  return pattern.test(tag) ? tag.replace(pattern, `$1"${value}"`) : tag.replace(/\s*(\/?)>$/, ` ${name}="${value}"$1>`);
+};
 
 /**
- * Add the TAB staves of `spec` to `mei` and retarget hidden staves' control events. `memory` (optional) keeps
- * fingerings by note ID across calls: a remembered note is fixed for the solver and new results are added to it.
+ * Add the TAB staves of `spec` to `mei`, re-finger its `refret` staves and retarget hidden staves' control events.
+ * `memory` (optional) keeps fingerings by note ID across calls: a remembered note is fixed for the solver and new
+ * results are added to it.
  */
 export function injectTab(mei: string, spec: TabSpec, memory?: FretMemory): string {
   const generate = new Set(spec.generate);
+  const refret = spec.refret ?? {};
   const retarget = spec.retarget;
   const retargeting = Object.keys(retarget).length > 0;
-  if (!generate.size && !retargeting) return mei;
-  const { staves, tieStarts, tieEnds, info } = generate.size ? collect(mei, generate, spec.fixed) : { staves: new Map<string, EventRec[]>(), tieStarts: new Set<string>(), tieEnds: new Set<string>(), info: new Map<string, StaffInfo>() };
-  const frets = generate.size ? solve(staves, tieStarts, tieEnds, spec, memory) : new Map<string, FretResult>();
-  const continuations = new Set<string>();
-  for (const events of staves.values()) for (const event of events) for (const rec of event.notes) if (rec.continuation) continuations.add(rec.id);
-  const tuning = tuningXml(spec.tuning, spec.capo);
+  if (!generate.size && !retargeting && !Object.keys(refret).length) return mei;
+  const collected = generate.size || Object.keys(refret).length;
+  const { staves, tieStarts, tieEnds, info, ids } = collected ? collect(mei, spec) : { staves: new Map<string, EventRec[]>(), tieStarts: new Set<string>(), tieEnds: new Set<string>(), info: new Map<string, StaffInfo>(), ids: new Set<string>() };
+  const frets = collected ? solve(staves, tieStarts, tieEnds, info, spec, memory) : new Map<string, FretResult>();
+  /** Tie continuations, with the fingering of the note each continues. */
+  const continuations = new Map<string, FretResult | undefined>();
+  for (const events of staves.values()) for (const event of events) for (const rec of event.notes) if (rec.continuation) continuations.set(rec.id, rec.from ? frets.get(rec.from.id) : undefined);
+  const tuning = tuningOf(spec.tuning), capo = capoOf(spec.capo);
+  const tuningElement = tuningXml(tuning, capo);
+  /** Generated TAB staff numbers (an event moved onto one is attached to the TAB clone of its note). */
+  const generatedTabs = new Set([...generate].map(n => String(100 + Number(n))));
 
   const out: string[] = [];
   let last = 0;
@@ -261,10 +340,13 @@ export function injectTab(mei: string, spec: TabSpec, memory?: FretMemory): stri
   let staffDef: { n: string; id: string; meterSig: string; depth: number } | null = null;
   // The TAB clone of the generated staff being read.
   let clone: string[] | null = null; let cloneDepth = 0; let skip = 0;
-  let chordOpen = false;
+  /** The open chord's TAB group: whether it drew a fret, and the first continuation's fingering otherwise. */
+  let chordOpen: { frets: number; held?: FretResult } | null = null;
+  /** The depth of the imported TAB staff being re-fingered. */
+  let refretDepth = -1;
   const staffDefXml = (n: string, id: string, meterSig: string) => {
     const ppq = info.get(n)?.ppq;
-    return `<staffDef${idAttr(id, '-tab')} n="${100 + Number(n)}" lines="6" notationtype="tab.guitar" keysig="0"${ppq ? ` ppq="${ppq}"` : ''}><clef shape="TAB" line="5"/>${tuning}${meterSig}</staffDef>`;
+    return `<staffDef${idAttr(id, '-tab')} n="${100 + Number(n)}" lines="${tuning.length}" notationtype="tab.guitar" keysig="0"${ppq ? ` ppq="${ppq}"` : ''}><clef shape="TAB" line="${tuning.length - 1}"/>${tuningElement}${meterSig}</staffDef>`;
   };
   scan(mei, ({ closing, name, attributes, selfClosing, index, length }) => {
     out.push(mei.slice(last, index));
@@ -277,8 +359,23 @@ export function injectTab(mei: string, spec: TabSpec, memory?: FretMemory): stri
       const staffAttr = attributeOf(attributes, 'staff');
       if (staffAttr !== null) {
         const moved = staffAttr.split(/\s+/).filter(Boolean).map(token => retarget[token] ?? token).join(' ');
-        if (moved !== staffAttr) tag = tag.replace(/(\sstaff\s*=\s*)(?:"[^"]*"|'[^']*')/, `$1"${moved}"`);
+        if (moved !== staffAttr) {
+          tag = withAttribute(tag, 'staff', moved);
+          // Attached to a note of the hidden staff: attach it to that note's TAB event instead.
+          const startid = attributeOf(attributes, 'startid');
+          const start = startid?.replace(/^#/, '') ?? '';
+          if (start && ids.has(start) && moved.split(' ').every(token => generatedTabs.has(token))) tag = withAttribute(tag, 'startid', `#${start}-tab`);
+        }
       }
+    }
+    // An imported TAB staff re-fingered for the view: its notes take their new string and fret.
+    if (refretDepth < 0 && name === 'staff' && !closing && !selfClosing && (attributeOf(attributes, 'n') || '') in refret) refretDepth = depth;
+    else if (refretDepth >= 0 && closing && name === 'staff' && depth === refretDepth - 1) refretDepth = -1;
+    else if (refretDepth >= 0 && name === 'note' && !closing) {
+      const id = attributeOf(attributes, 'xml:id') || '';
+      const result = continuations.has(id) ? continuations.get(id) : frets.get(id);
+      if (result && 'string' in result) tag = withAttribute(withAttribute(tag, 'tab.course', String(result.string)), 'tab.fret', String(result.fret));
+      else if (result) tag = withAttribute(tag, 'visible', 'false');
     }
     out.push(tag);
 
@@ -303,7 +400,7 @@ export function injectTab(mei: string, spec: TabSpec, memory?: FretMemory): stri
       if (name === 'staff' && !closing && !selfClosing && generate.has(attributeOf(attributes, 'n') || '')) {
         const n = attributeOf(attributes, 'n')!;
         clone = [`<staff${idAttr(attributeOf(attributes, 'xml:id') || '', '-tab')} n="${100 + Number(n)}">`];
-        cloneDepth = depth; skip = 0; chordOpen = false;
+        cloneDepth = depth; skip = 0; chordOpen = null;
       }
       return;
     }
@@ -318,7 +415,11 @@ export function injectTab(mei: string, spec: TabSpec, memory?: FretMemory): stri
     const id = attributeOf(attributes, 'xml:id') || '';
     if (closing) {
       if (name === 'layer' || KEPT_CONTAINERS.has(name)) clone.push(`</${name}>`);
-      else if (name === 'chord' && chordOpen) { clone.push('</tabGrp>'); chordOpen = false; }
+      else if (name === 'chord' && chordOpen) {
+        // A chord of tie continuations only: one invisible note keeps its stem.
+        if (!chordOpen.frets) clone.push(heldNote(chordOpen.held));
+        clone.push('</tabGrp>'); chordOpen = null;
+      }
       return;
     }
     if (name === 'layer' || KEPT_CONTAINERS.has(name)) {
@@ -330,19 +431,27 @@ export function injectTab(mei: string, spec: TabSpec, memory?: FretMemory): stri
     if (name === 'chord') {
       if (attributeOf(attributes, 'grace') !== null) { if (!selfClosing) skip = 1; return; }
       clone.push(`<tabGrp${idAttr(id, '-tab')}${durAttributes(attributes)}><tabDurSym/>`);
-      if (selfClosing) clone.push('</tabGrp>'); else chordOpen = true;
+      if (selfClosing) clone.push('</tabGrp>'); else chordOpen = { frets: 0 };
       return;
     }
     if (name === 'note') {
       if (!selfClosing) skip = 1;
-      if (chordOpen) { if (!continuations.has(id)) clone.push(tabNote(id ? `${id}-tab` : '', frets.get(id))); return; }
+      if (chordOpen) {
+        if (continuations.has(id)) { if (!chordOpen.held) chordOpen.held = continuations.get(id); return; }
+        const drawn = tabNote(id ? `${id}-tab` : '', frets.get(id));
+        if (drawn) chordOpen.frets++;
+        clone.push(drawn);
+        return;
+      }
       if (attributeOf(attributes, 'grace') !== null) return;
-      clone.push(`<tabGrp${idAttr(id, '-tab')}${durAttributes(attributes)}><tabDurSym/>${continuations.has(id) ? '' : tabNote(id ? `${id}-tabn` : '', frets.get(id))}</tabGrp>`);
+      clone.push(`<tabGrp${idAttr(id, '-tab')}${durAttributes(attributes)}><tabDurSym/>${continuations.has(id) ? heldNote(continuations.get(id)) : tabNote(id ? `${id}-tabn` : '', frets.get(id))}</tabGrp>`);
       return;
     }
-    if (RESTS.has(name)) {
+    if (RESTS.has(name) || REPEATS.has(name)) {
       if (!selfClosing) skip = 1;
-      clone.push(`<${name}${idAttr(id, '-tab')}${durAttributes(attributes)}/>`);
+      // Repeats keep their attributes (the number of measures or beats repeated); rests their duration.
+      const kept = REPEATS.has(name) ? attributes.replace(/\s+xml:id\s*=\s*(?:"[^"]*"|'[^']*')/, '').trimEnd() : durAttributes(attributes);
+      clone.push(`<${name}${idAttr(id, '-tab')}${kept}/>`);
       return;
     }
     if (!selfClosing) skip = 1;

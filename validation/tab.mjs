@@ -16,6 +16,7 @@ import { serveDist } from './serve-dist.mjs';
 const fixture = name => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
 const fixturePath = name => new URL(`./fixtures/${name}`, import.meta.url).pathname;
 const STAVES = fixture('guitar-tab-staves.musicxml'), PARTS = fixture('guitar-tab-parts.musicxml'), NOTATION = fixture('guitar-notation.musicxml'), ENSEMBLE = fixture('ensemble.musicxml');
+const OCTAVE = fixture('guitar-octave-tab.musicxml'), CLARINET = fixture('guitar-tab-clarinet.musicxml'), VOICES = fixture('guitar-voices.musicxml'), TAB_ONLY = fixture('guitar-tab-only.musicxml'), REPEAT = fixture('guitar-repeat-fermata.musicxml');
 const DRUMS = '<?xml version="1.0"?><score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Drums</part-name></score-part></part-list><part id="P1"><measure number="1"><attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>percussion</sign></clef></attributes><note><unpitched><display-step>C</display-step><display-octave>5</display-octave></unpitched><duration>4</duration><type>whole</type></note></measure></part></score-partwise>';
 const TUNING = [40, 45, 50, 55, 59, 64];
 /** A TAB note's sounding pitch (course 1 is the highest string). */
@@ -85,7 +86,8 @@ try {
   assert.equal(generated.tab.tabGroups, 15, `One tabGrp per note or chord (${generated.tab.tabGroups})`);
   assert.equal(generated.tab.svgTabGroups, generated.tab.tabGroups, 'Every tabGrp is drawn');
   assert.equal(generated.tab.tabNotes.length, notation.pitches['P1-1'], `Every sounding pitch has a fret (${generated.tab.tabNotes.length} of ${notation.pitches['P1-1']})`);
-  assert.equal(generated.tab.notesByStaff['101'], notation.pitches['P1-1'], 'Every fret is drawn on the TAB staff');
+  // Plus the tied-into note of bar 3, drawn invisibly so its tabGrp keeps its stem.
+  assert.equal(generated.tab.notesByStaff['101'], notation.pitches['P1-1'] + 1, 'Every fret is drawn on the TAB staff');
   assert.equal(generated.both.tabNotes.length, generated.tab.tabNotes.length, 'Both view draws the same TAB');
   assert.ok(generated.tab.harm.every(staff => staff === '101') && generated.tab.drawnHarm === 4, `Chord symbols survive the TAB-only view (${generated.tab.harm})`);
   // The C chord of bar 1 is the open shape: x32010.
@@ -149,12 +151,90 @@ try {
   const round = await call('settingsRoundTrip', { tabView: 'both', tabTuning: dropD, capo: 3, bpm: 120.4, keyFlip: true }, NOTATION);
   assert.deepEqual(round.mapped, { tabView: 'both', tabTuning: dropD, capo: 3, bpm: 120, keyFlip: true }, 'Settings map to prefs');
   assert.deepEqual(round.read, { tabView: 'both', tabTuning: dropD, capo: 3, bpm: 120, keyFlip: true }, 'A saved record reads back the TAB settings, BPM and key flip');
-  assert.deepEqual(round.legacy, { tabView: 'notation', tabTuning: TUNING, capo: 0 }, 'A record without TAB settings reads with defaults');
-  assert.deepEqual(round.invalid, { tabView: 'notation', tabTuning: TUNING, capo: 0 }, 'Unusable TAB settings fall back to defaults');
+  assert.deepEqual(round.legacyKeys, [], 'A record without TAB settings reads without them');
+  const current = { tabView: 'both', tabTuning: dropD, capo: 5 };
+  assert.deepEqual(round.legacy, current, 'A record without TAB settings keeps the current TAB settings');
+  assert.deepEqual(round.invalid, { ...current, capo: 12 }, 'Unusable TAB settings keep the current ones (an out-of-range capo is clamped)');
+  assert.equal(round.fractional, 3, 'A fractional saved capo is rounded');
   assert.deepEqual(round.sanitized, { tabView: 'notation', tabTuning: TUNING, capo: 0, bpm: 240 }, 'Saved global prefs are repaired');
+  assert.equal(round.sanitizedCapo, 3, 'A fractional saved global capo is rounded');
+  assert.deepEqual(round.sanitizedTunings, [6, 4, 7, 6], 'A TAB tuning has 4 to 8 strings');
   const clamped = await call('settingsRoundTrip', { tabView: 'lute', capo: 40, bpm: 5, tabTuning: [] }, NOTATION);
   assert.deepEqual(clamped.mapped, { capo: 12, bpm: 30 }, 'Out-of-range settings are clamped or ignored');
+  assert.equal((await call('settingsRoundTrip', { capo: 2.5 }, NOTATION)).mapped.capo, 3, 'A fractional host capo is rounded');
   console.log('TAB: settings round trip (prefs, saved record, legacy record, repair) passed');
+
+  // 9. Transposing guitars: an octave-transposing guitar (written an octave above sounding) and its TAB part.
+  const octaveParts = await call('parts', OCTAVE);
+  assert.equal(octaveParts.parts.find(part => part.id === 'P2-1')?.tabOf, 'P1-1', `A TAB part at sounding pitch doubles the octave-transposing guitar (${JSON.stringify(octaveParts.parts)})`);
+  assert.deepEqual(octaveParts.timelineParts, ['P1-1'], 'The transposing guitar and its TAB part play once');
+  for (const view of ['tab', 'both']) {
+    const both = await call('engraveTab', OCTAVE, { view });
+    assert.deepEqual(both.generate, [], `Octave guitar, ${view}: the imported TAB part is used, nothing is generated`);
+  }
+  const octaveOnly = OCTAVE.replace(/<score-part id="P2">[\s\S]*?<\/score-part>/, '').replace(/<part id="P2">[\s\S]*?<\/part>/, '');
+  for (const pitch of ['written', 'concert']) {
+    const generated = await call('engraveTab', octaveOnly, { view: 'tab', pitch });
+    assert.deepEqual(generated.tabNotes.map(note => pitchOf(note)), [40, 45, 55, 64], `Octave guitar, ${pitch} view: frets sound the guitar's pitches`);
+  }
+  // A transposing part elsewhere in the score (a clarinet in the concert view) does not make the guitar's TAB stale.
+  const clarinet = await call('engraveTab', CLARINET, { view: 'both', pitch: 'concert' });
+  assert.deepEqual(clarinet.generate, [], 'Concert view of another part: the imported TAB is kept');
+  assert.ok(clarinet.staves.includes('2'), `Concert view of another part: the imported TAB staff shows (${clarinet.staves})`);
+  console.log('TAB: an octave-transposing guitar gets frets at sounding pitch and keeps its TAB part passed');
+
+  // 10. Capo and tuning at the TAB boundary: a fractional capo is rounded; the TAB staff has one line per string.
+  const fractionalCapo = await call('engraveTab', NOTATION, { view: 'tab', capo: 2.5 });
+  within(fractionalCapo.tabNotes.map(note => pitchOf(note, TUNING, 3)), basePitches, 1, 'Capo 2.5 is a capo at 3');
+  for (const tuning of [[35, 40, 45, 50, 55, 59, 64], [28, 33, 38, 43]]) {
+    const strings = await call('engraveTab', NOTATION, { view: 'tab', tuning });
+    assert.equal(strings.staffLines['101'], tuning.length, `${tuning.length} strings: the TAB staffDef has ${tuning.length} lines`);
+    assert.equal(strings.drawnLines['101'], tuning.length, `${tuning.length} strings: ${tuning.length} lines are drawn (${strings.drawnLines['101']})`);
+    assert.ok(strings.tabNotes.every(note => note.course >= 1 && note.course <= tuning.length), `${tuning.length} strings: every course is a string`);
+  }
+  console.log('TAB: fractional capo and 4- and 7-string tunings passed');
+
+  // 11. Voices: a note held in voice 2 keeps its string while voice 1 moves (events are fingered in time order).
+  const voices = await call('engraveTab', VOICES, { view: 'tab' });
+  const held = voices.tabNotes.find(note => note.id === 'v2-1-tabn');
+  assert.ok(held, 'The held note is fingered');
+  for (const note of voices.tabNotes.filter(note => note.id.startsWith('v1-'))) assert.notEqual(note.course, held.course, `${note.id} is not on the held note's string (${JSON.stringify(voices.tabNotes)})`);
+  console.log('TAB: voices are fingered in time order passed');
+
+  // 12. A TAB-only score (no notation partner): transposed, its frets are re-fingered to sound the transposed pitches.
+  const tabOnly = { plain: await call('engraveTab', TAB_ONLY, { view: 'notation' }), moved: await call('engraveTab', TAB_ONLY, { view: 'notation', semitones: 2 }) };
+  const onlyPitches = tabOnly.plain.staffNotes['1'].map(note => pitchOf(note));
+  assert.equal(onlyPitches.length, (await call('parts', TAB_ONLY)).pitches['P2-1'] + 1, 'TAB only: every note has a fret (the tied note twice)');
+  assert.deepEqual(tabOnly.moved.staffNotes['1'].map(note => pitchOf(note)), onlyPitches.map(pitch => pitch + 2), 'TAB only, +2: frets sound the transposed pitches');
+  console.log('TAB: a transposed TAB-only score is re-fingered passed');
+
+  // 13-15. A tied-into note keeps its rhythm on the TAB staff; measure repeats and fermatas show on TAB.
+  assert.ok(generated.tab.stems.includes('g3-1-tab'), `The tied-into note of bar 3 keeps its stem (${generated.tab.stems.length} stems)`);
+  assert.ok(generated.tab.staffNotes['101'].some(note => !note.visible), 'The tied-into note has no visible fret');
+  const extras = { notation: await call('engraveTab', REPEAT, { view: 'notation' }), tab: await call('engraveTab', REPEAT, { view: 'tab' }), both: await call('engraveTab', REPEAT, { view: 'both' }) };
+  assert.equal(extras.notation.repeats, 1, 'The measure repeat is drawn in notation');
+  assert.equal(extras.tab.repeats, 1, `TAB view: the measure repeat is drawn on the TAB staff (${extras.tab.repeats})`);
+  assert.equal(extras.both.repeats, 2, 'Both view: the measure repeat is drawn on both staves');
+  assert.equal(extras.notation.fermatas, 1, 'The fermata is drawn in notation');
+  assert.equal(extras.tab.fermatas, 1, `TAB view: the fermata moves to the TAB staff (${extras.tab.fermatas})`);
+  console.log('TAB: tie continuations keep their rhythm; measure repeats and fermatas show on TAB passed');
+
+  // 16. Reader parts: with no part mapped to a staff every part shows; a hidden TAB part never hides its guitar.
+  const unmapped = await call('unmappedStaffCount', ENSEMBLE);
+  assert.equal(unmapped.staffCount, unmapped.parts, `No part mapped: one staff per part (${JSON.stringify(unmapped)})`);
+  const restored = {
+    tabHidden: await call('restoredHidden', PARTS, { 'P1-1': true, 'P2-1': false }),
+    notationHidden: await call('restoredHidden', PARTS, { 'P1-1': false, 'P2-1': true }),
+    bothHidden: await call('restoredHidden', PARTS, { 'P1-1': false, 'P2-1': false }),
+    oldRecord: await call('restoredHidden', PARTS, { 'P1-1': false }),
+  };
+  assert.deepEqual(restored.tabHidden.hidden, [], 'A hidden TAB part hides nothing');
+  assert.deepEqual(restored.notationHidden.hidden, [], 'Hidden notation with its TAB part shown keeps the guitar');
+  assert.deepEqual(restored.bothHidden.hidden, ['P1-1'], 'Hidden notation and TAB hide the guitar');
+  assert.deepEqual(restored.oldRecord.hidden, ['P1-1'], 'A hidden guitar stays hidden');
+  assert.deepEqual(restored.bothHidden.saved, { 'P1-1': false, 'P2-1': false }, 'A TAB part is saved with its guitar\'s visibility');
+  assert.deepEqual(restored.tabHidden.saved, { 'P1-1': true, 'P2-1': true }, 'A shown guitar saves its TAB part shown');
+  console.log('TAB: staff count without mapped parts and hidden TAB parts passed');
   assert.deepEqual(errors, [], 'No page errors');
 } finally {
   await browser?.close();
@@ -224,6 +304,25 @@ try {
   await open('guitar-tab-staves.musicxml');
   state = await settled(state => state.staves.join() === '2', 'Saved TAB view');
   assert.equal(state.pressed, 'tab');
+  // Accessible names start with the visible label (WCAG 2.5.3), at full and condensed widths; captions say TAB.
+  const names = () => page.locator('.tab-view-toggle-header button').evaluateAll(buttons => buttons.map(button => ({
+    visible: [...button.childNodes].map(node => node.nodeType === 3 ? node.textContent : getComputedStyle(node).display === 'none' ? '' : node.innerText).join('').trim(),
+    label: button.getAttribute('aria-label'), hidden: [...button.querySelectorAll('[aria-hidden="true"]')].filter(node => getComputedStyle(node).display !== 'none').length })));
+  for (const width of [1500, 1300]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const { visible, label, hidden } of await names()) {
+      assert.ok(visible && (label === null || label.toLowerCase().startsWith(visible.toLowerCase())), `${width}px: the name of "${visible}" starts with it (${label})`);
+      assert.equal(hidden, 0, `${width}px: the visible label of "${visible}" is in the accessible name`);
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
+  assert.equal(await page.locator('.header-tab-view-caption').textContent(), 'TAB', 'The caption says TAB');
+  // Another score without a saved record opens in the host's initial view (notation), not the last score's.
+  await open('guitar-notation.musicxml');
+  state = await settled(state => state.staves.join() === '1', 'A new score opens in notation view');
+  assert.equal(state.pressed, 'notation', 'A new score opens with Notation pressed');
+  await open('guitar-tab-staves.musicxml');
+  state = await settled(state => state.staves.join() === '2', 'Saved TAB view again');
   await page.screenshot({ path: '/tmp/tab-validation-reader.png' });
 
   // Phone: the switch sits in the More panel and still works.

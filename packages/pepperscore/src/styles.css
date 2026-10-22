@@ -304,6 +304,7 @@
   .pepperscore .header-secondary-panel .tab-view-toggle-header button{padding:0 9px;letter-spacing:normal}
 }
 .pepperscore .tab-view-choice .tab-view-toggle button{min-width:44px}
+.pepperscore .ps-visually-hidden{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
 .pepperscore .ps-portrait .score-content{padding-bottom:calc(70px + var(--page-tail,0px))}
 /* Large scores draw systems on demand: a placeholder keeps the system's laid-out size until it is drawn. */
 .pepperscore .score-system.is-pending{background:repeating-linear-gradient(180deg,transparent 0 22px,#f3f4ef 22px 23px);border-radius:6px;opacity:.7}

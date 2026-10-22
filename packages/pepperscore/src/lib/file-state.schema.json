@@ -137,20 +137,20 @@
         },
         "tabView": {
           "enum": ["notation", "tab", "both"],
-          "description": "Which staves guitar parts show: notation, guitar TAB or both. Optional; readers default it to notation."
+          "description": "Which staves guitar parts show: notation, TAB or both. Optional; a reader without it keeps its current view."
         },
         "tabTuning": {
           "type": "array",
           "items": { "type": "integer", "minimum": 0, "maximum": 127 },
-          "minItems": 1,
-          "maxItems": 12,
-          "description": "Open-string MIDI pitches of generated TAB, low to high. Optional; readers default it to standard tuning [40, 45, 50, 55, 59, 64]."
+          "minItems": 4,
+          "maxItems": 8,
+          "description": "Open-string MIDI pitches of generated TAB, low to high (4 to 8 strings). Optional; a reader without it keeps its current tuning (standard [40, 45, 50, 55, 59, 64] by default)."
         },
         "capo": {
           "type": "integer",
           "minimum": 0,
           "maximum": 12,
-          "description": "Capo fret of generated TAB (frets are relative to it). Optional; readers default it to 0."
+          "description": "Capo fret of generated TAB (frets are relative to it). Optional; a reader without it keeps its current capo."
         }
       }
     },

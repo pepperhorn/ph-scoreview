@@ -6,8 +6,8 @@ import { isRestarted, isSuperseded, nextRenderTicket, probeVerovio, renderVerovi
 import { staffDefXmlId, type SourceDocument } from './notation/document';
 import type { BaselineInfo, ViewSpec } from './notation/mei-view';
 import { musicFontOptions } from './music-fonts';
-import { clampBarsPerLine } from './prefs';
-import { planTab, type TabView } from './tab/tab-parts';
+import { clampBarsPerLine, clampCapo, validTabTuning } from './prefs';
+import { planTab, soundingKeyOf, type TabView } from './tab/tab-parts';
 import { STANDARD_TUNING } from './tab/fret-assign';
 import { BARS_FIT_MAX_STAVE_SCALE, DEFAULT_VERTICAL_BARS, HEIGHT_FIT_STAVES, STAVE_SCALE_FLOOR, STAVE_SCALE_MAX, STAVE_SCALE_MIN } from './stave-scale';
 
@@ -211,8 +211,10 @@ export function planStaves(info: BaselineInfo, score: Score, hiddenIds: Readonly
   // otherwise TAB is generated after spelling. In TAB view the notation staff is hidden and read from its TAB staff.
   const tabView = tab?.view ?? 'notation';
   const tabPlan = planTab(score, staffOf, tabView, {
-    tuning: tab?.tuning ?? STANDARD_TUNING, capo: tab?.capo ?? 0,
-    stale: spelling.semitones !== 0 || Object.values(spelling.staves).some(staff => staff.moved),
+    tuning: validTabTuning(tab?.tuning) ? tab.tuning : STANDARD_TUNING, capo: clampCapo(tab?.capo),
+    // Only transposition moves sounding pitches (a concert view shows written notes at the pitch they already sound).
+    stale: spelling.semitones !== 0, semitones: spelling.semitones,
+    sounding: Object.entries(spelling.staves).filter(([, staff]) => staff.moved).map(([n]) => n),
     hiddenIds: new Set(score.parts.filter(part => !visibleParts.includes(part)).map(part => part.id)),
   });
   for (const part of tabPlan.importedFor.values()) shown.add(staffOf.get(part.id)!);
@@ -221,18 +223,19 @@ export function planStaves(info: BaselineInfo, score: Score, hiddenIds: Readonly
   if (!shown.size) visibleParts = [];
   /** TAB staves of this view: generated, and imported ones shown (their bands are measured differently). */
   const tabStaves = new Set([...tabPlan.added, ...[...tabPlan.importedFor.values()].map(part => staffOf.get(part.id) || '')]);
-  /** Staves engraved per system (generated and imported TAB staves in the Both view count). */
-  const staffCount = Math.max(1, visibleParts.length) + (tabView === 'both' ? tabPlan.added.length + tabPlan.importedFor.size : 0);
-  // A part shown through an imported TAB staff highlights that staff's events: the TAB part's note at the same onset.
+  /** Staves engraved per system (generated and imported TAB staves in the Both view count); every part when none maps. */
+  const staffCount = (visibleParts.length || score.parts.length || 1) + (tabView === 'both' ? tabPlan.added.length + tabPlan.importedFor.size : 0);
+  // A part shown through an imported TAB staff highlights that staff's events: the TAB part's note at the same onset
+  // and sounding pitches (read from the untransposed Score: imported TAB only shows when the view keeps pitches).
   const tabAlias = new Map<string, ScoreNote>();
+  const sourceParts = score.pitchView?.source.parts ?? score.parts;
   for (const [partId, tabPart] of tabPlan.importedFor) {
-    const notation = score.parts.find(part => part.id === partId);
-    if (!notation) continue;
-    const keyOf = (index: number, note: ScoreNote) => `${index}:${Math.round(note.start * 96)}:${note.rest ? 'r' : note.pitches.map(pitch => pitch.midi).sort().join(',')}`;
+    const notation = sourceParts.find(part => part.id === partId), doubling = sourceParts.find(part => part.id === tabPart.id);
+    if (!notation || !doubling) continue;
     const byOnset = new Map<string, ScoreNote>();
-    for (const measure of tabPart.measures) for (const note of measure.notes) if (!note.grace) byOnset.set(keyOf(measure.index, note), note);
+    for (const measure of doubling.measures) for (const note of measure.notes) if (!note.grace) byOnset.set(soundingKeyOf(doubling, measure, note), note);
     for (const measure of notation.measures) for (const note of measure.notes) {
-      const match = byOnset.get(keyOf(measure.index, note));
+      const match = byOnset.get(soundingKeyOf(notation, measure, note));
       if (match) tabAlias.set(note.id, match);
     }
   }

@@ -11,8 +11,8 @@ Guitarists can read any pepperscore score as tablature. A reader switch flips be
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `tabView` | `'notation' \| 'tab' \| 'both'` | `'notation'` | Which staves guitar parts show |
-| `tabTuning` | `number[]` (open-string MIDI, low → high) | `[40,45,50,55,59,64]` (EADGBE) | Tuning for generated TAB |
-| `capo` | `number` 0–12 | `0` | Capo fret; generated frets are relative to it |
+| `tabTuning` | `number[]` (4–8 open-string MIDI pitches, low → high) | `[40,45,50,55,59,64]` (EADGBE) | Tuning for generated TAB (one staff line per string) |
+| `capo` | `number` 0–12 (rounded) | `0` | Capo fret; generated frets are relative to it |
 | `bpm` | `number` 30–240 | `96` | Initial tempo (was internal-only) |
 | `keyFlip` | `boolean` | `false` | Enharmonic respelling (was internal-only) |
 
@@ -20,7 +20,7 @@ Guitarists can read any pepperscore score as tablature. A reader switch flips be
 
 ## Which staves get TAB
 
-1. **Imported TAB staves** (MusicXML `clef sign=TAB` / `staff-lines` 6 with `staff-tuning`, imported by Verovio as `staffDef notationtype="tab.guitar"`): used as-is when `semitones === 0`. They are flagged in the parser as TAB staves: excluded from the playback timeline and annotation lanes (no doubled audio, no note-name lanes under TAB), but kept so staff numbers map. When transposed, Verovio leaves `tab.fret` stale, so the imported TAB is hidden and a generated one replaces it.
+1. **Imported TAB staves** (MusicXML `clef sign=TAB` / `staff-lines` 6 with `staff-tuning`, imported by Verovio as `staffDef notationtype="tab.guitar"`): used as-is when `semitones === 0`. They are flagged in the parser as TAB staves: excluded from the playback timeline and annotation lanes (no doubled audio, no note-name lanes under TAB), but kept so staff numbers map. When transposed, Verovio leaves `tab.fret` stale, so the imported TAB is hidden and a generated one replaces it. A concert view does not make it stale (TAB is at sounding pitch). A TAB part is linked to the notation part it doubles by onset and *sounding* pitch (the part's `<transpose>` applied, e.g. a guitar written an octave up). A TAB staff that doubles nothing (a TAB-only score) is a normal part; transposed, its notes are re-fingered in place from their tuning + fret + semitones (`TabSpec.refret`).
 2. **Generated TAB**: for parts whose instrument is a guitar (GM program 24–31, or name matching /guitar/i) that have no TAB staff. If the score has no guitar part, the first pitched, non-percussion part's top staff.
 
 The notation view (`tabView: 'notation'`) is unchanged from today: imported TAB staves are hidden, nothing is generated.
@@ -30,8 +30,8 @@ The notation view (`tabView: 'notation'`) is unchanged from today: imported TAB 
 - `ViewSpec` gains `tab: { view, tuning, capo }`; it is part of the worker reload key.
 - `buildViewMei` injects TAB **after** spelling/transposition, so frets follow the transposed pitches. Covers whole, probe and chunked paths.
 - Each TAB staff is `n = 100 + notation n`, its `staffDef` placed right after the notation one: `notationtype="tab.guitar" lines="6"`, `<clef shape="TAB" line="5"/>`, `<tuning>` with six `<course>`s (always include tuning, or Verovio MIDI pitch is 0).
-- Per measure, clone the staff: note/chord → `tabGrp dur dots` + `<tabDurSym/>` + `note tab.course tab.fret`; keep `beam`, `tuplet`, `rest`/`mRest`/`space`; drop verse, grace notes and control events. Ids get a `-tab` suffix. Tie continuations show the fret in parentheses or are omitted.
-- `tabView: 'tab'` hides the notation staff via `hiddenStaves` and retargets `harm@staff` to the TAB staff so chord symbols stay.
+- Per measure, clone the staff: note/chord → `tabGrp dur dots` + `<tabDurSym/>` + `note tab.course tab.fret`; keep `beam`, `tuplet`, `rest`/`mRest`/`space`; drop verse, grace notes and control events. Ids get a `-tab` suffix. Tie continuations keep their `tabGrp` and stem with an invisible note on the held string (no fret shown). `mRpt`/`mRpt2`/`beatRpt`/`halfmRpt`/`multiRpt` are copied. A generated staff whose notes the concert view already moved to sounding pitch (`TabSpec.sounding`) ignores its `trans.semi`.
+- `tabView: 'tab'` hides the notation staff via `hiddenStaves` and retargets `harm`/`tempo`/`dir`/`repeatMark`/`fermata` `@staff` to the TAB staff so chord symbols stay; a `@startid` on a notation note is pointed at its `-tab` clone (generated TAB only).
 - Highlighting: `findNote` also looks up `${id}-tab`.
 - Layout: staff counting (`stavesOf`, chunk budgets, `spacingStaff`) counts TAB staves.
 - Notes that already carry `tab.course`/`tab.fret` (MusicXML `<technical><string>/<fret>` on the notation staff) are fixed constraints for the solver. This is the "preprocessed score" path: an editor can correct fingerings in MuseScore and upload.
@@ -54,6 +54,7 @@ export function assignFrets(events: FretEvent[], options?: FretOptions): FretRes
 - Node cost: open bonus, gentle pull to low positions, a body penalty past fret 12 (squared), a stretch penalty `(span)^1.5`, muted interior strings, a tiny high-string tie-break.
 - Transition: `(shiftFixed + shiftDist·|Δpos|) / (1 + gapRelief·gapBeats)`.
 - Out of range: octave-fold (`shifted = ±12k`) or `unplayable`. Chords with too many notes drop doubled notes, then inner voices. Never fail the whole score.
+- Events are solved in onset order (a stable sort: same onset keeps layer order) and ringing strings are looked up across voices, so a held note in one layer keeps its string.
 - Segment at rests of ≥ 2 beats. Target: 2,000 events in under 50 ms.
 
 ## Preprocessing (follow-up)
@@ -64,3 +65,7 @@ export function assignFrets(events: FretEvent[], options?: FretOptions): FretRes
 
 - becreative `ScoreEmbed` / `BlockScore`: pass every reader setting and control through.
 - crf-admin `block_score`: one field per reader option, including `tab_view`, `show_tab_toggle`, `tab_tuning`, `capo`.
+
+## Saved state
+
+TAB settings arrived after record version 2: a record without them (or with unusable ones) leaves them out, so applying it keeps the reader's current values. A score opened without a record resets `tabView` to the host's initial value (else notation), like transposition. A TAB part that doubles a guitar is not a reader part: it is saved with the guitar's visibility, and a saved hidden TAB part never hides anything (a guitar hidden in an old record with its TAB part shown stays shown).
