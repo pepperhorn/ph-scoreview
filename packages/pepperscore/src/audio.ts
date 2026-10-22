@@ -15,7 +15,7 @@
 export { getSharedAudio, resumeAudio, claimPlayback, releasePlayback } from './lib/audio-engine';
 export type { SharedAudio, PlaybackOwner } from './lib/audio-engine';
 export { loadInstrument, loadDrumKit, createMetronome } from './lib/instruments';
-export type { Instrument, InstrumentName, InstrumentOptions, Metronome, MetronomeOptions } from './lib/instruments';
+export type { Instrument, InstrumentName, InstrumentPlan, InstrumentOptions, Metronome, MetronomeOptions } from './lib/instruments';
 export { METRONOME_VOICES } from './lib/metronome';
 export type { MetronomeVoice } from './lib/metronome';
 export type { AudioPlayer } from './lib/sound-players';

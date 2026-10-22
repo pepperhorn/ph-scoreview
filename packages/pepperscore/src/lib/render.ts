@@ -607,7 +607,7 @@ export async function renderScore(
           if (showNames && labelled) [...event.pitches].sort((a, b) => b.midi - a.midi).forEach((pitch, row) => annotation(layer, 'note-label', x, band.laneTop + nameRow * (row + 1) - 4 * nameScale, pitch.step));
           if (showCounts) {
             const label = beatLabel(event.start, subdivisions);
-            annotation(layer, /\D/.test(label) ? 'count-label is-subdivision' : 'count-label', x, band.laneTop + nameRows * nameRow + countRow - 4 * countScale, label);
+            annotation(layer, (offbeatScale !== 1 || beatScale !== 1) && /\D/.test(label) ? 'count-label is-subdivision' : 'count-label', x, band.laneTop + nameRows * nameRow + countRow - 4 * countScale, label);
           }
           if (laneRows) laneBottom = Math.max(laneBottom, band.laneTop + lanesHeight + 2);
           if (showChordSymbols && inferChordSymbols && !event.chordSymbol && labelled) {

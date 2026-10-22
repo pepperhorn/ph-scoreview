@@ -26,20 +26,23 @@ export type InstrumentOptions = {
   notes?: number[];
 };
 
+/** The public view of an instrument's sound plan. */
+export type InstrumentPlan = { readonly kind: SoundPlan['kind']; readonly sourceId: string };
+
 /** A loaded sound: an AudioPlayer plus its output gain (volume) and the plan it came from. */
 export type Instrument = AudioPlayer & {
   readonly context: AudioContext;
   /** The instrument's volume; connected to `destination`. */
   readonly output: GainNode;
-  /** Which source plays it (sample pack, SF2 or note files) and from where. */
-  readonly plan: SoundPlan;
+  /** Which kind of source plays it and its id (for example `'builtin:fluidr3'`). Read-only; the plan's URLs and presets are internal. */
+  readonly plan: InstrumentPlan;
   /** Load (decode) these notes; a note starts silently until it is loaded. Drums load TimGM6mb's kit for notes the kit lacks. */
   loadNotes(notes: number[]): Promise<void>;
   /** Whether a loaded player can sound this note. */
   covers(note: number): boolean;
 };
 
-/** A GM program (1-128), a FluidR3 sound name (`'acoustic_grand_piano'`), or `'drums'` for the GM drum kit. */
+/** A GM program (1-128), a FluidR3 sound name (`'acoustic_grand_piano'`), or `'drums'` for the GM drum kit (`'drum-kit'`, the score part id, is accepted as an alias). */
 export type InstrumentName = number | string;
 
 const PIANO_RANGE = Array.from({ length: 88 }, (_, i) => 21 + i);
@@ -75,12 +78,25 @@ export async function loadInstrument(sound: InstrumentName, options: InstrumentO
   output.connect(destination);
   let players: AudioPlayer[];
   try { players = await loadPlayers(context, plan, output); } catch (error) { output.disconnect(); throw error; }
+  let disposed = false;
+  // The drum kit's TimGM6mb fallback loads one at a time (two overlapping loadNotes calls would each fetch the 6 MB SF2),
+  // and a player that arrives after dispose() is released at once instead of leaking into the old player list.
+  let fallbackQueue: Promise<void> = Promise.resolve();
   const loadNotes = async (notes: number[]) => {
     await Promise.all(players.map(player => player.loadNotes?.(notes)));
-    if (plan.kind === 'note-files' && plan.drums) await addDrumFallback(context, players, notes, fallbackSf2Url(base), output);
+    if (plan.kind === 'note-files' && plan.drums) {
+      const step = fallbackQueue.then(async () => {
+        if (disposed) return;
+        const current = players, before = current.length;
+        await addDrumFallback(context, current, notes, fallbackSf2Url(base), output);
+        if (disposed) current.slice(before).forEach(player => player.dispose());
+      });
+      fallbackQueue = step.catch(() => {});
+      await step;
+    }
   };
   const instrument: Instrument = {
-    context, output, plan, loadNotes,
+    context, output, plan: { kind: plan.kind, sourceId: plan.sourceId }, loadNotes,
     covers: note => players.some(player => player.covers?.(note) ?? true),
     start: options => {
       const stops: Array<() => void> = [];
@@ -91,7 +107,7 @@ export async function loadInstrument(sound: InstrumentName, options: InstrumentO
       return () => stops.forEach(stop => stop());
     },
     stop: () => players.forEach(player => player.stop()),
-    dispose: () => { players.forEach(player => player.dispose()); players = []; output.disconnect(); },
+    dispose: () => { disposed = true; players.forEach(player => player.dispose()); players = []; output.disconnect(); },
   };
   try { await loadNotes(options.notes ?? (request.drums ? [] : PIANO_RANGE)); } catch (error) { instrument.dispose(); throw error; }
   return instrument;
@@ -115,19 +131,31 @@ export type Metronome = {
    * `accent` says otherwise. Returns a stop function for that beat.
    */
   tick(options: { time: number; beat: number; accent?: boolean }): () => void;
-  /** Switch voice; loads the drum kit notes the voice needs. */
+  /**
+   * Resolves once the drum kit and the notes of the voice given to `createMetronome` have loaded (or failed: then the
+   * synthesized sounds keep playing). `createMetronome` itself does not wait for it.
+   */
+  readonly ready: Promise<void>;
+  /** Switch voice; resolves when the drum kit notes the voice needs have loaded. Until then the voice plays its synthesized sound. A failed load is retried by the next call. */
   setVoice(voice: MetronomeVoice): Promise<void>;
   /** Stop every sounding and scheduled beat. */
   stop(): void;
   dispose(): void;
 };
 
+/** After a failed drum load, ticks retry in the background no sooner than this. */
+const RETRY_AFTER_MS = 10_000;
+
 const SYNTH = {
   knock: { frequency: [740, 1040], drop: .6, decay: .07, level: [.5, .7], type: 'triangle' },
   tick: { frequency: [1800, 2400], drop: 1, decay: .025, level: [.18, .28], type: 'sine' },
 } as const;
 
-/** A metronome on the shared AudioContext; drum voices come from the same drum kit loadDrumKit plays. */
+/**
+ * A metronome on the shared AudioContext; drum voices come from the same drum kit loadDrumKit plays. Resolves at once:
+ * the drum kit (a few MB for the woodblock's TimGM6mb kit) loads in the background, and beats play the synthesized
+ * sound until it arrives (`await metronome.ready` to wait).
+ */
 export async function createMetronome(options: MetronomeOptions = {}): Promise<Metronome> {
   const { context, destination } = audioTarget(options);
   const output = context.createGain();
@@ -135,21 +163,37 @@ export async function createMetronome(options: MetronomeOptions = {}): Promise<M
   output.connect(destination);
   let voice: MetronomeVoice = options.voice ?? 'woodblock';
   let kit: Instrument | null = null;
-  let kitFailed = false;
+  let kitLoad: Promise<Instrument> | null = null;
+  let disposed = false;
+  let failedAt = -Infinity;
+  /** Voices whose kit notes are loaded; a voice plays its synthesized sound until then. */
+  const loaded = new Set<MetronomeVoice>();
   const synths = new Set<OscillatorNode>();
+  // The drum kit loads once however many setVoice calls overlap (they share the in-flight promise), a kit that arrives
+  // after dispose() is released, and a failed load is not remembered: the next setVoice (or, after a pause, tick) retries.
+  const ensureKit = (): Promise<Instrument> => kitLoad ??= loadDrumKit({ ...options, context, destination: output }).then(
+    loadedKit => {
+      if (disposed) { loadedKit.dispose(); throw new Error('the metronome was disposed'); }
+      kit = loadedKit;
+      return loadedKit;
+    },
+    error => { kitLoad = null; throw error; });
   const setVoice = async (next: MetronomeVoice) => {
     voice = next;
     const notes = metronomeNotes(next);
-    if (!notes.length || kitFailed) return;
+    if (!notes.length || disposed || loaded.has(next)) return;
     try {
-      kit ??= await loadDrumKit({ ...options, context, destination: output });
-      await kit.loadNotes(notes);
+      const drums = await ensureKit();
+      await drums.loadNotes(notes);
+      if (!disposed) loaded.add(next);
     } catch (error) {
-      // No drum kit at the asset base: the sample voices fall back to synthesized sounds.
-      kitFailed = true;
+      if (disposed) return;
+      // No drum kit at the asset base (or the fetch failed): the sample voices play synthesized sounds, and a later retry is allowed.
+      failedAt = Date.now();
       console.warn(`pepperscore/audio: the metronome's drum sounds could not load (${error instanceof Error ? error.message : String(error)}); using synthesized sounds.`);
     }
   };
+  const ready = setVoice(voice);
   const synth = (kind: 'knock' | 'tick', accent: boolean, time: number) => {
     const spec = SYNTH[kind], i = accent ? 1 : 0;
     const osc = context.createOscillator(), env = context.createGain();
@@ -167,18 +211,21 @@ export async function createMetronome(options: MetronomeOptions = {}): Promise<M
     return () => { if (synths.has(osc)) try { osc.stop(); } catch { /* ended */ } };
   };
   const stop = () => { kit?.stop(); for (const osc of [...synths]) try { osc.stop(); } catch { /* ended */ } };
-  await setVoice(voice);
   return {
     get voice() { return voice; },
     output,
+    ready,
     setVoice,
     tick: ({ time, beat, accent }) => {
       const at = Math.max(time, context.currentTime);
-      const stops = metronomeHits(voice, beat, { accent, covers: kit && !kitFailed ? note => kit!.covers(note) : undefined }).map(hit =>
-        hit.kind === 'note' ? kit!.start({ note: hit.note, time: at, duration: .5, velocity: hit.velocity }) : synth(hit.kind, hit.accent, at));
+      // A drum voice whose kit failed to load tries again, at most once per RETRY_AFTER_MS, while ticks keep sounding synthesized.
+      if (!disposed && !kitLoad && !loaded.has(voice) && metronomeNotes(voice).length && Date.now() - failedAt > RETRY_AFTER_MS) void setVoice(voice);
+      const drums = kit && loaded.has(voice) ? kit : null;
+      const stops = metronomeHits(voice, beat, { accent, covers: drums ? note => drums.covers(note) : undefined }).map(hit =>
+        hit.kind === 'note' ? drums!.start({ note: hit.note, time: at, duration: .5, velocity: hit.velocity }) : synth(hit.kind, hit.accent, at));
       return () => stops.forEach(stop => stop());
     },
     stop,
-    dispose: () => { stop(); kit?.dispose(); kit = null; output.disconnect(); },
+    dispose: () => { disposed = true; stop(); kit?.dispose(); kit = null; kitLoad = null; output.disconnect(); },
   };
 }

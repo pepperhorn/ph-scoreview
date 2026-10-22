@@ -1475,7 +1475,7 @@ try {
     await settle(wide);
     const sizes = wide.getByRole('group', { name: 'Note names size' });
     assert.deepEqual(await sizes.getByRole('button').allTextContents(), ['xs', 'sm', 'md', 'rg', 'lg', 'xl'], 'Six size steps, smallest first');
-    assert.equal(await sizes.getByRole('button', { name: 'rg', exact: true }).getAttribute('aria-pressed'), 'true', 'Regular is the default size');
+    assert.equal(await sizes.getByRole('button', { name: 'Regular', exact: true }).getAttribute('aria-pressed'), 'true', 'Regular is the default size');
     assert.equal(await fontOf(wide, '.note-label'), '15px', 'Regular note names keep their size');
     assert.equal(await fontOf(wide, '.count-label'), '13px', 'Regular counts keep their size');
     const laneGap = () => wide.evaluate(() => {
@@ -1485,14 +1485,14 @@ try {
       return count.top - Math.max(...names.map(rect => rect.bottom));
     });
     const regularGap = await laneGap();
-    await sizes.getByRole('button', { name: 'xl', exact: true }).click();
+    await sizes.getByRole('button', { name: 'Extra large', exact: true }).click();
     await settle(wide);
     assert.equal(await fontOf(wide, '.note-label'), '21.75px', 'Extra large note names are 1.45 times regular');
     assert.equal(await fontOf(wide, '.count-label'), '13px', 'Counts keep their own size');
     // Text boxes include the font's line gap, so regular rows already overlap slightly; an extra large row keeps that spacing.
     const largeGap = await laneGap();
     assert.ok(largeGap >= regularGap - 1, `Extra large note names keep clear of the count row (gap ${regularGap} -> ${largeGap})`);
-    await wide.getByRole('group', { name: 'Beat counts size' }).getByRole('button', { name: 'xs', exact: true }).click();
+    await wide.getByRole('group', { name: 'Beat counts size' }).getByRole('button', { name: 'Extra small', exact: true }).click();
     await settle(wide);
     assert.equal(await fontOf(wide, '.count-label'), '9.1px', 'Extra small counts are 0.7 times regular');
     // Source chord symbols are sized by Verovio (MEI rend fontsize), so it keeps them clear of the notes.
@@ -1503,7 +1503,7 @@ try {
     await wide.waitForFunction(() => document.querySelector('.score-system svg .harm'), null, { timeout: 30000 }); await settle(wide);
     const harmSize = () => wide.evaluate(() => Number.parseFloat([...document.querySelectorAll('.score-system svg .harm tspan[font-size]')].at(-1).getAttribute('font-size')));
     const regularHarm = await harmSize();
-    await wide.getByRole('group', { name: 'Chord symbols size' }).getByRole('button', { name: 'xl', exact: true }).click();
+    await wide.getByRole('group', { name: 'Chord symbols size' }).getByRole('button', { name: 'Extra large', exact: true }).click();
     await wide.waitForFunction(regular => Number.parseFloat([...document.querySelectorAll('.score-system svg .harm tspan[font-size]')].at(-1)?.getAttribute('font-size')) > regular * 1.3, regularHarm, { timeout: 30000 });
     const largeHarm = await harmSize();
     assert.ok(Math.abs(largeHarm / regularHarm - 1.45) < .02, `Extra large source chord symbols are 1.45 times regular (${regularHarm} -> ${largeHarm})`);
@@ -1511,8 +1511,25 @@ try {
     await wide.waitForTimeout(800);
     await wide.reload(); await settle(wide);
     await wide.getByRole('button', { name: 'Options', exact: true }).click();
-    assert.equal(await wide.getByRole('group', { name: 'Note names size' }).getByRole('button', { name: 'xl', exact: true }).getAttribute('aria-pressed'), 'true', 'The note name size survives a reload');
-    assert.equal(await wide.getByRole('group', { name: 'Beat counts size' }).getByRole('button', { name: 'xs', exact: true }).getAttribute('aria-pressed'), 'true', 'The count size survives a reload');
+    assert.equal(await wide.getByRole('group', { name: 'Note names size' }).getByRole('button', { name: 'Extra large', exact: true }).getAttribute('aria-pressed'), 'true', 'The note name size survives a reload');
+    assert.equal(await wide.getByRole('group', { name: 'Beat counts size' }).getByRole('button', { name: 'Extra small', exact: true }).getAttribute('aria-pressed'), 'true', 'The count size survives a reload');
+    // Regular draws the earlier SVG: off-beat labels carry no is-subdivision class (it is added only when a count or subdivision size is not regular).
+    const sub = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
+    await sub.goto(url); await settle(sub);
+    await sub.locator('input[type=file]').setInputFiles(resolve(root, 'validation/fixtures/expressive.musicxml'));
+    await settle(sub);
+    await sub.getByRole('button', { name: 'Options', exact: true }).click();
+    await sub.getByRole('switch', { name: 'Beat counts', exact: true }).click();
+    await sub.getByRole('switch', { name: 'Count subdivisions', exact: true }).click(); await settle(sub);
+    const subdivisionLabels = () => sub.evaluate(() => ({ offbeat: [...document.querySelectorAll('.score-system svg .count-label')].filter(el => /\D/.test(el.textContent)).length, classed: document.querySelectorAll('.score-system svg .is-subdivision').length, styled: document.querySelector('.score-system svg').getAttribute('style') }));
+    const subSizes = sub.getByRole('group', { name: 'Count subdivisions size' });
+    const regularSub = await subdivisionLabels();
+    assert.ok(regularSub.offbeat > 0, 'The score has off-beat count labels');
+    assert.equal(regularSub.classed, 0, 'At regular size no label carries is-subdivision');
+    assert.ok(!/--ps-/.test(regularSub.styled || ''), 'At regular size the SVG sets no --ps-* scale');
+    await subSizes.getByRole('button', { name: 'Large', exact: true }).click(); await settle(sub);
+    assert.equal((await subdivisionLabels()).classed, regularSub.offbeat, 'A non-regular subdivisions size marks every off-beat label');
+    await sub.context().close();
     await sizeContext.close();
     const phoneContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
     const phone = await phoneContext.newPage();

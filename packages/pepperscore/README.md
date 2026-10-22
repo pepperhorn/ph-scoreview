@@ -412,17 +412,19 @@ releasePlayback(owner);                       // when your playback ends
 | `createMetronome` | `(options?) => Promise<Metronome>` | See below. |
 | `METRONOME_VOICES`, `SOUNDS_VERSION`, `defaultAssetBaseUrl` | | Constants. |
 
+The drum kit is `'drums'` (`'drum-kit'`, the score part id, is accepted as an alias).
+
 Options (`InstrumentOptions`): `assetBaseUrl`, `soundPack` (`'core'` default, `'complete'`) and `sources` (`SoundSource[]`) work exactly like the reader's `assetBaseUrl`, `soundPack` and `soundSources` props. `context` and `destination` default to the shared context and its master compressor. `notes` lists the notes to load before the promise resolves (default 21-108 for an instrument, none for the kit; call `loadNotes(notes)` for more, since a note that is not loaded starts silently).
 
-An `Instrument` is an `AudioPlayer` (`start({ note, time, duration, velocity, destination? }) => stop`, `stop()`, `dispose()`, `loadNotes(notes)`, `covers(note)`) plus `context`, `output` (its volume `GainNode`) and `plan` (which source plays it). `stop()` stops every sounding note **and cancels every scheduled one**. A note's `destination` is honoured by sample-pack and note-file sounds. SF2 sounds always play through `output`.
+An `Instrument` is an `AudioPlayer` (`start({ note, time, duration, velocity, destination? }) => stop`, `stop()`, `dispose()`, `loadNotes(notes)`, `covers(note)`) plus `context`, `output` (its volume `GainNode`) and `plan` (read-only `{ kind, sourceId }`: which source plays it, for example `'builtin:fluidr3'`). `stop()` stops every sounding note **and cancels every scheduled one**. A note's `destination` is honoured by sample-pack and note-file sounds. SF2 sounds always play through `output`.
 
 Sounds resolve exactly as in the reader (above): your `sources`, then the pack's FluidR3 sound, then `TimGM6mb.sf2`. Drums use Perfect Drums, with TimGM6mb's kit for the notes it lacks. Every built-in file comes from `assetBaseUrl`, so a self-hosted base means no requests to any other host.
 
-**Metronome.** `createMetronome({ voice?, gain?, ...InstrumentOptions })` returns `{ voice, output, tick({ time, beat, accent? }) => stop, setVoice(voice), stop(), dispose() }`. `beat` counts from 0 within the bar, and beat 0 is accented (louder, or higher for synth sounds) unless `accent` says otherwise. `gain` defaults to a gentle 0.5.
+**Metronome.** `createMetronome({ voice?, gain?, ...InstrumentOptions })` returns `{ voice, output, ready, tick({ time, beat, accent? }) => stop, setVoice(voice), stop(), dispose() }`. It resolves at once and loads the drum kit in the background: beats play the synthesized sound until the kit arrives (`await metronome.ready` to wait; `setVoice` resolves when its notes have loaded). A failed kit download is not remembered: the next `setVoice`, or a tick after 10 seconds, tries again. `beat` counts from 0 within the bar, and beat 0 is accented (louder, or higher for synth sounds) unless `accent` says otherwise. `gain` defaults to a gentle 0.5.
 
 | Voice | Beat 1 | Other beats | Source |
 | --- | --- | --- | --- |
-| `'woodblock'` (default) | GM hi wood block (76) | GM low wood block (77) | The drum kit (Perfect Drums has no wood blocks, so TimGM6mb's kit plays them). Without a kit wood block: a soft synthesized knock. |
+| `'woodblock'` (default) | GM hi wood block (76) | GM low wood block (77) | The drum kit (Perfect Drums has no wood blocks, so TimGM6mb's kit plays them). **The default voice downloads Perfect Drums' manifest and `TimGM6mb.sf2` (about 6 MB, once, cached) from `assetBaseUrl` in the background; use `voice: 'click'` to load nothing.** Without a kit wood block: a soft synthesized knock. |
 | `'drum-machine'` | Kick (36) | Closed hi-hat (42) | The drum kit (Perfect Drums). Without a kit: synthesized ticks. |
 | `'click'` | Soft high tick | Soft tick | Synthesized, short and quiet. Loads nothing. |
 

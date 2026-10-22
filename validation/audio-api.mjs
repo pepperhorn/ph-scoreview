@@ -40,6 +40,7 @@ const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 const work = mkdtempSync(join(tmpdir(), 'pepperscore-audio-'));
 let server, browser;
+let failedOnce = false;
 try {
   // 2. Pack (build first; --ignore-scripts keeps prepack's build out of --json) and unpack into a consumer's node_modules.
   execFileSync(npm, ['run', 'build', '-w', 'pepperscore'], { cwd: root, stdio: ['ignore', 2, 'inherit'] });
@@ -65,6 +66,10 @@ try {
   // The main entry's exports are unchanged (pepperscore's own index.ts re-exports no audio API).
   assert.doesNotMatch(readFileSync(join(pkgDir, 'dist/index.d.ts'), 'utf8'), /loadInstrument|createMetronome|getSharedAudio/, 'the main entry does not export the audio API');
 
+  // The public declarations carry no internal fields: AudioPlayer.fallback is stripped and Instrument.plan is the narrow { kind, sourceId }.
+  assert.doesNotMatch(readFileSync(join(pkgDir, 'dist/lib/sound-players.d.ts'), 'utf8'), /fallback\?:/, 'AudioPlayer.fallback (@internal) is not in the shipped declarations');
+  assert.match(readFileSync(join(pkgDir, 'dist/lib/instruments.d.ts'), 'utf8'), /readonly plan: InstrumentPlan/, 'Instrument.plan is the narrow public InstrumentPlan');
+
   // Types: a strict consumer type-checks against dist/audio.d.ts through the exports map.
   writeFileSync(join(app, 'check.ts'), [
     "import { claimPlayback, createMetronome, getSharedAudio, loadDrumKit, loadInstrument, releasePlayback, resumeAudio, METRONOME_VOICES, SOUNDS_VERSION, type AudioPlayer, type Instrument, type Metronome, type MetronomeVoice, type PlaybackOwner, type SharedAudio, type SoundSource } from 'pepperscore/audio';",
@@ -80,6 +85,9 @@ try {
     '  stop(); harp.stop(); drums.dispose(); piano.covers(60); await piano.loadNotes([61]);',
     "  const voice: MetronomeVoice = METRONOME_VOICES[0];",
     "  const metronome: Metronome = await createMetronome({ voice, gain: .4, assetBaseUrl: '/sounds/' });",
+    "  await metronome.ready; const planKind: 'sf2' | 'sample-pack' | 'note-files' = piano.plan.kind; const planId: string = piano.plan.sourceId; void planKind; void planId;",
+    "  // @ts-expect-error the plan's URLs are internal",
+    "  void piano.plan.url;",
     "  const tickStop: () => void = metronome.tick({ time: 0, beat: 0 }); tickStop();",
     "  await metronome.setVoice('click'); metronome.stop(); metronome.dispose();",
     "  // @ts-expect-error not a metronome voice",
@@ -113,12 +121,24 @@ try {
   server = createServer(async (request, response) => {
     const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
     served.push(pathname);
+    // /sounds2/ (slow SF2), /sounds3/ (counts kit loads) and /sounds4/ (the first drum manifest request fails) alias /sounds/.
+    const alias = /^\/sounds([234])\//.exec(pathname);
+    if (alias) {
+      if (alias[1] === '2' && pathname.endsWith('.sf2')) await new Promise(done => setTimeout(done, 1500));
+      if (alias[1] === '4' && pathname.endsWith('perfect-drums/manifest.json') && !failedOnce) { failedOnce = true; return response.writeHead(500).end(); }
+      request.url = request.url.replace(alias[0], '/sounds/');
+      return handle(request, response);
+    }
+    return handle(request, response);
+  });
+  async function handle(request, response) {
+    const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);
     if (pathname === '/sounds/pack.json') return response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ pack: 'core', fluidr3: ['acoustic_grand_piano'] }));
     const [base, rel] = pathname.startsWith('/sounds/') ? [sounds, pathname.slice('/sounds/'.length)] : [join(app, 'dist'), pathname === '/' ? 'index.html' : pathname.slice(1)];
     const path = resolve(base, rel);
     if (!path.startsWith(`${base}${sep}`)) return response.writeHead(403).end();
     try { response.writeHead(200, { 'content-type': mime[extname(path)] || 'application/octet-stream' }).end(await readFile(path)); } catch { response.writeHead(404).end(); }
-  });
+  }
   await new Promise(done => server.listen(0, '127.0.0.1', done));
   const origin = `http://127.0.0.1:${server.address().port}`;
 
@@ -196,6 +216,7 @@ try {
     const metronome = await createMetronome({ assetBaseUrl: '/sounds/' });
     out.defaultVoice = metronome.voice;
     out.defaultGain = metronome.output.gain.value;
+    await metronome.ready;
     const bar = async () => {
       const b = starts(), t = ctx.currentTime + .05;
       for (let beat = 0; beat < 4; beat++) metronome.tick({ time: t + beat * .1, beat });
@@ -220,6 +241,47 @@ try {
     metronome.dispose(); harp.dispose(); piano.dispose(); kit.dispose();
     return out;
   });
+  const lifecycle = await page.evaluate(async () => {
+    const { createMetronome } = window.__audio;
+    const ctx = window.__audio.getSharedAudio().context;
+    const wait = ms => new Promise(done => setTimeout(done, ms));
+    const starts = () => window.__nodes.length;
+    const delta = before => { const heard = window.__nodes.slice(before).filter(node => node.stopAt > node.startAt); return { buffer: heard.filter(node => node.kind === 'buffer').length, osc: heard.filter(node => node.kind === 'osc').length }; };
+    const bar = async metronome => { const b = starts(), t = ctx.currentTime + .05; for (let beat = 0; beat < 4; beat++) metronome.tick({ time: t + beat * .1, beat }); await wait(600); return delta(b); };
+    const out = {};
+    // createMetronome does not wait for the kit: the SF2 here takes 1.5 s. Until it arrives the woodblock plays the synthesized knock.
+    let t0 = performance.now();
+    const slow = await createMetronome({ assetBaseUrl: '/sounds2/' });
+    out.resolveMs = performance.now() - t0;
+    out.beforeKit = await bar(slow);
+    await slow.ready;
+    out.afterKit = await bar(slow);
+    slow.dispose();
+    // Two quick setVoice calls from 'click' load one kit.
+    const quick = await createMetronome({ voice: 'click', assetBaseUrl: '/sounds3/' });
+    await Promise.all([quick.setVoice('drum-machine'), quick.setVoice('woodblock'), quick.setVoice('drum-machine')]);
+    out.quick = await bar(quick);
+    quick.dispose();
+    // dispose() while the kit is loading releases it when it arrives, and nothing throws or plays.
+    const early = await createMetronome({ assetBaseUrl: '/sounds2/' });
+    early.dispose();
+    await wait(2500);
+    // A failed kit load is retried by the next setVoice.
+    const flaky = await createMetronome({ voice: 'click', assetBaseUrl: '/sounds4/' });
+    await flaky.setVoice('drum-machine');
+    out.flakyFirst = await bar(flaky);
+    await flaky.setVoice('drum-machine');
+    out.flakyRetry = await bar(flaky);
+    flaky.dispose();
+    return out;
+  });
+  assert.ok(lifecycle.resolveMs < 1000, `createMetronome resolves before the kit arrives (${Math.round(lifecycle.resolveMs)} ms)`);
+  assert.ok(lifecycle.beforeKit.osc >= 4 && lifecycle.beforeKit.buffer === 0, `until the kit arrives the woodblock plays the synthesized knock: ${JSON.stringify(lifecycle.beforeKit)}`);
+  assert.ok(lifecycle.afterKit.buffer >= 4 && lifecycle.afterKit.osc === 0, `after ready it plays the kit samples: ${JSON.stringify(lifecycle.afterKit)}`);
+  assert.equal(served.filter(path => path === '/sounds3/soundfonts/perfect-drums/manifest.json').length, 1, 'overlapping setVoice calls share one drum kit load');
+  assert.ok(lifecycle.quick.buffer >= 4, 'the shared kit plays');
+  assert.deepEqual(lifecycle.flakyFirst, { buffer: 0, osc: 4 }, 'after a failed drum load the metronome plays synthesized sounds');
+  assert.deepEqual(lifecycle.flakyRetry, { buffer: 4, osc: 0 }, 'the next setVoice retries the drum load and succeeds');
   assert.deepEqual(errors, [], 'no page errors');
   assert.ok(result.sameShared, 'getSharedAudio() returns one shared graph');
   assert.ok(result.running, 'the shared AudioContext runs');

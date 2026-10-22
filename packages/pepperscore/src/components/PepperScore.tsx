@@ -1533,7 +1533,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const annotationRow = (label: string, toggle: 'names' | 'chordSymbols' | 'counts' | 'subdivisions', sizeKey: AnnotationSizePref, onToggle: () => void, shown = prefs[toggle]) => (
     <div className={`ps-switch-row annotation-row annotation-row-${sizeKey}`}>
       <span className="annotation-name">{label}</span>
-      {shown && <div className="font-toggle annotation-size" role="group" aria-label={`${label} size`}>{ANNOTATION_SIZES.map(size => <button key={size} className={prefs[sizeKey] === size ? 'is-selected' : ''} aria-pressed={prefs[sizeKey] === size} title={ANNOTATION_SIZE_NAMES[size]} onClick={() => update({ [sizeKey]: size })}>{size}</button>)}</div>}
+      {shown && <div className="font-toggle annotation-size" role="group" aria-label={`${label} size`}>{ANNOTATION_SIZES.map(size => <button key={size} className={prefs[sizeKey] === size ? 'is-selected' : ''} aria-pressed={prefs[sizeKey] === size} title={ANNOTATION_SIZE_NAMES[size]} aria-label={ANNOTATION_SIZE_NAMES[size]} onClick={() => update({ [sizeKey]: size })}>{size}</button>)}</div>}
       <button className={`ps-switch ${prefs[toggle] ? 'is-on' : ''}`} role="switch" aria-label={label} aria-checked={prefs[toggle]} onClick={onToggle}/>
     </div>
   );

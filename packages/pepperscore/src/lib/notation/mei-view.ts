@@ -237,8 +237,10 @@ export function buildViewMei(mei: string, spec: ViewSpec, measureLimit = Infinit
     if (!selfClosing) open.push(/^<([^\s/>]+)/.exec(tag)![1]);
     else if (name === 'measure' && closeMeasure()) { stoppedAt = last; return true; }
     if (harmSize && name === 'harm' && !selfClosing) {
-      const end = mei.indexOf('</harm>', last); const figured = mei.indexOf('<fb', last);
-      if (!(figured >= 0 && (end < 0 || figured < end))) { out.push(`<rend fontsize="${harmSize}%">`); open.push('rend'); harmWraps++; }
+      const end = mei.indexOf('</harm>', last);
+      // Look for <fb only inside this <harm> (a bounded slice), not to the end of the document for every symbol.
+      const figured = end >= 0 ? mei.slice(last, end).includes('<fb') : mei.includes('<fb', last);
+      if (!figured) { out.push(`<rend fontsize="${harmSize}%">`); open.push('rend'); harmWraps++; }
     }
   });
   if (stoppedAt < 0) { out.push(mei.slice(last)); return out.join(''); }

@@ -30,8 +30,14 @@
 
 ### Fixed
 
+- `pepperscore/audio`: the metronome no longer leaks drum kits (overlapping `setVoice` calls share one load, a kit or TimGM6mb fallback that arrives after `dispose()` is released) and retries after a failed drum download. `createMetronome` resolves at once and plays the synthesized sound until the kit arrives (new `metronome.ready`); the default `'woodblock'` voice's ~6 MB download is documented. `Instrument.plan` is now the read-only `{ kind, sourceId }` (`InstrumentPlan`) and the internal `AudioPlayer.fallback` is no longer in the declarations.
+- Chord-symbol sizing no longer scans to the end of the document for every symbol. The size buttons have accessible names ("Extra small" ... "Extra large"). Regular size draws an SVG with no `is-subdivision` class.
 - Stopping playback now cancels SF2 (TimGM6mb and `kind: 'sf2'` source) notes already scheduled more than 200 ms ahead. smplr queues those in its own scheduler, and its argument-less `stop()` only stops sounding voices, so a queued note could still play after Stop. Each SF2 note now keeps its own stop handle (with a unique id: smplr's handle stopped every voice of the same pitch) and `stop()` calls them all.
 - An ending (volta) that starts a line is drawn whole on that line. The page break went inside the `<ending>`, so Verovio drew a stub on the line before and labelled the bracket "(1)" as a continuation.
+
+### Known follow-ups
+
+- the default `loadInstrument` note range 21-108 decodes up to 88 buffers up front; `instruments.ts` and the reader assemble sounds separately; a pre-0.3 per-score record resets the four sizes to `rg`; the shared audio chunk is named after sound-players.
 
 ## 0.2.0
 
