@@ -1,6 +1,7 @@
 import { isGmSoundfont, type InstrumentId, type Score } from './score';
 import { STAVE_SCALE_FLOOR, STAVE_SCALE_MAX, type DeviceClass } from './stave-scale';
-import { BARS_PER_LINE_MAX, BARS_PER_LINE_MIN } from './prefs';
+import { BARS_PER_LINE_MAX, BARS_PER_LINE_MIN, clampBpm, MAX_BPM, MIN_BPM, STANDARD_TAB_TUNING, validCapo, validTabTuning, validTabView } from './prefs';
+import type { TabView } from './tab/tab-parts';
 
 export type FileSource = { name: string; size: number; sha256: string; format: string };
 export type FileSettings = {
@@ -9,6 +10,8 @@ export type FileSettings = {
   counts: boolean; subdivisions: boolean; annotationFont: 'Sans' | 'Serif' | 'Mono'; bpm: number; semitones: number; scorePitch: 'written' | 'concert';
   /** Spell the transposed view in the enharmonic key (F# major shown as Gb major); optional on read, default false. */
   keyFlip: boolean;
+  /** Guitar TAB view, tuning (open-string MIDI, low to high) and capo; optional on read, default notation, standard, 0. */
+  tabView: TabView; tabTuning: number[]; capo: number;
 };
 /** Saved view: an absolute stave scale and the device class it was chosen on (see stave-scale.ts). */
 export type ScoreView = { zoom: number; zoomDevice: DeviceClass };
@@ -26,9 +29,7 @@ export type FileState = {
 /** The localStorage v1 record: zoom was a multiplier of the width fit and lived in settings. */
 export type FileStateV1 = { version: 1; source: FileSource; settings: FileSettings & { zoom: number }; parts: Record<string, PartState> };
 
-export const MIN_BPM = 30, MAX_BPM = 240;
-/** The reader's BPM control range; saved and source tempos outside it are clamped. */
-export const clampBpm = (bpm: number) => Math.max(MIN_BPM, Math.min(MAX_BPM, bpm));
+export { clampBpm, MAX_BPM, MIN_BPM };
 /** The localStorage key of a v1 record; `prefix` is the reader's persist namespace (score-db keyPrefix). */
 export const legacyStorageKey = (hash: string, prefix = 'scoreflow') => `${prefix}-file-v1:${hash}`;
 const instruments = new Set<InstrumentId>(['piano', 'guitar', 'bassguitar', 'double-bass', 'drum-kit', 'alto-saxophone', 'tenor-saxophone', 'bari-saxophone', 'flute', 'clarinet', 'trumpet', 'trombone', 'violin', 'viola', 'cello', 'microphone']);
@@ -146,10 +147,14 @@ function validSettingsAndParts(state: { settings: FileSettings; parts: Record<st
   if (settings.scorePitch !== undefined && !['written', 'concert'].includes(settings.scorePitch)) return false;
   if (settings.keyFlip !== undefined && typeof settings.keyFlip !== 'boolean') return false;
   if (settings.annotationFont !== undefined && !['Sans', 'Serif', 'Mono'].includes(settings.annotationFont)) return false;
+  // TAB settings came after version 2 shipped: optional on read, and an unusable one falls back to its default.
+  const tabView = validTabView(settings.tabView) ? settings.tabView : 'notation';
+  const tabTuning = validTabTuning(settings.tabTuning) ? [...settings.tabTuning] : [...STANDARD_TAB_TUNING];
+  const capo = validCapo(settings.capo) ? settings.capo : 0;
   if (['names', 'chordSymbols', 'inferChordSymbols', 'counts', 'subdivisions'].some(key => typeof settings[key as keyof FileSettings] !== 'boolean')) return false;
   Object.values(state.parts).forEach(part => { part.instrument = legacyInstruments[part.instrument] || part.instrument; });
   if (Object.values(state.parts).some(part => typeof part.visible !== 'boolean' || !instruments.has(part.instrument) || (part.gmSoundfont !== undefined && !isGmSoundfont(part.gmSoundfont)) || (part.volume !== undefined && (!Number.isInteger(part.volume) || part.volume < 0 || part.volume > 100)))) return false;
-  state.settings = { ...settings, annotationFont: settings.annotationFont ?? 'Sans', semitones: settings.semitones ?? 0, scorePitch: settings.scorePitch ?? 'written', keyFlip: settings.keyFlip ?? false };
+  state.settings = { ...settings, annotationFont: settings.annotationFont ?? 'Sans', semitones: settings.semitones ?? 0, scorePitch: settings.scorePitch ?? 'written', keyFlip: settings.keyFlip ?? false, tabView, tabTuning, capo };
   return true;
 }
 
@@ -198,6 +203,7 @@ export function buildFileState(source: FileSource, settings: FileSettings, score
   const hidden = new Set(hiddenIds);
   const parts: FileState['parts'] = {};
   for (const part of score.parts) parts[part.id] = { visible: !hidden.has(part.id), instrument: part.instrument, ...(part.gmSoundfont ? { gmSoundfont: part.gmSoundfont } : {}), volume: volumes[part.id] ?? 100 };
-  const { mode, notationFont, barsPerLine, overlap, names, chordSymbols, inferChordSymbols, counts, subdivisions, annotationFont, bpm, semitones, scorePitch, keyFlip } = settings;
-  return { version: 2, source, lastOpened, settings: { mode, notationFont, barsPerLine, overlap, names, chordSymbols, inferChordSymbols, counts, subdivisions, annotationFont, bpm: clampBpm(bpm), semitones, scorePitch, keyFlip: !!keyFlip }, parts, ...(view ? { view } : {}) };
+  const { mode, notationFont, barsPerLine, overlap, names, chordSymbols, inferChordSymbols, counts, subdivisions, annotationFont, bpm, semitones, scorePitch, keyFlip, tabView, tabTuning, capo } = settings;
+  return { version: 2, source, lastOpened, settings: { mode, notationFont, barsPerLine, overlap, names, chordSymbols, inferChordSymbols, counts, subdivisions, annotationFont, bpm: clampBpm(bpm), semitones, scorePitch, keyFlip: !!keyFlip,
+    tabView: validTabView(tabView) ? tabView : 'notation', tabTuning: validTabTuning(tabTuning) ? [...tabTuning] : [...STANDARD_TAB_TUNING], capo: validCapo(capo) ? capo : 0 }, parts, ...(view ? { view } : {}) };
 }

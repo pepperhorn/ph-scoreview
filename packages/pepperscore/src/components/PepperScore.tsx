@@ -32,6 +32,7 @@ import { ensureMusicFonts } from '../lib/asset-fonts';
 import type { ExternalClock } from '../lib/clock';
 import { measureSeekSeconds, noteSeekSeconds } from '../lib/playback/clock-time';
 import { nearestNote, noteInBox } from '../lib/hit-test';
+import { canShowTab, type TabView } from '../lib/tab/tab-parts';
 
 /** Short key name for readouts: 'Gb', 'C#m'. */
 const keyName = (key: SpellingKey) => `${key.tonic}${key.mode === 'minor' ? 'm' : ''}`;
@@ -235,7 +236,7 @@ const flag = (element: HTMLElement, key: 'psShort' | 'psTiny' | 'psWide', on: bo
 type ZoomAnchor = { index: number; fx: number; fy: number };
 
 export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: preset = 'full', controls, view, height, className, ariaLabel, settings, persist, assetBaseUrl, verovioBaseUrl, soundPack = 'core', soundSources, onReady, onPlay, onStop, onError, clock, audio: withAudio = true, onSeek, onTimeUpdate, onElementClick, onRender, highlights, autoFocus, paintTransition = 'reveal', ref }: PepperScoreProps) {
-  const chrome = useMemo(() => resolveChrome(preset, controls), [preset, controls?.mixer, controls?.openFile, controls?.drawer, controls?.transport, controls?.viewToggle, controls?.zoom]);
+  const chrome = useMemo(() => resolveChrome(preset, controls), [preset, controls?.mixer, controls?.openFile, controls?.drawer, controls?.transport, controls?.viewToggle, controls?.zoom, controls?.tabToggle]);
   /** A host clock always shows the playhead (ivories uses chrome="none" with a clock). */
   const playhead = chrome.playhead || Boolean(clock);
   const storage = useMemo(() => readerStorage(persist ?? (preset === 'full' ? 'pepperscore' : false)), [persist, preset]);
@@ -386,10 +387,15 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   useEffect(() => { const channel = openVerovioChannel(); channelRef.current = channel; return () => { cancelImports(channel); closeVerovioChannel(channel); }; }, []);
   useEffect(() => ensureMusicFonts(assetBase, failed => warnAssetBase(assetBase, failed)), [assetBase]);
   const hiddenSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
+  /** Parts the reader lists, plays and controls: a TAB staff that doubles a notation part shows with it (tab/tab-parts.ts). */
+  const readerParts = useMemo(() => score.parts.filter(part => !part.tabOf), [score]);
+  /** The Notation / TAB / Both switch only shows for a score with a stave that can take TAB. */
+  const tabAvailable = useMemo(() => canShowTab(score), [score]);
+  const tabTuningKey = prefs.tabTuning.join(',');
   const visibleScore = useMemo(() => {
-    const parts = score.parts.filter(part => !hiddenSet.has(part.id));
-    return { ...score, parts: parts.length ? parts : score.parts.slice(0, 1) };
-  }, [score, hiddenSet]);
+    const parts = readerParts.filter(part => !hiddenSet.has(part.id));
+    return { ...score, parts: parts.length ? parts : readerParts.slice(0, 1) };
+  }, [score, readerParts, hiddenSet]);
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -464,7 +470,8 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     return () => { window.removeEventListener('pagehide', persistPending); document.removeEventListener('visibilitychange', hidden); void scoreDb.flush(); };
   }, [storage]);
   const update = (patch: Partial<Prefs>) => {
-    if (['mode', 'notationFont', 'annotationFont', 'barsPerLine', 'names', 'chordSymbols', 'inferChordSymbols', 'counts', 'subdivisions', 'semitones', 'scorePitch', 'keyFlip'].some(key => key in patch && patch[key as keyof Prefs] !== prefs[key as keyof Prefs])) setPainting(true);
+    if (['mode', 'notationFont', 'annotationFont', 'barsPerLine', 'names', 'chordSymbols', 'inferChordSymbols', 'counts', 'subdivisions', 'semitones', 'scorePitch', 'keyFlip', 'tabView', 'capo'].some(key => key in patch && patch[key as keyof Prefs] !== prefs[key as keyof Prefs])
+      || (patch.tabTuning && patch.tabTuning.join() !== prefs.tabTuning.join())) setPainting(true);
     if (patch.mode && patch.mode !== prefs.mode) viewportRef.current?.scrollTo({ left: 0, top: 0 });
     setPrefs(prev => ({ ...prev, ...patch }));
   };
@@ -513,7 +520,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     // reader's own edits to this score are newer. Without a record, the per-score resets (zoom, transposition, pitch
     // view) take the host's value for the keys it gives; every other pref keeps what the reader has now (drawer edits).
     const host = hostPrefsRef.current;
-    const hostResets: Partial<Prefs> = Object.fromEntries((['zoom', 'semitones', 'scorePitch'] as const).filter(key => host[key] !== undefined).map(key => [key, host[key]]));
+    const hostResets: Partial<Prefs> = Object.fromEntries((['zoom', 'semitones', 'scorePitch', 'bpm', 'keyFlip'] as const).filter(key => host[key] !== undefined).map(key => [key, host[key]]));
     setPrefs(prev => saved ? { ...prev, ...saved.settings, zoom } : { ...prev, bpm: clampBpm(Math.round(next.tempo)), zoom: null, semitones: 0, keyFlip: false, scorePitch: next.parts.some(part => part.pitchBasis === 'concert') ? 'concert' : 'written', ...hostResets });
     if (!inPlace) viewportRef.current?.scrollTo({ left: 0, top: 0 });
     setDrawer(false);
@@ -665,11 +672,11 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     viewportRef.current?.scrollTo({ left: 0, top: 0 });
   };
   /** The stave a lone visible part is focused on, if any. */
-  const focusedId = score.parts.length > 1 && visibleScore.parts.length === 1 ? visibleScore.parts[0].id : null;
+  const focusedId = readerParts.length > 1 && visibleScore.parts.length === 1 ? visibleScore.parts[0].id : null;
   /** Focus hides every other stave; focusing the focused stave again shows them all. */
   const focusPart = (id: string) => {
     stop(true); setPainting(true);
-    setHiddenIds(focusedId === id ? [] : score.parts.filter(part => part.id !== id).map(part => part.id));
+    setHiddenIds(focusedId === id ? [] : readerParts.filter(part => part.id !== id).map(part => part.id));
     viewportRef.current?.scrollTo({ left: 0, top: 0 });
   };
   const resetStaves = () => { stop(true); setPainting(true); setHiddenIds([]); viewportRef.current?.scrollTo({ left: 0, top: 0 }); };
@@ -847,7 +854,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
         if (disposed) return;
         setScoreWidth(previous => previous === canvas.clientWidth ? previous : canvas.clientWidth);
         // Every multi-stave score gets a focus button per stave; a hide button joins it from five staves.
-        const buttons = (score.parts.length > 1 ? 1 : 0) + (score.parts.length > 4 ? 1 : 0);
+        const buttons = (readerParts.length > 1 ? 1 : 0) + (readerParts.length > 4 ? 1 : 0);
         const maxGutter = maxControlGutter(canvas.clientWidth);
         // Without part controls (they follow the mixer) the score takes the full width.
         const metricsFor = (stavePx: number, staffPitchPx: number) => {
@@ -859,7 +866,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
         const availableHeight = natural ? 4000 : Math.max(120, (viewportRef.current?.clientHeight || 600) - metaHeight - 70);
         // Without a user zoom the default ('fit': four bars in Vertical) is re-resolved for the viewport, so rotation re-fits.
         const requested = prefs.zoom ?? 'fit';
-        const result = await renderScore(canvas, displayScore, prefs.mode, prefs.names, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.chordSymbols, prefs.inferChordSymbols, availableHeight, requested, 0, { gutterFor: (stavePx, staffPitchPx) => metricsFor(stavePx, staffPitchPx).gutter, fitCap: ENDLESS_STAVE_SCALE[deviceClass()], fitFloor: minimumDefaultStaveScale(deviceClass()), font: prefs.notationFont, textFont: prefs.annotationFont, transpose: prefs.semitones, flip: prefs.keyFlip, scorePitch, hiddenPartIds: hiddenIds, generation, focusMeasure: anchor?.index, channel: channelRef.current });
+        const result = await renderScore(canvas, displayScore, prefs.mode, prefs.names, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.chordSymbols, prefs.inferChordSymbols, availableHeight, requested, 0, { gutterFor: (stavePx, staffPitchPx) => metricsFor(stavePx, staffPitchPx).gutter, fitCap: ENDLESS_STAVE_SCALE[deviceClass()], fitFloor: minimumDefaultStaveScale(deviceClass()), font: prefs.notationFont, textFont: prefs.annotationFont, transpose: prefs.semitones, flip: prefs.keyFlip, scorePitch, hiddenPartIds: hiddenIds, generation, focusMeasure: anchor?.index, channel: channelRef.current, tab: { view: prefs.tabView, tuning: prefs.tabTuning, capo: prefs.capo } });
         if (disposed || generation !== renderRunRef.current) { result.dispose(); return; }
         renderRef.current = result;
         // Systems drawn later (scrolling, playback) change block sizes: re-page, and let the playhead find new notes.
@@ -894,7 +901,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
         drawnRevisionRef.current = scoreRevision;
         if (scoreRevision > 0 && readyRevisionRef.current !== scoreRevision) {
           readyRevisionRef.current = scoreRevision;
-          callbacks.current.onReady?.({ title: score.title, composer: score.composer || undefined, parts: score.parts.map(part => ({ id: part.id, name: part.name })), measures: score.parts[0]?.measures.length ?? 0 });
+          callbacks.current.onReady?.({ title: score.title, composer: score.composer || undefined, parts: readerParts.map(part => ({ id: part.id, name: part.name })), measures: score.parts[0]?.measures.length ?? 0 });
         }
         if (largeNoticeArmedRef.current) { largeNoticeArmedRef.current = false; setLargeNotice(''); }
       } catch (e) {
@@ -924,7 +931,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     const delay = !quiet && !newSource && hasPaintedRef.current && !window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 260 : 0;
     timer = window.setTimeout(() => void draw(), delay);
     return () => { disposed = true; window.clearTimeout(timer); cancelAnimationFrame(frame); };
-  }, [ready, resizeTick, scoreRevision, chrome.partControls, hiddenIds, prefs.mode, prefs.notationFont, prefs.annotationFont, prefs.names, prefs.chordSymbols, prefs.inferChordSymbols, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.zoom, prefs.semitones, prefs.keyFlip, scorePitch]);
+  }, [ready, resizeTick, scoreRevision, chrome.partControls, hiddenIds, prefs.mode, prefs.notationFont, prefs.annotationFont, prefs.names, prefs.chordSymbols, prefs.inferChordSymbols, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.zoom, prefs.semitones, prefs.keyFlip, scorePitch, prefs.tabView, tabTuningKey, prefs.capo]);
 
   /** Each rendered system's top and bottom in the viewport's scroll coordinates (score title included). */
   const systemSpans = (): SystemSpan[] => {
@@ -1530,6 +1537,17 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const flipText = flipTo ? `${keyName(readout.key)} ↔ ${keyName(flipTo)}` : keyName(readout.key);
   const flipKey = () => { if (flipTo) changePitch({ keyFlip: !prefs.keyFlip }); };
   const transposeTitle = `Transposition ${prefs.semitones > 0 ? '+' : ''}${prefs.semitones} semitone${Math.abs(prefs.semitones) === 1 ? '' : 's'}, key ${spokenKey(readout.key)}`;
+  const tabViews: { view: TabView; label: string; short: string; title: string }[] = [
+    { view: 'notation', label: 'Notation', short: 'Std', title: 'Standard notation' },
+    { view: 'tab', label: 'TAB', short: 'TAB', title: 'Guitar TAB' },
+    { view: 'both', label: 'Both', short: 'Both', title: 'Notation and guitar TAB' },
+  ];
+  /** The Notation / TAB / Both switch (header and drawer); a pressed button is the current view. */
+  const tabToggle = (placement: 'header' | 'drawer') => <div className={`tab-view-toggle tab-view-toggle-${placement} ${placement === 'header' ? '' : 'font-toggle'}`} role="group" aria-label="Guitar TAB view">
+    {tabViews.map(({ view, label, short, title }) => <button key={view} type="button" className={`tab-view-toggle-${view} ${prefs.tabView === view ? 'is-selected' : ''}`} aria-pressed={prefs.tabView === view} aria-label={title} title={title} onClick={() => update({ tabView: view })}>
+      {placement === 'header' ? <><span className="tab-view-toggle-label-full">{label}</span><span className="tab-view-toggle-label-short" aria-hidden="true">{short}</span></> : label}
+    </button>)}
+  </div>;
   const headerElements: Record<HeaderControlId, React.ReactNode> = {
     stop: clock ? null : <button className="icon-button stop-button" aria-label="Stop playback" title="Stop playback" onClick={() => { stop(true); viewportRef.current?.scrollTo({ top: 0, left: 0, behavior: 'smooth' }); }}><Square size={17} fill="currentColor"/></button>,
     play: clock ? null : <button className={`play-button ${loadingAudio ? 'is-loading' : ''}`} aria-label={playing || loadingAudio ? 'Pause playback' : 'Play score'} onClick={() => void play()}>{playing || loadingAudio ? <Pause size={17} fill="currentColor"/> : <Play size={17} fill="currentColor"/>}<span className="play-button-label">{loadingAudio ? 'Loading' : playing ? 'Pause' : 'Play'}</span></button>,
@@ -1551,6 +1569,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
       <span className="header-key-flip-caption" aria-hidden="true">Key spelling</span>
       <button className={`header-key-flip-button ${flipTo ? '' : 'is-disabled'}`} aria-label={flipLabel} title={flipLabel} aria-disabled={!flipTo} onClick={flipKey}><span className="header-key-flip-icon" aria-hidden="true">⇄</span><span className="header-key-flip-label">{flipText}</span></button>
     </div>,
+    tab: tabAvailable ? <div className={`header-tab-view ${chrome.drawer ? 'has-drawer-copy' : ''}`}><span className="header-tab-view-caption" aria-hidden="true">Guitar TAB</span>{tabToggle('header')}</div> : null,
     bars: barsSetting,
     staveScale: <label className="header-stave-scale" title="Stave scale">
       <span className="header-stave-scale-label">Scale</span>
@@ -1592,7 +1611,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
       <section ref={focusOnMount} tabIndex={-1} className="mixer-panel" role="dialog" aria-modal="true" aria-label="Track mixer">
         <div className="mixer-heading"><div><SlidersHorizontal size={18}/><h2>Track mixer</h2></div><button className="icon-button" aria-label="Close track mixer" onClick={() => setMixer(false)}><X size={19}/></button></div>
         <p>Choose each track’s sound and volume.</p>
-        <div className="mixer-tracks">{score.parts.map(part => <div className="mixer-track" key={part.id}><img src={instrumentDetails(part.instrument).icon} alt=""/><span className="mixer-track-name">{part.name}{hiddenSet.has(part.id) && <small>Muted · hidden</small>}</span><button className="icon-button mixer-visibility-button" aria-label={`${hiddenSet.has(part.id) ? 'Show' : 'Hide'} ${part.name}`} title={`${hiddenSet.has(part.id) ? 'Show' : 'Hide'} ${part.name}`} aria-pressed={!hiddenSet.has(part.id)} onClick={() => togglePart(part.id)} disabled={!hiddenSet.has(part.id) && visibleScore.parts.length <= 1}>{hiddenSet.has(part.id) ? <EyeOff size={17}/> : <Eye size={17}/>}</button><button className="mixer-voice-button" aria-label={`Voice for ${part.name}`} onClick={() => openInstrumentPicker(part)}>{part.gmSoundfont ? gmSoundfontLabel(part.gmSoundfont) : instrumentDetails(part.instrument).label}<ChevronDown size={14}/></button><label className="mixer-volume"><span>Volume</span><input type="range" min="0" max="100" value={trackVolumes[part.id] ?? 100} aria-label={`Volume for ${part.name}`} onChange={event => setTrackVolumes(previous => ({ ...previous, [part.id]: Number(event.target.value) }))}/><output>{trackVolumes[part.id] ?? 100}%</output></label></div>)}</div>
+        <div className="mixer-tracks">{readerParts.map(part => <div className="mixer-track" key={part.id}><img src={instrumentDetails(part.instrument).icon} alt=""/><span className="mixer-track-name">{part.name}{hiddenSet.has(part.id) && <small>Muted · hidden</small>}</span><button className="icon-button mixer-visibility-button" aria-label={`${hiddenSet.has(part.id) ? 'Show' : 'Hide'} ${part.name}`} title={`${hiddenSet.has(part.id) ? 'Show' : 'Hide'} ${part.name}`} aria-pressed={!hiddenSet.has(part.id)} onClick={() => togglePart(part.id)} disabled={!hiddenSet.has(part.id) && visibleScore.parts.length <= 1}>{hiddenSet.has(part.id) ? <EyeOff size={17}/> : <Eye size={17}/>}</button><button className="mixer-voice-button" aria-label={`Voice for ${part.name}`} onClick={() => openInstrumentPicker(part)}>{part.gmSoundfont ? gmSoundfontLabel(part.gmSoundfont) : instrumentDetails(part.instrument).label}<ChevronDown size={14}/></button><label className="mixer-volume"><span>Volume</span><input type="range" min="0" max="100" value={trackVolumes[part.id] ?? 100} aria-label={`Volume for ${part.name}`} onChange={event => setTrackVolumes(previous => ({ ...previous, [part.id]: Number(event.target.value) }))}/><output>{trackVolumes[part.id] ?? 100}%</output></label></div>)}</div>
       </section>
     </div>}
 
@@ -1607,10 +1626,10 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
       </section>
     </div>}
 
-    <section className={`reader-area ps-${prefs.mode} ${score.parts.length > 4 ? 'has-many-staves' : ''} ${chrome.zoom ? '' : 'no-page-controls'}`}>
+    <section className={`reader-area ps-${prefs.mode} ${readerParts.length > 4 ? 'has-many-staves' : ''} ${chrome.zoom ? '' : 'no-page-controls'}`}>
       <div className="edge-fade edge-start"/><div className="edge-fade edge-end"/>
       <div className="score-viewport" ref={viewportRef} onTouchStart={e => {
-        if (chrome.zoom && score.parts.length > 4 && e.touches.length === 2) {
+        if (chrome.zoom && readerParts.length > 4 && e.touches.length === 2) {
           const distance = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
           pinchRef.current = { distance, zoom: renderedZoomRef.current, nextZoom: renderedZoomRef.current };
           swipeRef.current = null;
@@ -1643,11 +1662,11 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
             {score.subtitle && <p className="score-subtitle">{score.subtitle}</p>}
             {score.composer && <p className="score-composer">{score.composer}</p>}
             {score.credits?.map((line, i) => <p className="score-credit" key={`${line}-${i}`}>{line}</p>)}
-            {hiddenIds.length > 0 && <div className="hidden-staves" aria-label="Hidden staves">{score.parts.filter(part => hiddenSet.has(part.id)).map(part => <button key={part.id} onClick={() => togglePart(part.id)} title={`Show ${part.name}`} aria-label={`Show ${part.name}`}><img src={instrumentDetails(part.instrument).icon} alt=""/><EyeOff size={15}/><span>{part.name}</span></button>)}</div>}
+            {hiddenIds.length > 0 && <div className="hidden-staves" aria-label="Hidden staves">{readerParts.filter(part => hiddenSet.has(part.id)).map(part => <button key={part.id} onClick={() => togglePart(part.id)} title={`Show ${part.name}`} aria-label={`Show ${part.name}`}><img src={instrumentDetails(part.instrument).icon} alt=""/><EyeOff size={15}/><span>{part.name}</span></button>)}</div>}
           </div>}
           <div className="score-stage">
             <div className="score-staves" ref={canvasRef} onClick={onScoreClick}/>
-            {chrome.partControls && <div className="part-controls" style={{ '--part-icon': `${controlMetrics.icon}px`, '--part-font': `${controlMetrics.font}px`, '--part-eye': `${controlMetrics.eye}px`, '--part-control-height': `${controlMetrics.height}px` } as React.CSSProperties}>{visibleScore.parts.map((part, index) => <div key={part.id} className="part-control" style={{ top: `${staffCenters[part.id] ?? 86 + index * ((prefs.names || prefs.counts) ? 125 : 100)}px` }} title={`Sound for ${part.name}`}><button className="instrument-control" aria-label={`Instrument for ${part.name}`} aria-haspopup="dialog" onClick={() => openInstrumentPicker(part)}><img className="part-icon" src={instrumentDetails(part.instrument).icon} alt=""/></button><span className="part-name" title={part.name}>{part.name}</span>{score.parts.length > 1 && <button className={`staff-eye staff-focus ${focusedId === part.id ? 'is-focused' : ''}`} aria-label={focusedId === part.id ? 'Show all staves' : `Focus on ${part.name}`} title={focusedId === part.id ? 'Show all staves' : `Focus on ${part.name}`} aria-pressed={focusedId === part.id} onClick={() => focusPart(part.id)}><Focus size={17}/></button>}{score.parts.length > 4 && <button className="staff-eye" aria-label={`Hide ${part.name}`} title={`Hide ${part.name}`} onClick={() => togglePart(part.id)} disabled={visibleScore.parts.length <= 1}><Eye size={17}/></button>}</div>)}</div>}
+            {chrome.partControls && <div className="part-controls" style={{ '--part-icon': `${controlMetrics.icon}px`, '--part-font': `${controlMetrics.font}px`, '--part-eye': `${controlMetrics.eye}px`, '--part-control-height': `${controlMetrics.height}px` } as React.CSSProperties}>{visibleScore.parts.map((part, index) => <div key={part.id} className="part-control" style={{ top: `${staffCenters[part.id] ?? 86 + index * ((prefs.names || prefs.counts) ? 125 : 100)}px` }} title={`Sound for ${part.name}`}><button className="instrument-control" aria-label={`Instrument for ${part.name}`} aria-haspopup="dialog" onClick={() => openInstrumentPicker(part)}><img className="part-icon" src={instrumentDetails(part.instrument).icon} alt=""/></button><span className="part-name" title={part.name}>{part.name}</span>{readerParts.length > 1 && <button className={`staff-eye staff-focus ${focusedId === part.id ? 'is-focused' : ''}`} aria-label={focusedId === part.id ? 'Show all staves' : `Focus on ${part.name}`} title={focusedId === part.id ? 'Show all staves' : `Focus on ${part.name}`} aria-pressed={focusedId === part.id} onClick={() => focusPart(part.id)}><Focus size={17}/></button>}{readerParts.length > 4 && <button className="staff-eye" aria-label={`Hide ${part.name}`} title={`Hide ${part.name}`} onClick={() => togglePart(part.id)} disabled={visibleScore.parts.length <= 1}><Eye size={17}/></button>}</div>)}</div>}
           </div>
         </div>}
       </div>
@@ -1661,7 +1680,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
       <div className="drawer-top"><div><div className="ps-eyebrow">MAKE IT YOURS</div><h2>Reading options</h2></div><button className="icon-button" aria-label="Close options" onClick={() => setDrawer(false)}><X size={20}/></button></div>
       <div className="drawer-grid">
 
-        <div className="drawer-panel"><h3><Settings2 size={17}/> Reading</h3><div className="font-choice"><span>Notation font</span><div className="font-toggle" role="group" aria-label="Notation font"><button className={prefs.notationFont === 'Bravura' ? 'is-selected' : ''} aria-pressed={prefs.notationFont === 'Bravura'} onClick={() => update({ notationFont: 'Bravura' })}>Bravura</button><button className={prefs.notationFont === 'Petaluma' ? 'is-selected' : ''} aria-pressed={prefs.notationFont === 'Petaluma'} onClick={() => update({ notationFont: 'Petaluma' })}>Petaluma</button></div></div><div className="font-choice"><span>Stave text font</span><div className="font-toggle" role="group" aria-label="Stave text font">{(['Sans', 'Serif', 'Mono'] as const).map(font => <button key={font} className={prefs.annotationFont === font ? 'is-selected' : ''} aria-pressed={prefs.annotationFont === font} onClick={() => update({ annotationFont: font })}>{font}</button>)}</div></div><label className="field-label" htmlFor={overhangId}>Overhang <span>{prefs.overlap === 0 ? 'Off' : `${prefs.overlap} ${prefs.mode === 'portrait' ? (prefs.overlap === 1 ? 'system' : 'systems') : (prefs.overlap === 1 ? 'bar' : 'bars')}`}</span></label><input id={overhangId} className="ps-range" type="range" min="0" max="3" step="1" value={prefs.overlap} onChange={e => update({ overlap: Number(e.target.value) })}/><div className="ps-switch-row"><span>Note names</span><button className={`ps-switch ${prefs.names ? 'is-on' : ''}`} role="switch" aria-label="Note names" aria-checked={prefs.names} onClick={() => update({ names: !prefs.names })}/></div><div className="ps-switch-row"><span>Chord symbols</span><button className={`ps-switch ${prefs.chordSymbols ? 'is-on' : ''}`} role="switch" aria-label="Chord symbols" aria-checked={prefs.chordSymbols} onClick={() => update({ chordSymbols: !prefs.chordSymbols })}/></div><label className="ps-switch-row inference-row"><span>Infer chord symbols</span><input type="checkbox" checked={prefs.inferChordSymbols} onChange={e => update({ inferChordSymbols: e.target.checked })}/></label><div className="ps-switch-row"><span>Beat counts</span><button className={`ps-switch ${prefs.counts ? 'is-on' : ''}`} role="switch" aria-label="Beat counts" aria-checked={prefs.counts} onClick={() => update({ counts: !prefs.counts })}/></div><div className="ps-switch-row"><span>Count subdivisions</span><button className={`ps-switch ${prefs.subdivisions ? 'is-on' : ''}`} role="switch" aria-label="Count subdivisions" aria-checked={prefs.subdivisions} onClick={() => update({ subdivisions: !prefs.subdivisions, counts: true })}/></div>{score.parts.length > 4 && <button className="text-action reset-staves" onClick={resetStaves}><RotateCcw size={15}/> Reset score staves</button>}</div>
+        <div className="drawer-panel"><h3><Settings2 size={17}/> Reading</h3><div className="font-choice"><span>Notation font</span><div className="font-toggle" role="group" aria-label="Notation font"><button className={prefs.notationFont === 'Bravura' ? 'is-selected' : ''} aria-pressed={prefs.notationFont === 'Bravura'} onClick={() => update({ notationFont: 'Bravura' })}>Bravura</button><button className={prefs.notationFont === 'Petaluma' ? 'is-selected' : ''} aria-pressed={prefs.notationFont === 'Petaluma'} onClick={() => update({ notationFont: 'Petaluma' })}>Petaluma</button></div></div><div className="font-choice"><span>Stave text font</span><div className="font-toggle" role="group" aria-label="Stave text font">{(['Sans', 'Serif', 'Mono'] as const).map(font => <button key={font} className={prefs.annotationFont === font ? 'is-selected' : ''} aria-pressed={prefs.annotationFont === font} onClick={() => update({ annotationFont: font })}>{font}</button>)}</div></div><label className="field-label" htmlFor={overhangId}>Overhang <span>{prefs.overlap === 0 ? 'Off' : `${prefs.overlap} ${prefs.mode === 'portrait' ? (prefs.overlap === 1 ? 'system' : 'systems') : (prefs.overlap === 1 ? 'bar' : 'bars')}`}</span></label><input id={overhangId} className="ps-range" type="range" min="0" max="3" step="1" value={prefs.overlap} onChange={e => update({ overlap: Number(e.target.value) })}/>{chrome.tabToggle && tabAvailable && <div className="font-choice tab-view-choice"><span>Guitar TAB</span>{tabToggle('drawer')}</div>}<div className="ps-switch-row"><span>Note names</span><button className={`ps-switch ${prefs.names ? 'is-on' : ''}`} role="switch" aria-label="Note names" aria-checked={prefs.names} onClick={() => update({ names: !prefs.names })}/></div><div className="ps-switch-row"><span>Chord symbols</span><button className={`ps-switch ${prefs.chordSymbols ? 'is-on' : ''}`} role="switch" aria-label="Chord symbols" aria-checked={prefs.chordSymbols} onClick={() => update({ chordSymbols: !prefs.chordSymbols })}/></div><label className="ps-switch-row inference-row"><span>Infer chord symbols</span><input type="checkbox" checked={prefs.inferChordSymbols} onChange={e => update({ inferChordSymbols: e.target.checked })}/></label><div className="ps-switch-row"><span>Beat counts</span><button className={`ps-switch ${prefs.counts ? 'is-on' : ''}`} role="switch" aria-label="Beat counts" aria-checked={prefs.counts} onClick={() => update({ counts: !prefs.counts })}/></div><div className="ps-switch-row"><span>Count subdivisions</span><button className={`ps-switch ${prefs.subdivisions ? 'is-on' : ''}`} role="switch" aria-label="Count subdivisions" aria-checked={prefs.subdivisions} onClick={() => update({ subdivisions: !prefs.subdivisions, counts: true })}/></div>{readerParts.length > 4 && <button className="text-action reset-staves" onClick={resetStaves}><RotateCcw size={15}/> Reset score staves</button>}</div>
         <div className="drawer-panel abc-panel"><h3><FileMusic size={17}/> ABC notation</h3><p>Paste ABC text here, or use the open button in the header for files and folders.</p><textarea value={abcDraft} onChange={e => setAbcDraft(e.target.value)} spellCheck={false} aria-label="ABC notation"/><button className="primary-action" onClick={() => void readAbc(abcDraft)}>View notation <ChevronRight size={17}/></button><button className="text-action" onClick={loadSample}><FileMusic size={16}/> Open sample score</button>{lastFileInfo && <button className="text-action forget-last-file" title={LAST_FILE_PRIVACY} onClick={forgetLast}><Trash2 size={15}/> Forget last opened file</button>}</div>
         <div className="drawer-panel pitch-panel"><h3><Settings2 size={17}/> Pitch</h3><div className="pitch-options"><div><span className="pitch-label">Transpose score</span><div className="semitone-control"><button aria-label="Transpose down a semitone" disabled={prefs.semitones <= -12} onClick={() => transposeBy(-1)}><Minus size={16}/></button><output aria-live={drawer ? 'polite' : 'off'}>{prefs.semitones > 0 ? '+' : ''}{prefs.semitones} semitones</output><button aria-label="Transpose up a semitone" disabled={prefs.semitones >= 12} onClick={() => transposeBy(1)}><Plus size={16}/></button><button className="pitch-reset" aria-label="Reset transposition" title="Reset transposition" disabled={prefs.semitones === 0 && !prefs.keyFlip} onClick={() => changePitch({ semitones: 0, keyFlip: false })}><RotateCcw size={15}/></button></div></div><div className="pitch-key"><span className="pitch-label">Key</span><div className="pitch-key-control"><output className="pitch-key-readout" aria-live={drawer ? 'polite' : 'off'}>{readout.text}</output><button className={`pitch-key-flip ${flipTo ? '' : 'is-disabled'}`} aria-label={flipLabel} title={flipLabel} aria-disabled={!flipTo} onClick={flipKey}><span className="pitch-key-flip-icon" aria-hidden="true">⇄</span><span className="pitch-key-flip-label">{flipText}</span></button></div></div>{!concertBasis && <div><span className="pitch-label">Score view</span><div className="font-toggle pitch-view" role="group" aria-label="Score pitch view"><button className={prefs.scorePitch === 'written' ? 'is-selected' : ''} aria-pressed={prefs.scorePitch === 'written'} onClick={() => changePitch({ scorePitch: 'written' })}>Transposing</button><button className={prefs.scorePitch === 'concert' ? 'is-selected' : ''} aria-pressed={prefs.scorePitch === 'concert'} onClick={() => changePitch({ scorePitch: 'concert' })}>Concert</button></div></div>}</div><p className="pitch-hint">{concertBasis ? 'This score is written at concert pitch, so it is shown at concert pitch. Playback stays at concert pitch.' : hasTransposingParts ? 'Transposing shows written parts; Concert shows sounding pitches. Playback stays at concert pitch.' : 'This score has no instrument transposition data, so both views match.'}</p></div>
       </div>

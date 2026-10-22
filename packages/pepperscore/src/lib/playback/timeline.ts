@@ -220,7 +220,10 @@ export type BaseTimelineOptions = {
   roadmap?: Roadmap;
   /** Note marks and pedals already read from the source (for example by the import worker). */
   marks?: PlaybackMarks;
-  /** Parts to perform; all parts of the score by default. Tempo, fermatas and dynamics always come from the whole score. */
+  /**
+   * Parts to perform; all parts of the score by default. Tempo, fermatas and dynamics always come from the whole score.
+   * A TAB staff that doubles a notation part (`tabOf`) is never performed, so the instrument sounds once.
+   */
   parts?: Part[];
 };
 
@@ -228,7 +231,7 @@ export type BaseTimelineOptions = {
 export function buildBaseTimeline(full: Score, options: BaseTimelineOptions = {}): BaseTimeline {
   const diagnostics: string[] = [];
   const partDiagnostics: { partId: string; message: string }[] = [];
-  const parts = options.parts || full.parts;
+  const parts = (options.parts || full.parts).filter(part => !part.tabOf);
   // Measure lengths, navigation and the roadmap come from the full score, so hiding a part never changes them.
   const exactLengths = measureLengths(full);
   const lengths = exactLengths.map(fractionValue);

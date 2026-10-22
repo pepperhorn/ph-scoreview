@@ -7,6 +7,8 @@ import { staffDefXmlId, type SourceDocument } from './notation/document';
 import type { BaselineInfo, ViewSpec } from './notation/mei-view';
 import { musicFontOptions } from './music-fonts';
 import { clampBarsPerLine } from './prefs';
+import { planTab, type TabView } from './tab/tab-parts';
+import { STANDARD_TUNING } from './tab/fret-assign';
 import { BARS_FIT_MAX_STAVE_SCALE, DEFAULT_VERTICAL_BARS, HEIGHT_FIT_STAVES, STAVE_SCALE_FLOOR, STAVE_SCALE_MAX, STAVE_SCALE_MIN } from './stave-scale';
 
 const SVG = 'http://www.w3.org/2000/svg';
@@ -55,7 +57,9 @@ export type RenderOptions = { font?: 'Bravura' | 'Petaluma'; textFont?: 'Sans' |
   /** Vertical 'fit' is never below this stave scale (compact readability floor); the stack then scrolls. */
   fitFloor?: number;
   /** Draw the system holding this Score measure before resolving (a zoom anchor), besides those in view. */
-  focusMeasure?: number };
+  focusMeasure?: number;
+  /** Guitar TAB (docs/specs/guitar-tab.md): which staves guitar parts show, and the tuning and capo of generated TAB. */
+  tab?: { view: TabView; tuning?: number[]; capo?: number } };
 
 const latestGeneration = new WeakMap<HTMLElement, number>();
 const liveResults = new WeakMap<HTMLElement, RenderResult>();
@@ -190,6 +194,51 @@ export function staffNumbers(info: BaselineInfo, score: Score): { byPart: Map<st
   return { byPart, engraved };
 }
 
+/**
+ * The staves a view engraves: Score parts to staff numbers, the visible parts (a TAB staff that doubles a notation
+ * part is never a part of its own: it shows with its partner), the staves to hide, the spelling plan and the guitar
+ * TAB plan (tab/tab-parts.ts). Shared with validation/tab-harness.ts.
+ */
+export function planStaves(info: BaselineInfo, score: Score, hiddenIds: ReadonlySet<string>, tab?: RenderOptions['tab']) {
+  const { byPart: staffOf, engraved } = staffNumbers(info, score);
+  let visibleParts = score.parts.filter(part => !part.tabOf && !hiddenIds.has(part.id) && staffOf.has(part.id));
+  if (!visibleParts.length) visibleParts = score.parts.filter(part => !part.tabOf && staffOf.has(part.id)).slice(0, 1);
+  const shown = new Set(visibleParts.map(part => staffOf.get(part.id)!));
+  // Transposition and spelling: the worker moves and respells the baseline (notation/mei-spelling.ts) with the plan
+  // `scoreForView` used for this Score view, so the view is loaded untransposed.
+  const spelling = spellingSpecFor(score, staffOf);
+  // Guitar TAB: imported TAB staves show in a TAB view unless the view moves pitches (their frets would be stale);
+  // otherwise TAB is generated after spelling. In TAB view the notation staff is hidden and read from its TAB staff.
+  const tabView = tab?.view ?? 'notation';
+  const tabPlan = planTab(score, staffOf, tabView, {
+    tuning: tab?.tuning ?? STANDARD_TUNING, capo: tab?.capo ?? 0,
+    stale: spelling.semitones !== 0 || Object.values(spelling.staves).some(staff => staff.moved),
+    hiddenIds: new Set(score.parts.filter(part => !visibleParts.includes(part)).map(part => part.id)),
+  });
+  for (const part of tabPlan.importedFor.values()) shown.add(staffOf.get(part.id)!);
+  // Staves without a Score part (for example rest-only template parts that import dropped) are hidden reversibly here.
+  const hiddenStaves = shown.size ? [...new Set([...engraved.filter(n => !shown.has(n)), ...tabPlan.hidden])] : [];
+  if (!shown.size) visibleParts = [];
+  /** TAB staves of this view: generated, and imported ones shown (their bands are measured differently). */
+  const tabStaves = new Set([...tabPlan.added, ...[...tabPlan.importedFor.values()].map(part => staffOf.get(part.id) || '')]);
+  /** Staves engraved per system (generated and imported TAB staves in the Both view count). */
+  const staffCount = Math.max(1, visibleParts.length) + (tabView === 'both' ? tabPlan.added.length + tabPlan.importedFor.size : 0);
+  // A part shown through an imported TAB staff highlights that staff's events: the TAB part's note at the same onset.
+  const tabAlias = new Map<string, ScoreNote>();
+  for (const [partId, tabPart] of tabPlan.importedFor) {
+    const notation = score.parts.find(part => part.id === partId);
+    if (!notation) continue;
+    const keyOf = (index: number, note: ScoreNote) => `${index}:${Math.round(note.start * 96)}:${note.rest ? 'r' : note.pitches.map(pitch => pitch.midi).sort().join(',')}`;
+    const byOnset = new Map<string, ScoreNote>();
+    for (const measure of tabPart.measures) for (const note of measure.notes) if (!note.grace) byOnset.set(keyOf(measure.index, note), note);
+    for (const measure of notation.measures) for (const note of measure.notes) {
+      const match = byOnset.get(keyOf(measure.index, note));
+      if (match) tabAlias.set(note.id, match);
+    }
+  }
+  return { staffOf, visibleParts, hiddenStaves, spelling, tabView, tabPlan, tabStaves, staffCount, tabAlias };
+}
+
 function beatLabel(start: number, subdivisions: boolean): string {
   const beat = Math.floor(start) + 1;
   if (!subdivisions) return String(beat);
@@ -205,12 +254,15 @@ function sourceIds(score: Score, event: ScoreNote): string[] {
   const mapped = score.document?.identity?.noteIdToSourceId?.[event.id];
   return [event.sourceId, mapped, event.id, ...event.pitches.map(p => p.sourceId)].filter((id): id is string => !!id);
 }
-/** Resolve the rendered event for a model note; a chord wins over any one of its noteheads. */
+/**
+ * Resolve the rendered event for a model note; a chord wins over any one of its noteheads. A note whose notation
+ * staff is hidden (TAB view) resolves to its generated TAB event (`${id}-tab`, notation/mei-tab.ts).
+ */
 function findNote(byId: Map<string, Element>, score: Score, event: ScoreNote): Element | undefined {
   for (const id of sourceIds(score, event)) {
-    const target = byId.get(id);
+    const target = byId.get(id) ?? byId.get(`${id}-tab`);
     if (!target) continue;
-    const related = target.closest('.chord') || target.closest('.note, .rest, .mRest, .multiRest');
+    const related = target.closest('.tabGrp') || target.closest('.chord') || target.closest('.note, .rest, .mRest, .multiRest');
     if (related) return related;
   }
   return undefined;
@@ -242,7 +294,9 @@ const naturalHeightOf = (svg: string) => Number(/viewBox="[^"]*?\s([\d.]+)"/.exe
 const wraps = (svg: string) => (svg.match(/class="system"/g) || []).length > 1;
 const yieldTask = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 
-type StaffBand = { top: number; bottom: number; center: number; laneTop: number; lines: boolean };
+type StaffBand = { top: number; bottom: number; center: number; laneTop: number; lines: boolean;
+  /** A six-line TAB staff (its lines are drawn in segments around the fret numbers). */
+  tab?: boolean };
 /** One system block: drawn (`svg`) or a placeholder holding the size from layout data. */
 type Slot = {
   index: number;
@@ -299,14 +353,12 @@ export async function renderScore(
   const explicitBars = mode === 'portrait' && barsPerLine !== 'auto' ? clampBarsPerLine(barsPerLine) : 0;
   const barsFit = explicitBars > 0 && zoom === 'fit';
 
-  const { byPart: staffOf, engraved } = staffNumbers(info, score);
-  let visibleParts = score.parts.filter(part => !hiddenIds.has(part.id) && staffOf.has(part.id));
-  if (!visibleParts.length) visibleParts = score.parts.filter(part => staffOf.has(part.id)).slice(0, 1);
-  const shown = new Set(visibleParts.map(part => staffOf.get(part.id)!));
-  // Staves without a Score part (for example rest-only template parts that import dropped) are hidden reversibly here.
-  const hiddenStaves = shown.size ? engraved.filter(n => !shown.has(n)) : [];
-  if (!shown.size) visibleParts = score.parts;
+  const { staffOf, hiddenStaves, spelling, tabView, tabPlan, tabStaves, staffCount, tabAlias, ...planned } = planStaves(info, score, hiddenIds, options.tab);
+  let { visibleParts } = planned;
+  if (!visibleParts.length) visibleParts = score.parts;
   const visibleIndex = new Map(visibleParts.map((part, index) => [part.id, index]));
+  /** The staff a part is read from in this view: its notation staff, or its TAB staff in TAB view. */
+  const displayStaff = (part: Part) => tabPlan.display.get(part.id) ?? staffOf.get(part.id) ?? '';
 
   // Annotation lanes sit under each staff (below lyrics); reserve room for them in the engraving.
   const annotated = visibleParts.filter(part => part.clef !== 'percussion' || showCounts);
@@ -316,9 +368,6 @@ export async function renderScore(
   const laneHeight = laneRows ? LANE_GAP + laneRows * LANE_ROW + 4 : 0;
   const spacingStaff = Math.min(48, 12 + Math.ceil(laneHeight / 9) + (showChordSymbols && inferChordSymbols ? 2 : 0));
 
-  // Transposition and spelling: the worker moves and respells the baseline (notation/mei-spelling.ts) with the plan
-  // `scoreForView` used for this Score view, so the view is loaded untransposed.
-  const spelling = spellingSpecFor(score, staffOf);
   // `natural`: one unbroken system at its natural width (Endless, and a Vertical score shorter than a full line).
   const verovioOptions = (pageWidth: number, natural = false): Record<string, unknown> => ({
     breaks: endlessSingle || natural ? 'none' : 'encoded', font: options.font || 'Bravura', fontFallback: 'Bravura',
@@ -335,11 +384,11 @@ export async function renderScore(
     const usableUnits = Math.max(180, viewportWidth - layoutGutter(scale)) / scale;
     const restUnits = viewportWidth / scale;
     const explicit = explicitBars > 0;
-    const bars = mode === 'landscape' ? (endlessSingle ? count : info.chunked ? endlessChunkBars(visibleParts.length) : ENDLESS_CHUNK) : explicit ? explicitBars : Math.min(maxBars, autoBarsPerLine(usableUnits, score, minimumBar));
+    const bars = mode === 'landscape' ? (endlessSingle ? count : info.chunked ? endlessChunkBars(staffCount) : ENDLESS_CHUNK) : explicit ? explicitBars : Math.min(maxBars, autoBarsPerLine(usableUnits, score, minimumBar));
     // A score shorter than a full Auto line is not stretched to fill it: one system at Verovio's natural width, centred.
     const fullLine = Math.max(1, Math.min(AUTO_BAR_CAP, Math.floor((Math.max(240, usableUnits) - 56) / minimumBar)));
     const short = mode === 'portrait' && !explicit && count < fullLine;
-    const view: ViewSpec = { breakEvery: endlessSingle ? 0 : bars, hiddenStaves, chordSymbols: showChordSymbols, spelling };
+    const view: ViewSpec = { breakEvery: endlessSingle ? 0 : bars, hiddenStaves, chordSymbols: showChordSymbols, spelling, ...(tabPlan.spec ? { tab: tabPlan.spec } : {}) };
     // A bar never gets narrower than its minimum (the system is width-fitted instead). An explicit count at a user zoom is
     // not stretched past a comfortable width, so its systems stay narrower than the viewport and are centred. An explicit
     // count that sets the stave scale fills the width; a score shorter than one such line takes its share of it, centred.
@@ -370,8 +419,8 @@ export async function renderScore(
     : barsFit ? Math.max(STAVE_SCALE_MIN, Math.min(BARS_FIT_MAX_STAVE_SCALE, barFitZoom(viewportWidth, explicitBars, barFloor, layoutGutter)))
     : barFitZoom(viewportWidth, DEFAULT_VERTICAL_BARS, barFloor, layoutGutter);
   const shrinkZoom = (scale: number) => Math.max(STAVE_SCALE_MIN, Math.floor(scale * .9 * 1000) / 1000);
-  const heightFit = (naturalHeight: number) => visibleParts.length > HEIGHT_FIT_STAVES && availableHeight > 0 ? Math.min(fitCap, availableHeight / naturalHeight) : fitCap;
-  const eager = mode === 'landscape' ? endlessSingle || visibleParts.length * count <= EAGER_STAFF_MEASURES : visibleParts.length * count <= EAGER_STAFF_MEASURES;
+  const heightFit = (naturalHeight: number) => staffCount > HEIGHT_FIT_STAVES && availableHeight > 0 ? Math.min(fitCap, availableHeight / naturalHeight) : fitCap;
+  const eager = mode === 'landscape' ? endlessSingle || staffCount * count <= EAGER_STAFF_MEASURES : staffCount * count <= EAGER_STAFF_MEASURES;
 
   // Choose the layout. Vertical draws its first system from a probe of the first measures (cheap at any score length):
   // a short score as one natural-width system, a many-staff stack measured for the height fit, and Auto bars reduced
@@ -429,7 +478,7 @@ export async function renderScore(
       firstSvg = await probe(layout);
       // Vertical: the bar fit; many staves then measure the first system there and lay out again at the height fit.
       // The readability floor wins over both, so a compact default never draws an unreadably small staff.
-      if (zoom === 'fit' && !barsFit && visibleParts.length > HEIGHT_FIT_STAVES) {
+      if (zoom === 'fit' && !barsFit && staffCount > HEIGHT_FIT_STAVES) {
         const fitted = Math.max(options.fitFloor ?? 0, Math.round(heightFit(naturalHeightOf(firstSvg)) * 1000) / 1000);
         if (fitted < layout.zoom - .001) { layout = layoutAt(fitted); firstSvg = await probe(layout); }
       }
@@ -528,11 +577,12 @@ export async function renderScore(
     const measureElements = Array.from(svg.querySelectorAll('g.measure'));
     for (const staff of Array.from(measureElements[0]?.querySelectorAll(':scope > g.staff') || [])) {
       const n = staff.getAttribute('data-n'); if (!n) continue;
-      const lines = Array.from(staff.querySelectorAll(':scope > path')).slice(0, 5).map(line => boxOf(line));
+      const tab = tabStaves.has(n);
+      const lines = Array.from(staff.querySelectorAll(':scope > path')).slice(0, tab ? Infinity : 5).map(line => boxOf(line));
       const rect = lines.length ? null : boxOf(staff);
       const top = lines.length ? Math.min(...lines.map(line => line.y)) : rect!.y;
       const bottom = lines.length ? Math.max(...lines.map(line => line.y + line.height)) : rect!.y + rect!.height;
-      slot.bands.set(n, { top, bottom, center: (top + bottom) / 2, laneTop: bottom, lines: lines.length > 1 });
+      slot.bands.set(n, { top, bottom, center: (top + bottom) / 2, laneTop: bottom, lines: lines.length > 1, tab });
     }
     // The lane goes below the staff and anything hanging under it: low notes, lyrics and below-staff directions.
     if (laneRows) {
@@ -566,12 +616,13 @@ export async function renderScore(
     const notes: { element: Element; event: ScoreNote; partIndex: number; measure: number; x: number; y: number }[] = [];
     for (const part of visibleParts) {
       const partIndex = visibleIndex.get(part.id)!;
-      const band = slot.bands.get(staffOf.get(part.id) || '');
+      const band = slot.bands.get(displayStaff(part));
       for (const [measureIndex, svgMeasure] of svgMeasureByIndex) {
         const measure = part.measures[measureIndex]?.index === measureIndex ? part.measures[measureIndex] : part.measures.find(item => item.index === measureIndex);
         if (!measure) continue;
         for (const event of measure.notes) {
-          const element = findNote(byId, score, event);
+          const alias = tabAlias.get(event.id);
+          const element = findNote(byId, score, event) ?? (alias ? findNote(byId, score, alias) : undefined);
           if (!element || !svgMeasure.contains(element)) continue;
           const anchor = element.querySelector('.notehead') || element;
           const rect = boxOf(anchor); const x = rect.x + rect.width / 2; const y = rect.y + rect.height / 2;
@@ -601,9 +652,10 @@ export async function renderScore(
   // Staff controls scale with the first system's staves, and the first system fits beside the controls' gutter.
   const first = slots[0];
   const firstGeometry = measureGeometry(first);
-  const firstBands = visibleParts.map(part => first.bands.get(staffOf.get(part.id) || '')).filter((band): band is StaffBand => !!band);
-  const lined = firstBands.find(band => band.lines);
-  const staffNatural = lined ? lined.bottom - lined.top : 72;
+  const firstBands = visibleParts.map(part => first.bands.get(displayStaff(part))).filter((band): band is StaffBand => !!band);
+  // Staff controls are sized from a five-line staff; a six-line TAB staff (five gaps) counts as four of its gaps.
+  const lined = firstBands.find(band => band.lines && !band.tab) ?? firstBands.find(band => band.lines);
+  const staffNatural = lined ? (lined.bottom - lined.top) * (lined.tab ? 4 / 5 : 1) : 72;
   const centers = firstBands.map(band => band.center).sort((a, b) => a - b);
   const pitchNatural = centers.slice(1).reduce((least, center, index) => Math.min(least, center - centers[index]), Infinity);
   // Systems draw at the stave scale; a portrait system is only width-fitted when its bars cannot fit at their minimum width.
@@ -788,7 +840,7 @@ export async function renderScore(
 
   const firstSystem = (): SystemGeometry => geometryOf(first);
   const geometryOf = (slot: Slot): SystemGeometry => ({ index: slot.index, firstMeasure: slot.firstMeasure, measureCount: slot.measureCount, width: slot.naturalWidth * slot.scale, height: slot.naturalHeight * slot.scale, rendered: !!slot.svg,
-    staffCenters: visibleParts.map(part => (slot.bands.get(staffOf.get(part.id) || '')?.center ?? (slot.svg ? NaN : first.bands.get(staffOf.get(part.id) || '')?.center ?? NaN)) * slot.scale) });
+    staffCenters: visibleParts.map(part => (slot.bands.get(displayStaff(part))?.center ?? (slot.svg ? NaN : first.bands.get(displayStaff(part))?.center ?? NaN)) * slot.scale) });
   const head = firstSystem();
   const firstCenters = head.staffCenters.map((center, index) => Number.isFinite(center) ? center : (head.staffCenters[index - 1] ?? 0) + 80 * first.scale);
   const result: RenderResult = {

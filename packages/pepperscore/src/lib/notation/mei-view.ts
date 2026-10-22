@@ -9,6 +9,7 @@
  */
 
 import type { SpellingSpec } from './mei-spelling';
+import type { TabSpec } from './mei-tab';
 
 /** A start tag, end tag or self-closing tag; comments, processing instructions, CDATA and DOCTYPE match without a name. */
 const TAG = /<(?:!--[\s\S]*?--|\?[\s\S]*?\?|!\[CDATA\[[\s\S]*?\]\]|!DOCTYPE[^>]*|(\/?)([A-Za-z_][\w.:-]*)((?:\s+[^\s=/>]+(?:\s*=\s*(?:"[^"]*"|'[^']*'))?)*)\s*(\/?))>/g;
@@ -121,6 +122,11 @@ export type ViewSpec = {
    * loaded untransposed.
    */
   spelling?: SpellingSpec;
+  /**
+   * Guitar TAB staves to add after spelling (notation/mei-tab.ts), and staff-bound text to move onto them. Hidden
+   * notation staves (TAB view) and unused imported TAB staves are in `hiddenStaves`.
+   */
+  tab?: TabSpec;
 };
 
 /** Elements the reader view never engraves: the header (React shows metadata), labels (staff controls show names) and encoded breaks. */

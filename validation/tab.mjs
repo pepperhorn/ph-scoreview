@@ -1,0 +1,266 @@
+// Guitar TAB view (docs/specs/guitar-tab.md). Part 1 runs the pipeline in a page served by a private Vite server
+// (validation/tab-harness.ts, as validation/transpose.mjs): an imported TAB staff is flagged and never performed (the
+// timeline has the notation notes once), the Notation / TAB / Both views engrave the right staves, a notation-only
+// guitar score gets one generated tabGrp per note or chord, transposing replaces imported TAB with regenerated frets,
+// chord symbols survive the TAB-only view, chunked engraving keeps fingerings, and settings survive a saved record.
+// Part 2 drives the built demo reader (apps/reader/dist; run `npm run build` first): the switch shows for guitar and
+// piano scores, flips the engraving, lists the guitar once, follows transposition, persists per score and sits in the
+// More panel on a phone. BROWSER=chromium|firefox|webkit for part 2 (part 1 always runs on Chromium).
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { setTimeout as delay } from 'node:timers/promises';
+import { chromium, firefox, webkit } from 'playwright-core';
+import { serveDist } from './serve-dist.mjs';
+
+const fixture = name => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
+const fixturePath = name => new URL(`./fixtures/${name}`, import.meta.url).pathname;
+const STAVES = fixture('guitar-tab-staves.musicxml'), PARTS = fixture('guitar-tab-parts.musicxml'), NOTATION = fixture('guitar-notation.musicxml'), ENSEMBLE = fixture('ensemble.musicxml');
+const DRUMS = '<?xml version="1.0"?><score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Drums</part-name></score-part></part-list><part id="P1"><measure number="1"><attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>percussion</sign></clef></attributes><note><unpitched><display-step>C</display-step><display-octave>5</display-octave></unpitched><duration>4</duration><type>whole</type></note></measure></part></score-partwise>';
+const TUNING = [40, 45, 50, 55, 59, 64];
+/** A TAB note's sounding pitch (course 1 is the highest string). */
+const pitchOf = (note, tuning = TUNING, capo = 0) => tuning[tuning.length - note.course] + capo + note.fret;
+const sorted = list => [...list].sort((a, b) => a - b);
+const engine = process.env.BROWSER || 'chromium';
+const launcher = { chromium, firefox, webkit }[engine];
+if (!launcher) throw new Error(`BROWSER must be chromium, firefox or webkit (got "${engine}")`);
+
+// --- Part 1: the pipeline -------------------------------------------------------------------------------------------
+const port = 43993;
+const vite = spawn('node', ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { cwd: new URL('..', import.meta.url), stdio: 'ignore' });
+let browser;
+try {
+  let baseUrl;
+  for (let attempt = 0; attempt < 50 && !baseUrl; attempt++) {
+    try { if ((await fetch(`http://127.0.0.1:${port}/validation/performance.html`)).ok) baseUrl = `http://127.0.0.1:${port}`; } catch { /* startup */ }
+    if (!baseUrl) await delay(200);
+  }
+  assert.ok(baseUrl, 'Vite dev server started');
+  browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
+  const page = await browser.newPage();
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto(`${baseUrl}/validation/performance.html`);
+  // The first import makes Vite optimize new dependencies and reload the page: import until it is stable.
+  for (let attempt = 0; ; attempt++) {
+    try { await page.evaluate(() => import('/validation/tab-harness.ts')); await delay(1500); await page.evaluate(() => import('/validation/tab-harness.ts')); break; }
+    catch (error) { if (attempt > 5) throw error; await page.waitForLoadState('load'); }
+  }
+  const call = (name, ...args) => page.evaluate(async ([name, args]) => (await import('/validation/tab-harness.ts'))[name](...args), [name, args]);
+
+  // 1. Parser: an imported TAB staff (or part) doubles the notation part, is flagged, and is performed once.
+  const notation = await call('parts', NOTATION);
+  for (const [name, xml, tabId, partnerId] of [['TAB staff', STAVES, 'P1-2', 'P1-1'], ['TAB part', PARTS, 'P2-1', 'P1-1']]) {
+    const read = await call('parts', xml);
+    const tab = read.parts.find(part => part.id === tabId);
+    assert.ok(tab?.tab && tab.clef === 'tab', `${name}: the TAB staff is flagged (${JSON.stringify(read.parts)})`);
+    assert.equal(tab.tabOf, partnerId, `${name}: the TAB staff doubles the notation part`);
+    assert.deepEqual(read.timelineParts, [partnerId], `${name}: only the notation part is performed`);
+    assert.equal(read.timelineNotes, notation.timelineNotes, `${name}: the timeline has the notation notes once (${read.timelineNotes} == ${notation.timelineNotes})`);
+    assert.equal(read.pitches[partnerId], read.pitches[tabId], `${name}: the TAB staff holds the same notes`);
+  }
+  assert.equal((await call('parts', NOTATION)).parts.every(part => !part.tab), true, 'A notation-only score has no TAB parts');
+  assert.equal(notation.canShowTab, true, 'A guitar score can show TAB');
+  assert.equal((await call('parts', ENSEMBLE)).canShowTab, true, 'A piano score can show TAB (its first pitched part)');
+  assert.equal((await call('parts', DRUMS)).canShowTab, false, 'A drums-only score cannot show TAB');
+  console.log(`TAB: an imported TAB staff or part is flagged, linked to its notation part and performed once (${notation.timelineNotes} notes) passed`);
+
+  // 2. Imported TAB: Notation hides it, TAB shows it alone, Both shows both; chord symbols move onto it in TAB view.
+  const imported = { notation: await call('engraveTab', STAVES, { view: 'notation' }), tab: await call('engraveTab', STAVES, { view: 'tab' }), both: await call('engraveTab', STAVES, { view: 'both' }) };
+  assert.deepEqual(imported.notation.staves, ['1'], 'Imported TAB, Notation view: the notation staff only');
+  assert.deepEqual(imported.tab.staves, ['2'], 'Imported TAB, TAB view: the imported TAB staff only');
+  assert.deepEqual(imported.both.staves, ['1', '2'], 'Imported TAB, Both view: notation and TAB');
+  for (const view of ['tab', 'both']) assert.deepEqual(imported[view].generate, [], `Imported TAB, ${view}: nothing is generated`);
+  assert.ok(imported.tab.harm.length === 4 && imported.tab.harm.every(staff => staff === '2') && imported.tab.drawnHarm === 4, `Imported TAB, TAB view: chord symbols move to the TAB staff (${imported.tab.harm})`);
+  assert.equal(imported.both.harm.every(staff => staff === '1'), true, 'Both view: chord symbols stay on the notation staff');
+  console.log('TAB: imported TAB staff shows in TAB and Both views only, with chord symbols in TAB view passed');
+
+  // 3. Generated TAB for a notation-only guitar score: one tabGrp per note or chord, every pitch fingered.
+  const generated = { notation: await call('engraveTab', NOTATION, { view: 'notation' }), tab: await call('engraveTab', NOTATION, { view: 'tab' }), both: await call('engraveTab', NOTATION, { view: 'both' }) };
+  const events = notation.timelineNotes;
+  assert.deepEqual(generated.notation.staves, ['1']); assert.equal(generated.notation.tabGroups, 0, 'Notation view: no TAB');
+  assert.deepEqual(generated.tab.staves, ['101'], 'TAB view: the generated TAB staff (100 + n) replaces the notation staff');
+  assert.deepEqual(generated.both.staves, ['1', '101'], 'Both view: the TAB staff follows the notation staff');
+  // 4 bars: 5 + 4 + 4 + 3 notes or chords, less none (a tied note keeps its tabGrp, without a fret).
+  assert.equal(generated.tab.tabGroups, 15, `One tabGrp per note or chord (${generated.tab.tabGroups})`);
+  assert.equal(generated.tab.svgTabGroups, generated.tab.tabGroups, 'Every tabGrp is drawn');
+  assert.equal(generated.tab.tabNotes.length, notation.pitches['P1-1'], `Every sounding pitch has a fret (${generated.tab.tabNotes.length} of ${notation.pitches['P1-1']})`);
+  assert.equal(generated.tab.notesByStaff['101'], notation.pitches['P1-1'], 'Every fret is drawn on the TAB staff');
+  assert.equal(generated.both.tabNotes.length, generated.tab.tabNotes.length, 'Both view draws the same TAB');
+  assert.ok(generated.tab.harm.every(staff => staff === '101') && generated.tab.drawnHarm === 4, `Chord symbols survive the TAB-only view (${generated.tab.harm})`);
+  // The C chord of bar 1 is the open shape: x32010.
+  const firstChord = generated.tab.tabNotes.slice(0, 5).map(note => `${note.course}:${note.fret}`).sort();
+  assert.deepEqual(firstChord, ['1:0', '2:1', '3:0', '4:2', '5:3'], `Open C chord (${firstChord})`);
+  const basePitches = sorted(generated.tab.tabNotes.map(note => pitchOf(note)));
+  console.log(`TAB: a notation-only guitar score gets ${generated.tab.tabGroups} tabGrps and ${generated.tab.tabNotes.length} frets in TAB and Both views passed`);
+
+  // 4. Transposition: generated frets follow the transposed pitches; imported TAB (stale frets) is replaced by generated TAB.
+  // Down a minor third the six-note G chord becomes E G# B E G# E: G#2 has no string of its own, so the solver drops
+  // that inner voice (unplayable) rather than fail; every other note sounds its transposed pitch.
+  const within = (actual, expected, drops, message) => {
+    const left = [...expected];
+    for (const pitch of actual) { const at = left.indexOf(pitch); assert.ok(at >= 0, `${message}: ${pitch} is not a transposed note`); left.splice(at, 1); }
+    assert.ok(left.length <= drops, `${message}: ${left.length} notes unfingered (${left})`);
+  };
+  for (const [semitones, drops] of [[2, 0], [-3, 1]]) {
+    const moved = await call('engraveTab', NOTATION, { view: 'tab', semitones });
+    within(moved.tabNotes.map(note => pitchOf(note)), basePitches.map(pitch => pitch + semitones), drops, `${semitones > 0 ? '+' : ''}${semitones}: frets sound the transposed pitches`);
+    const movedImported = await call('engraveTab', STAVES, { view: 'both', semitones });
+    assert.deepEqual(movedImported.staves, ['1', '101'], `${semitones}: imported TAB is hidden and TAB is generated`);
+    assert.ok(movedImported.hiddenStaves.includes('2'), 'The stale imported TAB staff is hidden');
+    within(movedImported.tabNotes.map(note => pitchOf(note)), basePitches.map(pitch => pitch + semitones), drops, `${semitones}: regenerated frets match the transposed notes`);
+  }
+  console.log('TAB: transposed views regenerate frets (imported TAB replaced) passed');
+
+  // 5. Tuning and capo: frets are relative to the capo and sound the written pitches; MusicXML string/fret are kept.
+  const capo = await call('engraveTab', NOTATION, { view: 'tab', capo: 2 });
+  // With a capo at 2 the open strings rise a tone: the full G chord's D3 has no string left, so it is dropped.
+  within(capo.tabNotes.map(note => pitchOf(note, TUNING, 2)), basePitches, 1, 'Capo 2: frets relative to the capo');
+  assert.ok(capo.tabNotes.some(note => note.fret === 0) && capo.tabNotes.every(note => note.fret <= 12), 'Capo 2: open strings are the capo fret');
+  const dropD = [38, 45, 50, 55, 59, 64];
+  const dropped = await call('engraveTab', NOTATION, { view: 'tab', tuning: dropD });
+  assert.deepEqual(sorted(dropped.tabNotes.map(note => pitchOf(note, dropD))), basePitches, 'Drop D: frets for the tuning');
+  // MusicXML <technical> string/fret on a notation note (a "preprocessed" score) is a fixed fingering: C3 on string 6.
+  const fixedXml = NOTATION.replace('<note id="g1-6"><pitch><step>C</step><octave>3</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type></note>',
+    '<note id="g1-6"><pitch><step>C</step><octave>3</octave></pitch><duration>1</duration><voice>1</voice><type>eighth</type><notations><technical><string>6</string><fret>8</fret></technical></notations></note>');
+  assert.notEqual(fixedXml, NOTATION, 'The fixture note to fix was found');
+  const fixedNote = (await call('engraveTab', fixedXml, { view: 'tab' })).tabNotes.find(note => note.id === 'g1-6-tabn');
+  assert.deepEqual(fixedNote && [fixedNote.course, fixedNote.fret], [6, 8], 'A MusicXML string/fret is kept as a fixed fingering');
+  const movedFixed = (await call('engraveTab', fixedXml, { view: 'tab', semitones: 2 })).tabNotes.find(note => note.id === 'g1-6-tabn');
+  assert.ok(movedFixed && movedFixed.course !== 6, `Transposed: the stale fingering is not forced (${JSON.stringify(movedFixed)})`);
+  console.log('TAB: capo, tuning and fixed MusicXML fingerings passed');
+
+  // 6. Chunked engraving: three-bar chunks with one bar of overlap keep the whole score's fingerings per note.
+  const chunked = await call('engraveTab', NOTATION, { view: 'tab', slices: 3 });
+  assert.deepEqual(chunked.chunks.tabNotes.filter(note => note.id.endsWith('(changed)')), [], 'A note keeps its fret in every chunk that draws it');
+  const chunkIds = new Set(chunked.chunks.tabNotes.map(note => note.id));
+  assert.deepEqual(generated.tab.tabNotes.filter(note => !chunkIds.has(note.id)), [], 'Chunks finger every note');
+  // A tie continued from before a chunk shows its fret there (it has no start in that document); nothing else is extra.
+  assert.ok(chunked.chunks.tabNotes.length - generated.tab.tabNotes.length <= 1, 'Only the tied note at a chunk start is extra');
+  console.log('TAB: chunked engraving keeps fingerings across chunks passed');
+
+  // 7. Piano score: the first pitched part's top staff takes TAB.
+  const piano = await call('engraveTab', ENSEMBLE, { view: 'both' });
+  assert.equal(piano.generate.length, 1, `Piano: one staff takes TAB (${piano.generate})`);
+  assert.ok(piano.staves.includes(String(100 + Number(piano.generate[0]))) && piano.tabGroups > 0, 'Piano: its TAB staff is drawn');
+  console.log('TAB: a piano score gets TAB on its first pitched part passed');
+
+  // 8. Settings: host settings map to prefs, survive a saved per-score record, and bad or missing values get defaults.
+  const round = await call('settingsRoundTrip', { tabView: 'both', tabTuning: dropD, capo: 3, bpm: 120.4, keyFlip: true }, NOTATION);
+  assert.deepEqual(round.mapped, { tabView: 'both', tabTuning: dropD, capo: 3, bpm: 120, keyFlip: true }, 'Settings map to prefs');
+  assert.deepEqual(round.read, { tabView: 'both', tabTuning: dropD, capo: 3, bpm: 120, keyFlip: true }, 'A saved record reads back the TAB settings, BPM and key flip');
+  assert.deepEqual(round.legacy, { tabView: 'notation', tabTuning: TUNING, capo: 0 }, 'A record without TAB settings reads with defaults');
+  assert.deepEqual(round.invalid, { tabView: 'notation', tabTuning: TUNING, capo: 0 }, 'Unusable TAB settings fall back to defaults');
+  assert.deepEqual(round.sanitized, { tabView: 'notation', tabTuning: TUNING, capo: 0, bpm: 240 }, 'Saved global prefs are repaired');
+  const clamped = await call('settingsRoundTrip', { tabView: 'lute', capo: 40, bpm: 5, tabTuning: [] }, NOTATION);
+  assert.deepEqual(clamped.mapped, { capo: 12, bpm: 30 }, 'Out-of-range settings are clamped or ignored');
+  console.log('TAB: settings round trip (prefs, saved record, legacy record, repair) passed');
+  assert.deepEqual(errors, [], 'No page errors');
+} finally {
+  await browser?.close();
+  vite.kill();
+}
+
+// --- Part 2: the reader -----------------------------------------------------------------------------------------
+const server = await serveDist();
+browser = await launcher.launch({ headless: true, ...(engine === 'chromium' ? { args: ['--no-sandbox'] } : {}) });
+try {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  await context.route(/poppins/i, route => route.abort());
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const drawn = () => page.evaluate(() => ({
+    staves: [...new Set([...document.querySelectorAll('.score-system g.staff')].map(staff => staff.getAttribute('data-n')))].sort(),
+    tabGroups: document.querySelectorAll('.score-system g.tabGrp').length,
+    parts: [...document.querySelectorAll('.part-control .part-name')].map(name => name.textContent),
+    pressed: document.querySelector('.tab-view-toggle-header [aria-pressed="true"]')?.className.match(/tab-view-toggle-(\w+)/)?.[1] ?? null,
+  }));
+  const settled = async (check, message) => {
+    for (let attempt = 0; attempt < 120; attempt++) {
+      const state = await drawn();
+      if (check(state)) return state;
+      await delay(250);
+    }
+    throw new Error(`${message}: ${JSON.stringify(await drawn())}`);
+  };
+  const choose = view => page.locator(`.tab-view-toggle-header .tab-view-toggle-${view}`).click();
+  await page.goto(server.url);
+  await page.waitForSelector('.score-system svg', { timeout: 60000 });
+  // The built-in sample is a piano score: the switch shows, and TAB view draws its top staff as TAB.
+  assert.equal(await page.locator('.tab-view-toggle-header').count(), 1, 'The switch shows for a piano score');
+  assert.equal(await page.locator('.tab-view-toggle-header').getAttribute('role'), 'group');
+  await choose('tab');
+  await settled(state => state.tabGroups > 0 && state.staves.every(n => Number(n) > 100), 'Piano TAB view');
+  await choose('notation');
+  await settled(state => state.tabGroups === 0, 'Piano notation view');
+
+  const open = async name => {
+    await page.setInputFiles('input[type=file]', fixturePath(name));
+    await page.waitForFunction(title => document.querySelector('.pepperscore')?.getAttribute('aria-label')?.includes(title), name === 'guitar-notation.musicxml' ? 'Guitar notation' : 'TAB staves', { timeout: 30000 });
+  };
+  await open('guitar-tab-staves.musicxml');
+  let state = await settled(state => state.staves.join() === '1', 'Imported TAB, notation view');
+  assert.deepEqual(state.parts, ['Guitar'], 'The guitar is listed once');
+  await page.locator('.mixer-trigger').click();
+  assert.equal(await page.locator('.mixer-track').count(), 1, 'The mixer lists the guitar once');
+  await page.keyboard.press('Escape'); await page.locator('.mixer-panel button[aria-label="Close track mixer"]').click().catch(() => {});
+  await choose('tab');
+  state = await settled(state => state.staves.join() === '2', 'Imported TAB, TAB view');
+  assert.equal(state.pressed, 'tab', 'The pressed button is the current view');
+  await choose('both');
+  await settled(state => state.staves.join() === '1,2', 'Imported TAB, Both view');
+  // Transposing regenerates TAB: the imported staff gives way to a generated one.
+  await page.locator('.header-transpose-up').click();
+  await settled(state => state.staves.join() === '1,101', 'Transposed Both view');
+  await page.locator('.header-transpose-down').click();
+  await settled(state => state.staves.join() === '1,2', 'Back at written pitch');
+  await choose('tab');
+  await settled(state => state.staves.join() === '2', 'TAB view before reload');
+  // The view is saved with the score: reopening it after a reload restores TAB view.
+  await page.waitForTimeout(800);
+  await page.reload();
+  await page.waitForSelector('.score-system svg', { timeout: 60000 });
+  await open('guitar-tab-staves.musicxml');
+  state = await settled(state => state.staves.join() === '2', 'Saved TAB view');
+  assert.equal(state.pressed, 'tab');
+  await page.screenshot({ path: '/tmp/tab-validation-reader.png' });
+
+  // Phone: the switch sits in the More panel and still works.
+  const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: engine !== 'firefox' });
+  await phone.route(/poppins/i, route => route.abort());
+  const mobile = await phone.newPage();
+  mobile.on('pageerror', error => errors.push(error.message));
+  await mobile.goto(server.url);
+  await mobile.waitForSelector('.score-system svg', { timeout: 60000 });
+  assert.equal(await mobile.locator('.tab-view-toggle-header').isVisible(), false, 'Phone: the switch is in the More panel');
+  await mobile.locator('.header-more-toggle').click();
+  await mobile.locator('.tab-view-toggle-header .tab-view-toggle-both').click();
+  await mobile.waitForFunction(() => document.querySelectorAll('.score-system g.tabGrp').length > 0, null, { timeout: 30000 });
+  assert.equal(await mobile.evaluate(() => document.querySelector('.topbar').scrollWidth <= document.querySelector('.topbar').clientWidth), true, 'Phone: the header still fits');
+  await phone.close();
+
+  // Mid width: the full header has no room, so the switch is only in the drawer there.
+  const tablet = await browser.newContext({ viewport: { width: 1000, height: 800 } });
+  await tablet.route(/poppins/i, route => route.abort());
+  const mid = await tablet.newPage();
+  mid.on('pageerror', error => errors.push(error.message));
+  await mid.goto(server.url);
+  await mid.waitForSelector('.score-system svg', { timeout: 60000 });
+  assert.equal(await mid.locator('.tab-view-toggle-header').isVisible(), false, 'Mid width: no switch in the header');
+  assert.equal(await mid.evaluate(() => document.querySelector('.topbar').scrollWidth <= document.querySelector('.topbar').clientWidth), true, 'Mid width: the header fits');
+  await mid.locator('.drawer-handle').click();
+  await mid.locator('.tab-view-toggle-drawer .tab-view-toggle-tab').click();
+  await mid.waitForFunction(() => document.querySelectorAll('.score-system g.tabGrp').length > 0, null, { timeout: 30000 });
+  await tablet.close();
+
+  // Engraving-only and minimal embeds have no switch.
+  await page.goto(`${server.url}/embed-test`);
+  await page.waitForSelector('.pepperscore.embed-a .score-system svg', { timeout: 60000 });
+  assert.equal(await page.locator('.embed-a .tab-view-toggle, .embed-none .tab-view-toggle').count(), 0, 'No switch without controls.tabToggle in minimal or none');
+  assert.deepEqual(errors, [], 'No page errors');
+  console.log(`TAB: reader switch (piano and guitar, saved view, transposition, phone More panel, drawer at mid width, embeds) on ${engine} passed`);
+} finally {
+  await browser.close();
+  await server.close();
+}

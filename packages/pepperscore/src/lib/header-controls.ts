@@ -6,9 +6,10 @@
  * the header; `secondary` controls sit inline above MOBILE_HEADER_BREAKPOINT
  * and move into the "More controls" dropdown at or below it. PepperScore.tsx maps
  * each id to its element; every control is always rendered (`bars` is disabled outside Vertical view, `keyFlip` when the key has no enharmonic) so the
- * header footprint never depends on client-only state.
+ * header footprint never depends on client-only state. `tab` (the Notation / TAB / Both switch) is the exception: it shows only for a score with a
+ * stave that can take TAB (any pitched part).
  */
-export type HeaderControlId = 'stop' | 'play' | 'openFile' | 'bpm' | 'transpose' | 'keyFlip' | 'mode' | 'bars' | 'staveScale' | 'mixer';
+export type HeaderControlId = 'stop' | 'play' | 'openFile' | 'bpm' | 'transpose' | 'keyFlip' | 'mode' | 'tab' | 'bars' | 'staveScale' | 'mixer';
 export type HeaderControlTier = 'primary' | 'secondary';
 export type HeaderControlConfig = { id: HeaderControlId; tier: HeaderControlTier };
 
@@ -17,6 +18,7 @@ export const HEADER_CONTROLS = [
   { id: 'play', tier: 'primary' },
   { id: 'openFile', tier: 'primary' },
   { id: 'mode', tier: 'primary' },
+  { id: 'tab', tier: 'secondary' },
   { id: 'bpm', tier: 'secondary' },
   { id: 'transpose', tier: 'secondary' },
   { id: 'keyFlip', tier: 'secondary' },
@@ -32,7 +34,7 @@ export const MOBILE_HEADER_BREAKPOINT = 760;
 export { clampStaveScale, STAVE_SCALE_MAX, STAVE_SCALE_MIN, STAVE_SCALE_STEP } from './stave-scale';
 
 /** Which `controls` key shows each header control (see chrome.ts). */
-export const HEADER_CONTROL_GROUP: Record<HeaderControlId, 'transport' | 'viewToggle' | 'openFile' | 'zoom' | 'mixer'> = {
+export const HEADER_CONTROL_GROUP: Record<HeaderControlId, 'transport' | 'viewToggle' | 'openFile' | 'zoom' | 'mixer' | 'tabToggle'> = {
   stop: 'transport', play: 'transport', bpm: 'transport', transpose: 'transport', keyFlip: 'transport', bars: 'transport',
-  mode: 'viewToggle', openFile: 'openFile', staveScale: 'zoom', mixer: 'mixer',
+  mode: 'viewToggle', tab: 'tabToggle', openFile: 'openFile', staveScale: 'zoom', mixer: 'mixer',
 };
