@@ -1,6 +1,6 @@
 import { isGmSoundfont, type InstrumentId, type Score } from './score';
 import { STAVE_SCALE_FLOOR, STAVE_SCALE_MAX, type DeviceClass } from './stave-scale';
-import { BARS_PER_LINE_MAX, BARS_PER_LINE_MIN } from './prefs';
+import { ANNOTATION_SIZE_PREF_KEYS, BARS_PER_LINE_MAX, BARS_PER_LINE_MIN, isAnnotationSize, type AnnotationSize } from './prefs';
 
 export type FileSource = { name: string; size: number; sha256: string; format: string };
 export type FileSettings = {
@@ -9,6 +9,8 @@ export type FileSettings = {
   counts: boolean; subdivisions: boolean; annotationFont: 'Sans' | 'Serif' | 'Mono'; bpm: number; semitones: number; scorePitch: 'written' | 'concert';
   /** Spell the transposed view in the enharmonic key (F# major shown as Gb major); optional on read, default false. */
   keyFlip: boolean;
+  /** Text add-on sizes (prefs.ts ANNOTATION_SIZES); optional on read, default 'rg' (the size every earlier record showed). */
+  namesSize: AnnotationSize; chordSymbolsSize: AnnotationSize; countsSize: AnnotationSize; subdivisionsSize: AnnotationSize;
 };
 /** Saved view: an absolute stave scale and the device class it was chosen on (see stave-scale.ts). */
 export type ScoreView = { zoom: number; zoomDevice: DeviceClass };
@@ -150,6 +152,8 @@ function validSettingsAndParts(state: { settings: FileSettings; parts: Record<st
   Object.values(state.parts).forEach(part => { part.instrument = legacyInstruments[part.instrument] || part.instrument; });
   if (Object.values(state.parts).some(part => typeof part.visible !== 'boolean' || !instruments.has(part.instrument) || (part.gmSoundfont !== undefined && !isGmSoundfont(part.gmSoundfont)) || (part.volume !== undefined && (!Number.isInteger(part.volume) || part.volume < 0 || part.volume > 100)))) return false;
   state.settings = { ...settings, annotationFont: settings.annotationFont ?? 'Sans', semitones: settings.semitones ?? 0, scorePitch: settings.scorePitch ?? 'written', keyFlip: settings.keyFlip ?? false };
+  // A missing or unknown add-on size only loses that size (regular), not the record.
+  for (const key of ANNOTATION_SIZE_PREF_KEYS) if (!isAnnotationSize(state.settings[key])) state.settings[key] = 'rg';
   return true;
 }
 
@@ -199,5 +203,6 @@ export function buildFileState(source: FileSource, settings: FileSettings, score
   const parts: FileState['parts'] = {};
   for (const part of score.parts) parts[part.id] = { visible: !hidden.has(part.id), instrument: part.instrument, ...(part.gmSoundfont ? { gmSoundfont: part.gmSoundfont } : {}), volume: volumes[part.id] ?? 100 };
   const { mode, notationFont, barsPerLine, overlap, names, chordSymbols, inferChordSymbols, counts, subdivisions, annotationFont, bpm, semitones, scorePitch, keyFlip } = settings;
-  return { version: 2, source, lastOpened, settings: { mode, notationFont, barsPerLine, overlap, names, chordSymbols, inferChordSymbols, counts, subdivisions, annotationFont, bpm: clampBpm(bpm), semitones, scorePitch, keyFlip: !!keyFlip }, parts, ...(view ? { view } : {}) };
+  const sizes = Object.fromEntries(ANNOTATION_SIZE_PREF_KEYS.map(key => [key, isAnnotationSize(settings[key]) ? settings[key] : 'rg'])) as Pick<FileSettings, typeof ANNOTATION_SIZE_PREF_KEYS[number]>;
+  return { version: 2, source, lastOpened, settings: { mode, notationFont, barsPerLine, overlap, names, chordSymbols, inferChordSymbols, counts, subdivisions, annotationFont, ...sizes, bpm: clampBpm(bpm), semitones, scorePitch, keyFlip: !!keyFlip }, parts, ...(view ? { view } : {}) };
 }

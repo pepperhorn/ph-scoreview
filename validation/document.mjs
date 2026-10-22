@@ -286,6 +286,17 @@ try {
       // A first-measures document keeps the first measures and closes every open element.
       const limited = parse(buildViewMei(baseline, { breakEvery: 2, hiddenStaves: [], chordSymbols: true }, 2));
       if (limited.querySelector('parsererror') || nodes(limited, 'measure').length !== 2) failures.push(`${name} limit`);
+      // Chord symbol size: regular leaves the view unchanged; another size wraps each harmony's text in a sized rend.
+      const plain = buildViewMei(baseline, { breakEvery: 2, hiddenStaves: [], chordSymbols: true });
+      if (buildViewMei(baseline, { breakEvery: 2, hiddenStaves: [], chordSymbols: true, harmSize: 100 }) !== plain) failures.push(`${name} harmSize 100 changes the view`);
+      if (buildViewMei(baseline, { breakEvery: 2, hiddenStaves: [], chordSymbols: false, harmSize: 145 }) !== buildViewMei(baseline, { breakEvery: 2, hiddenStaves: [], chordSymbols: false })) failures.push(`${name} harmSize without chord symbols`);
+      for (const limit of [Infinity, 1, 2]) {
+        const sized = parse(buildViewMei(baseline, { breakEvery: 2, hiddenStaves: [], chordSymbols: true, harmSize: 145 }, limit));
+        const reference = parse(buildViewMei(baseline, { breakEvery: 2, hiddenStaves: [], chordSymbols: true }, limit));
+        const harms = nodes(sized, 'harm');
+        if (sized.querySelector('parsererror') || nodes(sized, 'measure').length !== nodes(reference, 'measure').length || harms.length !== nodes(reference, 'harm').length) failures.push(`${name} harmSize limit=${limit} structure`);
+        if (harms.some((harm, index) => harm.children.length !== 1 || harm.children[0].localName !== 'rend' || harm.children[0].getAttribute('fontsize') !== '145%' || harm.textContent !== nodes(reference, 'harm')[index].textContent)) failures.push(`${name} harmSize limit=${limit} rend`);
+      }
     }
     const doc = parse(crafted);
     const info = scanBaseline(crafted);

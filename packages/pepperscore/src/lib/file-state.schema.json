@@ -114,6 +114,50 @@
             "Mono"
           ]
         },
+        "namesSize": {
+          "enum": [
+            "xs",
+            "sm",
+            "md",
+            "rg",
+            "lg",
+            "xl"
+          ],
+          "description": "Note name text size. Steps smallest to largest; 'rg' (regular) is the default. Optional; readers default a missing or unknown value to 'rg'."
+        },
+        "chordSymbolsSize": {
+          "enum": [
+            "xs",
+            "sm",
+            "md",
+            "rg",
+            "lg",
+            "xl"
+          ],
+          "description": "Chord symbol text size (source and inferred). Steps smallest to largest; 'rg' (regular) is the default. Optional; readers default a missing or unknown value to 'rg'."
+        },
+        "countsSize": {
+          "enum": [
+            "xs",
+            "sm",
+            "md",
+            "rg",
+            "lg",
+            "xl"
+          ],
+          "description": "Beat count text size (on-beat counts). Steps smallest to largest; 'rg' (regular) is the default. Optional; readers default a missing or unknown value to 'rg'."
+        },
+        "subdivisionsSize": {
+          "enum": [
+            "xs",
+            "sm",
+            "md",
+            "rg",
+            "lg",
+            "xl"
+          ],
+          "description": "Subdivision count text size (the e/&/a counts between beats). Steps smallest to largest; 'rg' (regular) is the default. Optional; readers default a missing or unknown value to 'rg'."
+        },
         "bpm": {
           "type": "number",
           "minimum": 30,
