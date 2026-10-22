@@ -3,7 +3,7 @@
 // through Vite's SSR module loader, so baked fingerings are compared with what the reader would generate.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
@@ -245,6 +245,132 @@ try {
     ok(!readdirSync(tmp).includes('dry'), '--dry-run writes nothing');
     ok(/drop_d/.test((() => { try { run(join(dir, 'song.mxl'), '--tuning', 'banjo', '--dry-run'); return ''; } catch (error) { return String(error.stderr); } })()), 'unknown tuning is an error listing the names');
     console.log('tab-bake: CLI with .mxl, batch directory and dry run passed');
+  }
+  // 7. Reader parity: over every fixture, the bake writes the fingerings the reader generates (same-onset notes of all
+  // voices are one event, unisons one string), and the reader draws the baked score the same.
+  {
+    const names = readdirSync(new URL('./fixtures/', import.meta.url)).filter(name => name.endsWith('.musicxml')).sort();
+    let compared = 0;
+    for (const name of names) {
+      const source = fixture(name);
+      const out = bakeMusicXml(source, { parts: 'all', tuning: STANDARD });
+      const bakedNotes = new Map(notesOf(out.xml).filter(n => n.id).map(n => [n.id, n]));
+      const reader = await readerFrets(source);
+      // Known differences on the reader's side: Verovio drops a string number without a fret, and its MEI gives one
+      // ppq for the whole score while dur.ppq follows each measure's divisions (the bake times that fixture right: it
+      // matches the same score without the change, below).
+      if (name === 'guitar-string-only.musicxml' || name === 'guitar-divisions.musicxml') continue;
+      let mismatches = 0, here = 0;
+      for (const [id, expected] of reader) {
+        const note = bakedNotes.get(id);
+        if (!note) continue; // an ID Verovio made up (no ID in the file)
+        here++;
+        const actual = { string: note.string, fret: note.fret };
+        if (JSON.stringify(actual) !== JSON.stringify(expected)) { mismatches++; if (mismatches <= 3) console.log(`  ${name} ${id}: reader ${JSON.stringify(expected)}, bake ${JSON.stringify(actual)}`); }
+      }
+      eq(mismatches, 0, `${name}: the bake matches the reader on ${here} notes`);
+      compared += here;
+    }
+    // The reader keeps the baked fingerings, every fixture.
+    for (const name of names) {
+      const out = bakeMusicXml(fixture(name), { parts: 'all', tuning: STANDARD });
+      const bakedNotes = new Map(notesOf(out.xml).filter(n => n.id).map(n => [n.id, n]));
+      const again = await readerFrets(out.xml);
+      for (const [id, note] of bakedNotes) if (again.has(id) && note.string !== null) eq(again.get(id), { string: note.string, fret: note.fret }, `${name}: the reader draws baked ${id} as baked`);
+    }
+    for (const name of ['guitar-voices.musicxml', 'guitar-unison.musicxml']) ok(names.includes(name), `parity covers ${name}`);
+    // The unison: one string for both voices, held for the longer note, the tie continuation on it too.
+    const unison = notesOf(bakeMusicXml(fixture('guitar-unison.musicxml')).xml);
+    const u = id => unison.find(n => n.id === id);
+    eq([u('b1').string, u('b1').fret], [u('a1').string, u('a1').fret], 'unison across voices: one string and fret');
+    ok(u('a2').string !== u('a1').string, 'G4 avoids the unison E4 held in voice 2');
+    eq([u('d1').string, u('d1').fret, u('c2').string, u('c2').fret], [u('c1').string, u('c1').fret, u('c1').string, u('c1').fret], 'tied unison: both voices and the continuation on one string');
+    // A divisions change after the last note of a measure does not move later onsets.
+    eq(notesOf(bakeMusicXml(fixture('guitar-divisions.musicxml')).xml).map(n => [n.string, n.fret]), notesOf(baked.xml).map(n => [n.string, n.fret]), 'divisions change at a measure end: same fingerings as the score without it');
+    eq(bakeMusicXml(fixture('guitar-divisions.musicxml'), { addTabStaff: true }).warnings, [], 'divisions change after the last note: no mistiming warning');
+    console.log(`tab-bake: the bake matches the reader on ${compared} notes of ${names.length} fixtures (voices, unisons) passed`);
+  }
+
+  // 8. A string number without a fret (circled string) is a constraint: the string is kept, the fret is solved.
+  {
+    const source = fixture('guitar-string-only.musicxml');
+    for (const options of [{}, { overwrite: true }]) {
+      const out = bakeMusicXml(source, options);
+      const note = notesOf(out.xml).find(n => n.id === 'g1-7');
+      eq([note.string, note.fret], [5, 7], `string-only ${JSON.stringify(options)}: E3 stays on string 5 (fret 7)`);
+      checkOrder(out.xml, 'string-only');
+    }
+    const out = bakeMusicXml(source);
+    ok(/<technical><string>5<\/string><fret>7<\/fret><\/technical>/.test(out.xml), 'string-only: the fret is added after the string');
+    eq(bakeMusicXml(out.xml).changed, false, 'string-only: idempotent');
+    console.log('tab-bake: string numbers without frets are kept as constraints passed');
+  }
+
+  // 9. Tuning: a re-bake uses the part's TAB staff tuning; a different --tuning rewrites the staff-details.
+  {
+    const dropD = bakeMusicXml(NOTATION, { addTabStaff: true, tuning: TUNINGS.drop_d });
+    const re = bakeMusicXml(dropD.xml, { overwrite: true });
+    eq(re.parts[0].tuning, TUNINGS.drop_d, 're-bake reads the TAB staff tuning (staff-details number="2")');
+    eq(re.xml, dropD.xml, 're-bake with --overwrite-existing changes nothing');
+    const std = bakeMusicXml(dropD.xml, { overwrite: true, tuning: STANDARD });
+    const tunings = [...std.xml.matchAll(/<staff-details number="2">([\s\S]*?)<\/staff-details>/g)].map(([, body]) => [...body.matchAll(/<tuning-step>(\w)<\/tuning-step>(?:<tuning-alter>-?\d+<\/tuning-alter>)?<tuning-octave>(\d)/g)].map(m => m[1] + m[2]).join(' '));
+    eq(tunings, ['E2 A2 D3 G3 B3 E4'], '--tuning standard over drop D: the TAB staff tuning is rewritten');
+    for (const note of notesOf(std.xml).filter(n => n.midi !== null && n.string !== null)) eq(pitchOf(note.string, note.fret), note.midi, `retuned: ${note.id ?? 'TAB copy'} sounds its pitch`);
+    checkOrder(std.xml, 'retuned');
+    console.log('tab-bake: TAB staff tuning read back and rewritten passed');
+  }
+
+  // 10. Every <staves> of the part follows the added TAB staff.
+  {
+    const repeated = NOTATION.replace(/(<measure number="2"[^>]*>)/, '$1<attributes><staves>1</staves></attributes>');
+    const out = bakeMusicXml(repeated, { addTabStaff: true });
+    eq([...out.xml.matchAll(/<staves>(\d)<\/staves>/g)].map(m => m[1]), ['2', '2'], 'every <staves> is 2');
+    checkOrder(out.xml, 'repeated staves');
+    console.log('tab-bake: later <staves> updated passed');
+  }
+
+  // 11. CLI: no silent overwrite of the input, declared encodings kept, .mxl written as a container.
+  {
+    const dir = join(tmp, 'cli'); mkdirSync(dir, { recursive: true });
+    const run = (...args) => execFileSync(process.execPath, [script, ...args], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    const fails = (...args) => { try { run(...args); return ''; } catch (error) { return String(error.stderr) || 'failed'; } };
+    const input = join(dir, 'score.musicxml');
+    writeFileSync(input, NOTATION);
+    ok(/--in-place/.test(fails(input, '-o', input)), '-o equal to the input is refused without --in-place');
+    ok(/--in-place/.test(fails(input, '-o', join(dir, '.', 'score.musicxml'))), 'the same path spelled differently is refused');
+    eq(readFileSync(input, 'utf8'), NOTATION, 'the input is untouched');
+    ok(/--in-place/.test(fails(dir, '--out-dir', dir)), '--out-dir equal to the input directory is refused');
+    eq(readFileSync(input, 'utf8'), NOTATION, 'the input is still untouched');
+    run(input, '--in-place');
+    eq(readFileSync(input, 'utf8'), baked.xml, '--in-place bakes the input itself');
+    writeFileSync(input, NOTATION);
+    run(input, '-o', input, '--in-place');
+    eq(readFileSync(input, 'utf8'), baked.xml, '-o equal to the input with --in-place');
+
+    // ISO-8859-1: decoded and written back in that encoding.
+    const latin = NOTATION.replace('encoding="UTF-8"', 'encoding="ISO-8859-1"').replace('Guitar notation', 'Café für Gitarre');
+    writeFileSync(join(dir, 'latin.musicxml'), Buffer.from(latin, 'latin1'));
+    run(join(dir, 'latin.musicxml'), '-o', join(dir, 'latin.out.musicxml'));
+    const latinOut = readFileSync(join(dir, 'latin.out.musicxml'));
+    ok(latinOut.includes(Buffer.from([0x43, 0x61, 0x66, 0xe9])) && !latinOut.includes(Buffer.from('é', 'utf8')), 'ISO-8859-1: é written as one byte');
+    eq(latinOut.toString('latin1'), bakeMusicXml(latin).xml, 'ISO-8859-1: the baked text, nothing else changed');
+    writeFileSync(join(dir, 'sjis.musicxml'), NOTATION.replace('encoding="UTF-8"', 'encoding="Shift_JIS"'));
+    ok(/Shift_JIS/i.test(fails(join(dir, 'sjis.musicxml'), '-o', join(dir, 'sjis.out.musicxml'))), 'an unsupported encoding is an error');
+    ok(!existsSync(join(dir, 'sjis.out.musicxml')), 'nothing written for an unsupported encoding');
+
+    // .musicxml in, .mxl out: a real MusicXML container.
+    writeFileSync(input, NOTATION);
+    run(input, '-o', join(dir, 'packed.mxl'));
+    const files = unzipSync(readFileSync(join(dir, 'packed.mxl')));
+    eq(Object.keys(files)[0], 'mimetype', '.mxl: mimetype first');
+    eq(strFromU8(files.mimetype), 'application/vnd.recordare.musicxml', '.mxl: mimetype');
+    const raw = readFileSync(join(dir, 'packed.mxl'));
+    eq(raw.readUInt16LE(8), 0, '.mxl: mimetype stored uncompressed');
+    const rootPath = /full-path="([^"]+)"/.exec(strFromU8(files['META-INF/container.xml']))?.[1];
+    ok(rootPath && files[rootPath], `.mxl: container.xml points at the score (${rootPath})`);
+    eq(strFromU8(files[rootPath]), baked.xml, '.mxl: the baked score');
+    eq((await readerFrets(strFromU8(files[rootPath]))).size > 0, true, '.mxl: the reader reads it');
+    console.log('tab-bake: CLI refuses to overwrite its input, keeps ISO-8859-1, writes .mxl containers passed');
   }
   console.log(`tab-bake: all ${checks} checks passed`);
 } finally {

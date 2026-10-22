@@ -2,7 +2,7 @@
 // Make MusicXML scores TAB-ready ahead of time (docs/specs/guitar-tab.md, "Preprocessing").
 //
 //   node scripts/tab-bake.mjs <in.musicxml|.mxl|dir> [-o out] [--out-dir dir] [--tuning name|40,45,50,55,59,64]
-//        [--capo n] [--parts P1,P2|guitar|all] [--add-tab-staff] [--overwrite-existing] [--dry-run]
+//        [--capo n] [--parts P1,P2|guitar|all] [--add-tab-staff] [--overwrite-existing] [--in-place] [--dry-run]
 //
 // Runs the reader's fingering solver (packages/pepperscore/src/lib/tab/fret-assign.ts, loaded through Node's type
 // stripping, so Node 22.18+ or 23.6+) over each target part and writes `<notations><technical><string>/<fret>` onto
@@ -12,12 +12,12 @@
 //
 // The file is edited in place as text: every byte outside the inserted or changed elements is kept (XML declaration,
 // DOCTYPE, comments, whitespace, attribute quoting). Exported `bakeMusicXml` is used by validation/tab-bake.mjs.
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
-import { assignFrets, STANDARD_TUNING } from '../packages/pepperscore/src/lib/tab/fret-assign.ts';
+import { assignNoteFrets, STANDARD_TUNING } from '../packages/pepperscore/src/lib/tab/fret-assign.ts';
 
 /** Open-string MIDI pitches, low to high. */
 export const TUNINGS = {
@@ -163,7 +163,8 @@ const isGuitar = info => (info.program !== undefined && info.program >= 25 && in
 
 /**
  * Walk one part in document order: every note with its staff, voice, onset and duration in quarter notes, sounding
- * MIDI pitch (written pitch + `<transpose>`), grace/cue/chord/rest flags, ties and existing string/fret.
+ * MIDI pitch (written pitch + `<transpose>`), grace/cue/chord/rest flags, ties and existing string/fret. Durations are
+ * converted with the divisions in effect where they are read, so a `<divisions>` change anywhere keeps onsets right.
  */
 function readPart(src, partEl) {
   const notes = [];
@@ -171,33 +172,39 @@ function readPart(src, partEl) {
   let divisions = 1, transpose = new Map(), measureStart = 0;
   let maxVoice = 0, staves = 1, hasTab = false;
   const staffDetails = [];
+  /** Staff numbers with a TAB clef. */
+  const tabStaves = new Set();
   for (const [measureIndex, measure] of childrenOf(partEl, 'measure').entries()) {
+    // Quarter notes from the measure start.
     let cursor = 0, maxCursor = 0, lastOnset = 0;
     const record = { el: measure, number: attr(measure, 'number') ?? String(measureIndex + 1), index: measureIndex, items: [], divisionsChangedMidMeasure: false };
     measures.push(record);
-    let seenTimed = false;
+    // A divisions change between timed items (not before the first or after the last) mistimes a copied measure.
+    let seenTimed = false, changed = false;
+    const timed = () => { if (changed) record.divisionsChangedMidMeasure = true; seenTimed = true; };
+    const quarters = el => (numberOf(src, child(el, 'duration')) ?? 0) / divisions;
     for (const el of measure.children) {
       if (el.name === 'attributes') {
         const div = numberOf(src, child(el, 'divisions'));
-        if (div && div > 0) { if (seenTimed && div !== divisions) record.divisionsChangedMidMeasure = true; divisions = div; }
+        if (div && div > 0) { if (seenTimed && div !== divisions) changed = true; divisions = div; }
         const st = numberOf(src, child(el, 'staves')); if (st) staves = st;
         for (const tr of childrenOf(el, 'transpose')) {
           const semi = (numberOf(src, child(tr, 'chromatic')) ?? 0) + 12 * (numberOf(src, child(tr, 'octave-change')) ?? 0);
           const n = attr(tr, 'number');
           if (n) transpose.set(n, semi); else transpose = new Map([['*', semi]]);
         }
-        for (const clef of childrenOf(el, 'clef')) if (textOf(src, child(clef, 'sign')).toUpperCase() === 'TAB') hasTab = true;
+        for (const clef of childrenOf(el, 'clef')) if (textOf(src, child(clef, 'sign')).toUpperCase() === 'TAB') { hasTab = true; tabStaves.add(attr(clef, 'number') ?? '1'); }
         staffDetails.push(...childrenOf(el, 'staff-details'));
         continue;
       }
-      if (el.name === 'backup') { cursor -= numberOf(src, child(el, 'duration')) ?? 0; if (cursor < 0) cursor = 0; record.items.push(el); continue; }
-      if (el.name === 'forward') { cursor += numberOf(src, child(el, 'duration')) ?? 0; maxCursor = Math.max(maxCursor, cursor); seenTimed = true; record.items.push(el); continue; }
+      if (el.name === 'backup') { cursor -= quarters(el); if (cursor < 0) cursor = 0; record.items.push(el); continue; }
+      if (el.name === 'forward') { timed(); cursor += quarters(el); maxCursor = Math.max(maxCursor, cursor); record.items.push(el); continue; }
       if (el.name !== 'note') continue;
-      seenTimed = true;
+      timed();
       record.items.push(el);
       const grace = !!child(el, 'grace'), cue = !!child(el, 'cue'), chord = !!child(el, 'chord'), rest = !!child(el, 'rest');
-      const duration = grace ? 0 : numberOf(src, child(el, 'duration')) ?? 0;
-      const onsetDiv = chord ? lastOnset : cursor;
+      const duration = grace ? 0 : quarters(el);
+      const onset = chord ? lastOnset : cursor;
       if (!chord) { lastOnset = cursor; cursor += duration; maxCursor = Math.max(maxCursor, cursor); }
       const staff = textOf(src, child(el, 'staff')) || '1';
       const voice = Number(textOf(src, child(el, 'voice')));
@@ -219,79 +226,57 @@ function readPart(src, partEl) {
       const string = numberOf(src, stringEl), fret = numberOf(src, fretEl);
       notes.push({
         el, measure: record, staff, voice: Number.isFinite(voice) ? voice : null,
-        onset: measureStart + onsetDiv / divisions, dur: duration / divisions,
+        onset: measureStart + onset, dur: duration,
         midi, grace, cue, chord, rest,
         tieStart: ties.includes('start') || ties.includes('continue'), tieStop: ties.includes('stop') || ties.includes('continue'),
         existing: Number.isInteger(string) && Number.isInteger(fret) ? { string, fret } : null,
+        /** A string number without a fret (a circled string): kept, the solver picks the fret on it. */
+        stringOnly: Number.isInteger(string) && string >= 1 && !Number.isInteger(fret) ? string : null,
       });
     }
-    measureStart += maxCursor / divisions;
+    measureStart += maxCursor;
   }
-  return { notes, measures, maxVoice, staves, hasTab, staffDetails };
+  return { notes, measures, maxVoice, staves, hasTab, staffDetails, tabStaves };
 }
 
-/** Tuning and capo written in a part's own `<staff-details>` (staff 1 or unnumbered), if any. */
-function partTuning(src, staffDetails) {
-  const details = staffDetails.find(sd => (attr(sd, 'number') ?? '1') === '1' && childrenOf(sd, 'staff-tuning').length);
-  const capoEl = staffDetails.map(sd => child(sd, 'capo')).find(Boolean);
-  let tuning;
-  if (details) {
-    const lines = childrenOf(details, 'staff-tuning').map(st => {
-      const step = STEP_PC[textOf(src, child(st, 'tuning-step')).toUpperCase()];
-      const octave = numberOf(src, child(st, 'tuning-octave'));
-      return { line: Number(attr(st, 'line')), midi: step === undefined || octave === undefined ? NaN : 12 * (octave + 1) + step + Math.round(numberOf(src, child(st, 'tuning-alter')) ?? 0) };
-    }).sort((a, b) => a.line - b.line);
-    if (lines.length && lines.every(l => Number.isFinite(l.midi))) tuning = lines.map(l => l.midi);
-  }
-  return { tuning, capo: numberOf(src, capoEl) };
+/** Open-string pitches (low to high) of a `<staff-details>`, if it has a complete `<staff-tuning>`. */
+function tuningOfDetails(src, details) {
+  const lines = childrenOf(details, 'staff-tuning').map(st => {
+    const step = STEP_PC[textOf(src, child(st, 'tuning-step')).toUpperCase()];
+    const octave = numberOf(src, child(st, 'tuning-octave'));
+    return { line: Number(attr(st, 'line')), midi: step === undefined || octave === undefined ? NaN : 12 * (octave + 1) + step + Math.round(numberOf(src, child(st, 'tuning-alter')) ?? 0) };
+  }).sort((a, b) => a.line - b.line);
+  return lines.length && lines.every(l => Number.isFinite(l.midi)) ? lines.map(l => l.midi) : undefined;
+}
+
+/**
+ * Tuning and capo written in a part's own `<staff-details>`: the TAB staff's if it has one, else any staff's
+ * (unnumbered or numbered) with a `<staff-tuning>`.
+ */
+function partTuning(src, staffDetails, tabStaves) {
+  const tuned = staffDetails.filter(sd => tuningOfDetails(src, sd));
+  const onTab = sd => tabStaves.has(attr(sd, 'number') ?? '1');
+  const details = tuned.find(onTab) ?? tuned[0];
+  const capoEl = (details && child(details, 'capo')) ?? staffDetails.filter(onTab).map(sd => child(sd, 'capo')).find(Boolean) ?? staffDetails.map(sd => child(sd, 'capo')).find(Boolean);
+  return { tuning: details ? tuningOfDetails(src, details) : undefined, capo: numberOf(src, capoEl), tuned };
 }
 
 // --- Solving ---------------------------------------------------------------------------------------------------------------
 
 /**
- * Fingerings for one staff's notes: events in time order across voices (notes starting together form one event,
- * a unison across voices is fingered once), grace and cue notes skipped, tie continuations take the fingering of
- * the note they continue (whose duration they extend). Returns Map<note, FretResult>.
+ * Fingerings for one staff's notes: the reader's note-level solver (fret-assign.ts assignNoteFrets, also used by
+ * mei-tab.ts), so the bake and the reader agree. Notes starting together in any voice are one event, a unison across
+ * voices is one string, grace and cue notes are skipped, tie continuations take the fingering of the note they
+ * continue. Existing string/fret are fixed (unless overwriting); a string number alone always fixes the string.
+ * Returns Map<note, FretResult>.
  */
 function solveStaff(staffNotes, options) {
   const sounding = staffNotes.filter(n => n.midi !== null && !n.grace && !n.cue && !n.rest);
-  const ordered = sounding.map((note, order) => ({ note, order })).sort((a, b) => a.note.onset - b.note.onset || a.order - b.order).map(x => x.note);
-  const open = new Map();
-  const rootOf = new Map();
-  const extend = new Map();
-  const roots = [];
-  for (const note of ordered) {
-    const from = note.tieStop ? open.get(note.midi) : undefined;
-    if (from) { rootOf.set(note, from); extend.set(from, (extend.get(from) ?? 0) + note.dur); }
-    else roots.push(note);
-    if (note.tieStart) open.set(note.midi, from ?? note);
-    else if (from) open.delete(note.midi);
-  }
-  const events = [];
-  const owners = [];
-  const aliasOf = new Map();
-  for (const note of roots) {
-    const last = events.at(-1);
-    if (last && Math.abs(last.onset - note.onset) < EPS) {
-      const owner = owners.at(-1);
-      const twin = owner.find(other => other.midi === note.midi);
-      if (twin) { aliasOf.set(note, twin); continue; }
-      owner.push(note);
-      last.pitches.push(note.midi);
-    } else {
-      events.push({ onset: note.onset, pitches: [note.midi] });
-      owners.push([note]);
-    }
-  }
-  for (const [index, event] of events.entries()) {
-    event.durations = owners[index].map(note => note.dur + (extend.get(note) ?? 0));
-    event.fixed = owners[index].map(note => (options.overwrite ? undefined : note.existing ?? undefined));
-  }
-  const results = assignFrets(events, { tuning: options.tuning, capo: options.capo });
+  const fixedOf = note => note.stringOnly ? { string: note.stringOnly } : options.overwrite ? undefined : note.existing ?? undefined;
+  const results = assignNoteFrets(sounding.map(note => ({ onset: note.onset, duration: note.dur, pitch: note.midi, tieStart: note.tieStart, tieStop: note.tieStop, fixed: fixedOf(note) })),
+    { tuning: options.tuning, capo: options.capo });
   const out = new Map();
-  results.forEach((row, index) => row.forEach((result, at) => out.set(owners[index][at], result)));
-  for (const [note, twin] of aliasOf) out.set(note, out.get(twin));
-  for (const note of ordered) if (rootOf.has(note)) out.set(note, out.get(rootOf.get(note)) ?? out.get(aliasOf.get(rootOf.get(note))));
+  results.forEach(({ result }, index) => { if (result) out.set(sounding[index], result); });
   return out;
 }
 
@@ -309,8 +294,8 @@ function technicalEdits(edits, src, noteEl, string, fret) {
       if (textOf(src, fretEl) !== String(fret)) setText(edits, fretEl, String(fret));
       return;
     }
-    if (stringEl) setText(edits, stringEl, String(string));
-    if (fretEl) setText(edits, fretEl, String(fret));
+    // A string number already there is never changed (the solver kept it as a constraint).
+    if (fretEl && textOf(src, fretEl) !== String(fret)) setText(edits, fretEl, String(fret));
     const missing = `${stringEl ? '' : `<string>${string}</string>`}${fretEl ? '' : `<fret>${fret}</fret>`}`;
     insertChild(edits, src, technical, missing);
     return;
@@ -363,6 +348,29 @@ function stepAlterOctave(midi) {
   return `<tuning-step>${step}</tuning-step>${alter ? `<tuning-alter>${alter}</tuning-alter>` : ''}<tuning-octave>${Math.floor(midi / 12) - 1}</tuning-octave>`;
 }
 
+const staffTuningXml = tuning => tuning.map((midi, i) => `<staff-tuning line="${i + 1}">${stepAlterOctave(midi)}</staff-tuning>`).join('');
+
+/**
+ * Edits rewriting the part's `<staff-tuning>`s (and `<capo>`) when the bake fingers for another tuning or capo than the
+ * file states, so the written string/fret still sound the written pitches.
+ */
+function retuneEdits(edits, src, own, read, tuning, capo, options) {
+  for (const details of own.tuned) {
+    const lines = childrenOf(details, 'staff-tuning');
+    const written = tuningOfDetails(src, details);
+    if (options.tuning && written.join() !== tuning.join()) {
+      edits.replace(lines[0].start, lines.at(-1).end, staffTuningXml(tuning));
+      const staffLines = child(details, 'staff-lines');
+      if (staffLines && read.tabStaves.has(attr(details, 'number') ?? '1') && numberOf(src, staffLines) !== tuning.length) setText(edits, staffLines, String(tuning.length));
+    }
+    const capoEl = child(details, 'capo');
+    if (options.capo !== undefined && (numberOf(src, capoEl) ?? 0) !== capo) {
+      if (capoEl) setText(edits, capoEl, String(capo));
+      else edits.insert(lines.at(-1).end, `<capo>${capo}</capo>`);
+    }
+  }
+}
+
 /** Edits adding TAB staff `tabStaff` to a one-staff part: attributes, unnumbered staff-details, note copies. */
 function addTabStaff(edits, src, part, read, results, options) {
   const tabStaff = read.staves + 1;
@@ -370,13 +378,14 @@ function addTabStaff(edits, src, part, read, results, options) {
   const first = measures[0];
   if (!first) return false;
   const tuning = options.tuning;
-  const details = `<staff-details number="${tabStaff}"><staff-lines>${tuning.length}</staff-lines>${tuning.map((midi, i) => `<staff-tuning line="${i + 1}">${stepAlterOctave(midi)}</staff-tuning>`).join('')}${options.capo ? `<capo>${options.capo}</capo>` : ''}</staff-details>`;
+  const details = `<staff-details number="${tabStaff}"><staff-lines>${tuning.length}</staff-lines>${staffTuningXml(tuning)}${options.capo ? `<capo>${options.capo}</capo>` : ''}</staff-details>`;
   const clef = `<clef number="${tabStaff}"><sign>TAB</sign><line>5</line></clef>`;
   const attributes = child(first.el, 'attributes');
+  // Every <staves> of the part (later measures may repeat it) counts the TAB staff.
+  for (const measure of measures) for (const attrs of childrenOf(measure.el, 'attributes')) for (const staves of childrenOf(attrs, 'staves')) setText(edits, staves, String(tabStaff));
   if (attributes) {
     const staves = child(attributes, 'staves');
-    if (staves) setText(edits, staves, String(tabStaff));
-    else insertChild(edits, src, attributes, `<staves>${tabStaff}</staves>`, ['part-symbol', 'instruments', 'clef', 'staff-details', 'transpose', 'for-part', 'directive', 'measure-style']);
+    if (!staves) insertChild(edits, src, attributes, `<staves>${tabStaff}</staves>`, ['part-symbol', 'instruments', 'clef', 'staff-details', 'transpose', 'for-part', 'directive', 'measure-style']);
     insertChild(edits, src, attributes, clef, ['staff-details', 'transpose', 'for-part', 'directive', 'measure-style']);
     insertChild(edits, src, attributes, details, ['transpose', 'for-part', 'directive', 'measure-style']);
   } else {
@@ -441,10 +450,12 @@ export function bakeMusicXml(xml, options = {}) {
     report.push(entry);
     if (!read.notes.some(note => note.midi !== null)) { entry.skipped = 'no pitched notes'; continue; }
     if (read.hasTab && !options.overwrite) { entry.skipped = 'already has a TAB staff (use --overwrite-existing)'; continue; }
-    const own = partTuning(xml, read.staffDetails);
+    const own = partTuning(xml, read.staffDetails, read.tabStaves);
     const tuning = options.tuning ?? own.tuning ?? [...STANDARD_TUNING];
     const capo = options.capo ?? own.capo ?? 0;
     Object.assign(entry, { tuning, capo });
+    // String/fret are read against the part's <staff-tuning>: a different --tuning or --capo rewrites it.
+    retuneEdits(edits, xml, own, read, tuning, capo, options);
     const results = new Map();
     for (const staff of new Set(read.notes.map(note => note.staff))) {
       for (const [note, result] of solveStaff(read.notes.filter(n => n.staff === staff), { tuning, capo, overwrite: options.overwrite })) results.set(note, result);
@@ -453,6 +464,18 @@ export function bakeMusicXml(xml, options = {}) {
       const result = results.get(note);
       if (!result) continue;
       if (note.existing && !options.overwrite) { entry.kept++; continue; }
+      if (note.stringOnly && (!('string' in result) || result.string !== note.stringOnly)) {
+        // The solver could not keep the string (a chord with no room): the string stays, the fret follows from it.
+        const fret = note.midi - tuning[tuning.length - note.stringOnly] - capo;
+        if (note.stringOnly > tuning.length || !(fret >= 0 && fret <= 24)) {
+          warnings.push(`${id} m${note.measure.number}: ${noteName(note.midi)} cannot be played on string ${note.stringOnly}; left without a fret`);
+          entry.unplayable.push({ measure: note.measure.number, midi: note.midi });
+          continue;
+        }
+        technicalEdits(edits, xml, note.el, note.stringOnly, fret);
+        entry.assigned++;
+        continue;
+      }
       if ('unplayable' in result) { entry.unplayable.push({ measure: note.measure.number, midi: note.midi }); continue; }
       if (note.existing && note.existing.string === result.string && note.existing.fret === result.fret) { entry.kept++; continue; }
       technicalEdits(edits, xml, note.el, result.string, result.fret);
@@ -470,7 +493,12 @@ export function bakeMusicXml(xml, options = {}) {
 
 // --- Files -------------------------------------------------------------------------------------------------------------------
 
-/** Read a .musicxml/.xml/.mxl file: { xml, write(xml) → bytes } keeping the encoding and the archive. */
+const MXL_MIMETYPE = 'application/vnd.recordare.musicxml';
+
+/**
+ * Read a .musicxml/.xml/.mxl file: { xml, archive, write(xml, target) → bytes }. The text keeps its encoding; the
+ * output is a MusicXML container when `target` ends in .mxl (the input's entries kept, or a new container), else XML.
+ */
 export function readScore(path) {
   const bytes = readFileSync(path);
   if (bytes[0] === 0x50 && bytes[1] === 0x4b) {
@@ -482,21 +510,63 @@ export function readScore(path) {
     const text = decodeText(files[rootPath]);
     return {
       xml: text.xml, archive: true,
-      write: (xml, asXml) => {
-        if (asXml) return text.encode(xml);
+      write: (xml, target) => {
+        if (!isMxl(target)) return text.encode(xml);
         const out = {};
         // mimetype first and stored, as the MusicXML container format asks.
-        if (files.mimetype) out.mimetype = [files.mimetype, { level: 0 }];
+        out.mimetype = [files.mimetype ?? strToU8(MXL_MIMETYPE), { level: 0 }];
         for (const [name, data] of Object.entries(files)) if (name !== 'mimetype') out[name] = name === rootPath ? text.encode(xml) : data;
         return zipSync(out, { level: 6 });
       },
     };
   }
   const text = decodeText(bytes);
-  return { xml: text.xml, archive: false, write: xml => text.encode(xml) };
+  return {
+    xml: text.xml, archive: false,
+    write: (xml, target) => {
+      if (!isMxl(target)) return text.encode(xml);
+      const name = `${basename(target, extname(target))}.musicxml`;
+      const container = `<?xml version="1.0" encoding="UTF-8"?>\n<container>\n  <rootfiles>\n    <rootfile full-path="${name.replace(/[&<>"]/g, '_')}" media-type="application/vnd.recordare.musicxml+xml"/>\n  </rootfiles>\n</container>\n`;
+      return zipSync({ mimetype: [strToU8(MXL_MIMETYPE), { level: 0 }], 'META-INF/container.xml': strToU8(container), [name.replace(/[&<>"]/g, '_')]: text.encode(xml) }, { level: 6 });
+    },
+  };
+}
+const isMxl = target => /\.mxl$/i.test(target ?? '');
+
+/** windows-1252 bytes 0x80-0x9F as code points (undefined: unassigned). */
+const CP1252 = [0x20ac, , 0x201a, 0x192, 0x201e, 0x2026, 0x2020, 0x2021, 0x2c6, 0x2030, 0x160, 0x2039, 0x152, , 0x17d, ,
+  , 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014, 0x2dc, 0x2122, 0x161, 0x203a, 0x153, , 0x17e, 0x178];
+
+/** Single-byte encodings: decode and encode exactly (every character written back as the byte it was read from). */
+function singleByte(u8, name, table) {
+  const reverse = new Map();
+  let xml = '';
+  for (const byte of u8) {
+    const code = byte >= 0x80 && byte < 0xa0 && table ? table[byte - 0x80] ?? byte : byte;
+    xml += String.fromCharCode(code);
+  }
+  if (table) table.forEach((code, i) => { if (code !== undefined) reverse.set(code, 0x80 + i); });
+  const max = name === 'US-ASCII' ? 0x7f : 0xff;
+  return {
+    xml,
+    encode: s => {
+      const out = Buffer.alloc(s.length);
+      for (let i = 0; i < s.length; i++) {
+        const code = s.charCodeAt(i);
+        const byte = reverse.get(code) ?? (code <= max && !(table && code >= 0x80 && code < 0xa0 && table[code - 0x80] !== undefined) ? code : -1);
+        if (byte < 0) throw new Error(`Cannot write U+${code.toString(16).toUpperCase().padStart(4, '0')} in ${name}`);
+        out[i] = byte;
+      }
+      return out;
+    },
+  };
 }
 
-function decodeText(bytes) {
+/**
+ * Decode a MusicXML file by its BOM or its declared encoding (UTF-8, UTF-16 with a BOM, ISO-8859-1, windows-1252,
+ * US-ASCII), with an encoder writing the same encoding back. Other encodings are an error, not a corrupted file.
+ */
+export function decodeText(bytes) {
   const u8 = new Uint8Array(bytes);
   if (u8[0] === 0xff && u8[1] === 0xfe) {
     const xml = new TextDecoder('utf-16le').decode(u8.subarray(2));
@@ -507,8 +577,32 @@ function decodeText(bytes) {
     return { xml, encode: s => { const b = Buffer.from(s, 'utf16le'); b.swap16(); return Buffer.concat([Buffer.from([0xfe, 0xff]), b]); } };
   }
   const bom = u8[0] === 0xef && u8[1] === 0xbb && u8[2] === 0xbf;
-  const xml = strFromU8(bom ? u8.subarray(3) : u8);
+  const head = Buffer.from(u8.subarray(bom ? 3 : 0, 512)).toString('latin1');
+  const declared = /^<\?xml\b[^>]*?\bencoding\s*=\s*["']([^"']+)["']/.exec(head)?.[1];
+  const encoding = (declared ?? 'UTF-8').toUpperCase().replace(/_/g, '-');
+  if (!bom && declared) {
+    if (/^(ISO-8859-1|ISO8859-1|LATIN-?1|L1|ISO-IR-100|CP819|IBM819)$/.test(encoding)) return singleByte(u8, 'ISO-8859-1');
+    if (/^(WINDOWS-1252|CP1252|X-CP1252)$/.test(encoding)) return singleByte(u8, 'windows-1252', CP1252);
+    if (/^(US-ASCII|ASCII|ANSI-X3\.4-1968)$/.test(encoding)) {
+      if (u8.some(byte => byte > 0x7f)) throw new Error('Declared US-ASCII but has non-ASCII bytes');
+      return singleByte(u8, 'US-ASCII');
+    }
+    if (!/^UTF-?8$/.test(encoding)) throw new Error(`Unsupported encoding "${declared}" (supported: UTF-8, UTF-16 with a BOM, ISO-8859-1, windows-1252, US-ASCII)`);
+  }
+  let xml;
+  try { xml = new TextDecoder('utf-8', { fatal: true }).decode(bom ? u8.subarray(3) : u8); }
+  catch { throw new Error(`Not valid UTF-8${declared ? '' : ' (no encoding declared)'}`); }
   return { xml, encode: s => (bom ? Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(strToU8(s))]) : Buffer.from(strToU8(s))) };
+}
+
+/** Whether two paths name the same file or directory (symlinks and `.`/`..` resolved; `a` need not exist). */
+function samePath(a, b) {
+  const real = path => {
+    if (existsSync(path)) return realpathSync(path);
+    const parent = dirname(path);
+    return parent === path ? path : join(real(parent), basename(path));
+  };
+  return real(resolve(a)) === real(resolve(b));
 }
 
 const shortPath = path => { const rel = relative(process.cwd(), path); return rel && !rel.startsWith('..') ? rel : path; };
@@ -540,8 +634,10 @@ function summarize(file, result, written) {
 }
 
 const USAGE = `Usage: node scripts/tab-bake.mjs <in.musicxml|in.mxl|dir> [options]
-  -o, --out <file>        output file (default: <name>.tab.<ext> next to the input; .musicxml/.xml output from .mxl unzips)
+  -o, --out <file>        output file (default: <name>.tab.<ext> next to the input); a .mxl name writes a MusicXML
+                          container, a .musicxml/.xml name plain XML (from .mxl too)
   --out-dir <dir>         output directory (needed for a directory input; keeps relative paths)
+  --in-place              write over the input (also needed when -o or --out-dir names the input itself)
   --tuning <t>            standard | drop_d | half_step_down | open_g | open_d | dadgad | MIDI low→high (40,45,50,55,59,64)
                           (default: the part's own <staff-tuning>, else standard)
   --capo <n>              capo fret, frets are written relative to it (default: the part's <capo>, else 0)
@@ -556,7 +652,7 @@ export async function main(argv = process.argv.slice(2)) {
     options: {
       out: { type: 'string', short: 'o' }, 'out-dir': { type: 'string' }, tuning: { type: 'string' }, capo: { type: 'string' },
       parts: { type: 'string' }, 'add-tab-staff': { type: 'boolean' }, 'overwrite-existing': { type: 'boolean' },
-      'dry-run': { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
+      'in-place': { type: 'boolean' }, 'dry-run': { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
     },
   });
   if (values.help || positionals.length !== 1) { console.log(USAGE); return values.help ? 0 : 2; }
@@ -568,7 +664,9 @@ export async function main(argv = process.argv.slice(2)) {
   if (!existsSync(input)) throw new Error(`No such file or directory: ${positionals[0]}`);
   const isDir = statSync(input).isDirectory();
   if (isDir && values.out) throw new Error('-o is for a single file; use --out-dir for a directory');
-  if (isDir && !values['out-dir'] && !values['dry-run']) throw new Error('A directory input needs --out-dir (or --dry-run)');
+  const inPlace = !!values['in-place'];
+  if (isDir && !values['out-dir'] && !values['dry-run'] && !inPlace) throw new Error('A directory input needs --out-dir (or --in-place, or --dry-run)');
+  if (isDir && values['out-dir'] && samePath(resolve(values['out-dir']), input) && !inPlace) throw new Error('--out-dir is the input directory: this would overwrite the input files (pass --in-place to do that)');
   const files = isDir ? listScores(input) : [input];
   let failed = 0;
   const totals = { files: 0, parts: 0, assigned: 0, folded: 0, unplayable: 0 };
@@ -581,10 +679,13 @@ export async function main(argv = process.argv.slice(2)) {
       let target = null;
       if (values.out) target = resolve(values.out);
       else if (values['out-dir']) target = resolve(values['out-dir'], isDir ? relative(input, file) : basename(file));
+      else if (inPlace) target = file;
       else target = join(dirname(file), `${basename(file, extname(file))}.tab${extname(file)}`);
+      if (samePath(target, file) && !inPlace) throw new Error(`the output ${shortPath(target)} is the input: pass --in-place to overwrite it`);
       if (!values['dry-run']) {
+        const bytes = score.write(result.xml, target); // encode before touching the disk: an unwritable character throws
         mkdirSync(dirname(target), { recursive: true });
-        writeFileSync(target, score.write(result.xml, score.archive && !/\.mxl$/i.test(target)));
+        writeFileSync(target, bytes);
       }
       console.log(summarize(shown, result, values['dry-run'] ? null : shortPath(target)));
       totals.files++;
