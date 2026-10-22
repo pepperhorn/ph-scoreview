@@ -66,5 +66,27 @@ export async function loadSf2Player(context: AudioContext, { url, drums, program
   // Stacked layers add up: scale by 1/sqrt(the most regions any one note sounds) so the preset sits near single-layer
   // ones. A global approximation: notes with fewer layers are scaled by the same amount.
   if (match) output.gain.value = 1 / Math.sqrt(Math.max(1, ...Array.from({ length: 128 }, (_, note) => instrument.zones.filter(zone => zone.keyRange!.lo <= note && note <= zone.keyRange!.hi).length)));
-  return { start: options => sampler.start(options), stop: () => sampler.stop(), dispose: () => { sampler.dispose(); output.disconnect(); } };
+  // smplr queues a note more than its 200 ms lookahead ahead in its own scheduler, and its argument-less stop() only
+  // stops sounding voices: queued notes would still play after a stop. So every start keeps its own stop handle (with a
+  // unique stopId, since smplr's handle stops every voice sharing the id, which defaults to the pitch), and stop() calls
+  // them all. Handles are dropped once their note has ended.
+  const pending = new Map<() => void, number>();
+  let nextId = 0;
+  const release = 2; // seconds after a note's end before its handle is forgotten (covers smplr's release tail)
+  const stopAll = () => { for (const stop of [...pending.keys()]) stop(); pending.clear(); sampler.stop(); };
+  // Notes some zone sounds (a zone without a key range covers every key).
+  const covered = new Set(instrument.zones.flatMap(({ keyRange: { lo, hi } = { lo: 0, hi: 127 } }) => Array.from({ length: Math.max(0, hi - lo + 1) }, (_, i) => lo + i)));
+  return {
+    start: ({ note, time, duration, velocity }) => {
+      const now = context.currentTime;
+      for (const [stop, end] of pending) if (end < now) pending.delete(stop);
+      const handle = sampler.start({ note, time, duration, velocity, stopId: `n${nextId++}` });
+      const stop = () => { pending.delete(stop); handle(); };
+      pending.set(stop, Math.max(time, now) + duration + release);
+      return stop;
+    },
+    stop: stopAll,
+    dispose: () => { stopAll(); sampler.dispose(); output.disconnect(); },
+    covers: note => covered.has(note),
+  };
 }
