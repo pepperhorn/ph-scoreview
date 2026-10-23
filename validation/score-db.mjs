@@ -100,13 +100,22 @@ try {
     out.sampleKey = sampleSource(withEngravingDocument(exampleScore())).sha256;
 
     // keyFlip: optional on read (records written before it default to false), validated, and always written.
-    const { parseFileState, buildFileState } = await import('/packages/pepperscore/src/lib/file-state.ts');
+    const { parseFileState, buildFileState, parseLegacyFileState, migrateFileState } = await import('/packages/pepperscore/src/lib/file-state.ts');
     const record = (extra) => ({ version: 2, source: source(hex(7)), lastOpened: 1, settings: { ...settings, ...extra }, parts: {} });
     out.keyFlipDefault = parseFileState(record({}), hex(7))?.settings.keyFlip;
     out.keyFlipKept = parseFileState(record({ keyFlip: true }), hex(7))?.settings.keyFlip;
     out.keyFlipInvalid = parseFileState(record({ keyFlip: 'yes' }), hex(7));
     out.keyFlipBuilt = buildFileState(source(hex(7)), { ...settings, keyFlip: true }, { parts: [] }, []).settings.keyFlip;
     out.keyFlipBuiltDefault = buildFileState(source(hex(7)), settings, { parts: [] }, []).settings.keyFlip;
+    // Text add-on sizes: optional on read (earlier records show regular), repaired when unknown, round-tripped when built.
+    const sizesOf = state => state && [state.settings.namesSize, state.settings.chordSymbolsSize, state.settings.countsSize, state.settings.subdivisionsSize];
+    out.sizesDefault = sizesOf(parseFileState(record({}), hex(7)));
+    out.sizesRepaired = sizesOf(parseFileState(record({ namesSize: 'xl', countsSize: 'huge' }), hex(7)));
+    const sized = { ...settings, namesSize: 'xl', chordSymbolsSize: 'sm', countsSize: 'lg', subdivisionsSize: 'xs' };
+    out.sizesRoundTrip = sizesOf(parseFileState(JSON.parse(JSON.stringify(buildFileState(source(hex(7)), sized, { parts: [] }, []))), hex(7)));
+    out.sizesBuiltDefault = sizesOf(buildFileState(source(hex(7)), settings, { parts: [] }, []));
+    const legacy = parseLegacyFileState({ version: 1, source: source(hex(8)), settings: { ...settings, zoom: 1 }, parts: {} }, hex(8));
+    out.sizesLegacy = legacy && sizesOf(migrateFileState(legacy, 'desktop'));
     return out;
   });
 
@@ -132,6 +141,11 @@ try {
   assert.equal(result.keyFlipInvalid, null, 'A non-boolean keyFlip makes the record unusable');
   assert.equal(result.keyFlipBuilt, true, 'buildFileState writes keyFlip');
   assert.equal(result.keyFlipBuiltDefault, false, 'buildFileState writes keyFlip false when unset');
+  assert.deepEqual(result.sizesDefault, ['rg', 'rg', 'rg', 'rg'], 'A record without add-on sizes reads as regular');
+  assert.deepEqual(result.sizesRepaired, ['xl', 'rg', 'rg', 'rg'], 'An unknown size is repaired to regular; the record and other sizes are kept');
+  assert.deepEqual(result.sizesRoundTrip, ['xl', 'sm', 'lg', 'xs'], 'Add-on sizes round-trip through buildFileState and parseFileState');
+  assert.deepEqual(result.sizesBuiltDefault, ['rg', 'rg', 'rg', 'rg'], 'buildFileState writes regular sizes when unset');
+  assert.deepEqual(result.sizesLegacy, ['rg', 'rg', 'rg', 'rg'], 'A v1 record migrates with regular sizes');
   assert.equal(result.afterFlush, 1.2, 'The latest debounced write wins');
   assert.equal(result.abcKey, result.abcKeyAgain, 'ABC key is stable');
   assert.notEqual(result.abcKey, result.xmlKey, 'Keys carry a format prefix');

@@ -200,7 +200,7 @@ export default defineConfig({
 | `height` | `string` | natural | `"fill"`: the parent's height. Any CSS length (`"420px"`, `"60vh"`, `"100dvh"`) fixes it. Omitted: `full` fills its parent with a 480px floor, and `minimal`/`none` take the height of their score. |
 | `className` | `string` | | Extra classes on the `.pepperscore` root. |
 | `ariaLabel` | `string` | `"Score: <title>"`, or `"Score reader"` | Accessible name of the reader's landmark region. By default it is `Score: ` and the loaded score's title, or `Score reader` while there is no titled score. Give each snippet on a page a distinct name when titles repeat. |
-| `settings` | `PepperScoreSettings` | | **Initial** reader settings: `noteNames`, `chordSymbols`, `inferChords`, `beatCounts`, `subdivisions` (booleans); `musicFont` (`'Bravura' \| 'Petaluma'`); `staveFont` (`'Sans' \| 'Serif' \| 'Mono'`); `barsPerLine` (`'auto' \| 1–8`, Vertical view; without a `zoom`, an explicit count also sets the on-load size: that many bars fill the width, see below); `zoom` (stave scale, `null` = device default; with a `zoom`, `barsPerLine` only sets the line breaks); `semitones` (−12…12); `concert` (concert vs written pitch); `keyFlip` (spell a transposed view in the enharmonic key, for example Gb major for F# major); `bpm` (initial tempo, 30–240; the score's own tempo otherwise); `overlap` (0–3 lines kept on a page turn); `tabView`, `tabTuning`, `capo` (guitar TAB, see [Guitar TAB](#guitar-tab)). Changing a key in the prop re-applies that key. Drawer edits still work in between. With `persist` on, **a saved per-score record overrides `settings` and `view`** when that score is opened again. The record holds the settings, view, zoom, transposition, part sounds and hidden staves the reader stored for that exact file. |
+| `settings` | `PepperScoreSettings` | | **Initial** reader settings: `noteNames`, `chordSymbols`, `inferChords`, `beatCounts`, `subdivisions` (booleans); `musicFont` (`'Bravura' \| 'Petaluma'`); `staveFont` (`'Sans' \| 'Serif' \| 'Mono'`); `barsPerLine` (`'auto' \| 1–8`, Vertical view; without a `zoom`, an explicit count also sets the on-load size: that many bars fill the width, see below); `zoom` (stave scale, `null` = device default; with a `zoom`, `barsPerLine` only sets the line breaks); `semitones` (−12…12); `concert` (concert vs written pitch); `keyFlip` (spell a transposed view in the enharmonic key, for example Gb major for F# major); `bpm` (initial tempo, 30–240; the score's own tempo otherwise); `overlap` (0–3 lines kept on a page turn); `tabView`, `tabTuning`, `capo` (guitar TAB, see [Guitar TAB](#guitar-tab)); `annotationSizes` (text size per add-on, see below). Changing a key in the prop re-applies that key. Drawer edits still work in between. With `persist` on, **a saved per-score record overrides `settings` and `view`** when that score is opened again. The record holds the settings, view, zoom, transposition, part sounds and hidden staves the reader stored for that exact file. |
 | `persist` | `string \| false` | `'pepperscore'` for `full`, `false` for `minimal`/`none` | Storage namespace, see below. `false` reads and writes nothing. |
 | `assetBaseUrl` | `string` | jsDelivr copy of `pepperscore-sounds-<soundPack>` | Root of a sounds-package layout. Relative values resolve against the page, and a missing trailing slash is added. |
 | `verovioBaseUrl` | `string` | the copy in `dist/verovio/` | A directory with an interface-compatible Verovio build to engrave with, laid out like the `verovio` npm package's `dist/` (`verovio-module.mjs`, `verovio.mjs`), e.g. `https://cdn.jsdelivr.net/npm/verovio@6.3.0/dist/`. Shared by every reader on the page: set it before the first score engraves. See [Verovio](#verovio). |
@@ -218,6 +218,8 @@ export default defineConfig({
 | `autoFocus` | `boolean` | `false` | Focus the reader on mount so the page-turn keys work before any click. Keyboard shortcuts belong to the focused reader only. Each reader is one Tab stop, and keyboard focus shows a focus ring on it (clicks do not). |
 | `paintTransition` | `'reveal' \| 'none'` | `'reveal'` | How a new `musicXml` or `abc` replaces a score already on screen. `'reveal'` fades it out, shows the loading overlay, scrolls to the top and fades the new score in. `'none'` keeps the current engraving and scroll position until the new one replaces it in place, with no fade or overlay (for a host that edits the score it shows). The first paint, other sources and setting changes always reveal. |
 | `ref` | `Ref<PepperScoreHandle>` | | `{ play(): Promise<void>; stop(): void; transpose(semitones: number): void; seek(seconds: number): void; currentTime(): number; scrollToMeasure(index: number): Promise<void>; seekToMeasure(index: number): void }`. `play` does nothing while playing, before a score has loaded, with `chrome="none"`, or with a `clock`. `stop` does nothing with a `clock`. `transpose` sets the **absolute** transposition (clamped to −12…12), the same as `settings.semitones`. It does not add to the current value. `seek` moves the playhead (and keeps playing from there when playing). With a `clock` it calls `onSeek` instead. `currentTime` returns the playhead seconds, or `clock.now()` with a `clock`. |
+
+**Text add-on sizes with `annotationSizes`.** Each text add-on has its own size, in six steps: `'xs' | 'sm' | 'md' | 'rg' | 'lg' | 'xl'` (type `AnnotationSize`). `'rg'` (regular) is the default and draws the size earlier versions drew; the steps scale it by 0.7, 0.8, 0.9, 1, 1.2 and 1.45. Keys: `noteNames`, `chordSymbols` (source chord symbols and inferred ones), `beatCounts` (on-beat counts) and `subdivisions` (the e/&/a counts between beats). Give only the add-ons you want to change, for example `settings={{ noteNames: true, annotationSizes: { noteNames: 'lg' } }}`; unknown sizes are ignored. The rows under the staff grow with their labels, and Verovio sizes and spaces source chord symbols itself; the stave size and bar layout do not change. In the full reader each add-on's size is also a segmented control beside its switch in the options drawer (shown while that add-on is on), saved with the other reader settings and in each score's record.
 
 **Sizing a snippet with `barsPerLine`.** In Vertical view, `settings={{ barsPerLine: N }}` without a `zoom` picks the stave size at which exactly N bars fill the reader's width, so N is the simplest way to set how large an embed draws: on the same width, `barsPerLine: 2` draws larger staves than `barsPerLine: 4`. The size is bounded (at most stave scale 2.5, at least 0.2; a single bar on a very wide reader is stretched to fill rather than drawn huge), and lines always hold N bars. A score shorter than one line takes its share of the width, centred. `'auto'` keeps the device default (four bars across on desktop). Endless view ignores `barsPerLine`.
 
@@ -394,6 +396,54 @@ Drums use the Perfect Drums note files unless a source claims them. `soundSource
   ]}
 />
 ```
+
+## Shared audio engine (`pepperscore/audio`)
+
+The reader's audio engine is also a small, framework-free subpath (no React), so other music apps on the same page (a piano visualiser, a practice tool) share one `AudioContext`, one "who is playing" slot and the same sounds as every `PepperScore`:
+
+```ts
+import { claimPlayback, createMetronome, getSharedAudio, loadInstrument, releasePlayback, resumeAudio } from 'pepperscore/audio';
+
+const shared = getSharedAudio();              // { context, master } or null without Web Audio
+await resumeAudio(shared!.context);           // from a user gesture; resolves false if audio cannot start
+
+const piano = await loadInstrument(1, { assetBaseUrl: '/pepperscore-sounds/' });   // GM program, FluidR3 name or 'drums'
+const metronome = await createMetronome({ voice: 'woodblock', assetBaseUrl: '/pepperscore-sounds/' });
+
+const owner = { stop: () => { piano.stop(); metronome.stop(); } };
+claimPlayback(owner);                         // stops any PepperScore (or other owner) that is playing
+const t = shared!.context.currentTime + .1;
+for (let beat = 0; beat < 4; beat++) metronome.tick({ time: t + beat * .5, beat });   // beat 0 is accented
+const stopNote = piano.start({ note: 60, time: t, duration: 1, velocity: 90 });
+// later: stopNote() stops (or cancels) that note; owner.stop() stops everything still sounding or scheduled
+releasePlayback(owner);                       // when your playback ends
+```
+
+| Export | Signature | |
+| --- | --- | --- |
+| `getSharedAudio` | `() => { context: AudioContext; master: DynamicsCompressorNode } \| null` | The page's audio graph, created on first use. Readers play through `master`. |
+| `resumeAudio` | `(context) => Promise<boolean>` | Resume with a bounded wait (a pending `resume()` never hangs your code). |
+| `claimPlayback` / `releasePlayback` | `(owner: { stop(): void }) => void` | One player at a time: claiming stops the previous owner. A reader claims it when it starts playing, so your app and the readers never play over each other. |
+| `loadInstrument` | `(sound: number \| string, options?) => Promise<Instrument>` | `sound`: GM program 1-128, FluidR3 name (`'acoustic_grand_piano'`) or `'drums'`. |
+| `loadDrumKit` | `(options?) => Promise<Instrument>` | `loadInstrument('drums', options)`. |
+| `createMetronome` | `(options?) => Promise<Metronome>` | See below. |
+| `METRONOME_VOICES`, `SOUNDS_VERSION`, `defaultAssetBaseUrl` | | Constants. |
+
+The drum kit is `'drums'` (`'drum-kit'`, the score part id, is accepted as an alias).
+
+Options (`InstrumentOptions`): `assetBaseUrl`, `soundPack` (`'core'` default, `'complete'`) and `sources` (`SoundSource[]`) work exactly like the reader's `assetBaseUrl`, `soundPack` and `soundSources` props. `context` and `destination` default to the shared context and its master compressor. `notes` lists the notes to load before the promise resolves (default 21-108 for an instrument, none for the kit; call `loadNotes(notes)` for more, since a note that is not loaded starts silently).
+
+An `Instrument` is an `AudioPlayer` (`start({ note, time, duration, velocity, destination? }) => stop`, `stop()`, `dispose()`, `loadNotes(notes)`, `covers(note)`) plus `context`, `output` (its volume `GainNode`) and `plan` (read-only `{ kind, sourceId }`: which source plays it, for example `'builtin:fluidr3'`). `stop()` stops every sounding note **and cancels every scheduled one**. A note's `destination` is honoured by sample-pack and note-file sounds. SF2 sounds always play through `output`.
+
+Sounds resolve exactly as in the reader (above): your `sources`, then the pack's FluidR3 sound, then `TimGM6mb.sf2`. Drums use Perfect Drums, with TimGM6mb's kit for the notes it lacks. Every built-in file comes from `assetBaseUrl`, so a self-hosted base means no requests to any other host.
+
+**Metronome.** `createMetronome({ voice?, gain?, ...InstrumentOptions })` returns `{ voice, output, ready, tick({ time, beat, accent? }) => stop, setVoice(voice), stop(), dispose() }`. It resolves at once and loads the drum kit in the background: beats play the synthesized sound until the kit arrives (`await metronome.ready` to wait; `setVoice` resolves when its notes have loaded). A failed kit download is not remembered: the next `setVoice`, or a tick after 10 seconds, tries again. `beat` counts from 0 within the bar, and beat 0 is accented (louder, or higher for synth sounds) unless `accent` says otherwise. `gain` defaults to a gentle 0.5.
+
+| Voice | Beat 1 | Other beats | Source |
+| --- | --- | --- | --- |
+| `'woodblock'` (default) | GM hi wood block (76) | GM low wood block (77) | The drum kit (Perfect Drums has no wood blocks, so TimGM6mb's kit plays them). **The default voice downloads Perfect Drums' manifest and `TimGM6mb.sf2` (about 6 MB, once, cached) from `assetBaseUrl` in the background; use `voice: 'click'` to load nothing.** Without a kit wood block: a soft synthesized knock. |
+| `'drum-machine'` | Kick (36) | Closed hi-hat (42) | The drum kit (Perfect Drums). Without a kit: synthesized ticks. |
+| `'click'` | Soft high tick | Soft tick | Synthesized, short and quiet. Loads nothing. |
 
 ## Known v1 limits
 

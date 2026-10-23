@@ -1,6 +1,6 @@
 import { isGmSoundfont, type InstrumentId, type Score } from './score';
 import { STAVE_SCALE_FLOOR, STAVE_SCALE_MAX, type DeviceClass } from './stave-scale';
-import { BARS_PER_LINE_MAX, BARS_PER_LINE_MIN, clampBpm, clampCapo, MAX_BPM, MIN_BPM, STANDARD_TAB_TUNING, validTabTuning, validTabView } from './prefs';
+import { ANNOTATION_SIZE_PREF_KEYS, BARS_PER_LINE_MAX, BARS_PER_LINE_MIN, clampBpm, clampCapo, isAnnotationSize, MAX_BPM, MIN_BPM, STANDARD_TAB_TUNING, validTabTuning, validTabView, type AnnotationSize } from './prefs';
 import type { TabView } from './tab/tab-parts';
 
 export type FileSource = { name: string; size: number; sha256: string; format: string };
@@ -10,6 +10,8 @@ export type FileSettings = {
   counts: boolean; subdivisions: boolean; annotationFont: 'Sans' | 'Serif' | 'Mono'; bpm: number; semitones: number; scorePitch: 'written' | 'concert';
   /** Spell the transposed view in the enharmonic key (F# major shown as Gb major); optional on read, default false. */
   keyFlip: boolean;
+  /** Text add-on sizes (prefs.ts ANNOTATION_SIZES); optional on read, default 'rg' (the size every earlier record showed). */
+  namesSize: AnnotationSize; chordSymbolsSize: AnnotationSize; countsSize: AnnotationSize; subdivisionsSize: AnnotationSize;
   /** TAB view, tuning (open-string MIDI, low to high) and capo; always written (see `SavedSettings` for reading). */
   tabView: TabView; tabTuning: number[]; capo: number;
 };
@@ -162,6 +164,8 @@ function validSettingsAndParts(state: { settings: SavedSettings; parts: Record<s
   if (Object.values(state.parts).some(part => typeof part.visible !== 'boolean' || !instruments.has(part.instrument) || (part.gmSoundfont !== undefined && !isGmSoundfont(part.gmSoundfont)) || (part.volume !== undefined && (!Number.isInteger(part.volume) || part.volume < 0 || part.volume > 100)))) return false;
   const { tabView: _view, tabTuning: _tuning, capo: _capo, ...rest } = settings;
   state.settings = { ...rest, annotationFont: settings.annotationFont ?? 'Sans', semitones: settings.semitones ?? 0, scorePitch: settings.scorePitch ?? 'written', keyFlip: settings.keyFlip ?? false, ...late } as SavedSettings;
+  // A missing or unknown add-on size only loses that size (regular), not the record.
+  for (const key of ANNOTATION_SIZE_PREF_KEYS) if (!isAnnotationSize(state.settings[key])) state.settings[key] = 'rg';
   return true;
 }
 
@@ -212,6 +216,7 @@ export function buildFileState(source: FileSource, settings: FileSettings, score
   // A TAB part that doubles a guitar is saved with the guitar's visibility (the reader lists and hides the guitar).
   for (const part of score.parts) parts[part.id] = { visible: !hidden.has(part.tabOf ?? part.id), instrument: part.instrument, ...(part.gmSoundfont ? { gmSoundfont: part.gmSoundfont } : {}), volume: volumes[part.id] ?? 100 };
   const { mode, notationFont, barsPerLine, overlap, names, chordSymbols, inferChordSymbols, counts, subdivisions, annotationFont, bpm, semitones, scorePitch, keyFlip, tabView, tabTuning, capo } = settings;
-  return { version: 2, source, lastOpened, settings: { mode, notationFont, barsPerLine, overlap, names, chordSymbols, inferChordSymbols, counts, subdivisions, annotationFont, bpm: clampBpm(bpm), semitones, scorePitch, keyFlip: !!keyFlip,
+  const sizes = Object.fromEntries(ANNOTATION_SIZE_PREF_KEYS.map(key => [key, isAnnotationSize(settings[key]) ? settings[key] : 'rg'])) as Pick<FileSettings, typeof ANNOTATION_SIZE_PREF_KEYS[number]>;
+  return { version: 2, source, lastOpened, settings: { mode, notationFont, barsPerLine, overlap, names, chordSymbols, inferChordSymbols, counts, subdivisions, annotationFont, ...sizes, bpm: clampBpm(bpm), semitones, scorePitch, keyFlip: !!keyFlip,
     tabView: validTabView(tabView) ? tabView : 'notation', tabTuning: validTabTuning(tabTuning) ? [...tabTuning] : [...STANDARD_TAB_TUNING], capo: clampCapo(capo) }, parts, ...(view ? { view } : {}) };
 }

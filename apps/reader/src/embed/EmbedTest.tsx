@@ -37,7 +37,7 @@ export default function EmbedTest() {
     onError: (error: Error) => window.__events.push([who, 'error', error.message]),
   });
   return <div className="embed-test">
-    {mounted.full && <div className="host-box embed-box-full"><PepperScore ref={refs.full} className="embed-full" height="fill" assetBaseUrl={ASSETS} settings={{ noteNames: false }} highlights={highlights} onElementClick={info => window.__events.push(['click', 'full', info])} {...log('full')} /></div>}
+    {mounted.full && <div className="host-box embed-box-full"><PepperScore ref={refs.full} className="embed-full" height="fill" assetBaseUrl={ASSETS} settings={{ noteNames: false, annotationSizes: { noteNames: 'lg' } }} highlights={highlights} onElementClick={info => window.__events.push(['click', 'full', info])} {...log('full')} /></div>}
     {mounted.a && <div className="host-snippet"><PepperScore ref={refs.a} className="embed-a" chrome="minimal" view={views.a} abc={abcA} assetBaseUrl={ASSETS} soundSources={sourceA} settings={{ zoom: 1.5 }} {...log('a')} /></div>}
     {mounted.b && <div className="host-snippet"><PepperScore ref={refs.b} className="embed-b" chrome="minimal" view={views.b} controls={controlsB} musicXml={ensemble} height="200px" assetBaseUrl={ASSETS} {...log('b')} /></div>}
     {mounted.c && <div className="host-snippet"><PepperScore ref={refs.c} className="embed-c" chrome="minimal" musicXml="<score-partwise><part" assetBaseUrl={ASSETS} {...log('c')} /></div>}

@@ -42,7 +42,16 @@ jobs:
   reader:
     name: Reader (${{ matrix.browser }})
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+    # The Playwright image carries the browsers and every system library they need. Installing those libraries with
+    # apt on the runner (`--with-deps`, ~120 MB for WebKit or Firefox) has crawled at ~50 kB/s from the runner's mirror
+    # and run into the job timeout. Keep the tag on the lockfile's playwright-core version.
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      options: --ipc=host
+    env:
+      # Firefox refuses to start as root with another user's HOME (the container runs as root).
+      HOME: /root
     strategy:
       fail-fast: false
       matrix:
@@ -55,8 +64,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # A no-op while the image matches playwright-core; after a bump it downloads the new browser build.
       - name: Install Playwright ${{ matrix.browser }}
-        run: npx playwright-core install --with-deps ${{ matrix.browser }}
+        run: npx playwright-core install ${{ matrix.browser }}
       - name: Build
         run: npm run build
       - name: Reader validation

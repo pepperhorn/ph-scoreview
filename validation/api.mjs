@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resolveChrome } from '../packages/pepperscore/src/lib/chrome.ts';
-import { defaults, settingsToPrefs, viewToMode } from '../packages/pepperscore/src/lib/prefs.ts';
+import { readFileSync } from 'node:fs';
+import { ANNOTATION_SCALE, ANNOTATION_SIZES, defaults, sanitizeSavedPrefs, settingsToPrefs, viewToMode } from '../packages/pepperscore/src/lib/prefs.ts';
 import { nearestNote, noteInBox } from '../packages/pepperscore/src/lib/hit-test.ts';
 
 const all = { header: true, transport: true, viewToggle: true, openFile: true, mixer: true, drawer: true, zoom: true, tabToggle: true, compactPlay: false, playhead: true, partControls: true, audio: true };
@@ -32,6 +33,28 @@ assert.deepEqual(settingsToPrefs({ tabView: 'lute', tabTuning: [40, 300], capo: 
 assert.equal(defaults.tabView, 'notation'); assert.deepEqual(defaults.tabTuning, [40, 45, 50, 55, 59, 64]); assert.equal(defaults.capo, 0);
 assert.equal(viewToMode('vertical'), 'portrait'); assert.equal(viewToMode('endless'), 'landscape');
 assert.equal(defaults.mode, 'portrait');
+
+// Text add-on sizes: six steps around regular (today's size), one pref per add-on, applied only for the add-ons given.
+assert.deepEqual(ANNOTATION_SIZES, ['xs', 'sm', 'md', 'rg', 'lg', 'xl']);
+assert.equal(ANNOTATION_SCALE.rg, 1, 'Regular draws the existing size');
+assert.ok(ANNOTATION_SIZES.every((size, index) => !index || ANNOTATION_SCALE[size] > ANNOTATION_SCALE[ANNOTATION_SIZES[index - 1]]), 'Size steps grow monotonically');
+assert.deepEqual([defaults.namesSize, defaults.chordSymbolsSize, defaults.countsSize, defaults.subdivisionsSize], ['rg', 'rg', 'rg', 'rg'], 'Every add-on defaults to regular');
+assert.deepEqual(settingsToPrefs({ annotationSizes: { noteNames: 'xl', chordSymbols: 'sm', beatCounts: 'lg', subdivisions: 'xs' } }), { namesSize: 'xl', chordSymbolsSize: 'sm', countsSize: 'lg', subdivisionsSize: 'xs' });
+assert.deepEqual(settingsToPrefs({ annotationSizes: { noteNames: 'lg' } }), { namesSize: 'lg' }, 'Only the add-ons given are applied');
+assert.deepEqual(settingsToPrefs({ annotationSizes: { noteNames: 'huge', beatCounts: 3 } }), {}, 'Unknown sizes are ignored');
+assert.deepEqual(settingsToPrefs({ annotationSizes: {} }), {});
+{
+  const old = sanitizeSavedPrefs({ names: true, counts: true });
+  assert.deepEqual([old.namesSize, old.chordSymbolsSize, old.countsSize, old.subdivisionsSize], ['rg', 'rg', 'rg', 'rg'], 'Saved prefs from before sizes read as regular');
+  const saved = sanitizeSavedPrefs({ namesSize: 'xl', countsSize: 'bogus' });
+  assert.equal(saved.namesSize, 'xl', 'A saved size is kept'); assert.equal(saved.countsSize, 'rg', 'An unknown saved size is repaired to regular');
+  // The per-score schema lists the same steps for every size key (optional on read).
+  const schema = JSON.parse(readFileSync(new URL('../packages/pepperscore/src/lib/file-state.schema.json', import.meta.url), 'utf8')).properties.settings;
+  for (const key of ['namesSize', 'chordSymbolsSize', 'countsSize', 'subdivisionsSize']) {
+    assert.deepEqual(schema.properties[key]?.enum, [...ANNOTATION_SIZES], `file-state.schema.json settings.${key} lists the size steps`);
+    assert.ok(!schema.required.includes(key), `settings.${key} is optional in the schema`);
+  }
+}
 
 // The component never reads the page URL (the demo maps ?score= to scoreUrl): no location reads anywhere in the library source.
 const src = new URL('../packages/pepperscore/src/', import.meta.url).pathname;

@@ -10,6 +10,11 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./audio": {
+      "types": "./dist/audio.d.ts",
+      "import": "./dist/audio.js",
+      "default": "./dist/audio.js"
+    },
     "./style.css": "./dist/style.css",
     "./package.json": "./package.json"
   },

@@ -116,6 +116,8 @@ export type ViewSpec = {
   hiddenStaves: string[];
   /** Keep `<harm>` chord symbols. */
   chordSymbols: boolean;
+  /** Chord symbol text size in percent (the reader's annotation size); omitted or 100 leaves `<harm>` as encoded. */
+  harmSize?: number;
   /**
    * Transposition, key flip and spelling (mei-spelling.ts), applied to the baseline before the view is built. The
    * worker transposes with Verovio's `transpose` / `transposeToSoundingPitch` and respells; the view itself is then
@@ -184,12 +186,17 @@ export function buildViewMei(mei: string, spec: ViewSpec, measureLimit = Infinit
   // goes before them, so an ending that starts a line is drawn whole there and not continued from the line before.
   let wrapperStart = -1;
   const closeMeasure = () => ++measuresClosed >= measureLimit;
+  // A sized chord symbol's text is wrapped in `<rend fontsize="N%">`, so Verovio sizes and spaces it. Harmonies holding
+  // figured bass (`<fb>`, not allowed in `<rend>`) keep their size.
+  const harmSize = spec.chordSymbols && spec.harmSize && spec.harmSize !== 100 ? Math.round(spec.harmSize) : 0;
+  let harmWraps = 0;
   scan(mei, ({ closing, name, attributes, selfClosing, index, length }) => {
     if (!skip) out.push(mei.slice(last, index));
     last = index + length;
     const tag = mei.slice(index, index + length);
     if (closing) {
       if (skip) { skip--; return; }
+      if (name === 'harm' && harmWraps && open.at(-1) === 'rend') { open.pop(); harmWraps--; out.push('</rend>'); }
       open.pop();
       wrapperStart = -1;
       out.push(tag);
@@ -235,6 +242,12 @@ export function buildViewMei(mei: string, spec: ViewSpec, measureLimit = Infinit
     out.push(rewritten);
     if (!selfClosing) open.push(/^<([^\s/>]+)/.exec(tag)![1]);
     else if (name === 'measure' && closeMeasure()) { stoppedAt = last; return true; }
+    if (harmSize && name === 'harm' && !selfClosing) {
+      const end = mei.indexOf('</harm>', last);
+      // Look for <fb only inside this <harm> (a bounded slice), not to the end of the document for every symbol.
+      const figured = end >= 0 ? mei.slice(last, end).includes('<fb') : mei.includes('<fb', last);
+      if (!figured) { out.push(`<rend fontsize="${harmSize}%">`); open.push('rend'); harmWraps++; }
+    }
   });
   if (stoppedAt < 0) { out.push(mei.slice(last)); return out.join(''); }
   for (let index = open.length - 1; index >= 0; index--) out.push(`</${open[index]}>`);

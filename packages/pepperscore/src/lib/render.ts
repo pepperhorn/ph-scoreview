@@ -58,8 +58,15 @@ export type RenderOptions = { font?: 'Bravura' | 'Petaluma'; textFont?: 'Sans' |
   fitFloor?: number;
   /** Draw the system holding this Score measure before resolving (a zoom anchor), besides those in view. */
   focusMeasure?: number;
+  /**
+   * Font scale of each text add-on (1, the default, is the regular size; prefs.ts ANNOTATION_SCALE). Lane rows, label
+   * offsets and the room kept above the staff grow with it (bar layout and stave scale do not); source chord symbols are scaled
+   * by Verovio (MEI `<rend fontsize>`), so it spaces them itself.
+   */
+  annotationScale?: AnnotationScale;
   /** Guitar TAB (docs/specs/guitar-tab.md): which staves guitar parts show, and the tuning and capo of generated TAB. */
   tab?: { view: TabView; tuning?: number[]; capo?: number } };
+export type AnnotationScale = { names?: number; chordSymbols?: number; counts?: number; subdivisions?: number };
 
 const latestGeneration = new WeakMap<HTMLElement, number>();
 const liveResults = new WeakMap<HTMLElement, RenderResult>();
@@ -347,6 +354,12 @@ export async function renderScore(
   const measureTotal = info.measureIds.length || count;
   // A chunked score is long or wide: Endless keeps one system only when that is still a small document.
   const endlessSingle = mode === 'landscape' && count <= ENDLESS_SINGLE_SYSTEM_LIMIT && !(info.chunked && score.parts.length * count > EAGER_STAFF_MEASURES);
+  // Text add-on scales (1 = regular). The count row holds on-beat and, with subdivisions, off-beat labels.
+  const sizeOf = (value: number | undefined) => value && Number.isFinite(value) && value > 0 ? value : 1;
+  const nameScale = sizeOf(options.annotationScale?.names), chordScale = sizeOf(options.annotationScale?.chordSymbols);
+  const beatScale = sizeOf(options.annotationScale?.counts), offbeatScale = sizeOf(options.annotationScale?.subdivisions);
+  const countScale = subdivisions ? Math.max(beatScale, offbeatScale) : beatScale;
+  // Label sizes never change the bar layout or stave scale (the default zoom fits bars by width): only the lanes grow.
   const minimumBar = Math.max(portraitMinimumBarWidth(score), lyricBarWidth(info.lyricDensity));
   const barFloor = Math.max(190, minimumBar);
   const hiddenIds = new Set(options.hiddenPartIds || []);
@@ -368,8 +381,15 @@ export async function renderScore(
   let nameRows = 0;
   if (showNames) { nameRows = 1; for (const part of annotated) for (const measure of part.measures) for (const note of measure.notes) nameRows = Math.max(nameRows, note.pitches.length); }
   const laneRows = nameRows + (showCounts ? 1 : 0);
-  const laneHeight = laneRows ? LANE_GAP + laneRows * LANE_ROW + 4 : 0;
-  const spacingStaff = Math.min(48, 12 + Math.ceil(laneHeight / 9) + (showChordSymbols && inferChordSymbols ? 2 : 0));
+  // Row heights scale with their labels; at the regular size each row is LANE_ROW.
+  const nameRow = LANE_ROW * nameScale, countRow = LANE_ROW * countScale;
+  const lanesHeight = nameRows * nameRow + (showCounts ? countRow : 0);
+  const laneHeight = laneRows ? LANE_GAP + lanesHeight + 4 : 0;
+  // Inferred chord symbols sit above the staff: keep room for their height (2 spacing units at the regular size).
+  const inferredRoom = showChordSymbols && inferChordSymbols ? Math.max(1, Math.round(2 + (chordScale - 1) * 17 / 9)) : 0;
+  const spacingStaff = Math.min(48, 12 + Math.ceil(laneHeight / 9) + inferredRoom);
+  // Source chord symbols: Verovio scales and spaces them (omitted at the regular size, so the view is unchanged).
+  const harmSize = showChordSymbols && chordScale !== 1 ? Math.round(chordScale * 100) : undefined;
 
   // `natural`: one unbroken system at its natural width (Endless, and a Vertical score shorter than a full line).
   const verovioOptions = (pageWidth: number, natural = false): Record<string, unknown> => ({
@@ -391,7 +411,7 @@ export async function renderScore(
     // A score shorter than a full Auto line is not stretched to fill it: one system at Verovio's natural width, centred.
     const fullLine = Math.max(1, Math.min(AUTO_BAR_CAP, Math.floor((Math.max(240, usableUnits) - 56) / minimumBar)));
     const short = mode === 'portrait' && !explicit && count < fullLine;
-    const view: ViewSpec = { breakEvery: endlessSingle ? 0 : bars, hiddenStaves, chordSymbols: showChordSymbols, spelling, ...(tabPlan.spec ? { tab: tabPlan.spec } : {}) };
+    const view: ViewSpec = { breakEvery: endlessSingle ? 0 : bars, hiddenStaves, chordSymbols: showChordSymbols, spelling, ...(harmSize ? { harmSize } : {}), ...(tabPlan.spec ? { tab: tabPlan.spec } : {}) };
     // A bar never gets narrower than its minimum (the system is width-fitted instead). An explicit count at a user zoom is
     // not stretched past a comfortable width, so its systems stay narrower than the viewport and are centred. An explicit
     // count that sets the stave scale fills the width; a score shorter than one such line takes its share of it, centred.
@@ -517,6 +537,11 @@ export async function renderScore(
     svg.classList.add('score-svg');
     svg.dataset.textFont = textFont;
     svg.dataset.musicFont = options.font || 'Bravura';
+    // Add-on label sizes (styles.css); the lanes below are laid out for the same scales.
+    if (nameScale !== 1) svg.style.setProperty('--ps-note-name-scale', String(nameScale));
+    if (beatScale !== 1) svg.style.setProperty('--ps-count-scale', String(beatScale));
+    if (offbeatScale !== 1) svg.style.setProperty('--ps-subdivision-scale', String(offbeatScale));
+    if (chordScale !== 1) svg.style.setProperty('--ps-chord-symbol-scale', String(chordScale));
     return svg;
   };
   /**
@@ -633,9 +658,12 @@ export async function renderScore(
           notes.push({ element, event, partIndex, measure: measure.index, x, y });
           if (!band) continue;
           const labelled = part.clef !== 'percussion';
-          if (showNames && labelled) [...event.pitches].sort((a, b) => b.midi - a.midi).forEach((pitch, row) => annotation(layer, 'note-label', x, band.laneTop + LANE_ROW * (row + 1) - 4, pitch.step));
-          if (showCounts) annotation(layer, 'count-label', x, band.laneTop + LANE_ROW * (nameRows + 1) - 4, beatLabel(event.start, subdivisions));
-          if (laneRows) laneBottom = Math.max(laneBottom, band.laneTop + laneRows * LANE_ROW + 2);
+          if (showNames && labelled) [...event.pitches].sort((a, b) => b.midi - a.midi).forEach((pitch, row) => annotation(layer, 'note-label', x, band.laneTop + nameRow * (row + 1) - 4 * nameScale, pitch.step));
+          if (showCounts) {
+            const label = beatLabel(event.start, subdivisions);
+            annotation(layer, (offbeatScale !== 1 || beatScale !== 1) && /\D/.test(label) ? 'count-label is-subdivision' : 'count-label', x, band.laneTop + nameRows * nameRow + countRow - 4 * countScale, label);
+          }
+          if (laneRows) laneBottom = Math.max(laneBottom, band.laneTop + lanesHeight + 2);
           if (showChordSymbols && inferChordSymbols && !event.chordSymbol && labelled) {
             // Inferred names follow the view's key like the engraved chord symbols.
             const chord = inferChordSymbol(event.pitches); if (chord) annotation(layer, 'chord-symbol', x, band.top - 20, score.pitchView ? spellChordSymbol(chord, measureKey(part, measure, score)) : chord);
