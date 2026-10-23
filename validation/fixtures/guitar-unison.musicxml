@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
+<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Guitar</part-name></score-part></part-list><part id="P1"><measure number="1"><attributes><divisions>2</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line><clef-octave-change>-1</clef-octave-change></clef></attributes>
+<note id="a1"><pitch><step>E</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>quarter</type></note>
+<note id="a2"><pitch><step>G</step><octave>4</octave></pitch><duration>2</duration><voice>1</voice><type>quarter</type></note>
+<note id="a3"><pitch><step>A</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><type>half</type></note>
+<backup><duration>8</duration></backup>
+<note id="b1"><pitch><step>E</step><octave>4</octave></pitch><duration>4</duration><voice>2</voice><type>half</type></note>
+<note id="b2"><pitch><step>A</step><octave>2</octave></pitch><duration>4</duration><voice>2</voice><type>half</type></note>
+</measure>
+<measure number="2">
+<note id="c1"><pitch><step>D</step><octave>4</octave></pitch><duration>2</duration><tie type="start"/><voice>1</voice><type>quarter</type><notations><tied type="start"/></notations></note>
+<note id="c2"><pitch><step>D</step><octave>4</octave></pitch><duration>2</duration><tie type="stop"/><voice>1</voice><type>quarter</type><notations><tied type="stop"/></notations></note>
+<note id="c3"><pitch><step>G</step><octave>4</octave></pitch><duration>4</duration><voice>1</voice><type>half</type></note>
+<backup><duration>8</duration></backup>
+<note id="d1"><pitch><step>D</step><octave>4</octave></pitch><duration>2</duration><voice>2</voice><type>quarter</type></note>
+<note id="d2"><pitch><step>B</step><octave>3</octave></pitch><duration>2</duration><voice>2</voice><type>quarter</type></note>
+<note id="d3"><pitch><step>G</step><octave>2</octave></pitch><duration>4</duration><voice>2</voice><type>half</type></note>
+</measure></part></score-partwise>

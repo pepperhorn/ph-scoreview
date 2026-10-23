@@ -1,4 +1,21 @@
 import type { FileSettings } from './file-state';
+import type { TabView } from './tab/tab-parts';
+
+// No runtime imports: validation/api.mjs loads this module in Node.
+export const MIN_BPM = 30, MAX_BPM = 240;
+/** The reader's BPM control range; saved and source tempos outside it are clamped. */
+export const clampBpm = (bpm: number) => Math.max(MIN_BPM, Math.min(MAX_BPM, bpm));
+export const TAB_VIEW_NAMES: readonly TabView[] = ['notation', 'tab', 'both'];
+/** Standard guitar tuning EADGBE as open-string MIDI, low to high (tab/fret-assign.ts STANDARD_TUNING). */
+export const STANDARD_TAB_TUNING: readonly number[] = [40, 45, 50, 55, 59, 64];
+export const MAX_CAPO = 12;
+export const validTabView = (view: unknown): view is TabView => TAB_VIEW_NAMES.includes(view as TabView);
+export const MIN_TAB_STRINGS = 4, MAX_TAB_STRINGS = 8;
+/** A usable TAB tuning: 4 to 8 open strings (bass to extended-range guitar), MIDI 0-127. */
+export const validTabTuning = (tuning: unknown): tuning is number[] => Array.isArray(tuning) && tuning.length >= MIN_TAB_STRINGS && tuning.length <= MAX_TAB_STRINGS && tuning.every(pitch => Number.isInteger(pitch) && pitch >= 0 && pitch <= 127);
+export const validCapo = (capo: unknown): capo is number => Number.isInteger(capo) && (capo as number) >= 0 && (capo as number) <= MAX_CAPO;
+/** A capo as a whole fret 0-12 (fractions round; anything not a number is no capo). */
+export const clampCapo = (capo: unknown): number => typeof capo === 'number' && Number.isFinite(capo) ? Math.max(0, Math.min(MAX_CAPO, Math.round(capo))) : 0;
 
 /** Explicit bars per line (`barsPerLine`) range; Auto is capped separately (render.ts AUTO_BAR_CAP). */
 export const BARS_PER_LINE_MIN = 1;
@@ -23,7 +40,7 @@ export type PepperScoreAnnotationSizes = Partial<Record<AnnotationKey, Annotatio
 
 /** Reader settings; `zoom` is the score's explicit stave scale, or null for the device default (see stave-scale.ts). */
 export type Prefs = FileSettings & { zoom: number | null };
-export const defaults: Prefs = { mode: 'portrait', notationFont: 'Bravura', barsPerLine: 'auto', overlap: 1, names: false, chordSymbols: false, inferChordSymbols: false, counts: false, subdivisions: false, annotationFont: 'Sans', namesSize: 'rg', chordSymbolsSize: 'rg', countsSize: 'rg', subdivisionsSize: 'rg', bpm: 96, zoom: null, semitones: 0, scorePitch: 'written', keyFlip: false };
+export const defaults: Prefs = { mode: 'portrait', notationFont: 'Bravura', barsPerLine: 'auto', overlap: 1, names: false, chordSymbols: false, inferChordSymbols: false, counts: false, subdivisions: false, annotationFont: 'Sans', namesSize: 'rg', chordSymbolsSize: 'rg', countsSize: 'rg', subdivisionsSize: 'rg', bpm: 96, zoom: null, semitones: 0, scorePitch: 'written', keyFlip: false, tabView: 'notation', tabTuning: [...STANDARD_TAB_TUNING], capo: 0 };
 
 /** Saved global prefs, repaired. Zoom is per score (score-db), so a legacy global zoom is ignored. */
 export function sanitizeSavedPrefs(raw: unknown): Prefs {
@@ -37,6 +54,11 @@ export function sanitizeSavedPrefs(raw: unknown): Prefs {
   if (typeof next.keyFlip !== 'boolean') next.keyFlip = false;
   if (!['Sans', 'Serif', 'Mono'].includes(next.annotationFont)) next.annotationFont = 'Sans';
   for (const key of ANNOTATION_SIZE_PREF_KEYS) if (!isAnnotationSize(next[key])) next[key] = 'rg';
+  if (!validTabView(next.tabView)) next.tabView = 'notation';
+  next.tabTuning = validTabTuning(next.tabTuning) ? [...next.tabTuning] : [...STANDARD_TAB_TUNING];
+  next.capo = clampCapo(next.capo);
+  if (!Number.isFinite(next.bpm)) next.bpm = defaults.bpm;
+  next.bpm = clampBpm(next.bpm);
   return next;
 }
 
@@ -55,6 +77,16 @@ export type PepperScoreSettings = Partial<{
    * counts between beats). Only the add-ons given are applied; unknown sizes are ignored.
    */
   annotationSizes: PepperScoreAnnotationSizes;
+  /** Which staves guitar parts show: `'notation'` (default), `'tab'` or `'both'`. */
+  tabView: TabView;
+  /** Open-string MIDI pitches of generated TAB, low to high (default EADGBE, [40, 45, 50, 55, 59, 64]). */
+  tabTuning: number[];
+  /** Capo fret 0-12 of generated TAB; frets are relative to it. */
+  capo: number;
+  /** Initial tempo, 30-240 BPM (a score's own tempo otherwise). */
+  bpm: number;
+  /** Spell a transposed view in the enharmonic key (F# major shown as Gb major). */
+  keyFlip: boolean;
 }>;
 const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, Math.round(value)));
 
@@ -77,6 +109,11 @@ export function settingsToPrefs(settings: PepperScoreSettings = {}): Partial<Pre
     const size = settings.annotationSizes?.[key];
     if (isAnnotationSize(size)) out[pref] = size;
   }
+  if (settings.tabView !== undefined && validTabView(settings.tabView)) out.tabView = settings.tabView;
+  if (settings.tabTuning !== undefined && validTabTuning(settings.tabTuning)) out.tabTuning = [...settings.tabTuning];
+  if (settings.capo !== undefined && Number.isFinite(settings.capo)) out.capo = clampCapo(settings.capo);
+  if (settings.bpm !== undefined && Number.isFinite(settings.bpm)) out.bpm = clampBpm(Math.round(settings.bpm));
+  if (settings.keyFlip !== undefined) out.keyFlip = !!settings.keyFlip;
   return out;
 }
 export const viewToMode = (view: 'vertical' | 'endless'): Prefs['mode'] => view === 'endless' ? 'landscape' : 'portrait';

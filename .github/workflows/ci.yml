@@ -16,7 +16,7 @@ jobs:
   validate:
     name: Check, build and validate (chromium)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,7 +25,12 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Install Playwright Chromium
-        run: npx playwright-core install --with-deps chromium
+        # The runner's apt mirror can stall for minutes per package (seen as Ign: lines until the job timeout): time
+        # requests out and retry instead of hanging.
+        timeout-minutes: 12
+        run: |
+          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/99ci-network > /dev/null
+          for attempt in 1 2 3; do timeout 230 npx playwright-core install --with-deps chromium && exit 0; echo "Playwright install attempt $attempt failed"; done; exit 1
       - name: Type check
         run: npm run check
       - name: Build
@@ -34,7 +39,7 @@ jobs:
         run: npm run test:manifest
       - name: Validation suite (document, performance, reader and large score on chromium)
         run: npm run test:validation
-        timeout-minutes: 10
+        timeout-minutes: 15
       - name: Pack smoke test (npm pack into fresh Vite, Astro static and Astro SSR apps, serving the SSR one on 127.0.0.1; installs from the npm registry, uploads nothing)
         run: npm run test:pack
         timeout-minutes: 12
@@ -42,7 +47,7 @@ jobs:
   reader:
     name: Reader (${{ matrix.browser }})
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -56,7 +61,12 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Install Playwright ${{ matrix.browser }}
-        run: npx playwright-core install --with-deps ${{ matrix.browser }}
+        # The runner's apt mirror can stall for minutes per package (seen as Ign: lines until the job timeout): time
+        # requests out and retry instead of hanging.
+        timeout-minutes: 12
+        run: |
+          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/99ci-network > /dev/null
+          for attempt in 1 2 3; do timeout 230 npx playwright-core install --with-deps ${{ matrix.browser }} && exit 0; echo "Playwright install attempt $attempt failed"; done; exit 1
       - name: Build
         run: npm run build
       - name: Reader validation

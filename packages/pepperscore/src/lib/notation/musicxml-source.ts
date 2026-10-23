@@ -1,5 +1,6 @@
 import { gmProgramForNumber, gmProgramForVirtualName, instrumentForName, midiPitch, pitch, ucfirst, type MeasureNavigation, type Measure, type Part, type Score, type ScoreNote, type Transposition } from '../score';
 import { attachNavigation, musicXmlNavigationReader } from './navigation';
+import { linkTabParts } from '../tab/tab-parts';
 import { localNameOf, scanXml, XmlElement, XmlError, XmlTreeBuilder, type XmlAttribute } from './xml-stream';
 import type { NoteMark, PedalChange, PlaybackMarks } from '../playback/source-marks';
 
@@ -85,7 +86,7 @@ function musicXmlHarmony(element: XmlElement): string {
 /** Common five-line drum-set staff positions mapped to General MIDI percussion keys. */
 const drumPositions: Record<string, number> = { D4: 44, E4: 35, F4: 36, G4: 41, A4: 43, B4: 45, C5: 38, D5: 47, E5: 48, F5: 51, G5: 42, A5: 49, B5: 57, C6: 49 };
 const defaultDrumMidi = (step: string, octave: number) => drumPositions[`${step.toUpperCase()}${octave}`] ?? 38;
-const clefName = (clefElement: XmlElement) => { const sign = value(clefElement, 'sign'); return sign === 'F' ? 'bass' : sign === 'C' ? number(clefElement, 'line', 3) === 4 ? 'tenor' : 'alto' : sign === 'percussion' ? 'percussion' : 'treble'; };
+const clefName = (clefElement: XmlElement) => { const sign = value(clefElement, 'sign'); return sign === 'F' ? 'bass' : sign === 'C' ? number(clefElement, 'line', 3) === 4 ? 'tenor' : 'alto' : sign === 'percussion' ? 'percussion' : sign === 'TAB' ? 'tab' : 'treble'; };
 
 /** Pad every part to the longest, sort notes by onset and fit measure lengths to their content (shared by importers). */
 export const normalizedScore = (score: Score): Score => {
@@ -600,7 +601,7 @@ function readPartwise(text: string, timewiseInventory: FeatureInventory | undefi
   const shapesPlayback = (p: Part) => p.measures.some(measure => measure.directions?.some(direction => (direction.tempo ?? 0) > 0
     || (soundingSources.has(sourcePart(p)) && (direction.symbols?.length || direction.wedge || direction.soundDynamics !== undefined))));
   const playableParts = parts.filter(p => sounding(p) || shapesPlayback(p));
-  const score = normalizedScore({ title, subtitle, composer, credits: otherCredits, source: 'MusicXML', tempo, beats, beatType, key, ...(keyMode ? { keyMode } : {}), parts: playableParts.length ? playableParts : parts });
+  const score = linkTabParts(normalizedScore({ title, subtitle, composer, credits: otherCredits, source: 'MusicXML', tempo, beats, beatType, key, ...(keyMode ? { keyMode } : {}), parts: playableParts.length ? playableParts : parts }));
   // Navigation is read once from the first source part and shared by every staff.
   const measureCount = score.parts[0].measures.length;
   const navigation = Array.from({ length: measureCount }, (_, i) => navigationMeasures[i] || {});

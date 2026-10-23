@@ -104,7 +104,7 @@ try {
       // Desktop tab order follows the registry and never lands on the hidden More toggle.
       await hydrate.getByRole('button', { name: 'Stop playback', exact: true }).focus();
       const order = [await hydrate.evaluate(() => document.activeElement.closest('[data-header-control]')?.dataset.headerControl)];
-      for (let step = 0; step < 12; step++) {
+      for (let step = 0; step < 16; step++) {
         await hydrate.keyboard.press('Tab');
         const focused = await hydrate.evaluate(() => ({ id: document.activeElement.closest('[data-header-control]')?.dataset.headerControl, more: document.activeElement.classList.contains('header-more-toggle') }));
         assert.equal(focused.more, false, 'The hidden More toggle is not in the desktop tab order');
@@ -112,7 +112,7 @@ try {
         if (focused.id !== order.at(-1)) order.push(focused.id);
       }
       // The key flip is aria-disabled (not disabled) on the C major sample, so it stays in the tab order with its explanation.
-      assert.deepEqual(order, ['stop', 'play', 'openFile', 'mode', 'bpm', 'transpose', 'keyFlip', 'bars', 'staveScale', 'mixer'], 'Desktop tab order follows the header registry');
+      assert.deepEqual(order, ['stop', 'play', 'openFile', 'mode', 'tab', 'bpm', 'transpose', 'keyFlip', 'bars', 'staveScale', 'mixer'], 'Desktop tab order follows the header registry');
     }
     assert.deepEqual(hydrateErrors, []);
     await hydrateContext.close();
@@ -1398,6 +1398,9 @@ try {
     await link.waitForFunction(() => document.querySelector('h1')?.textContent === 'Migration ensemble', null, { timeout: 30000 });
     assert.equal(await link.locator('.part-control').count(), 5, `${target} opens the linked score`);
     assert.equal(await link.locator('.reopen-banner').count(), 0, 'No reopen offer when a score is linked');
+    // Let the engraving land before the next navigation: WebKit reports a Verovio worker load cut off by a navigation
+    // as a page error ("... due to access control checks").
+    await link.locator('.score-system svg').first().waitFor({ timeout: 30000 });
   };
   await linked('https://scores.example/ensemble.musicxml');
   await linked('https://scores.example/download');
@@ -1461,6 +1464,11 @@ try {
       return { columns: getComputedStyle(grid).gridTemplateColumns.split(' ').length, rows: new Set(cards.map(card => Math.round(card.top))).size, cards: cards.length, scrolls: drawer.scrollHeight > drawer.clientHeight + 1 };
     });
     const fontOf = (target, selector) => target.evaluate(selector => { const text = document.querySelector(`.score-system svg ${selector}`); return text ? getComputedStyle(text).fontSize : null; }, selector);
+    // Engines round computed font sizes differently (Firefox stores 1/64 px, so 13 * 0.7 = 9.1px reads as 9.09375px).
+    const assertFont = async (target, selector, px, message) => {
+      const size = await fontOf(target, selector);
+      assert.ok(size !== null && Math.abs(parseFloat(size) - px) <= 1 / 32, `${message} (expected ${px}px, got ${size})`);
+    };
     const sizeContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const wide = await sizeContext.newPage();
     await wide.goto(url); await settle(wide);
@@ -1476,8 +1484,8 @@ try {
     const sizes = wide.getByRole('group', { name: 'Note names size' });
     assert.deepEqual(await sizes.getByRole('button').allTextContents(), ['xs', 'sm', 'md', 'rg', 'lg', 'xl'], 'Six size steps, smallest first');
     assert.equal(await sizes.getByRole('button', { name: 'Regular', exact: true }).getAttribute('aria-pressed'), 'true', 'Regular is the default size');
-    assert.equal(await fontOf(wide, '.note-label'), '15px', 'Regular note names keep their size');
-    assert.equal(await fontOf(wide, '.count-label'), '13px', 'Regular counts keep their size');
+    await assertFont(wide, '.note-label', 15, 'Regular note names keep their size');
+    await assertFont(wide, '.count-label', 13, 'Regular counts keep their size');
     const laneGap = () => wide.evaluate(() => {
       const svg = document.querySelector('.score-system svg'); const x = svg.querySelector('.note-label').getAttribute('x');
       const at = selector => [...svg.querySelectorAll(selector)].filter(text => text.getAttribute('x') === x).map(text => text.getBoundingClientRect());
@@ -1487,14 +1495,15 @@ try {
     const regularGap = await laneGap();
     await sizes.getByRole('button', { name: 'Extra large', exact: true }).click();
     await settle(wide);
-    assert.equal(await fontOf(wide, '.note-label'), '21.75px', 'Extra large note names are 1.45 times regular');
-    assert.equal(await fontOf(wide, '.count-label'), '13px', 'Counts keep their own size');
-    // Text boxes include the font's line gap, so regular rows already overlap slightly; an extra large row keeps that spacing.
+    await assertFont(wide, '.note-label', 21.75, 'Extra large note names are 1.45 times regular');
+    await assertFont(wide, '.count-label', 13, 'Counts keep their own size');
+    // Text boxes include the font's line gap, so regular rows already overlap slightly, and that overlap grows with the
+    // font (WebKit's boxes overlap most): an extra large row keeps the regular spacing at its 1.45x size.
     const largeGap = await laneGap();
-    assert.ok(largeGap >= regularGap - 1, `Extra large note names keep clear of the count row (gap ${regularGap} -> ${largeGap})`);
+    assert.ok(largeGap >= regularGap * 1.45 - 1, `Extra large note names keep clear of the count row (gap ${regularGap} -> ${largeGap})`);
     await wide.getByRole('group', { name: 'Beat counts size' }).getByRole('button', { name: 'Extra small', exact: true }).click();
     await settle(wide);
-    assert.equal(await fontOf(wide, '.count-label'), '9.1px', 'Extra small counts are 0.7 times regular');
+    await assertFont(wide, '.count-label', 9.1, 'Extra small counts are 0.7 times regular');
     // Source chord symbols are sized by Verovio (MEI rend fontsize), so it keeps them clear of the notes.
     await wide.locator('input[type=file]').setInputFiles(resolve(root, 'validation/fixtures/expressive.musicxml'));
     await settle(wide);

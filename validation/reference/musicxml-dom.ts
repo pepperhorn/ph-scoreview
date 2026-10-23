@@ -5,6 +5,7 @@
 // behaviour. Served by Vite to the validation page (it needs DOMParser).
 import { gmProgramForNumber, gmProgramForVirtualName, instrumentForName, midiPitch, pitch, ucfirst, type BarlineNavigation, type Measure, type MeasureNavigation, type Part, type Score, type ScoreNote, type Transposition } from '../../packages/pepperscore/src/lib/score';
 import { attachNavigation, endingNumbers, navigationWord } from '../../packages/pepperscore/src/lib/notation/navigation';
+import { linkTabParts } from '../../packages/pepperscore/src/lib/tab/tab-parts';
 import { formatFraction, fraction, fromNumber } from '../../packages/pepperscore/src/lib/playback/fraction';
 
 type SourceDiagnostic = { feature: string; status: 'retained' | 'partial' | 'unsupported'; location: string; message: string };
@@ -318,7 +319,7 @@ export function referenceParseMusicXml(text: string) {
         const clefElement = children(attributes, 'clef').find(c => Number(c.getAttribute('number') || 1) === 1);
         if (clefElement) {
           const sign = value(clefElement, 'sign');
-          partClef = sign === 'F' ? 'bass' : sign === 'C' ? number(clefElement, 'line', 3) === 4 ? 'tenor' : 'alto' : sign === 'percussion' ? 'percussion' : 'treble';
+          partClef = sign === 'F' ? 'bass' : sign === 'C' ? number(clefElement, 'line', 3) === 4 ? 'tenor' : 'alto' : sign === 'percussion' ? 'percussion' : sign === 'TAB' ? 'tab' : 'treble';
         }
         const forPart = children(attributes, 'for-part').map(item => musicXmlTranspose(child(item, 'part-transpose'))).find(Boolean);
         if (concertScore && forPart) partTransposition = forPart;
@@ -332,7 +333,7 @@ export function referenceParseMusicXml(text: string) {
           const measure = part.measures[index];
           if (!measure) return;
           const clefElement = children(attributes, 'clef').find(c => Number(c.getAttribute('number') || 1) === staff);
-          if (clefElement) { const sign = value(clefElement, 'sign'); part.clef = sign === 'F' ? 'bass' : sign === 'C' ? number(clefElement, 'line', 3) === 4 ? 'tenor' : 'alto' : sign === 'percussion' ? 'percussion' : 'treble'; }
+          if (clefElement) { const sign = value(clefElement, 'sign'); part.clef = sign === 'F' ? 'bass' : sign === 'C' ? number(clefElement, 'line', 3) === 4 ? 'tenor' : 'alto' : sign === 'percussion' ? 'percussion' : sign === 'TAB' ? 'tab' : 'treble'; }
           measure.key = partKey; if (partKeyMode) measure.keyMode = partKeyMode; measure.clef = part.clef; measure.beatsPerBar = partBeats; measure.beatType = partBeatType;
           measure.nominalBeats = partBeats * 4 / partBeatType;
         });
@@ -344,7 +345,7 @@ export function referenceParseMusicXml(text: string) {
         if (!staffMap.has(staff)) {
           const clefEl = attrs && children(attrs, 'clef').find(c => Number(c.getAttribute('number') || 1) === staff);
           const sign = clefEl ? value(clefEl, 'sign') : '';
-          const clef = sign === 'F' ? 'bass' : sign === 'C' ? number(clefEl!, 'line', 3) === 4 ? 'tenor' : 'alto' : sign === 'percussion' ? 'percussion' : partClef || (/bass/i.test(name) ? 'bass' : 'treble');
+          const clef = sign === 'F' ? 'bass' : sign === 'C' ? number(clefEl!, 'line', 3) === 4 ? 'tenor' : 'alto' : sign === 'percussion' ? 'percussion' : sign === 'TAB' ? 'tab' : partClef || (/bass/i.test(name) ? 'bass' : 'treble');
           staffMap.set(staff, { id: `${id}-${staff}`, name: staff === 1 ? name : `${name} · ${staff}`, clef, key: partKey, ...(partKeyMode ? { keyMode: partKeyMode } : {}), instrument: drumKit ? 'drum-kit' : gm ? gm.icon as Part['instrument'] : instrumentForName(name), gmProgram: gm?.program, gmSoundfont: gm?.soundfont, pitchBasis: concertScore ? 'concert' : 'written', transposition, measures: Array.from({ length: index }, (_, i) => empty(i, measureBeats)) });
         }
         const p = staffMap.get(staff)!;
@@ -435,7 +436,7 @@ export function referenceParseMusicXml(text: string) {
   const shapesPlayback = (part: Part) => part.measures.some(measure => measure.directions?.some(direction => (direction.tempo ?? 0) > 0
     || (soundingSources.has(sourcePart(part)) && (direction.symbols?.length || direction.wedge || direction.soundDynamics !== undefined))));
   const playableParts = parts.filter(part => sounding(part) || shapesPlayback(part));
-  const score = normalized({ title, subtitle, composer, credits: otherCredits, source: 'MusicXML', tempo, beats, beatType, key, ...(keyMode ? { keyMode } : {}), parts: playableParts.length ? playableParts : parts });
+  const score = linkTabParts(normalized({ title, subtitle, composer, credits: otherCredits, source: 'MusicXML', tempo, beats, beatType, key, ...(keyMode ? { keyMode } : {}), parts: playableParts.length ? playableParts : parts }));
   // Navigation is read once from the first source part and shared by every staff.
   const navigationNotes: string[] = [];
   attachNavigation(score, musicXmlNavigation(root, score.parts[0].measures.length, navigationNotes));

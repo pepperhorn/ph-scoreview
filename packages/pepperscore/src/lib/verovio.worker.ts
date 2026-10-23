@@ -2,6 +2,7 @@ import type createVerovioModule from 'verovio/wasm';
 import type { VerovioToolkit, enableLogToBuffer } from 'verovio/esm';
 import { buildViewMei, scanBaseline, type BaselineInfo, type ViewSpec } from './notation/mei-view';
 import { spellBaseline, spellingNeeded, type SpellingSpec } from './notation/mei-spelling';
+import { injectTab, type FretMemory } from './notation/mei-tab';
 import { indexMusicXml, measureId, planChunk, sliceMusicXml, tailFor, type ChunkIndex, type ChunkPlan } from './notation/musicxml-chunks';
 import type { VerovioConfigure, VerovioFiles, VerovioReply, VerovioRequest } from './verovio-protocol';
 
@@ -79,8 +80,9 @@ let main: Toolkit | undefined;
 let probe: Toolkit | undefined;
 /** What the main toolkit holds: the loaded view and the options it was last laid out with. */
 let loaded: { loadKey: string; optionsKey: string } | undefined;
-type WholeBaseline = { kind: 'whole'; mei: string; info: BaselineInfo; spelled?: { key: string; mei: string } };
-type ChunkedBaseline = { kind: 'chunked'; index: ChunkIndex; info: BaselineInfo; meis: Map<string, string>; spelled: Map<string, string> };
+type WholeBaseline = { kind: 'whole'; mei: string; info: BaselineInfo; spelled?: { key: string; mei: string }; tabbed?: { key: string; mei: string } };
+/** `frets`: TAB fingerings by note ID per spelling and TAB spec, so a note keeps its fret in every chunk that draws it. */
+type ChunkedBaseline = { kind: 'chunked'; index: ChunkIndex; info: BaselineInfo; meis: Map<string, string>; spelled: Map<string, string>; frets: Map<string, FretMemory> };
 type Baseline = WholeBaseline | ChunkedBaseline;
 const baselines = new Map<number, Baseline>();
 /** Log text of toolkits destroyed during a request, reported with it. */
@@ -168,6 +170,32 @@ async function spelledWhole(entry: WholeBaseline, spec: SpellingSpec | undefined
   return entry.spelled.mei;
 }
 
+/**
+ * The whole baseline spelled and with the view's TAB staves (notation/mei-tab.ts), kept for the latest view so layout
+ * changes and probes do not solve the fingerings again. TAB follows spelling, so frets match the transposed pitches.
+ */
+async function viewWhole(entry: WholeBaseline, view: ViewSpec): Promise<string> {
+  const spelled = await spelledWhole(entry, view.spelling);
+  if (!view.tab) return spelled;
+  const key = JSON.stringify([view.spelling ?? null, view.tab]);
+  if (entry.tabbed?.key !== key) entry.tabbed = { key, mei: injectTab(spelled, view.tab) };
+  return entry.tabbed.mei;
+}
+
+/** A chunk spelled and with the view's TAB staves; fingerings are remembered by note ID across chunks. */
+async function viewChunk(entry: ChunkedBaseline, from: number, to: number, view: ViewSpec): Promise<string> {
+  const spelled = await spelledChunk(entry, from, to, view.spelling);
+  if (!view.tab) return spelled;
+  const key = JSON.stringify([view.spelling ?? null, view.tab]);
+  let memory = entry.frets.get(key);
+  if (!memory) {
+    memory = new Map();
+    entry.frets.set(key, memory);
+    while (entry.frets.size > 4) entry.frets.delete(entry.frets.keys().next().value!);
+  }
+  return injectTab(spelled, view.tab, memory);
+}
+
 /** A chunk's MEI spelled for `spec`, in a small per-score cache like the converted chunks. */
 async function spelledChunk(entry: ChunkedBaseline, from: number, to: number, spec: SpellingSpec | undefined): Promise<string> {
   const raw = await chunkMei(entry, from, to);
@@ -253,7 +281,7 @@ async function importSource(revision: number, bytes: ArrayBuffer, force: boolean
     // The staff structure (staffDef numbers and IDs, groups) comes from Verovio's import of the first measure.
     const { staffDefs, groups } = scanBaseline(await convert(sliceMusicXml(index, 0, 1)));
     const info: BaselineInfo = { measureIds: Array.from({ length: index.measureCount }, (_, measure) => measureId(measure)), lyricDensity: index.lyricDensity, staffDefs, groups, chunked: true };
-    entry = { kind: 'chunked', index, info, meis: new Map(), spelled: new Map() };
+    entry = { kind: 'chunked', index, info, meis: new Map(), spelled: new Map(), frets: new Map() };
   } else {
     const target = await toolkit('main');
     loaded = undefined;
@@ -284,8 +312,11 @@ function svgFor(target: Toolkit, page: number, channel: number): string {
 /** How long a simulated out-of-memory request works before it fails (test hook). */
 const SIMULATED_OOM_MS = 300;
 
-/** Staves a view engraves (a chunk's size is set in staff-measures). */
-const stavesOf = (info: BaselineInfo, view: ViewSpec) => Math.max(1, info.staffDefs.length - view.hiddenStaves.length);
+/** Staves a view engraves (a chunk's size is set in staff-measures), generated TAB staves included. */
+const stavesOf = (info: BaselineInfo, view: ViewSpec) => {
+  const hidden = new Set(view.hiddenStaves);
+  return Math.max(1, info.staffDefs.filter(def => !hidden.has(def.n)).length + (view.tab?.generate.length ?? 0));
+};
 
 async function handle(request: VerovioRequest): Promise<unknown> {
   if (request.kind === 'import') return importSource(request.revision, request.bytes, !!request.chunking?.force);
@@ -301,18 +332,18 @@ async function handle(request: VerovioRequest): Promise<unknown> {
       const total = entry.index.measureCount;
       const core = Math.min(total, request.measures * 2);
       const limit = request.measures >= total ? total : core + tailFor(entry.index, core);
-      load(target, buildViewMei(await spelledChunk(entry, 0, limit, request.view.spelling), request.view), request.options);
+      load(target, buildViewMei(await viewChunk(entry, 0, limit, request.view), request.view), request.options);
       return { svg: svgFor(target, 1, request.channel), pageCount: target.getPageCount(), measures: limit };
     }
     const { info } = entry;
-    const mei = await spelledWhole(entry, request.view.spelling);
+    const mei = await viewWhole(entry, request.view);
     const limit = request.measures >= info.measureIds.length ? info.measureIds.length : probeLimit(mei, request.measures, info.measureIds.length);
     load(target, buildViewMei(mei, request.view, limit), request.options);
     const svg = svgFor(target, 1, request.channel);
     return { svg, pageCount: target.getPageCount(), measures: limit };
   }
   if (entry.kind === 'whole') {
-    const target = await ensureLayout([request.revision], request.view, request.options, async () => buildViewMei(await spelledWhole(entry, request.view.spelling), request.view));
+    const target = await ensureLayout([request.revision], request.view, request.options, async () => buildViewMei(await viewWhole(entry, request.view), request.view));
     const count = target.getPageCount();
     const pages = request.pages.filter(page => page >= 1 && page <= count).map(page => ({ page, svg: svgFor(target, page, request.channel) }));
     return { pageCount: count, pages };
@@ -330,7 +361,7 @@ async function handle(request: VerovioRequest): Promise<unknown> {
   const pages: { page: number; svg: string }[] = [];
   for (const { plan, pages: wanted } of plans.values()) {
     const target = await ensureLayout([request.revision, plan.from, plan.to], request.view, request.options,
-      async () => buildViewMei(await spelledChunk(entry, plan.from, plan.to, request.view.spelling), request.view, Infinity, plan.from));
+      async () => buildViewMei(await viewChunk(entry, plan.from, plan.to, request.view), request.view, Infinity, plan.from));
     const count = target.getPageCount();
     for (const page of wanted) {
       const local = plan.firstPage + (page - 1 - plan.firstSystem);

@@ -7,17 +7,20 @@ import { readFileSync } from 'node:fs';
 import { ANNOTATION_SCALE, ANNOTATION_SIZES, defaults, sanitizeSavedPrefs, settingsToPrefs, viewToMode } from '../packages/pepperscore/src/lib/prefs.ts';
 import { nearestNote, noteInBox } from '../packages/pepperscore/src/lib/hit-test.ts';
 
-const all = { header: true, transport: true, viewToggle: true, openFile: true, mixer: true, drawer: true, zoom: true, compactPlay: false, playhead: true, partControls: true, audio: true };
+const all = { header: true, transport: true, viewToggle: true, openFile: true, mixer: true, drawer: true, zoom: true, tabToggle: true, compactPlay: false, playhead: true, partControls: true, audio: true };
 assert.deepEqual(resolveChrome(), all, 'full is the default');
 assert.deepEqual(resolveChrome('full'), all);
-assert.deepEqual(resolveChrome('minimal'), { header: false, transport: false, viewToggle: false, openFile: false, mixer: false, drawer: false, zoom: false, compactPlay: true, playhead: true, partControls: false, audio: true });
-assert.deepEqual(resolveChrome('none'), { header: false, transport: false, viewToggle: false, openFile: false, mixer: false, drawer: false, zoom: false, compactPlay: false, playhead: false, partControls: false, audio: false });
+assert.deepEqual(resolveChrome('minimal'), { header: false, transport: false, viewToggle: false, openFile: false, mixer: false, drawer: false, zoom: false, tabToggle: false, compactPlay: true, playhead: true, partControls: false, audio: true });
+assert.deepEqual(resolveChrome('none'), { header: false, transport: false, viewToggle: false, openFile: false, mixer: false, drawer: false, zoom: false, tabToggle: false, compactPlay: false, playhead: false, partControls: false, audio: false });
 assert.deepEqual(resolveChrome('full', { mixer: false, openFile: false }), { ...all, mixer: false, openFile: false, partControls: false });
 const minimalWithToggle = resolveChrome('minimal', { viewToggle: true });
 assert.equal(minimalWithToggle.header, true); assert.equal(minimalWithToggle.compactPlay, true);
 const minimalWithTransport = resolveChrome('minimal', { transport: true });
 assert.equal(minimalWithTransport.compactPlay, false, 'header transport replaces the compact button');
 assert.equal(resolveChrome('none', { transport: true }).audio, true, 'a host can opt none into playback');
+const minimalWithTab = resolveChrome('minimal', { tabToggle: true });
+assert.equal(minimalWithTab.tabToggle, true); assert.equal(minimalWithTab.header, true, 'the TAB switch alone shows the header');
+assert.equal(resolveChrome('full', { tabToggle: false }).tabToggle, false, 'full can hide the TAB switch');
 
 assert.deepEqual(settingsToPrefs({ noteNames: true, chordSymbols: true, inferChords: true, beatCounts: true, subdivisions: false, musicFont: 'Petaluma', staveFont: 'Serif', barsPerLine: 3, zoom: 1.5, semitones: 2, concert: true, overlap: 2 }),
   { names: true, chordSymbols: true, inferChordSymbols: true, counts: true, subdivisions: false, notationFont: 'Petaluma', annotationFont: 'Serif', barsPerLine: 3, zoom: 1.5, semitones: 2, scorePitch: 'concert', overlap: 2 });
@@ -25,6 +28,9 @@ assert.deepEqual(settingsToPrefs({}), {}, 'only given keys are applied');
 assert.deepEqual(settingsToPrefs({ semitones: 40, overlap: 9, barsPerLine: 7, concert: false, zoom: null }), { semitones: 12, overlap: 3, barsPerLine: 7, scorePitch: 'written', zoom: null });
 assert.equal(settingsToPrefs({ barsPerLine: 12 }).barsPerLine, 8, 'barsPerLine is clamped to 1-8');
 assert.equal(settingsToPrefs({ barsPerLine: 0 }).barsPerLine, 1, 'barsPerLine is clamped to 1-8');
+assert.deepEqual(settingsToPrefs({ tabView: 'tab', tabTuning: [38, 45, 50, 55, 59, 64], capo: 2, bpm: 132, keyFlip: true }), { tabView: 'tab', tabTuning: [38, 45, 50, 55, 59, 64], capo: 2, bpm: 132, keyFlip: true }, 'TAB settings, BPM and key flip map to prefs');
+assert.deepEqual(settingsToPrefs({ tabView: 'lute', tabTuning: [40, 300], capo: 20, bpm: 999 }), { capo: 12, bpm: 240 }, 'unusable TAB settings are ignored, capo and BPM clamped');
+assert.equal(defaults.tabView, 'notation'); assert.deepEqual(defaults.tabTuning, [40, 45, 50, 55, 59, 64]); assert.equal(defaults.capo, 0);
 assert.equal(viewToMode('vertical'), 'portrait'); assert.equal(viewToMode('endless'), 'landscape');
 assert.equal(defaults.mode, 'portrait');
 
