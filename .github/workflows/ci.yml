@@ -16,7 +16,7 @@ jobs:
   validate:
     name: Check, build and validate (chromium)
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,12 +25,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Install Playwright Chromium
-        # The runner's apt mirror can stall for minutes per package (seen as Ign: lines until the job timeout): time
-        # requests out and retry instead of hanging.
-        timeout-minutes: 12
-        run: |
-          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/99ci-network > /dev/null
-          for attempt in 1 2 3; do timeout 230 npx playwright-core install --with-deps chromium && exit 0; echo "Playwright install attempt $attempt failed"; done; exit 1
+        run: npx playwright-core install --with-deps chromium
       - name: Type check
         run: npm run check
       - name: Build
@@ -48,6 +43,15 @@ jobs:
     name: Reader (${{ matrix.browser }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # The Playwright image carries the browsers and every system library they need. Installing those libraries with
+    # apt on the runner (`--with-deps`, ~120 MB for WebKit or Firefox) has crawled at ~50 kB/s from the runner's mirror
+    # and run into the job timeout. Keep the tag on the lockfile's playwright-core version.
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      options: --ipc=host
+    env:
+      # Firefox refuses to start as root with another user's HOME (the container runs as root).
+      HOME: /root
     strategy:
       fail-fast: false
       matrix:
@@ -60,13 +64,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # A no-op while the image matches playwright-core; after a bump it downloads the new browser build.
       - name: Install Playwright ${{ matrix.browser }}
-        # The runner's apt mirror can stall for minutes per package (seen as Ign: lines until the job timeout): time
-        # requests out and retry instead of hanging.
-        timeout-minutes: 12
-        run: |
-          printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/99ci-network > /dev/null
-          for attempt in 1 2 3; do timeout 230 npx playwright-core install --with-deps ${{ matrix.browser }} && exit 0; echo "Playwright install attempt $attempt failed"; done; exit 1
+        run: npx playwright-core install ${{ matrix.browser }}
       - name: Build
         run: npm run build
       - name: Reader validation
