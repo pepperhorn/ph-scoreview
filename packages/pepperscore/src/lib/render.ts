@@ -214,7 +214,8 @@ export function planStaves(info: BaselineInfo, score: Score, hiddenIds: Readonly
   // Transposition and spelling: the worker moves and respells the baseline (notation/mei-spelling.ts) with the plan
   // `scoreForView` used for this Score view, so the view is loaded untransposed.
   const spelling = spellingSpecFor(score, staffOf);
-  // Guitar TAB: imported TAB staves show in a TAB view unless the view moves pitches (their frets would be stale);
+  // Guitar TAB: imported TAB staves show in a TAB view unless the view moves pitches (their frets would be stale; an
+  // instrument view's switched or octave-moved parts make their own TAB stale, see planTab);
   // otherwise TAB is generated after spelling. In TAB view the notation staff is hidden and read from its TAB staff.
   const tabView = tab?.view ?? 'notation';
   const tabPlan = planTab(score, staffOf, tabView, {

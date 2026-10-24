@@ -58,9 +58,11 @@ try {
   const drawnOf = (result, staff) => result.notes.filter(note => note.staff === staff).map(name);
   /** Every drawn note has the display Score's spelling for its MEI id (engraving and note names agree). */
   const agrees = (result, label) => {
-    const wrong = result.notes.filter(note => result.pitches[note.id] && name(note) !== scoreName(result.pitches[note.id])).map(note => `${note.id}: ${name(note)} vs ${scoreName(result.pitches[note.id])}`);
+    // A generated MEI's continuation and split pieces (`_cN`, `_sN`) belong to their note (`source`).
+    const of = note => result.pitches[note.id] ?? result.pitches[note.source];
+    const wrong = result.notes.filter(note => of(note) && name(note) !== scoreName(of(note))).map(note => `${note.id}: ${name(note)} vs ${scoreName(of(note))}`);
     assert.deepEqual(wrong, [], `${label}: engraved pitches match the display Score`);
-    assert.ok(result.notes.every(note => result.pitches[note.id]), `${label}: every drawn note has a Score pitch (Pitch.sourceId = MEI id)`);
+    assert.ok(result.notes.every(note => of(note)), `${label}: every drawn note has a Score pitch (Pitch.sourceId = MEI id)`);
   };
   const clefOf = (result, staff) => { const clef = result.clefs.find(item => item.staff === staff); return clef && `${clef.shape}${clef.line}${clef.dis ? `/${clef.dis}${clef.disPlace}` : ''}`; };
 
@@ -89,6 +91,25 @@ try {
   assert.deepEqual([drawnOf(own, '1'), drawnOf(own, '2'), clefOf(own, '1'), clefOf(own, '2')], [['C6', 'E5'], ['C3'], 'G2', 'F4'], 'As written with an octave move: that note an octave up, nothing else changes');
   agrees(own, 'Unswitched octave move');
   console.log('Instrument switch: a reader octave move engraves that note an octave down (switched) or up (as written) passed');
+
+  // ABC (engraved from the MEI the Score generates; its pitches carry no sourceId): octave moves key on the generated
+  // ids, and a note split into pieces (5 eighths = half + eighth, the `_s1` piece) moves as one.
+  const abc = 'X:1\nT:Switch\nM:4/4\nL:1/8\nK:C\nc5 e3|g2 c2 e4|]\n';
+  const abcPlain = await engrave(abc, { switches: {}, format: 'abc' });
+  assert.deepEqual(drawnOf(abcPlain, '1'), ['C5', 'C5', 'E5', 'G5', 'C5', 'E5'], 'ABC as written (the first note drawn as two pieces)');
+  agrees(abcPlain, 'ABC as written');
+  const abcFirst = abcPlain.pitches[abcPlain.notes[0].id].note;
+  const abcOwn = await engrave(abc, { switches: { 0: { level: 'intermediate', autoRange: true, octaves: { [abcFirst]: -12 } } }, format: 'abc' });
+  assert.ok(abcOwn.moved.includes(abcFirst), 'ABC: the moved note is listed');
+  assert.deepEqual(drawnOf(abcOwn, '1'), ['C4', 'C4', 'E5', 'G5', 'C5', 'E5'], 'ABC as written with an octave move: both pieces of the note engrave an octave down');
+  agrees(abcOwn, 'ABC unswitched octave move');
+  const trumpet = { instrument: 'trumpet', level: 'intermediate', autoRange: true, octaves: { [abcFirst]: -12 } };
+  const abcTrumpet = await engrave(abc, { switches: { 0: trumpet }, format: 'abc' });
+  assert.deepEqual(drawnOf(abcTrumpet, '1'), ['D4', 'D4', 'F#5', 'A5', 'D5', 'F#5'], 'ABC as trumpet with an octave move: written a tone up, the moved note an octave down');
+  agrees(abcTrumpet, 'ABC as trumpet');
+  const abcRendered = await page.evaluate(async ([xml, test]) => (await import('/validation/instrument-switch-harness.ts')).renderSwitch(xml, test), [abc, { switches: { 0: trumpet }, format: 'abc' }]);
+  assert.deepEqual(abcRendered.notes.map(note => `${note.pname}${note.oct}`), ['D4', 'D4', 'F5', 'A5', 'D5', 'F5'], 'ABC as trumpet: the reader\'s render draws the switch and the octave move');
+  console.log('Instrument switch: ABC octave moves and switches engrave (generated MEI ids, split notes) passed');
 
   // Concert view: the switched staff is shown at sounding pitch (no written shift), clef and range move still apply.
   const concert = await engrave(pianoXml, { switches: { 0: alto, 1: alto }, view: 'concert' });

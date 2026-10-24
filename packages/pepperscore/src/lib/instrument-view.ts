@@ -6,6 +6,7 @@ import { applyOverrides, joinRuns, planShifts, tieChainOf, type FitEvent, type S
 import { gmProgramForNumber, type KeyMode, type Measure, type Part, type Pitch, type Score, type ScoreNote } from './score';
 import { keyFromFifths, spellChordSymbol } from './spelling';
 import { foldFifths, intervalFifths, moveChordSymbol, respellLine, type Interval, type LineNote } from './notation/respell';
+import { generatedEngraving, generatedPitchId } from './notation/document';
 import { soundingMidi } from './transpose';
 
 /** The part all staves of one source part share: the MusicXML <score-part id>, or the part's own id for ABC/MIDI. */
@@ -32,7 +33,10 @@ export type InstrumentViewResult = {
   outOfRange: string[];
   /** Keyed by part id. */
   staves: Record<string, StaffSwitch>;
-  /** TAB parts doubling a switched part (hidden while it is switched). */
+  /**
+   * TAB parts doubling a switched or octave-moved part (their frets are stale). The renderer reads the same from
+   * `score.instrumentView` (tab/tab-parts.ts `planTab`): regenerated while the part is a guitar, else hidden.
+   */
   hiddenTab: string[];
 };
 
@@ -117,26 +121,42 @@ function sourceInterval(part: Part, measure: Measure | undefined): Interval {
   return t?.semitones ? { diatonic: t.diatonic ?? Math.round(t.semitones * 7 / 12), chromatic: t.semitones } : { diatonic: 0, chromatic: 0 };
 }
 
+/** A part at sounding pitch without its transposition, so `soundingMidi` reads its MIDI as is. */
+const withoutTransposition = (part: Part): Part => ({ ...part, transposition: undefined, measures: part.measures.map(measure => (measure.transposition ? { ...measure, transposition: undefined } : measure)) });
+
 /**
  * Switches parts of a Score view (`scoreForView`'s result) to other instruments and applies the reader's octave
  * moves. Each part is treated on its own (a grand staff's callers set one `PartSwitch` on every staff). For every
- * note, `soundingMidi(outPart, measure, pitch, 0)` is its judged pitch (sounding, after the view's transposition)
- * plus its octave shift; a switched part is written for the target instrument in the written view, at sounding
- * pitch in the concert view.
+ * note of every part, `soundingMidi(outPart, measure, pitch, 0)` is its judged pitch (sounding, after the view's
+ * transposition) plus its octave shift: a concert view's transposing parts (already at sounding pitch) lose their
+ * transposition, switched or not. A switched part is written for the target instrument in the written view, at
+ * sounding pitch in the concert view. A target without a pitched clef or ranges (the drum kit) is treated as written.
+ *
+ * The view is the Score's own (`score.pitchView.view`); `scorePitch` only applies to a Score no view was made of.
+ * Throws when `score` already carries an instrument view: apply it once, to `scoreForView`'s result (a second pass
+ * would stack the shifts).
  */
 export function applyInstrumentView(score: Score, switches: Record<string, PartSwitch>, scorePitch: 'written' | 'concert'): InstrumentViewResult {
+  if (score.instrumentView) throw new Error('applyInstrumentView: the Score already has an instrument view; apply it to the scoreForView result once');
+  const view = score.pitchView?.view ?? scorePitch;
   const moved: string[] = [];
   const outOfRange: string[] = [];
   const staves: Record<string, StaffSwitch> = {};
   const viewMoved = new Set(score.pitchView?.view === 'concert' ? score.pitchView.viewMoved : []);
+  // The MEI ids octave moves are keyed by: the pitch's source id, or for an engraving made from the Score (ABC, MIDI)
+  // the id `scoreToMei` gave it (notation/document.ts).
+  const generated = generatedEngraving(score.document);
+  const meiIdOf = (note: ScoreNote, index: number) => (generated || !note.pitches[index].sourceId ? generatedPitchId(note, index) : note.pitches[index].sourceId!);
 
-  const parts = score.parts.map(part => {
+  const parts = score.parts.map(input => {
+    // A concert view's transposing part is at sounding pitch: without its transposition, playback reads it as shown.
+    const atSounding = viewMoved.has(input.id);
+    const part = atSounding ? withoutTransposition(input) : input;
     const choice = switches[part.id];
-    if (!choice || !switchablePart(part)) return part;
-    const target = choice.instrument ? MODEL[choice.instrument] : undefined;
-    // A concert view already moved a transposing part to sounding pitch (keeping its transposition), so its MIDI is judged as is.
-    const atSounding = viewMoved.has(part.id);
-    const judged = (measure: Measure, p: Pitch) => (atSounding ? p.midi : soundingMidi(part, measure, p, 0));
+    if (!choice || !switchablePart(input)) return part;
+    const model = choice.instrument ? MODEL[choice.instrument] : undefined;
+    const target = model && model.clef !== 'percussion' && model.ranges ? model : undefined;
+    const judged = (measure: Measure, p: Pitch) => soundingMidi(part, measure, p, 0);
 
     // Fit: phrases at judged pitch against the target's range, then the reader's overrides along tie chains.
     const notes = new Map<string, { note: ScoreNote; measure: Measure }>();
@@ -153,7 +173,7 @@ export function applyInstrumentView(score: Score, switches: Record<string, PartS
       const out = !!range && midiOf(id).some(m => m + shift < range.low || m + shift > range.high);
       if (shift) {
         moved.push(id);
-        for (const p of note.pitches) if (p.sourceId && !p.unpitched) octaves[p.sourceId] = shift;
+        note.pitches.forEach((p, index) => { if (!p.unpitched) octaves[meiIdOf(note, index)] = shift; });
       }
       // Unswitched parts are as written: only the reader's moves are flagged.
       if (out && (target || shift)) outOfRange.push(id);
@@ -161,26 +181,24 @@ export function applyInstrumentView(score: Score, switches: Record<string, PartS
 
     // Known limitation: the MEI shift is the first measure's; a mid-score `measure.transposition` change in a switched
     // part is not reflected in `StaffSwitch.shift` (the Score pitches below do follow it per measure).
-    const own = sourceInterval(part, part.measures[0]);
+    const own = sourceInterval(input, input.measures[0]);
     if (!target) {
       if (!Object.keys(octaves).length) return part;
       // The baseline MEI is written pitch; a concert view's own move of the staff stays.
       staves[part.id] = { shift: atSounding ? [own.diatonic, own.chromatic] : [0, 0], octaves };
-      // At sounding pitch the transposition is dropped, so playback reads the shown MIDI as is.
-      const sounding = atSounding ? { transposition: undefined } : {};
-      return { ...part, ...sounding, measures: part.measures.map(measure => ({ ...measure, ...sounding, notes: measure.notes.map(note => {
+      return { ...part, measures: part.measures.map(measure => ({ ...measure, notes: measure.notes.map(note => {
         const shift = shifts[note.id];
         return shift ? { ...note, pitches: note.pitches.map(p => (p.unpitched ? p : { ...p, octave: p.octave + shift / 12, midi: p.midi + shift, ...(p.displayOctave !== undefined ? { displayOctave: p.displayOctave + shift / 12 } : {}) })) } : note;
       }) })) };
     }
 
     // Rewrite as the target: written pitch and key in the written view, sounding pitch in the concert view.
-    const written = scorePitch === 'written';
+    const written = view === 'written';
     const shown: ModelTransposition = written ? target.transposition : { semitones: 0, diatonic: 0 };
     staves[part.id] = { shift: [shown.diatonic + own.diatonic, shown.semitones + own.chromatic], clef: target.clef, octaves };
     const measures = part.measures.map(measure => {
       // The view's key is the source's shown key; at concert pitch it is the sounding key unless the part is written.
-      const source = atSounding ? { diatonic: 0, chromatic: 0 } : sourceInterval(part, measure);
+      const source = sourceInterval(part, measure);
       const concertFifths = foldFifths((measure.key ?? part.key ?? score.key) + intervalFifths(source));
       const fifths = written ? writtenKeyFifths(concertFifths, target.transposition) : concertFifths;
       const mode = measure.keyMode ?? part.keyMode ?? score.keyMode ?? 'major';

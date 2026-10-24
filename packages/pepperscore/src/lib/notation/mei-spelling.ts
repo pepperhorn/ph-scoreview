@@ -21,6 +21,7 @@
  */
 import type { InstrumentClef } from '../instrument-model';
 import { keyFromFifths, spellChordSymbol, type KeyMode, type SpellingKey, type SpellingProfile } from '../spelling';
+import { generatedPitchIdOf } from './document';
 import { attributeOf, scan } from './mei-view';
 import { accidentalDisplay, fifthsOf, intervalFifths, moveChordSymbol, parseInterval, transposeSpelled, respellLine, sigOf, viewKey, type LineNote, type SpelledPitch, type StaffSpelling } from './respell';
 
@@ -175,10 +176,17 @@ export function respellMei(mei: string, spec: SpellingSpec, measureOffset = 0): 
   // Any staff Verovio moved (an interval moves every staff) is respelled, as is every staff of a flipped view and a
   // staff with its own shift. A staff with octave moves only keeps its spellings (its notes are read to move them).
   const respelled = (n: string) => !percussion.has(n) && (staffSpec(n).moved || spec.semitones !== 0 || spec.flip || !!spec.interval || !!viewShift(n));
-  const octaveOf = (n: string, id: string) => (percussion.has(n) ? 0 : staffSpec(n).octaves?.[id] ?? 0) / 12;
+  // A generated MEI (ABC, MIDI) draws a note's continuations and split pieces as notes of their own (`_cN`, `_sN`):
+  // they move with the note.
+  const octaveOf = (n: string, id: string) => {
+    const octaves = percussion.has(n) ? undefined : staffSpec(n).octaves;
+    if (!octaves) return 0;
+    const base = octaves[id] === undefined ? generatedPitchIdOf(id) : null;
+    return (octaves[id] ?? (base ? octaves[base] : undefined) ?? 0) / 12;
+  };
   const octaveMoves = (n: string) => !percussion.has(n) && Object.keys(staffSpec(n).octaves ?? {}).length > 0;
   /** Clefs of switched staves: the opening clef replaced, clef changes in the staff (layers, later definitions) removed. */
-  const clefOf = (n: string) => (percussion.has(n) ? undefined : staffSpec(n).clef);
+  const clefOf = (n: string) => { const clef = percussion.has(n) ? undefined : staffSpec(n).clef; return clef && CLEFS[clef] ? clef : undefined; };
   const clefEdits: Edit[] = [];
   const staves: string[] = [];
 
