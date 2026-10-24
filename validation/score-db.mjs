@@ -116,6 +116,37 @@ try {
     out.sizesBuiltDefault = sizesOf(buildFileState(source(hex(7)), settings, { parts: [] }, []));
     const legacy = parseLegacyFileState({ version: 1, source: source(hex(8)), settings: { ...settings, zoom: 1 }, parts: {} }, hex(8));
     out.sizesLegacy = legacy && sizesOf(migrateFileState(legacy, 'desktop'));
+    // Instrument switch per staff part (optional, version 2): round trip, and malformed entries dropped per part.
+    const alto = { instrument: 'alto-saxophone', level: 'beginner', autoRange: false, octaves: { n1: 12, n2: -12 } };
+    const switchScore = { parts: [{ id: 'p1', instrument: 'piano' }, { id: 'p2', instrument: 'piano' }, { id: 'p3', instrument: 'flute' }] };
+    const built = JSON.parse(JSON.stringify(buildFileState(source(hex(10)), settings, switchScore, [], {}, undefined, 5, { p1: alto, p2: { instrument: undefined, level: 'advanced', autoRange: true, octaves: {} } })));
+    out.switchBuilt = [built.parts.p1.switch, built.parts.p2.switch, 'switch' in built.parts.p3];
+    out.switchRoundTrip = parseFileState(built, hex(10))?.parts.p1.switch;
+    const malformed = { version: 2, source: source(hex(11)), lastOpened: 1, settings, parts: {
+      bad: { visible: true, instrument: 'piano', switch: { instrument: 'kazoo', level: 'beginner', autoRange: true } },
+      expert: { visible: true, instrument: 'piano', switch: { instrument: 'flute', level: 'expert', autoRange: true } },
+      seven: { visible: true, instrument: 'piano', switch: { instrument: 'flute', level: 'beginner', autoRange: true, octaves: { n1: 7 } } },
+      noRange: { visible: true, instrument: 'piano', switch: { level: 'beginner' } },
+      drums: { visible: true, instrument: 'piano', switch: { instrument: 'drum-kit', level: 'beginner', autoRange: true } },
+      good: { visible: false, instrument: 'piano', switch: { instrument: 'trumpet', level: 'advanced', autoRange: true } },
+    } };
+    const parsed = parseFileState(malformed, hex(11));
+    out.switchMalformed = parsed && Object.fromEntries(Object.entries(parsed.parts).map(([id, part]) => [id, part.switch ?? null]));
+    out.switchMalformedVisible = parsed?.parts.good.visible;
+    // Arrays are not octave maps; a null part entry is dropped (the record still opens); a picked sound round-trips,
+    // and an unusable sound (or one without an instrument) only loses the sound.
+    const edge = parseFileState({ version: 2, source: source(hex(12)), lastOpened: 1, settings, parts: {
+      arrayOctaves: { visible: true, instrument: 'piano', switch: { instrument: 'flute', level: 'beginner', autoRange: true, octaves: [12] } },
+      gone: null,
+      good: { visible: true, instrument: 'piano', switch: { instrument: 'trumpet', level: 'advanced', autoRange: true, sound: { instrument: 'violin', gmSoundfont: 'orchestral_harp' } } },
+      badSound: { visible: true, instrument: 'piano', switch: { instrument: 'trumpet', level: 'advanced', autoRange: true, sound: { instrument: 'violin', gmSoundfont: 'kazoo' } } },
+      soundOnly: { visible: true, instrument: 'piano', switch: { level: 'advanced', autoRange: true, sound: { instrument: 'drum-kit' } } },
+    } }, hex(12));
+    out.switchEdge = edge && Object.fromEntries(Object.entries(edge.parts).map(([id, part]) => [id, part.switch ?? null]));
+    const sounded = JSON.parse(JSON.stringify(buildFileState(source(hex(13)), settings, { parts: [{ id: 'p1', instrument: 'piano' }, { id: 'p2', instrument: 'piano' }] }, [], {}, undefined, 5,
+      { p1: { instrument: 'trumpet', level: 'beginner', autoRange: true, octaves: {}, sound: { instrument: 'drum-kit' } }, p2: { level: 'beginner', autoRange: true, octaves: {}, sound: { instrument: 'violin', gmSoundfont: 'orchestral_harp' } } })));
+    out.soundBuilt = [sounded.parts.p1.switch, sounded.parts.p2.switch];
+    out.soundRoundTrip = parseFileState(sounded, hex(13))?.parts.p1.switch;
     return out;
   });
 
@@ -146,6 +177,13 @@ try {
   assert.deepEqual(result.sizesRoundTrip, ['xl', 'sm', 'lg', 'xs'], 'Add-on sizes round-trip through buildFileState and parseFileState');
   assert.deepEqual(result.sizesBuiltDefault, ['rg', 'rg', 'rg', 'rg'], 'buildFileState writes regular sizes when unset');
   assert.deepEqual(result.sizesLegacy, ['rg', 'rg', 'rg', 'rg'], 'A v1 record migrates with regular sizes');
+  assert.deepEqual(result.switchBuilt, [{ instrument: 'alto-saxophone', level: 'beginner', autoRange: false, octaves: { n1: 12, n2: -12 } }, { level: 'advanced', autoRange: true }, false], 'buildFileState writes each part\'s switch (no octaves key when none, no entry when unswitched)');
+  assert.deepEqual(result.switchRoundTrip, { instrument: 'alto-saxophone', level: 'beginner', autoRange: false, octaves: { n1: 12, n2: -12 } }, 'A switch round-trips through buildFileState and parseFileState');
+  assert.deepEqual(result.switchMalformed, { bad: null, expert: null, seven: null, noRange: null, drums: null, good: { instrument: 'trumpet', level: 'advanced', autoRange: true } }, 'Malformed switches (bad id, level expert, octave 7, missing fields, drum kit) are dropped per part; the record opens');
+  assert.equal(result.switchMalformedVisible, false, 'The rest of a part with a dropped switch is kept');
+  assert.deepEqual(result.switchEdge, { arrayOctaves: null, good: { instrument: 'trumpet', level: 'advanced', autoRange: true, sound: { instrument: 'violin', gmSoundfont: 'orchestral_harp' } }, badSound: { instrument: 'trumpet', level: 'advanced', autoRange: true }, soundOnly: { level: 'advanced', autoRange: true } }, 'Array octaves drop the switch, a null part entry is dropped, a bad or instrument-less sound only loses the sound');
+  assert.deepEqual(result.soundBuilt, [{ instrument: 'trumpet', level: 'beginner', autoRange: true, sound: { instrument: 'drum-kit' } }, { level: 'beginner', autoRange: true }], 'buildFileState writes a picked sound only with an instrument');
+  assert.deepEqual(result.soundRoundTrip, { instrument: 'trumpet', level: 'beginner', autoRange: true, sound: { instrument: 'drum-kit' } }, 'A picked sound round-trips');
   assert.equal(result.afterFlush, 1.2, 'The latest debounced write wins');
   assert.equal(result.abcKey, result.abcKeyAgain, 'ABC key is stable');
   assert.notEqual(result.abcKey, result.xmlKey, 'Keys carry a format prefix');

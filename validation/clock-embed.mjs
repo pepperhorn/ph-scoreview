@@ -84,11 +84,14 @@ try {
   await page.waitForFunction(() => document.querySelector('.clock-a .reader-area.ps-landscape .score-system svg .reader-note') && !document.querySelector('.clock-a .score-loading'), null, { timeout: 60000 });
   await waitPlaying('a', { same: beforeHandle });
   // 5b. A transpose while the clock is paused re-engraves and keeps the playhead at the clock's time, not at 0.
+  const subscriptionsBefore = await page.evaluate(() => window.__clock.a.subscriptions());
   await page.evaluate(() => { window.__oldSvgA = document.querySelector('.clock-a .score-system svg'); window.__clockRefs.a.current.transpose(2); });
   await page.waitForFunction(() => !window.__oldSvgA.isConnected && document.querySelector('.clock-a .score-system svg .reader-note') && !document.querySelector('.clock-a .score-loading'), null, { timeout: 60000 });
   await page.waitForTimeout(300);
   assert.deepEqual(await playingIds('a'), beforeHandle, 'after a transpose the playhead is still on the note for the clock time');
   assert.equal(await page.evaluate(() => window.__clockRefs.a.current.currentTime()), 7.7, 'the clock time is unchanged by a transpose');
+  // No part is switched: the timeline does not follow the transpose, so the clock keeps its subscription.
+  assert.equal(await page.evaluate(() => window.__clock.a.subscriptions()), subscriptionsBefore, 'a transpose of an unswitched score does not re-subscribe to the clock');
 
   // 6. A new clock object on every host render keeps exactly one subscription (Review Focus 2).
   await page.evaluate(async () => {

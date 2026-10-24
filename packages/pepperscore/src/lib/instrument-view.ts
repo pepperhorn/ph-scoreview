@@ -12,8 +12,16 @@ import { soundingMidi } from './transpose';
 /** The part all staves of one source part share: the MusicXML <score-part id>, or the part's own id for ABC/MIDI. */
 export const sourcePartOf = (part: Part): string => part.sourcePartId ?? part.id;
 
-/** A reader's switch for one staff part: `instrument` undefined = as written; `octaves` keyed by `ScoreNote.id`. */
-export type PartSwitch = { instrument?: InstrumentId; level: Level; autoRange: boolean; octaves: Record<string, 12 | -12> };
+/**
+ * The playback sound a reader picked for a switched part (the mixer's Sound grid, like `Part.instrument` and
+ * `gmSoundfont`: the GM sound's icon id and FluidR3 name; no `gmSoundfont` with `instrument: 'drum-kit'` = the kit).
+ */
+export type PartSound = { instrument: InstrumentId; gmSoundfont?: string };
+/**
+ * A reader's switch for one staff part: `instrument` undefined = as written; `octaves` keyed by `ScoreNote.id`;
+ * `sound` overrides the target's main sound (only while switched; cleared when the instrument changes).
+ */
+export type PartSwitch = { instrument?: InstrumentId; level: Level; autoRange: boolean; octaves: Record<string, 12 | -12>; sound?: PartSound };
 /**
  * The MEI pass's view of one switched (or octave-moved) staff: `shift` = [diatonic, semitones] from the baseline MEI
  * (the source's written pitch, after the global interval) to the pitch shown; `octaves` keyed by MEI note id.
@@ -40,8 +48,18 @@ export type InstrumentViewResult = {
   hiddenTab: string[];
 };
 
-/** Whether the switch is offered for a part: never for the drum kit or percussion, nor for TAB staves. */
-export const switchablePart = (part: Part): boolean => part.clef !== 'percussion' && part.instrument !== 'drum-kit' && !part.tab && !part.tabOf;
+/**
+ * Whether the switch is offered for a part: never for the drum kit or percussion, nor for TAB staves. Judged on the
+ * part as imported: a Sound pick (`withPickedSound`) changes `instrument` but never what can be switched.
+ */
+export const switchablePart = (part: Part): boolean => part.clef !== 'percussion' && (part.importedInstrument ?? part.instrument) !== 'drum-kit' && !part.tab && !part.tabOf;
+
+/**
+ * A part playing a picked sound (the mixer's Sound grid or a saved record): its icon id, GM program and FluidR3 name,
+ * with the instrument it was imported as kept in `importedInstrument`.
+ */
+export const withPickedSound = (part: Part, sound: { instrument: InstrumentId; gmProgram?: number; gmSoundfont?: string }): Part =>
+  ({ ...part, importedInstrument: part.importedInstrument ?? part.instrument, instrument: sound.instrument, gmProgram: sound.gmProgram, gmSoundfont: sound.gmSoundfont });
 
 const pitched = (note: ScoreNote) => !note.rest && note.pitches.some(p => !p.unpitched);
 const byStart = (measure: Measure) => [...measure.notes].sort((a, b) => a.start - b.start);

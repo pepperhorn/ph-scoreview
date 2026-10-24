@@ -11,6 +11,7 @@ import { injectTab, type FretMemory } from '../packages/pepperscore/src/lib/nota
 import { indexMusicXml, sliceMusicXml } from '../packages/pepperscore/src/lib/notation/musicxml-chunks';
 import { planStaves } from '../packages/pepperscore/src/lib/render';
 import { scoreForView } from '../packages/pepperscore/src/lib/transpose';
+import { applyInstrumentView, type PartSwitch } from '../packages/pepperscore/src/lib/instrument-view';
 import { buildBaseTimeline } from '../packages/pepperscore/src/lib/playback/timeline';
 import { canShowTab, hiddenReaderParts, type TabView } from '../packages/pepperscore/src/lib/tab/tab-parts';
 import { defaults, sanitizeSavedPrefs, settingsToPrefs, type PepperScoreSettings, type Prefs } from '../packages/pepperscore/src/lib/prefs';
@@ -56,7 +57,8 @@ export async function parts(source: Source) {
   };
 }
 
-export type ViewCase = { view: TabView; semitones?: number; capo?: number; tuning?: number[]; chordSymbols?: boolean; hidden?: string[]; slices?: number; pitch?: 'written' | 'concert' };
+/** `switches`: instrument switches by part index, applied to the view last (as the reader does). */
+export type ViewCase = { view: TabView; semitones?: number; capo?: number; tuning?: number[]; chordSymbols?: boolean; hidden?: string[]; slices?: number; pitch?: 'written' | 'concert'; switches?: Record<number, PartSwitch> };
 type TabNote = { id: string; course: number; fret: number };
 type StaffNote = TabNote & { visible: boolean };
 
@@ -102,7 +104,8 @@ function readDrawn(mei: string, svg: string) {
 /** Engrave one TAB view of a score (whole, or in `slices` measures per chunk with one fret memory, as the worker does). */
 export async function engraveTab(source: Source, test: ViewCase) {
   const { score, baseline } = await prepare(source);
-  const view = scoreForView(score, test.pitch ?? 'written', test.semitones ?? 0, false);
+  const viewed = scoreForView(score, test.pitch ?? 'written', test.semitones ?? 0, false);
+  const view = test.switches ? applyInstrumentView(viewed, Object.fromEntries(Object.entries(test.switches).map(([index, value]) => [score.parts[Number(index)].id, value])), test.pitch ?? 'written').score : viewed;
   const plan = planStaves(scanBaseline(baseline), view, new Set(test.hidden ?? []), { view: test.view, tuning: test.tuning, capo: test.capo });
   const target = await verovio();
   const options = { breaks: 'none', xmlIdChecksum: true, pageWidth: 60000, adjustPageHeight: true, svgAdditionalAttribute: ['staff@n'] };

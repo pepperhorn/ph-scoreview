@@ -180,12 +180,20 @@
           "description": "Spell the transposed view in the enharmonic key (e.g. Gb major instead of F# major). Optional; readers default it to false."
         },
         "tabView": {
-          "enum": ["notation", "tab", "both"],
+          "enum": [
+            "notation",
+            "tab",
+            "both"
+          ],
           "description": "Which staves guitar parts show: notation, TAB or both. Optional; a reader without it keeps its current view."
         },
         "tabTuning": {
           "type": "array",
-          "items": { "type": "integer", "minimum": 0, "maximum": 127 },
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 127
+          },
           "minItems": 4,
           "maxItems": 8,
           "description": "Open-string MIDI pitches of generated TAB, low to high (4 to 8 strings). Optional; a reader without it keeps its current tuning (standard [40, 45, 50, 55, 59, 64] by default)."
@@ -239,6 +247,94 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 100
+          },
+          "switch": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "level",
+              "autoRange"
+            ],
+            "properties": {
+              "instrument": {
+                "enum": [
+                  "piano",
+                  "guitar",
+                  "bassguitar",
+                  "double-bass",
+                  "drum-kit",
+                  "alto-saxophone",
+                  "tenor-saxophone",
+                  "bari-saxophone",
+                  "flute",
+                  "clarinet",
+                  "trumpet",
+                  "trombone",
+                  "violin",
+                  "viola",
+                  "cello",
+                  "microphone"
+                ],
+                "description": "Shown as this instrument; absent = as written. Readers drop a switch to the drum kit."
+              },
+              "level": {
+                "enum": [
+                  "beginner",
+                  "intermediate",
+                  "advanced"
+                ]
+              },
+              "autoRange": {
+                "type": "boolean",
+                "description": "Fit phrases outside the level's range by an octave."
+              },
+              "octaves": {
+                "type": "object",
+                "additionalProperties": {
+                  "enum": [
+                    12,
+                    -12
+                  ]
+                },
+                "description": "The reader's octave moves by Score note id."
+              },
+              "sound": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "instrument"
+                ],
+                "properties": {
+                  "instrument": {
+                    "enum": [
+                      "piano",
+                      "guitar",
+                      "bassguitar",
+                      "double-bass",
+                      "drum-kit",
+                      "alto-saxophone",
+                      "tenor-saxophone",
+                      "bari-saxophone",
+                      "flute",
+                      "clarinet",
+                      "trumpet",
+                      "trombone",
+                      "violin",
+                      "viola",
+                      "cello",
+                      "microphone"
+                    ],
+                    "description": "The picked GM sound's icon id (drum-kit without gmSoundfont = the drum kit)."
+                  },
+                  "gmSoundfont": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_]+$"
+                  }
+                },
+                "description": "The playback sound picked while the part is switched (overrides the instrument's main sound); readers ignore it without an instrument or when unusable."
+              }
+            },
+            "description": "The reader's instrument switch of this staff part. Optional (added in version 2); readers drop an unusable one, so the part opens as written."
           }
         }
       }

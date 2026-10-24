@@ -2,6 +2,7 @@
 // import facts the instrument switch keys on (source part ids, slur ends, note ids) plus the MEI xml:ids Verovio assigns;
 // and engraves a switched view through the worker's pipeline (MEI baseline, Verovio transposition and the spelling
 // pass with the switched staves, the view MEI) or through the reader's own renderScore (worker, chunks).
+import '../packages/pepperscore/src/styles.css';
 import createVerovioModule from 'verovio/wasm';
 import { VerovioToolkit } from 'verovio/esm';
 import { parseAbc, parseMusicXml } from '../packages/pepperscore/src/lib/import';
@@ -13,7 +14,14 @@ import { indexMusicXml, sliceMusicXml } from '../packages/pepperscore/src/lib/no
 import { planStaves, renderScore } from '../packages/pepperscore/src/lib/render';
 import { scoreForView, type ScorePitchView } from '../packages/pepperscore/src/lib/transpose';
 import { verovioBaseline } from '../packages/pepperscore/src/lib/verovio-runtime';
-import type { Score } from '../packages/pepperscore/src/lib/score';
+import { gmProgramForSoundfont, type Score } from '../packages/pepperscore/src/lib/score';
+import { createElement } from 'react';
+import { createRoot } from 'react-dom/client';
+import PepperScore, { type PepperScoreReadyInfo } from '../packages/pepperscore/src/components/PepperScore';
+import type { PepperScoreSettings } from '../packages/pepperscore/src/lib/prefs';
+import type { PepperScoreControls } from '../packages/pepperscore/src/lib/chrome';
+import { readerPitch, switchedSoundParts, switchedTimeline, switchedView, switchesFromSettings } from '../packages/pepperscore/src/lib/instrument-switch-state';
+import { baseTimelineFor, playbackEventsFrom } from '../packages/pepperscore/src/lib/playback/timeline';
 
 type Toolkit = InstanceType<typeof VerovioToolkit>;
 let toolkit: Promise<Toolkit> | undefined;
@@ -171,4 +179,90 @@ export async function respellOctaves(xml: string, staff: string, moves: Record<n
   const octaves = Object.fromEntries(Object.entries(moves).map(([index, value]) => [ids[Number(index)], value]));
   const spec: SpellingSpec = { interval: '', semitones: 0, concert: false, flip: false, staves: { [staff]: { profile: 'neutral', moved: false, octaves } } };
   return { before: readMei(baseline), after: readMei(respellMei(baseline, spec)) };
+}
+
+// --- The reader with instrument settings (PepperScore mounted in the page) -----------------------------------------
+type MountProps = { settings?: PepperScoreSettings; highlights?: { ids?: string[]; className: string }[] };
+/**
+ * Mount PepperScore (minimal chrome, nothing saved, silent) on `xml` and read the first draw: noteheads per staff
+ * (`data-pname` / `data-oct`), each staff's opening clef glyph, and the drawn notes carrying each highlight class.
+ */
+export async function mountReader(xml: string, props: MountProps = {}) {
+  const host = document.createElement('div');
+  host.className = 'instrument-switch-reader';
+  host.style.width = '1200px';
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  let ready: PepperScoreReadyInfo | undefined;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('PepperScore did not render')), 60000);
+      root.render(createElement(PepperScore, { musicXml: xml, chrome: 'minimal', persist: false, audio: false, settings: props.settings, highlights: props.highlights,
+        onError: error => { clearTimeout(timer); reject(error); },
+        onReady: info => { ready = info; },
+        onRender: () => { clearTimeout(timer); resolve(); } }));
+    });
+    return { ...await readReader(host, props), ready };
+  } finally { root.unmount(); host.remove(); }
+}
+
+/** What a mounted reader drew: noteheads per staff, opening clef glyphs, highlighted notes. */
+async function readReader(host: HTMLElement, props: MountProps = {}) {
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  const svgNotes = [...host.querySelectorAll('.score-system svg g.note')];
+  const notes = svgNotes.map(note => ({ staff: note.closest('g.staff')?.getAttribute('data-n') || '', pitch: `${(note.getAttribute('data-pname') || '').toUpperCase()}${note.getAttribute('data-oct')}` }));
+  const glyph = (use: Element | null) => (use?.getAttribute('xlink:href') || use?.getAttribute('href') || '').replace(/^#/, '').split('-')[0];
+  const clefs: Record<string, string> = {};
+  for (const staff of host.querySelectorAll('.score-system svg g.staff[data-n]')) clefs[staff.getAttribute('data-n')!] ??= ({ E050: 'G', E062: 'F', E05C: 'C' } as Record<string, string>)[glyph(staff.querySelector('g.clef use'))] ?? '?';
+  /** Drawn pitches inside elements with the class (a chord's notes count for the chord). */
+  const classed = (name: string) => [...host.querySelectorAll(`.score-system svg .${name}`)].flatMap(element => (element.matches('g.note') ? [element] : [...element.querySelectorAll('g.note')])
+    .map(note => `${note.closest('g.staff')?.getAttribute('data-n')}:${(note.getAttribute('data-pname') || '').toUpperCase()}${note.getAttribute('data-oct')}`));
+  return { notes, clefs, transposed: classed('ps-transposed'), outOfRange: classed('ps-out-of-range'), host: props.highlights?.map(item => classed(item.className)) ?? [],
+    outOfRangeColor: (() => { const element = host.querySelector('.score-system svg .ps-out-of-range'); return element ? getComputedStyle(element).fill : null; })() };
+}
+
+// --- A full reader left mounted for UI tests (the page drives it; `window.__psDraws` counts finished draws) ---------
+let live: { root: ReturnType<typeof createRoot>; host: HTMLElement } | undefined;
+type LiveWindow = Window & { __psDraws?: number };
+/** Mount the full reader (nothing saved, silent) on `xml` and resolve after its first draw. */
+export async function mountLive(xml: string, props: { controls?: PepperScoreControls; settings?: PepperScoreSettings } = {}) {
+  unmountLive();
+  const host = document.createElement('div');
+  host.className = 'instrument-switch-live';
+  host.style.width = '1200px';
+  host.style.height = '900px';
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  live = { root, host };
+  (window as LiveWindow).__psDraws = 0;
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('PepperScore did not render')), 60000);
+    root.render(createElement(PepperScore, { musicXml: xml, chrome: 'full', controls: props.controls, settings: props.settings, persist: false, audio: false,
+      onError: error => { clearTimeout(timer); reject(error); },
+      onRender: () => { clearTimeout(timer); (window as LiveWindow).__psDraws = ((window as LiveWindow).__psDraws ?? 0) + 1; resolve(); } }));
+  });
+}
+/** What the mounted full reader drew. */
+export const readLive = () => readReader(live!.host);
+export function unmountLive() { if (!live) return; live.root.unmount(); live.host.remove(); live = undefined; }
+
+/**
+ * The reader's playback of a switched score, through the component's own pipeline (instrument-switch-state.ts): the
+ * switches from the host settings, the pitch view rule, the view (switch last), the source's base timeline retuned for
+ * the switched parts, and each part's sound. Returns the scheduled events' MIDI per part and each part's GM program.
+ */
+export async function readerPlayback(xml: string, settings: PepperScoreSettings, options: { scorePitch?: 'written' | 'concert'; semitones?: number } = {}) {
+  const score = parseMusicXml(xml);
+  const switches = switchesFromSettings(score, settings);
+  const pitchView = readerPitch(score, switches, options.scorePitch ?? 'written');
+  const semitones = options.semitones ?? 0;
+  const view = switchedView(scoreForView(score, pitchView.scorePitch, semitones, false), switches, pitchView.scorePitch);
+  const timeline = switchedTimeline(await baseTimelineFor(score), view, semitones);
+  const events = playbackEventsFrom(timeline, 0, timeline.initialBpm, semitones);
+  const parts = switchedSoundParts(score.parts.filter(part => !part.tabOf), view, switches);
+  return {
+    scorePitch: pitchView.scorePitch,
+    midi: Object.fromEntries(parts.map(part => [part.id, events.filter(event => event.partId === part.id).map(event => event.midi)])),
+    programs: Object.fromEntries(parts.map(part => [part.id, part.gmSoundfont ? gmProgramForSoundfont(part.gmSoundfont) : part.gmProgram])),
+  };
 }

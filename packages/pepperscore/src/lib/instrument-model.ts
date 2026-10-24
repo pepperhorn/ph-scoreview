@@ -9,6 +9,8 @@ export const LEVELS = ['beginner', 'intermediate', 'advanced'] as const;
 
 export type InstrumentId = typeof INSTRUMENT_IDS[number];
 export type Level = typeof LEVELS[number];
+/** An instrument a pitched part can be switched to: any but the drum kit (unpitched). */
+export type SwitchInstrumentId = Exclude<InstrumentId, 'drum-kit'>;
 export type Transposition = { semitones: number; diatonic: number };
 export type InstrumentClef = 'treble' | 'bass' | 'alto' | 'tenor' | 'percussion' | 'treble8vb';
 export type SpelledPitch = { step: 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G'; octave: number; alter: number };

@@ -7,6 +7,7 @@ export default PepperScore;
 export type { PepperScoreProps, PepperScoreHandle, PepperScoreReadyInfo, PepperScoreClickInfo, PepperScoreHighlight, PepperScoreInsets, PepperScoreScrollTarget, PepperScoreScrollOptions } from './components/PepperScore';
 export type { ChromePreset, PepperScoreControls } from './lib/chrome';
 export type { PepperScoreSettings, PepperScoreAnnotationSizes, AnnotationSize } from './lib/prefs';
+export type { InstrumentId, Level as RangeLevel, SwitchInstrumentId } from './lib/instrument-model';
 export type { ExternalClock, ClockEvent } from './lib/clock';
 export type { SoundSource } from './lib/sounds';
 export type { SoundPackName } from './lib/assets';
