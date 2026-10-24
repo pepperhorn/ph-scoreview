@@ -1,4 +1,4 @@
-import { pitchMidi, transposePitchSpelled, type Instrument, type Level, type Transposition } from '../../model/instruments';
+import { pitchMidi, transposePitchSpelled, writtenKeyFifths, type Instrument, type Level, type Transposition } from '../../model/instruments';
 import { eventStarts } from '../../model/query';
 import type { Event, Key, Part, Pitch } from '../../model/schema';
 
@@ -6,18 +6,6 @@ export type Phrase = { eventIds: string[] };
 export type Shift = 0 | 12 | -12;
 
 const CONCERT: Transposition = { semitones: 0, diatonic: 0 };
-
-/**
- * The written key (fifths) of music in concert key `concertFifths` shown with `transposition` (written minus
- * sounding): the transposition as fifths, `(7 * semitones) mod 12` normalised to -6..6, added and wrapped
- * back into -7..7. Alto sax (+9 semitones) is +3 fifths; a B-flat instrument +2.
- */
-export function writtenKeyFifths(concertFifths: number, transposition: Transposition): number {
-  let shift = (((7 * transposition.semitones) % 12) + 12) % 12;
-  if (shift > 6) shift -= 12;
-  const fifths = concertFifths + shift;
-  return fifths > 7 ? fifths - 12 : fifths < -7 ? fifths + 12 : fifths;
-}
 
 const add = (a: Transposition, b: Transposition): Transposition => ({ semitones: a.semitones + b.semitones, diatonic: a.diatonic + b.diatonic });
 const negate = (t: Transposition): Transposition => ({ semitones: -t.semitones, diatonic: -t.diatonic });

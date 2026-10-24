@@ -1,5 +1,6 @@
 import manifest from './gm-soundfont-manifest.json';
 import type { SourceDocument } from './notation/document';
+import type { InstrumentId as ModelInstrumentId } from './instrument-model';
 const iconUrls = import.meta.glob('../icons/*.svg', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
 
 export type Pitch = { step: string; octave: number; alter: number; midi: number; sourceId?: string; unpitched?: boolean; displayStep?: string; displayOctave?: number; accidental?: string; cautionary?: boolean; tieStart?: boolean; tieStop?: boolean };
@@ -37,7 +38,7 @@ export type Part = { id: string; name: string; clef: string; key?: number; keyMo
 export type Score = { title: string; subtitle?: string; composer?: string; credits?: string[]; source: string; tempo: number; beats: number; beatType: number; key: number; keyMode?: KeyMode; parts: Part[];
   /** Set on a transposed or flipped view of a score (transpose.ts `scoreForView`). */
   pitchView?: import('./transpose').PitchView; document?: SourceDocument };
-export type InstrumentId = 'piano' | 'guitar' | 'bassguitar' | 'double-bass' | 'drum-kit' | 'alto-saxophone' | 'tenor-saxophone' | 'bari-saxophone' | 'flute' | 'clarinet' | 'trumpet' | 'trombone' | 'violin' | 'viola' | 'cello' | 'microphone';
+export type InstrumentId = ModelInstrumentId;
 export const GM_FAMILIES = ['Keyboard', 'Guitar', 'Voice', 'Percussion', 'Drums', 'Woodwinds', 'Brass', 'Strings', 'FX / Other'] as const;
 export type GmFamily = typeof GM_FAMILIES[number];
 export type GmSound = { program: number | null; label: string; soundfont: string | null; iconId: InstrumentId; icon: string; family: GmFamily };

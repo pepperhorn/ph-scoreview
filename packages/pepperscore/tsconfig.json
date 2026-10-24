@@ -14,7 +14,7 @@
     "strict": true,
     "jsx": "react-jsx",
     "jsxImportSource": "react",
-    "types": ["vite/client"]
+    "types": ["vite/client", "vitest/globals"]
   },
   "include": ["src/**/*"]
 }

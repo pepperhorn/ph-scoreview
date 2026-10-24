@@ -21,6 +21,9 @@
     "paths": {
       "pepperscore": [
         "../pepperscore/src/index.ts"
+      ],
+      "pepperscore/instruments": [
+        "../pepperscore/src/instruments.ts"
       ]
     }
   },

@@ -4,7 +4,7 @@ import { checkInvariants } from '../../model/invariants';
 import { effectiveKey, eventStarts } from '../../model/query';
 import type { Document, Event, Note, Part, Pitch } from '../../model/schema';
 import { fixedIds } from '../../test-helpers';
-import { fitToRange, phrases, writtenKeyFifths, type FitOptions } from './range-fit';
+import { fitToRange, phrases, type FitOptions } from './range-fit';
 
 const P = (step: Pitch['step'], octave: number, alter = 0): Pitch => ({ step, octave, alter });
 const note = (id: string, pitch: Pitch, extra: Partial<Note> = {}): Note => ({ id, pitch, ...extra });
@@ -35,15 +35,6 @@ const fit = (d: Document, options: Partial<FitOptions> & Pick<FitOptions, 'targe
 };
 
 const alto = INSTRUMENTS['alto-saxophone'];
-
-test('writtenKeyFifths adds the transposition as fifths, normalised to -6..6 and wrapped into -7..7', () => {
-  expect(writtenKeyFifths(0, alto.transposition)).toBe(3);
-  expect(writtenKeyFifths(0, INSTRUMENTS.clarinet.transposition)).toBe(2);
-  expect(writtenKeyFifths(0, INSTRUMENTS['tenor-saxophone'].transposition)).toBe(2);
-  expect(writtenKeyFifths(-2, INSTRUMENTS.guitar.transposition)).toBe(-2);
-  expect(writtenKeyFifths(0, { semitones: -2, diatonic: -1 })).toBe(-2);
-  expect(writtenKeyFifths(6, alto.transposition)).toBe(-3);
-});
 
 test('phrases break at rests, after a slur end and at the bar line', () => {
   const d = doc(74, [
