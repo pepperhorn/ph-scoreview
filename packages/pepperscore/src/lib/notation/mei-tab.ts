@@ -42,6 +42,11 @@ export type TabSpec = {
    * `trans.semi` was applied by spelling and must not be applied again.
    */
   sounding?: string[];
+  /**
+   * Generated staves of a part switched to another instrument (instrument-view.ts), by `@n`: semitones from their
+   * spelled (shown) pitch to sounding pitch, which replace `trans.semi` (a guitar in the written view: -12).
+   */
+  switched?: Record<string, number>;
   /** Imported TAB staves (no notation partner) to re-finger, by staff `@n`: the semitones their pitches move. */
   refret?: Record<string, number>;
 };
@@ -119,7 +124,7 @@ function tuningXml(tuning: number[], capo: number): string {
  * tuning and frets, moved by the view's semitones. `ids` are the notes and chords a TAB clone exists for.
  */
 function collect(mei: string, spec: TabSpec): { staves: Map<string, EventRec[]>; tieStarts: Set<string>; tieEnds: Set<string>; info: Map<string, StaffInfo>; ids: Set<string> } {
-  const generate = new Set(spec.generate), refret = spec.refret ?? {}, sounding = new Set(spec.sounding ?? []);
+  const generate = new Set(spec.generate), refret = spec.refret ?? {}, sounding = new Set(spec.sounding ?? []), switched = spec.switched ?? {};
   const collected = new Set([...generate, ...Object.keys(refret)]);
   const staves = new Map<string, EventRec[]>([...collected].map(n => [n, []]));
   const info = new Map<string, StaffInfo>();
@@ -179,8 +184,9 @@ function collect(mei: string, spec: TabSpec): { staves: Map<string, EventRec[]>;
         const previous = info.get(n);
         const ppq = Number(attributeOf(attributes, 'ppq'));
         const semi = attributeOf(attributes, 'trans.semi');
-        // A staff spelled at sounding pitch (concert view) already applied its transposition.
-        const entry: StaffInfo = { ppq: ppq > 0 ? ppq : previous?.ppq, semi: sounding.has(n) ? 0 : semi !== null ? Number(semi) || 0 : previous?.semi ?? 0, courses: previous?.courses };
+        // A staff spelled at sounding pitch (concert view) already applied its transposition; a switched staff is
+        // spelled at its new instrument's pitch, whose transposition is given.
+        const entry: StaffInfo = { ppq: ppq > 0 ? ppq : previous?.ppq, semi: n in switched ? switched[n] : sounding.has(n) ? 0 : semi !== null ? Number(semi) || 0 : previous?.semi ?? 0, courses: previous?.courses };
         info.set(n, entry);
         if (n in refret && !selfClosing) reading = { entry, courses: new Map() };
       }

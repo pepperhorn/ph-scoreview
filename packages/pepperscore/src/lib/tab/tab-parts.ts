@@ -141,8 +141,14 @@ export function planTab(score: Score, staffOf: Map<string, string>, view: TabVie
     if (part.tab && !part.tabOf && n) refret[n] = options.semitones;
   }
   const sounding = (options.sounding ?? []).filter(n => generate.includes(n));
+  // A part switched to a guitar is spelled at the guitar's pitch (written an octave above sounding in the written view).
+  const switched: Record<string, number> = {};
+  for (const part of score.parts) {
+    const n = staffOf.get(part.id);
+    if (n && generate.includes(n) && score.instrumentView?.staves[part.id]?.clef) switched[n] = part.transposition?.semitones ?? 0;
+  }
   if (generate.length || Object.keys(retarget).length || Object.keys(refret).length) {
-    plan.spec = { generate, retarget, tuning: options.tuning, capo: options.capo, fixed: !options.stale, ...(sounding.length ? { sounding } : {}), ...(unfixed.length && !options.stale ? { unfixed } : {}), ...(Object.keys(refret).length ? { refret } : {}) };
+    plan.spec = { generate, retarget, tuning: options.tuning, capo: options.capo, fixed: !options.stale, ...(sounding.length ? { sounding } : {}), ...(Object.keys(switched).length ? { switched } : {}), ...(unfixed.length && !options.stale ? { unfixed } : {}), ...(Object.keys(refret).length ? { refret } : {}) };
   }
   return plan;
 }
