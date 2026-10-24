@@ -1,4 +1,4 @@
-import { INSTRUMENTS, type Instrument } from '../../model/instruments';
+import { INSTRUMENTS, type InstrumentInfo } from '../../model/instruments';
 import { effectiveKey, eventStarts } from '../../model/query';
 import type { Direction, Document, Layout, Part, Swap } from '../../model/schema';
 import { pruneDanglingReferences } from '../prune';
@@ -21,7 +21,7 @@ export type ViewResult = {
 const isConcert = (t: Part['transposition']) => !t || (t.semitones === 0 && t.diatonic === 0);
 
 /** `part` shown as (or copied to) `target`: name, GM program, first clef and transposition follow it. */
-function retarget(part: Part, target: Instrument, transposing: boolean): Part {
+function retarget(part: Part, target: InstrumentInfo, transposing: boolean): Part {
   const { abbreviation: _abbreviation, transposition: _transposition, ...rest } = part;
   const next: Part = { ...rest, name: target.label, instrument: { ...part.instrument, gmProgram: target.gmProgram }, clefs: [target.clef, ...part.clefs.slice(1)] };
   if (transposing && !isConcert(target.transposition)) next.transposition = { ...target.transposition };

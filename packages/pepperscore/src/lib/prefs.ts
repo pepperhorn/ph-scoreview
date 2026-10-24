@@ -1,6 +1,6 @@
 import type { FileSettings } from './file-state';
 import type { TabView } from './tab/tab-parts';
-import type { Level, SwitchInstrumentId } from './instrument-model';
+import type { RangeLevel, SwitchInstrumentId } from './instrument-model';
 
 // No runtime imports: validation/api.mjs loads this module in Node.
 export const MIN_BPM = 30, MAX_BPM = 240;
@@ -101,7 +101,7 @@ export type PepperScoreSettings = Partial<{
    */
   instruments: Record<string, SwitchInstrumentId>;
   /** Range level the switched parts are fitted to: `'beginner'`, `'intermediate'` (default) or `'advanced'`. */
-  rangeLevel: Level;
+  rangeLevel: RangeLevel;
   /** Move phrases outside the instrument's range by an octave (default `true`). */
   autoRange: boolean;
 }>;

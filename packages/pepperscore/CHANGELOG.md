@@ -8,11 +8,12 @@
 
 - Instrument switch (docs/specs/instrument-switch.md). `settings.instrument`, `settings.instruments` (per part, keyed by 1-based source part number or `onReady` part id), `settings.rangeLevel` (`'beginner' | 'intermediate' | 'advanced'`, default `'intermediate'`) and `settings.autoRange` (default `true`). A switched part changes sound, clef and written transposition (B♭ and E♭ instruments read at written pitch, also in a concert-pitch score) and each phrase is fitted into the instrument's range. A grand staff switches together. A piano part switched to guitar gets generated TAB, and a TAB staff doubling a switched part is hidden or regenerated.
 - Highlights `ps-transposed` (moved by fitting or the octave tool), `ps-out-of-range` (`--ps-out-of-range`) and `ps-octave-selection`.
-- `controls.instrumentSwitch` and `controls.octaveTool` (the octave tool is on in `full`, off otherwise). The octave tool selects a note (with its tie chain), a passage or a phrase and moves it 8va/8vb relative to the shown pitch; a 0 override pins a note as written; Reset clears.
+- `controls.instrumentSwitch` and `controls.octaveTool`: both on in `full`, off in `minimal` and `none` unless set. In `minimal` and `none`, `settings.instrument` / `settings.instruments` alone switch the part but show no switcher. The octave tool selects a note (with its tie chain), a passage or a phrase and moves it 8va/8vb relative to the shown pitch; a 0 override pins a note as written; Reset clears.
 - The mixer separates Instrument from Sound (a playback override). Embeds get a popover switcher and, on a phone, a bottom toolbar. Part labels read "→ Instrument".
 - `pepperscore/instruments`: the instrument model and range-fit core (`INSTRUMENTS`, `INSTRUMENT_IDS`, `EMBED_INSTRUMENTS`, levels, ranges, transpositions, clefs, spelling helpers, `writtenKeyFifths`, `joinRuns`, `tieChainOf`, `planShifts`, `applyOverrides`), shared with the editor.
-- `onReady` parts gain `sourcePart` and `switchable`. Types `RangeLevel` and `SwitchInstrumentId`.
-- Saved per-score records (still version 2) keep each part's switch (`PartState.switch`: instrument, level, autoRange, octaves, sound). Records without it open as written.
+- `onReady` parts gain `sourcePart` and `switchable`. Types `RangeLevel` and `SwitchInstrumentId` (from both `pepperscore` and `pepperscore/instruments`). The model's instrument type is `InstrumentInfo`, named apart from `pepperscore/audio`'s `Instrument`; `INSTRUMENTS` and `EMBED_INSTRUMENTS` are typed read-only and frozen.
+- Saved per-score records (still version 2) keep each part's switch (`PartState.switch`: instrument, level, autoRange, octaves, sound) and a fingerprint of the host's instrument settings (`hostInstruments`, optional). Records without a switch open as written.
+- Host instrument settings vs saved choices: a saved record's switches win while the host's instrument settings (`instrument`, `instruments`, `rangeLevel`, `autoRange`) are the ones it was saved under, or the host gives none. When they differ (the same score embedded as another instrument, or a block changed to another instrument), the host's apply again over the record; a part whose instrument changes loses its saved octave moves, and the rest of the record is kept.
 
 ### Changed
 
@@ -27,6 +28,7 @@
 
 - A switched part's written transposition and key come from its first measure; a mid-part transposition change is not reflected in the engraving.
 - MEI-file imports do not group grand staves.
+- The octave tool moves a note at most one octave from as written (±12 in total), so a phrase two octaves out of range stays flagged.
 
 ## 0.3.0 - 2026-10-23
 

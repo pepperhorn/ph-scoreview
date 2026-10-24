@@ -2,19 +2,19 @@
 // (Beginner / Intermediate / Advanced) and the Fit to range toggle. Shared by the reader's mixer picker and the embed
 // switcher (`compact`). It only reports choices; the reader holds the switch state (instrument-switch-state.ts).
 import { Music2 } from 'lucide-react';
-import { instrumentName, LEVELS, type InstrumentId, type Level } from '../lib/instrument-model';
+import { instrumentName, LEVELS, type InstrumentId, type RangeLevel } from '../lib/instrument-model';
 import { instrumentDetails } from '../lib/score';
 
-export const LEVEL_NAMES: Record<Level, string> = { beginner: 'Beginner', intermediate: 'Intermediate', advanced: 'Advanced' };
+export const LEVEL_NAMES: Record<RangeLevel, string> = { beginner: 'Beginner', intermediate: 'Intermediate', advanced: 'Advanced' };
 
 export type InstrumentChooserProps = {
-  instruments: InstrumentId[];
+  instruments: readonly InstrumentId[];
   /** The instrument shown; undefined = as written. */
   current: InstrumentId | undefined;
-  level: Level;
+  level: RangeLevel;
   autoRange: boolean;
   onInstrument(id: InstrumentId | undefined): void;
-  onLevel(level: Level): void;
+  onLevel(level: RangeLevel): void;
   onAutoRange(on: boolean): void;
   /** Smaller options in a list (the embed switcher). */
   compact?: boolean;

@@ -4,7 +4,7 @@ import { ANNOTATION_SIZE_PREF_KEYS, BARS_PER_LINE_MAX, BARS_PER_LINE_MIN, clampB
 import type { TabView } from './tab/tab-parts';
 import type { PartSound, PartSwitch } from './instrument-view';
 import type { Shift } from './range-fit-core';
-import { INSTRUMENTS, INSTRUMENT_IDS, LEVELS, type Level } from './instrument-model';
+import { INSTRUMENTS, INSTRUMENT_IDS, LEVELS, type RangeLevel } from './instrument-model';
 
 export type FileSource = { name: string; size: number; sha256: string; format: string };
 export type FileSettings = {
@@ -38,6 +38,12 @@ export type FileState = {
   settings: SavedSettings;
   parts: Record<string, PartState>;
   view?: ScoreView;
+  /**
+   * The host's instrument settings when the record was saved (instrument-switch-state.ts `hostInstrumentKey`); a host
+   * whose settings differ on the next load applies them again over the saved switches. Added after version 2 shipped:
+   * optional, absent when the host gave none, dropped when unusable.
+   */
+  hostInstruments?: string;
 };
 /** The localStorage v1 record: zoom was a multiplier of the width fit and lived in settings. */
 export type FileStateV1 = { version: 1; source: FileSource; settings: FileSettings & { zoom: number }; parts: Record<string, PartState> };
@@ -146,8 +152,8 @@ export function textSource(format: string, text: string, name: string): FileSour
 }
 
 /** A part's switch as saved in its record (`PartState.switch`); `sound` only with an `instrument`. */
-export type SavedSwitch = { instrument?: InstrumentId; level: Level; autoRange: boolean; octaves?: Record<string, Shift>; sound?: PartSound };
-export const isLevel = (value: unknown): value is Level => LEVELS.includes(value as Level);
+export type SavedSwitch = { instrument?: InstrumentId; level: RangeLevel; autoRange: boolean; octaves?: Record<string, Shift>; sound?: PartSound };
+export const isLevel = (value: unknown): value is RangeLevel => LEVELS.includes(value as RangeLevel);
 /** A switch target: any model instrument but the drum kit (unpitched). */
 export const isSwitchTarget = (value: unknown): value is InstrumentId => INSTRUMENT_IDS.includes(value as InstrumentId) && INSTRUMENTS[value as InstrumentId].clef !== 'percussion';
 /** A part's switch as saved, or undefined for no entry. */
@@ -239,6 +245,7 @@ export function parseFileState(raw: unknown, sha256: string): FileState | null {
     if (!state || state.version !== 2 || state.source?.sha256 !== sha256 || !Number.isFinite(state.lastOpened)) return null;
     // An unusable view only loses the saved zoom, not the score's other settings.
     if (state.view !== undefined && (!validZoom(state.view?.zoom) || !['desktop', 'compact'].includes(state.view.zoomDevice))) delete state.view;
+    if (state.hostInstruments !== undefined && (typeof state.hostInstruments !== 'string' || !state.hostInstruments)) delete state.hostInstruments;
     if ('zoom' in (state.settings || {})) delete (state.settings as Partial<FileSettings> & { zoom?: number }).zoom;
     return validSettingsAndParts(state) ? state : null;
   } catch { return null; }
@@ -250,7 +257,7 @@ export function readFileState(source: FileSource): FileStateV1 | null {
   catch { return null; }
 }
 
-export function buildFileState(source: FileSource, settings: FileSettings, score: Score, hiddenIds: string[], volumes: Record<string, number> = {}, view?: ScoreView, lastOpened = Date.now(), switches: Record<string, PartSwitch> = {}): FileState {
+export function buildFileState(source: FileSource, settings: FileSettings, score: Score, hiddenIds: string[], volumes: Record<string, number> = {}, view?: ScoreView, lastOpened = Date.now(), switches: Record<string, PartSwitch> = {}, hostInstruments?: string): FileState {
   const hidden = new Set(hiddenIds);
   const parts: FileState['parts'] = {};
   // A TAB part that doubles a guitar is saved with the guitar's visibility (the reader lists and hides the guitar).
@@ -259,5 +266,5 @@ export function buildFileState(source: FileSource, settings: FileSettings, score
   const { mode, notationFont, barsPerLine, overlap, names, chordSymbols, inferChordSymbols, counts, subdivisions, annotationFont, bpm, semitones, scorePitch, keyFlip, tabView, tabTuning, capo } = settings;
   const sizes = Object.fromEntries(ANNOTATION_SIZE_PREF_KEYS.map(key => [key, isAnnotationSize(settings[key]) ? settings[key] : 'rg'])) as Pick<FileSettings, typeof ANNOTATION_SIZE_PREF_KEYS[number]>;
   return { version: 2, source, lastOpened, settings: { mode, notationFont, barsPerLine, overlap, names, chordSymbols, inferChordSymbols, counts, subdivisions, annotationFont, ...sizes, bpm: clampBpm(bpm), semitones, scorePitch, keyFlip: !!keyFlip,
-    tabView: validTabView(tabView) ? tabView : 'notation', tabTuning: validTabTuning(tabTuning) ? [...tabTuning] : [...STANDARD_TAB_TUNING], capo: clampCapo(capo) }, parts, ...(view ? { view } : {}) };
+    tabView: validTabView(tabView) ? tabView : 'notation', tabTuning: validTabTuning(tabTuning) ? [...tabTuning] : [...STANDARD_TAB_TUNING], capo: clampCapo(capo) }, parts, ...(view ? { view } : {}), ...(hostInstruments ? { hostInstruments } : {}) };
 }
