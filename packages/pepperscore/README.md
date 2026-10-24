@@ -195,7 +195,7 @@ export default defineConfig({
 | `scoreUrl` | `string` | | A score to download. Relative URLs resolve against the page. Cross-origin URLs need CORS. |
 | `abc` | `string` | | ABC notation. |
 | `chrome` | `'full' \| 'minimal' \| 'none'` | `'full'` | See the chrome table below. |
-| `controls` | `{ transport?, viewToggle?, openFile?, mixer?, drawer?, zoom?, tabToggle? }` (booleans) | from `chrome` | Per-control overrides of the preset, see below. |
+| `controls` | `{ transport?, viewToggle?, openFile?, mixer?, drawer?, zoom?, tabToggle?, instrumentSwitch?, octaveTool? }` (booleans) | from `chrome` | Per-control overrides of the preset, see below. |
 | `view` | `'vertical' \| 'endless'` | saved or `'vertical'` | Vertical scrolls down, Endless scrolls sideways. Changing the prop re-applies it. |
 | `height` | `string` | natural | `"fill"`: the parent's height. Any CSS length (`"420px"`, `"60vh"`, `"100dvh"`) fixes it. Omitted: `full` fills its parent with a 480px floor, and `minimal`/`none` take the height of their score. |
 | `className` | `string` | | Extra classes on the `.pepperscore` root. |
@@ -288,6 +288,8 @@ For hosts that build on the reader (selection, cursors, navigation):
 | `mixer` | The track mixer, plus the part icons, instrument picker and stave eyes. |
 | `zoom` | The stave-scale slider, pinch zoom and the page arrows row. |
 | `drawer` | The bottom drawer and its handle. |
+| `instrumentSwitch` | The instrument switch: the Instrument choice in the mixer and the popover, the range-level and auto-range controls, and the phone bottom toolbar of embeds. On in `full` and in embeds that list instruments. |
+| `octaveTool` | The octave tool (select a note, passage or phrase and move it 8va/8vb). On in `full`, off otherwise. |
 | `tabToggle` | The Notation / TAB / Both switch, in the header (in the More panel on a phone) and in the drawer. With the drawer on, the header copy is left out between 761 and 1260px, where the full header has no room for it. It shows only for a score with a pitched part. |
 
 The header appears when any of `transport`, `viewToggle`, `openFile`, `mixer`, `zoom` or `tabToggle` is on. For example, `<PepperScore chrome="minimal" controls={{ viewToggle: true }} … />` keeps the compact play button and adds a small header with only the view toggle.
@@ -307,6 +309,27 @@ The header appears when any of `transport`, `viewToggle`, `openFile`, `mixer`, `
 - **Transposed views** regenerate TAB from the transposed pitches. An imported TAB staff is hidden then, because its frets no longer match.
 - Tied continuations keep their rhythm on the TAB staff but show no fret.
 - **Baked fingerings.** The repository's `npm run tab:bake` (`scripts/tab-bake.mjs`, see the root README) writes the solver's string/fret onto a score's notes ahead of time, and can add a TAB staff. The reader keeps those fingerings as they are.
+
+### Instrument switch
+
+Full behaviour: `docs/specs/instrument-switch.md`. Choose an instrument for a part and the reader changes its sound, clef and written transposition (B♭ and E♭ instruments read at written pitch, also in a concert-pitch score), then fits each phrase into the instrument's range for the chosen level.
+
+| Setting | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `instrument` | `SwitchInstrumentId` | | Shows the first switchable part as this instrument. |
+| `instruments` | `Record<string, SwitchInstrumentId>` | | Per part: key is the 1-based source part number or an `onReady` part id. Wins over `instrument`. |
+| `rangeLevel` | `RangeLevel` (`'beginner' \| 'intermediate' \| 'advanced'`) | `'intermediate'` | How wide a range the instrument is taken to have. |
+| `autoRange` | `boolean` | `true` | Phrases outside the range move by an octave. `false` leaves them and marks them. |
+
+- Notes moved by fitting get `ps-transposed` (`--ps-transposed`), notes still out of range get `ps-out-of-range` (`--ps-out-of-range`), and the octave tool's selection gets `ps-octave-selection`.
+- A grand staff switches as one part. A piano part switched to guitar gets generated TAB, and a TAB staff that doubled the switched part is hidden or regenerated.
+- The mixer lists Instrument (what the part is) and Sound (a playback override that keeps the notation).
+- Embeds show a popover switcher with a short instrument list (`EMBED_INSTRUMENTS`), and on a phone a bottom toolbar.
+- The octave tool (`controls.octaveTool`) selects a note and its tie chain, a passage (Shift-click) or a phrase, then moves it 8va or 8vb relative to its shown pitch. Reset clears the part's moves.
+- With `persist` on, each part's switch (instrument, level, auto-range, octave moves and sound override) is saved in the score's record. Records without it open as written.
+- `onReady` parts carry `sourcePart` and `switchable`.
+
+**`pepperscore/instruments`** is a framework-free entry (no React, no Verovio) with the instrument model (`INSTRUMENTS`, `INSTRUMENT_IDS`, `EMBED_INSTRUMENTS`, levels, ranges, transpositions, clefs, `spellMidi`, `writtenPitch`, `transposePitchSpelled`, `writtenKeyFifths`) and the range-fit core (`joinRuns`, `tieChainOf`, `planShifts`, `applyOverrides`). The editor uses the same module.
 
 ### `persist`
 
@@ -454,6 +477,8 @@ Sounds resolve exactly as in the reader (above): your `sources`, then the pack's
 - **No server-side engraving.** The server render is an empty frame. The SVG is drawn on the client.
 - Settings are initial values, not fully controlled props.
 - Many large scores on one page engrave one after another, because they share a single Verovio worker. It is slow, not broken.
+
+- **Instrument switch.** A switched part's written transposition and key come from its first measure, so a mid-part transposition change is not reflected in the engraving. MEI-file imports do not group grand staves, so a piano switches one staff at a time.
 
 ## Licenses
 

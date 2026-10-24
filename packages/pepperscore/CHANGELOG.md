@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.4.0 - 2026-10-24
+
+0.3.0 was never published, so 0.4.0 also contains everything listed under 0.3.0 below (guitar TAB, text sizes, the shared audio engine and the host hooks).
+
+### Added
+
+- Instrument switch (docs/specs/instrument-switch.md). `settings.instrument`, `settings.instruments` (per part, keyed by 1-based source part number or `onReady` part id), `settings.rangeLevel` (`'beginner' | 'intermediate' | 'advanced'`, default `'intermediate'`) and `settings.autoRange` (default `true`). A switched part changes sound, clef and written transposition (B♭ and E♭ instruments read at written pitch, also in a concert-pitch score) and each phrase is fitted into the instrument's range. A grand staff switches together. A piano part switched to guitar gets generated TAB, and a TAB staff doubling a switched part is hidden or regenerated.
+- Highlights `ps-transposed` (moved by fitting or the octave tool), `ps-out-of-range` (`--ps-out-of-range`) and `ps-octave-selection`.
+- `controls.instrumentSwitch` and `controls.octaveTool` (the octave tool is on in `full`, off otherwise). The octave tool selects a note (with its tie chain), a passage or a phrase and moves it 8va/8vb relative to the shown pitch; a 0 override pins a note as written; Reset clears.
+- The mixer separates Instrument from Sound (a playback override). Embeds get a popover switcher and, on a phone, a bottom toolbar. Part labels read "→ Instrument".
+- `pepperscore/instruments`: the instrument model and range-fit core (`INSTRUMENTS`, `INSTRUMENT_IDS`, `EMBED_INSTRUMENTS`, levels, ranges, transpositions, clefs, spelling helpers, `writtenKeyFifths`, `joinRuns`, `tieChainOf`, `planShifts`, `applyOverrides`), shared with the editor.
+- `onReady` parts gain `sourcePart` and `switchable`. Types `RangeLevel` and `SwitchInstrumentId`.
+- Saved per-score records (still version 2) keep each part's switch (`PartState.switch`: instrument, level, autoRange, octaves, sound). Records without it open as written.
+
+### Changed
+
+- Space on a focused button inside the reader now presses that button instead of turning the page (affects all embeds).
+
+### Compatibility
+
+- Saved records can now contain an octave override of 0. An older pepperscore reader sharing the same site storage accepts only +-12 and drops that part's whole saved switch.
+
+### Known limitations
+
+- A switched part's written transposition and key come from its first measure; a mid-part transposition change is not reflected in the engraving.
+- MEI-file imports do not group grand staves.
+
 ## 0.3.0 - 2026-10-23
 
 ### Added

@@ -34,7 +34,7 @@
 - A part that is already transposing (a B♭ clarinet) switched to alto sax must show alto's written pitch from the clarinet's *sounding* pitch, not its written one — Task 4 test `transposing source part`.
 - Transposing the whole score after switching can push notes out of range; they must be refitted, not left out silently — Task 4 test `refits after semitones`.
 - Drum-kit/percussion parts and TAB doubling parts (`tabOf`) are never offered, fitted or left orphaned: a TAB staff doubling a switched guitar is hidden — Task 4 test `tab doubling of a switched part is hidden`, Task 7 UI test.
-- A saved record with a malformed `switch` entry (bad id, bad level, octave values other than ±12) opens the score with that part as written instead of failing — Task 6 test.
+- A saved record with a malformed `switch` entry (bad id, bad level, octave values other than -12, 0 or 12) opens the score with that part as written instead of failing — Task 6 test.
 
 ---
 
@@ -204,7 +204,7 @@
 **Interfaces:**
 - Consumes: `phrasesOf`, `tieChainOf`, `setOctaves`, `PartSwitch.octaves`.
 - Produces: `OctaveTool({ selection, onUp, onDown, onPhrase, onReset, onDone })` toolbar `.octave-toolbar` with buttons `.octave-up` ("8va ↑", aria "Move selection up an octave"), `.octave-down` ("8vb ↓"), `.octave-phrase` ("Select phrase"), `.octave-reset` ("Reset"), `.octave-done` ("Done"). Entry button `.octave-tool-toggle` beside the instrument controls (embed menu and drawer Pitch panel), shown when `controls.octaveTool`.
-- Selection rules: click a note → that note's tie chain in its part; Shift-click or a second click with a selection in the same part → all notes of that part whose (measure, start) lies between the two, all voices, each extended to its tie chain; "Select phrase" → the `phrasesOf` phrase(s) containing the selection. Selection shows with `ps-selection`. Up/Down add ±12 to each selected id in `octaves` (an existing opposite move cancels to none; values stay ±12). Reset clears that part's `octaves`. Saved with the part's switch entry.
+- Selection rules: click a note → that note's tie chain in its part; Shift-click or a second click with a selection in the same part → all notes of that part whose (measure, start) lies between the two, all voices, each extended to its tie chain; "Select phrase" → the `phrasesOf` phrase(s) containing the selection. Selection shows with `ps-selection`. Up/Down move each selected note an octave relative to its shown pitch, stored in `octaves` as -12, 0 or +12 (a 0 override pins the note as written against range fitting). Reset clears that part's `octaves`. Saved with the part's switch entry.
 
 - [ ] **Step 1:** Test: with the tool on, clicking a note does not seek and selects its tie chain; Shift-click selects the passage; 8va moves it (renders an octave up, `ps-transposed`); moving past the range marks `ps-out-of-range`; 8vb after 8va returns to as-written; Reset clears; reload with persist restores the move; `controls={{ octaveTool: false }}` hides the toggle.
 - [ ] **Step 2:** Run `npm run test:instrument-switch` — FAIL.
