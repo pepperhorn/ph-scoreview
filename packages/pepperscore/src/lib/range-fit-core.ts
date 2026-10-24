@@ -77,6 +77,7 @@ export function planShifts(phrases: FitEvent[][], range: { low: number; high: nu
 export function applyOverrides(shifts: Record<string, Shift>, overrides: Record<string, Shift>, chainOf: (id: string) => string[]): Record<string, Shift> {
   const out = { ...shifts };
   for (const id of Object.keys(overrides)) {
+    if (overrides[id] === undefined) continue;
     const chain = chainOf(id);
     const owner = chain.find((e) => overrides[e] !== undefined)!;
     for (const e of chain) out[e] = overrides[owner];

@@ -82,9 +82,9 @@ export type Key = z.infer<typeof KeySchema>;
 export type GlobalMeasure = z.infer<typeof GlobalMeasureSchema>;
 export type Pitch = z.infer<typeof PitchSchema>;
 // The shared instrument model (`pepperscore/instruments`) has no zod types: keep the schema's clef and pitch assignable to it.
-export type _SharedModelCompat = [Clef, Pitch] extends [InstrumentClef, SpelledPitch] ? true : never;
-const _sharedModelCompat: _SharedModelCompat = true;
-void _sharedModelCompat;
+type SharedModelCompat = [Clef, Pitch] extends [InstrumentClef, SpelledPitch] ? true : never;
+const sharedModelCompat: SharedModelCompat = true;
+void sharedModelCompat;
 export type Note = z.infer<typeof NoteSchema>;
 export type Event = z.infer<typeof EventSchema>;
 export type Tuplet = z.infer<typeof TupletSchema>;

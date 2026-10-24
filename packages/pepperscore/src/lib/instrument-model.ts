@@ -1,4 +1,3 @@
-
 /** The instrument model shared by the reader, the embeds and the editor (`pepperscore/instruments`); framework-free. */
 
 /** The viewer's instrument ids. */

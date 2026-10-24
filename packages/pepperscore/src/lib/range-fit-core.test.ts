@@ -11,6 +11,12 @@ describe('range-fit core', () => {
   it('joinRuns merges runs linked by a tie', () => {
     expect(joinRuns([['a', 'b'], ['c'], ['d']], [['b', 'd']])).toEqual([['a', 'b', 'd'], ['c']]);
   });
+  it('joinRuns merges three runs transitively', () => {
+    expect(joinRuns([['a'], ['b'], ['c']], [['a', 'b'], ['b', 'c']])).toEqual([['a', 'b', 'c']]);
+  });
+  it('joinRuns ignores a tie to an unknown id', () => {
+    expect(joinRuns([['a'], ['b']], [['a', 'zz']])).toEqual([['a'], ['b']]);
+  });
   it('planShifts moves a phrase below range up as one', () => {
     const plan = planShifts([[ev('a', mid), ev('b', range.low - 1)]], range, true);
     expect(plan.shifts).toEqual({ a: 12, b: 12 });
