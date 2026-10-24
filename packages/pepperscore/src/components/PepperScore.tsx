@@ -38,7 +38,7 @@ import { nearestNote, noteInBox } from '../lib/hit-test';
 import { canShowTab, hiddenReaderParts, type TabView } from '../lib/tab/tab-parts';
 import { sourcePartOf, switchablePart, withPickedSound, type PartSwitch } from '../lib/instrument-view';
 import { EMBED_INSTRUMENTS, type InstrumentId, type Level } from '../lib/instrument-model';
-import { applyHostSwitchChange, readerPartsInfo, readerPitch, restoredScorePitch, selectOctaveNote, selectOctavePhrase, steppedOctaves, SWITCH_TARGETS, switchDefaults, switchedSoundParts, switchedTimeline, switchedView, switchesFromSaved, switchesFromSettings, switchHighlights, withOctaves, withSound, withSourceSwitch, type InstrumentSettings, type OctaveSelection } from '../lib/instrument-switch-state';
+import { applyHostSwitchChange, readerPartsInfo, readerPitch, restoredScorePitch, selectOctaveNote, selectOctavePhrase, steppedOctaves, SWITCH_TARGETS, switchDefaults, switchedSoundParts, switchedTimeline, switchedView, switchesFromSaved, switchesFromSettings, switchHighlights, withOctaves, withoutStalePins, withSound, withSourceSwitch, partLabel, type InstrumentSettings, type OctaveSelection } from '../lib/instrument-switch-state';
 
 /** Short key name for readouts: 'Gb', 'C#m'. */
 const keyName = (key: SpellingKey) => `${key.tonic}${key.mode === 'minor' ? 'm' : ''}`;
@@ -253,6 +253,18 @@ type ZoomAnchor = { index: number; fx: number; fy: number };
 
 /** Size step names (button titles in the drawer's size controls). */
 const ANNOTATION_SIZE_NAMES: Record<AnnotationSize, string> = { xs: 'Extra small', sm: 'Small', md: 'Medium', rg: 'Regular', lg: 'Large', xl: 'Extra large' };
+
+/**
+ * A staff's label beside the score: its name and, while switched, the instrument it is shown as ("Piano → Guitar").
+ * The arrow is visual only; a screen reader reads "Piano as Guitar".
+ */
+function PartName({ label }: { label: { name: string; switched?: string } }) {
+  if (!label.switched) return <span className="part-name" title={label.name}>{label.name}</span>;
+  return <span className="part-name is-switched" title={`${label.name}, shown as ${label.switched}`}>
+    <span className="part-name-source">{label.name}</span>
+    <span className="part-name-target"><span className="part-name-arrow" aria-hidden="true">→ </span><span className="ps-visually-hidden"> as </span>{label.switched}</span>
+  </span>;
+}
 
 export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: preset = 'full', controls, view, height, className, ariaLabel, settings, persist, assetBaseUrl, verovioBaseUrl, soundPack = 'core', soundSources, onReady, onPlay, onStop, onError, clock, audio: withAudio = true, onSeek, onTimeUpdate, onElementClick, onRender, highlights, autoFocus, paintTransition = 'reveal', ref }: PepperScoreProps) {
   const chrome = useMemo(() => resolveChrome(preset, controls), [preset, controls?.mixer, controls?.openFile, controls?.drawer, controls?.transport, controls?.viewToggle, controls?.zoom, controls?.tabToggle, controls?.instrumentSwitch, controls?.octaveTool]);
@@ -569,9 +581,11 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   };
   const hostSwitchDefaults = () => switchDefaults(instrumentSettingsRef.current);
   /** Show every staff of a source part as `instrument` (undefined = as written). */
-  const setPartInstrument = (sourcePart: string, instrument: InstrumentId | undefined) => changeSwitches(current => withSourceSwitch(score, current, sourcePart, { instrument }, hostSwitchDefaults()));
-  const setPartLevel = (sourcePart: string, level: Level) => changeSwitches(current => withSourceSwitch(score, current, sourcePart, { level }, hostSwitchDefaults()));
-  const setPartAutoRange = (sourcePart: string, autoRange: boolean) => changeSwitches(current => withSourceSwitch(score, current, sourcePart, { autoRange }, hostSwitchDefaults()));
+  /** A change of instrument, level or fit, without the "as written" pins its new auto-fit plan no longer overrides. */
+  const changeSwitchPlan = (change: (current: Record<string, PartSwitch>) => Record<string, PartSwitch>) => changeSwitches(current => withoutStalePins(score, change(current), { scorePitch: prefs.scorePitch, semitones: prefs.semitones, keyFlip: prefs.keyFlip }, hostSwitchDefaults()));
+  const setPartInstrument = (sourcePart: string, instrument: InstrumentId | undefined) => changeSwitchPlan(current => withSourceSwitch(score, current, sourcePart, { instrument }, hostSwitchDefaults()));
+  const setPartLevel = (sourcePart: string, level: Level) => changeSwitchPlan(current => withSourceSwitch(score, current, sourcePart, { level }, hostSwitchDefaults()));
+  const setPartAutoRange = (sourcePart: string, autoRange: boolean) => changeSwitchPlan(current => withSourceSwitch(score, current, sourcePart, { autoRange }, hostSwitchDefaults()));
   /** The reader's octave moves (by ScoreNote id) of one staff part. */
   const setOctaves = (partId: string, octaves: Record<string, Shift>) => changeSwitches(current => withOctaves(current, partId, octaves, hostSwitchDefaults()));
   /** Turn the octave tool on or off; it starts with nothing selected. Focus goes to its toolbar, then back to the reader. */
@@ -718,7 +732,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     const previous = instrumentSettingsRef.current;
     instrumentSettingsRef.current = instrumentSettings;
     if (!ready || !loaded || JSON.stringify(previous) === JSON.stringify(instrumentSettings)) return;
-    changeSwitches(current => applyHostSwitchChange(score, current, previous, instrumentSettings));
+    changeSwitchPlan(current => applyHostSwitchChange(score, current, previous, instrumentSettings));
   }, [instrumentSettings]);
   /** After an out-of-memory failure: engrave in smaller chunks and open or draw the score again. */
   const retryOutOfMemory = () => {
@@ -1897,7 +1911,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
           </div>}
           <div className="score-stage">
             <div className="score-staves" ref={canvasRef} onClick={onScoreClick}/>
-            {chrome.partControls && <div className="part-controls" style={{ '--part-icon': `${controlMetrics.icon}px`, '--part-font': `${controlMetrics.font}px`, '--part-eye': `${controlMetrics.eye}px`, '--part-control-height': `${controlMetrics.height}px` } as React.CSSProperties}>{visibleScore.parts.map((part, index) => <div key={part.id} className="part-control" style={{ top: `${staffCenters[part.id] ?? 86 + index * ((prefs.names || prefs.counts) ? 125 : 100)}px` }} title={`Instrument and sound for ${part.name}`}><button className="instrument-control" aria-label={`Instrument for ${part.name}`} aria-haspopup="dialog" onClick={() => openInstrumentPicker(part, 'instrument')}><img className="part-icon" src={instrumentDetails(shownInstrument(part)).icon} alt=""/></button><span className="part-name" title={part.name}>{part.name}</span>{readerParts.length > 1 && <button className={`staff-eye staff-focus ${focusedId === part.id ? 'is-focused' : ''}`} aria-label={focusedId === part.id ? 'Show all staves' : `Focus on ${part.name}`} title={focusedId === part.id ? 'Show all staves' : `Focus on ${part.name}`} aria-pressed={focusedId === part.id} onClick={() => focusPart(part.id)}><Focus size={17}/></button>}{readerParts.length > 4 && <button className="staff-eye" aria-label={`Hide ${part.name}`} title={`Hide ${part.name}`} onClick={() => togglePart(part.id)} disabled={visibleScore.parts.length <= 1}><Eye size={17}/></button>}</div>)}</div>}
+            {chrome.partControls && <div className="part-controls" style={{ '--part-icon': `${controlMetrics.icon}px`, '--part-font': `${controlMetrics.font}px`, '--part-eye': `${controlMetrics.eye}px`, '--part-control-height': `${controlMetrics.height}px` } as React.CSSProperties}>{visibleScore.parts.map((part, index) => <div key={part.id} className="part-control" style={{ top: `${staffCenters[part.id] ?? 86 + index * ((prefs.names || prefs.counts) ? 125 : 100)}px` }} title={`Instrument and sound for ${part.name}`}><button className="instrument-control" aria-label={`Instrument for ${part.name}`} aria-haspopup="dialog" onClick={() => openInstrumentPicker(part, 'instrument')}><img className="part-icon" src={instrumentDetails(shownInstrument(part)).icon} alt=""/></button><PartName label={partLabel(part, partSwitches)}/>{readerParts.length > 1 && <button className={`staff-eye staff-focus ${focusedId === part.id ? 'is-focused' : ''}`} aria-label={focusedId === part.id ? 'Show all staves' : `Focus on ${part.name}`} title={focusedId === part.id ? 'Show all staves' : `Focus on ${part.name}`} aria-pressed={focusedId === part.id} onClick={() => focusPart(part.id)}><Focus size={17}/></button>}{readerParts.length > 4 && <button className="staff-eye" aria-label={`Hide ${part.name}`} title={`Hide ${part.name}`} onClick={() => togglePart(part.id)} disabled={visibleScore.parts.length <= 1}><Eye size={17}/></button>}</div>)}</div>}
           </div>
         </div>}
       </div>

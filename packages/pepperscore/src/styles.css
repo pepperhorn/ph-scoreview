@@ -107,6 +107,8 @@
 .pepperscore .score-stage .part-controls{width:var(--control-gutter,128px)}
 .pepperscore .score-stage .part-control{width:calc(var(--control-gutter,128px) - 8px);justify-content:flex-start}
 .pepperscore .part-name{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#66766a;font-size:var(--part-font,11px);line-height:1.2}
+/* A switched staff: its name, then the instrument it is shown as ("→ Guitar") on a second, smaller line. */
+.pepperscore .part-name.is-switched{display:flex;flex-direction:column}.pepperscore .part-name-source,.pepperscore .part-name-target{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pepperscore .part-name-target{color:#345642;font-size:.72em;font-weight:600}
 .pepperscore .ps-portrait .score-system svg{overflow:hidden}
 .pepperscore .ps-portrait .score-system{contain:paint}
 .pepperscore .part-control{gap:4px}.pepperscore .instrument-control{position:relative;display:grid;place-items:center;width:calc(var(--part-icon,28px) + 4px);height:var(--part-control-height,30px);flex:none}

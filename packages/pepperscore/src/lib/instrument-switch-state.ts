@@ -2,12 +2,12 @@
 // records to per-staff-part switches, the pitch view rule for concert-basis scores, and what playback and the
 // highlights read from a switched view. Pure; PepperScore.tsx holds the state.
 import { isLevel, isSwitchTarget, type PartState } from './file-state';
-import { INSTRUMENT_IDS, INSTRUMENTS, type InstrumentId, type Level, type SwitchInstrumentId } from './instrument-model';
+import { INSTRUMENT_IDS, INSTRUMENTS, instrumentName, type InstrumentId, type Level, type SwitchInstrumentId } from './instrument-model';
 import { applyInstrumentView, byStart, phrasesOf, pitched, sourcePartOf, switchablePart, tieChainsOf, type InstrumentViewResult, type PartSound, type PartSwitch } from './instrument-view';
 import type { BaseTimeline } from './playback/timeline';
 import type { Shift } from './range-fit-core';
 import { gmProgramForSoundfont, type Part, type Score } from './score';
-import { soundingMidi } from './transpose';
+import { scoreForView, soundingMidi } from './transpose';
 
 export const DEFAULT_RANGE_LEVEL: Level = 'intermediate';
 /** The instruments a pitched part can be switched to: the model's, in its order, without the drum kit. */
@@ -88,6 +88,36 @@ export function withOctaves(switches: Switches, partId: string, octaves: Record<
   const out = { ...switches };
   if (plain(entry, defaults)) delete out[partId]; else out[partId] = entry;
   return out;
+}
+
+/**
+ * Drop the reader's "keep as written" pins (an octave override of 0) that the auto-fit plan no longer overrides: after
+ * a level, instrument or fit change (or a host change) the plan of the view these switches give may not move that note
+ * any more, and a stale pin would keep its staff "non-plain" (a saved entry) and block auto-fit if the plan moves the
+ * note again later. A 0 on a note the plan still moves (8vb on an auto-raised phrase: as written) stays, as do 8va / 8vb
+ * moves. The view is the reader's: `scoreForView` at `semitones`, in the pitch view `readerPitch` gives these switches.
+ */
+export function withoutStalePins(score: Score, switches: Switches, view: { scorePitch: 'written' | 'concert'; semitones: number; keyFlip?: boolean }, defaults: SwitchDefaults): Switches {
+  const pinned = Object.entries(switches).filter(([, entry]) => Object.values(entry.octaves).some(value => value === 0));
+  if (!pinned.length) return switches;
+  const { scorePitch } = readerPitch(score, switches, view.scorePitch);
+  const { planned } = switchedView(scoreForView(score, scorePitch, view.semitones, view.keyFlip ?? false), switches, scorePitch);
+  let out = switches;
+  for (const [id, entry] of pinned) {
+    const octaves = Object.fromEntries(Object.entries(entry.octaves).filter(([noteId, value]) => value !== 0 || planned[noteId]));
+    if (Object.keys(octaves).length !== Object.keys(entry.octaves).length) out = withOctaves(out, id, octaves, defaults);
+  }
+  return out;
+}
+
+/**
+ * A staff part's label: its own name and, while it is switched to another instrument, that instrument's short name
+ * (the reader shows "Piano → Guitar"). No `switched` when as written, or switched to the instrument the part already is.
+ */
+export function partLabel(part: Part, switches: Switches): { name: string; switched?: string } {
+  const target = switches[part.id]?.instrument;
+  if (!target || !switchablePart(part) || target === (part.importedInstrument ?? part.instrument)) return { name: part.name };
+  return { name: part.name, switched: instrumentName(target) };
 }
 
 /**

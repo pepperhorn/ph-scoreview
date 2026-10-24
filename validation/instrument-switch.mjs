@@ -303,6 +303,16 @@ try {
   assert.equal(await picker.getByRole('button', { name: 'Trumpet', exact: true }).getAttribute('aria-pressed'), 'true', 'Trumpet is selected');
   assert.match(await partIcon(), /trumpet/, 'The part icon shows the trumpet');
   assert.match(await page.locator('.mixer-track-icon').first().getAttribute('src'), /trumpet/, 'The mixer track icon shows the trumpet');
+  // The staff labels name the switch on both staves ("Piano → Trumpet"); a screen reader hears "Piano as Trumpet".
+  const partLabels = () => page.locator('.part-control .part-name').evaluateAll(names => names.map(name => {
+    const text = keep => { const copy = name.cloneNode(true); copy.querySelectorAll(keep).forEach(node => node.remove()); return [...copy.children].length ? [...copy.children].map(child => child.textContent.trim()).join(' ') : copy.textContent; };
+    return { shown: text('.ps-visually-hidden'), spoken: text('[aria-hidden="true"]').replace(/\s+/g, ' ').trim(), title: name.title };
+  }));
+  const switchedNames = (await partLabels()).map(label => label.shown);
+  assert.equal(switchedNames.length, 2, 'Both staves have a label');
+  assert.ok(switchedNames.every(name => / → Trumpet$/.test(name)) && switchedNames[0].startsWith('Piano'), `Trumpet: both staff labels show the switch: ${JSON.stringify(switchedNames)}`);
+  const firstLabel = (await partLabels())[0];
+  assert.deepEqual([firstLabel.spoken, firstLabel.title], [`${switchedNames[0].replace(' → Trumpet', '')} as Trumpet`, `${switchedNames[0].replace(' → Trumpet', '')}, shown as Trumpet`], 'The label reads "<part> as Trumpet"');
   // A sound pick changes only the sound: the notes and the instrument stay the trumpet's.
   await section('Sound').click();
   assert.match(await picker.locator('.instrument-picker-grid button.is-selected').textContent(), /Trumpet/, 'Choosing the trumpet set its main sound');
@@ -323,6 +333,7 @@ try {
   const backUi = await redraw(() => picker.getByRole('button', { name: 'As written', exact: true }).click());
   assert.deepEqual([staffPitches(backUi, '1'), staffPitches(backUi, '2'), backUi.clefs], [['C5', 'E5'], ['C3'], { 1: 'G', 2: 'F' }], 'As written: the original engraving');
   assert.equal(await partIcon(), pianoIcon, 'As written: the piano icon again');
+  assert.ok((await partLabels()).every(label => !label.shown.includes('→')), 'As written: the staff labels are the part names again');
   assert.equal(await page.getByRole('button', { name: 'Voice for Piano', exact: true }).first().textContent(), pianoVoice, 'As written: the part\'s own sound again');
   await page.getByRole('button', { name: 'Close voice picker', exact: true }).click();
   await page.getByRole('button', { name: 'Close track mixer', exact: true }).click();
