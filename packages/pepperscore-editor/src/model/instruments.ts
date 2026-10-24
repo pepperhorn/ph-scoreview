@@ -3,4 +3,4 @@ export {
   INSTRUMENT_IDS, LEVELS, INSTRUMENTS, instrumentName, instrumentFor, pitchMidi, keyAlter, spellMidi,
   writtenPitch, transposePitchSpelled, transposePitch, writtenKeyFifths, spelledSoundingMidi as soundingMidi,
 } from 'pepperscore/instruments';
-export type { InstrumentId, Level, Transposition, Instrument } from 'pepperscore/instruments';
+export type { InstrumentId, RangeLevel, Transposition, InstrumentInfo } from 'pepperscore/instruments';

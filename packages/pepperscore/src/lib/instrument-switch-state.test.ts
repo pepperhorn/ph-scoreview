@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyHostSwitchChange, readerPartsInfo, readerPitch, restoredScorePitch, selectOctaveNote, selectOctavePhrase, sourcePartsOf, steppedOctaves, switchedSoundParts, switchedTimeline, switchedView, switchesFromSaved, switchesFromSettings, switchHighlights, withOctaves, withoutStalePins, withSound, withSourceSwitch, partLabel } from './instrument-switch-state';
+import { applyHostSwitchChange, hostInstrumentKey, pitchHint, readerPartsInfo, readerPitch, restoredScorePitch, selectOctaveNote, selectOctavePhrase, sourcePartsOf, steppedOctaves, switchedSoundParts, switchedTimeline, switchedView, switchesFromSaved, switchesFromSettings, switchesOnLoad, switchHighlights, withHostSwitches, withOctaves, withoutStalePins, withSound, withSourceSwitch, partLabel } from './instrument-switch-state';
 import { buildBaseTimeline, playbackEventsFrom } from './playback/timeline';
 import { gmProgramForSoundfont, pitch, type Part, type Score } from './score';
 import { scoreForView } from './transpose';
@@ -171,6 +171,51 @@ describe('instrument switch state', () => {
     expect(readerPitch(concert, { 'P1-1': alto }, 'concert').scorePitch).toBe('concert');
     expect(readerPitch(score(clarinet()), {}, 'concert')).toMatchObject({ scorePitch: 'concert', forcedConcert: false, hasTransposingParts: true });
     expect(readerPitch(score(...piano()), {}, 'written')).toMatchObject({ scorePitch: 'written', hasTransposingParts: false });
+  });
+
+  it('pitch hint: a concert-basis score with a switched B-flat part says the other parts stay at concert pitch', () => {
+    const concert = score(...piano().map(p => ({ ...p, pitchBasis: 'concert' as const })), { ...clarinet(), pitchBasis: 'concert' as const });
+    const trumpet = { ...alto, instrument: 'trumpet' as const };
+    expect(pitchHint(readerPitch(concert, {}, 'written'))).toMatch(/^This score is written at concert pitch, so it is shown at concert pitch\./);
+    const switched = pitchHint(readerPitch(concert, { 'P1-1': trumpet, 'P1-2': trumpet }, 'written'));
+    expect(switched).toMatch(/Transposing shows switched parts at their instrument's written pitch and the other parts at concert pitch/);
+    expect(switched).not.toMatch(/Transposing shows written parts/);
+    // A written-basis score: Transposing shows written parts (switched ones at their instrument's written pitch).
+    expect(pitchHint(readerPitch(score(...piano(), clarinet()), { 'P1-1': trumpet }, 'written'))).toMatch(/^Transposing shows written parts; .* Switched parts show their instrument's written pitch\./);
+    expect(pitchHint(readerPitch(score(...piano(), clarinet()), { 'P1-1': trumpet }, 'concert'))).not.toMatch(/Switched parts/);
+    expect(pitchHint(readerPitch(score(...piano()), {}, 'written'))).toMatch(/no instrument transposition data/);
+  });
+
+  it('host fingerprint: normalised (usable keys only, instruments sorted), undefined when the host gives none', () => {
+    expect(hostInstrumentKey({})).toBeUndefined();
+    expect(hostInstrumentKey({ instrument: 'kazoo' as never, rangeLevel: 'expert' as never, instruments: { 1: 'drum-kit' as never } })).toBeUndefined();
+    expect(hostInstrumentKey({ instrument: 'trumpet' })).toBe(hostInstrumentKey({ instrument: 'trumpet', instruments: {}, rangeLevel: undefined }));
+    expect(hostInstrumentKey({ instruments: { P2: 'flute', 1: 'cello' } })).toBe(hostInstrumentKey({ instruments: { 1: 'cello', P2: 'flute' } }));
+    const keys = [{ instrument: 'trumpet' as const }, { instrument: 'alto-saxophone' as const }, { instrument: 'trumpet' as const, rangeLevel: 'beginner' as const }, { instrument: 'trumpet' as const, autoRange: false }, { instruments: { 2: 'trumpet' as const } }].map(hostInstrumentKey);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('load: a saved record keeps the reader\'s switches under the same (or no) host settings; other host settings apply again', () => {
+    const input = score(...piano(), clarinet());
+    const flute = { ...alto, instrument: 'flute' as const, octaves: { rh1: -12 as const } };
+    const trumpet = { instrument: 'trumpet' as const };
+    // The reader switched the piano (saved under host trumpet) to flute with an octave move, and the clarinet to cello.
+    const parts = { 'P1-1': { visible: true, instrument: 'piano' as const, switch: { instrument: 'flute' as const, level: 'intermediate' as const, autoRange: true, octaves: { rh1: -12 as const } } },
+      'P1-2': { visible: true, instrument: 'piano' as const, switch: { instrument: 'flute' as const, level: 'intermediate' as const, autoRange: true } },
+      P2: { visible: true, instrument: 'clarinet' as const, switch: { instrument: 'cello' as const, level: 'advanced' as const, autoRange: true } } };
+    const saved = { parts, hostInstruments: hostInstrumentKey(trumpet) };
+    const restored = switchesFromSaved(input, parts);
+    expect(switchesOnLoad(input, null, trumpet)).toEqual(switchesFromSettings(input, trumpet));
+    expect(switchesOnLoad(input, saved, trumpet)).toEqual(restored);
+    expect(switchesOnLoad(input, saved, {})).toEqual(restored);
+    expect(restored['P1-1']).toEqual(flute);
+    // The host now asks for alto sax: its instrument settings apply again to every switchable part, so the piano is alto
+    // (its octave move dropped: the instrument changed) and the clarinet, which the host leaves as written, is as written.
+    const altoHost = switchesOnLoad(input, saved, { instrument: 'alto-saxophone' });
+    expect(altoHost).toEqual({ 'P1-1': alto, 'P1-2': alto });
+    expect(withHostSwitches(input, restored, { instrument: 'flute', rangeLevel: 'beginner' })).toEqual({ 'P1-1': { ...flute, level: 'beginner' }, 'P1-2': { ...alto, instrument: 'flute', level: 'beginner' } });
+    // A record saved before the fingerprint existed (none saved) under a host that gives settings: the host's apply.
+    expect(switchesOnLoad(input, { parts }, trumpet)).toEqual(switchesFromSettings(input, trumpet));
   });
 
   it('no switches: the view is scoreForView\'s result itself, nothing highlighted, the timeline untouched', () => {

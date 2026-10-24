@@ -262,7 +262,6 @@
                   "guitar",
                   "bassguitar",
                   "double-bass",
-                  "drum-kit",
                   "alto-saxophone",
                   "tenor-saxophone",
                   "bari-saxophone",
@@ -275,7 +274,7 @@
                   "cello",
                   "microphone"
                 ],
-                "description": "Shown as this instrument; absent = as written. Readers drop a switch to the drum kit."
+                "description": "Shown as this instrument (any but the unpitched drum kit); absent = as written. Readers drop a switch to an unknown instrument or the drum kit."
               },
               "level": {
                 "enum": [
@@ -339,6 +338,11 @@
           }
         }
       }
+    },
+    "hostInstruments": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Fingerprint of the host's instrument settings (instrument, instruments, rangeLevel, autoRange; normalised) when the record was saved. Optional (added in version 2); when the host's settings differ on load, they are applied again over the saved switches."
     },
     "view": {
       "type": "object",

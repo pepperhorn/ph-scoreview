@@ -138,6 +138,38 @@ try {
   agrees(clarinetConcert, 'Clarinet as alto sax, concert');
   console.log('Instrument switch: a transposing source engraves from its sounding pitch in both views passed');
 
+  // Two voices on one piano staff in F major (chromatic notes with their accidentals, a chord and a tie in each, a B
+  // natural after a B flat in the same bar): every switched view's note names (the display Score) agree with the
+  // engraved noteheads, per voice.
+  const ACCIDENTAL = { 1: 'sharp', [-1]: 'flat', 0: 'natural' };
+  /** A note: `pitch` like 'C#5', 'Bb4', 'Bn4' (a natural); its accidental shown unless `key` (the key's own) or a tie's end. */
+  const xmlNote = (pitch, voice, { beats = 1, tie, chord, key } = {}) => {
+    const [, step, accidental, octave] = /^([A-G])([#bn]?)(\d)$/.exec(pitch);
+    const alter = { '#': 1, b: -1 }[accidental] ?? 0;
+    const shown = accidental && !key && tie !== 'stop' ? `<accidental>${ACCIDENTAL[alter]}</accidental>` : '';
+    return `<note>${chord ? '<chord/>' : ''}<pitch><step>${step}</step>${alter ? `<alter>${alter}</alter>` : ''}<octave>${octave}</octave></pitch><duration>${beats}</duration>${tie ? `<tie type="${tie}"/>` : ''}`
+      + `<voice>${voice}</voice><type>${beats === 2 ? 'half' : 'quarter'}</type>${shown}<stem>${voice === 1 ? 'up' : 'down'}</stem>${tie ? `<notations><tied type="${tie}"/></notations>` : ''}</note>`;
+  };
+  const twoVoiceXml = `<?xml version="1.0" encoding="UTF-8"?><score-partwise version="3.1"><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list><part id="P1">`
+    + `<measure number="1"><attributes><divisions>1</divisions><key><fifths>-1</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>`
+    + xmlNote('C#5', 1) + xmlNote('D5', 1) + xmlNote('Eb5', 1) + xmlNote('F#5', 1, { tie: 'start' }) + '<backup><duration>4</duration></backup>'
+    + xmlNote('A4', 2) + xmlNote('Bb4', 2, { key: true }) + xmlNote('G#4', 2) + xmlNote('Bn4', 2, { chord: true }) + xmlNote('A4', 2, { tie: 'start' })
+    + `</measure><measure number="2">`
+    + xmlNote('F#5', 1, { beats: 2, tie: 'stop' }) + xmlNote('Bb5', 1, { key: true }) + xmlNote('Bn5', 1) + '<backup><duration>4</duration></backup>'
+    + xmlNote('A4', 2, { tie: 'stop' }) + xmlNote('Eb4', 2) + xmlNote('En4', 2) + xmlNote('C#4', 2)
+    + `</measure></part></score-partwise>`;
+  const twoVoiceAsWritten = await engrave(twoVoiceXml, { switches: {} });
+  agrees(twoVoiceAsWritten, 'Two voices as written');
+  const voicesOf = result => new Set(result.notes.map(note => note.layer)).size;
+  assert.equal(voicesOf(twoVoiceAsWritten), 2, 'The staff engraves two layers');
+  for (const instrument of ['violin', 'alto-saxophone', 'trumpet']) {
+    const switched = await engrave(twoVoiceXml, { switches: { 0: { ...alto, instrument } } });
+    assert.equal(voicesOf(switched), 2, `Two voices as ${instrument}: two layers`);
+    agrees(switched, `Two voices as ${instrument}`);
+    agrees(await engrave(twoVoiceXml, { switches: { 0: { ...alto, instrument } }, semitones: 1 }), `Two voices as ${instrument}, transposed +1`);
+  }
+  console.log('Instrument switch: a two-voice piano staff switched to violin, alto sax and trumpet: note names agree with the noteheads per voice passed');
+
   // Accidentals after an octave move (as written, one note moved): F#5 F5 F#5 with F#5 moved down shows F#4 F5 F#5
   // (the natural is no longer needed), a chord keeps its other notes, and a courtesy natural elsewhere stays.
   const bar = notes => `<measure number="${bar.n = (bar.n ?? 0) + 1}">${bar.n === 1 ? '<attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>' : ''}${notes}</measure>`;
@@ -349,7 +381,9 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Voice for Piano', exact: true }).first().textContent(), 'Timpani', 'Timpani sound picked on the unswitched piano');
   await page.getByRole('button', { name: 'Voice for Piano', exact: true }).first().click();
   assert.deepEqual([await picker.locator('.instrument-picker-sections').count(), await section('Instrument').count()], [1, 1], 'Timpani sound: the Instrument section is still offered');
-  const timpaniTrumpet = await redraw(async () => { await section('Instrument').click(); await picker.getByRole('button', { name: 'Trumpet', exact: true }).click(); });
+  await section('Instrument').click();
+  assert.equal(await picker.locator('.instrument-chooser-as-written img').getAttribute('src'), pianoIcon, 'Timpani sound: As written shows the imported piano\'s icon, not the picked sound\'s');
+  const timpaniTrumpet = await redraw(() => picker.getByRole('button', { name: 'Trumpet', exact: true }).click());
   assert.deepEqual([staffPitches(timpaniTrumpet, '1'), timpaniTrumpet.clefs], [['D5', 'F5'], { 1: 'G', 2: 'G' }], 'Timpani sound: the piano still switches to trumpet');
   await redraw(() => picker.getByRole('button', { name: 'As written', exact: true }).click());
   await page.getByRole('button', { name: 'Close voice picker', exact: true }).click();
@@ -492,6 +526,32 @@ try {
   await live(pianoXml, { persist });
   const restored = await readLive();
   assert.deepEqual([staffPitches(restored, '1'), staffPitches(restored, '2'), restored.transposed], [['C5', 'E5'], ['C4'], ['2:C4']], 'Reload with persist restores the octave move');
+  // Host vs saved: a record keeps the reader's switch under the same host settings; other host settings apply again.
+  {
+    const ns = `host-switch-${Date.now()}`;
+    const records = () => page.evaluate(async ns => (await import('/validation/instrument-switch-harness.ts')).savedRecords(ns), ns);
+    const shownAs = async () => { const ui = await readLive(); return [staffPitches(ui, '1'), staffPitches(ui, '2'), ui.clefs]; };
+    await live(pianoXml, { persist: ns, settings: { instrument: 'trumpet' } });
+    assert.deepEqual(await shownAs(), [['D5', 'F5'], ['D4'], { 1: 'G', 2: 'G' }], 'Host trumpet: the piano shows as trumpet');
+    await page.locator('.part-control .instrument-control').first().click();
+    await redraw(() => picker.getByRole('button', { name: 'Flute', exact: true }).click());
+    await page.getByRole('button', { name: 'Close voice picker', exact: true }).click();
+    for (let attempt = 0; !(await records()).some(record => Object.values(record.parts ?? {}).some(part => part.switch?.instrument === 'flute')); attempt++) { assert.ok(attempt < 50, 'The flute switch is saved'); await delay(100); }
+    const [saved] = await records();
+    assert.equal(JSON.parse(saved.hostInstruments).instrument, 'trumpet', 'The record holds the host\'s instrument settings fingerprint');
+    const flute = [['C5', 'E5'], ['C4'], { 1: 'G', 2: 'G' }];
+    await page.evaluate(async () => (await import('/validation/instrument-switch-harness.ts')).unmountLive());
+    await live(pianoXml, { persist: ns, settings: { instrument: 'trumpet' } });
+    assert.deepEqual(await shownAs(), flute, 'Remount, same host (trumpet): the reader\'s flute wins');
+    await page.evaluate(async () => (await import('/validation/instrument-switch-harness.ts')).unmountLive());
+    await live(pianoXml, { persist: ns });
+    assert.deepEqual(await shownAs(), flute, 'Remount, host gives no instrument settings: the reader\'s flute wins');
+    await page.evaluate(async () => (await import('/validation/instrument-switch-harness.ts')).unmountLive());
+    await live(pianoXml, { persist: ns, settings: { instrument: 'alto-saxophone' } });
+    assert.deepEqual(await shownAs(), [['A5', 'C6'], ['A4'], { 1: 'G', 2: 'G' }], 'Remount, host now alto sax: the host\'s alto sax applies over the record');
+    await page.evaluate(async () => (await import('/validation/instrument-switch-harness.ts')).unmountLive());
+    console.log('Instrument switch: saved switch vs host settings (same host: the reader\'s flute; changed host: alto sax) passed');
+  }
   // Hidden by the host; the embed's instrument menu offers it when the host enables it.
   await live(pianoXml, { controls: { octaveTool: false } });
   await page.getByRole('button', { name: 'Options', exact: true }).click();
@@ -530,6 +590,22 @@ try {
   await phonePage.locator('.octave-toolbar').waitFor();
   assert.equal(await phonePage.locator('.ps-corner-controls .octave-tool-toggle').count(), 0, 'Phone: the compact entry sits in the bottom toolbar, not the corner');
   await phone.close();
+  // Without the Popover API (no top layer) the embed's instrument menu is fixed and stacked above host content.
+  {
+    const legacy = await browser.newPage();
+    legacy.on('pageerror', error => errors.push(error.message));
+    await legacy.addInitScript(() => { delete HTMLElement.prototype.showPopover; delete HTMLElement.prototype.hidePopover; });
+    await legacy.goto(`${baseUrl}/validation/performance.html`);
+    for (let attempt = 0; ; attempt++) {
+      try { await legacy.evaluate(async xml => (await import('/validation/instrument-switch-harness.ts')).mountLive(xml, { chrome: 'minimal', controls: { instrumentSwitch: true } }), pianoXml); break; }
+      catch (error) { if (attempt > 5) throw error; await legacy.waitForLoadState('load'); }
+    }
+    await legacy.locator('.instrument-switch').click();
+    const menu = legacy.locator('.instrument-menu');
+    await menu.waitFor();
+    assert.deepEqual(await menu.evaluate(element => [typeof element.showPopover, getComputedStyle(element).position, getComputedStyle(element).zIndex]), ['undefined', 'fixed', '40'], 'No Popover API: the menu is fixed with z-index 40');
+    await legacy.close();
+  }
   console.log('Instrument switch: octave tool (select, Shift/second-click passage, phrase, 8va/8vb, out of range, auto-fit kept as written, reset, Escape, focus, saved, hidden, embed menu and compact entry) passed');
 
   // The reader's own render with forced chunks (the worker's chunk path and its spelling cache).

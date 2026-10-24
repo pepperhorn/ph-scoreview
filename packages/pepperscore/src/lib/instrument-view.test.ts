@@ -144,6 +144,14 @@ describe('instrument view', () => {
     expect(result.staves.P).toEqual({ shift: [0, 0], octaves: { 'm-a': -12, 'm-b': -12 } });
   });
 
+  it('an unswitched part playing a picked sound is judged by the instrument it was imported as', () => {
+    // A flute playing the Timpani sound (the drum-kit icon, no range): the reader's 8vb still takes C4 below the flute.
+    const timpani = part('P', 'a:C4 b:E4', { instrument: 'drum-kit', importedInstrument: 'flute', gmProgram: 48, gmSoundfont: 'timpani' });
+    const result = applyInstrumentView(score(timpani), { P: sw(undefined, 'intermediate', { a: -12 }) }, 'written');
+    expect(result.moved).toEqual(['a']);
+    expect(result.outOfRange).toEqual(['a']);
+  });
+
   it('drum kit and tab parts are not switchable', () => {
     const drums = part('D', 'a:C4', { clef: 'percussion', instrument: 'drum-kit' });
     const tab = part('T', 'a:C4', { clef: 'tab', instrument: 'guitar', tab: true });

@@ -1,4 +1,4 @@
-import { pitchMidi, transposePitchSpelled, writtenKeyFifths, type Instrument, type Level, type Transposition } from '../../model/instruments';
+import { pitchMidi, transposePitchSpelled, writtenKeyFifths, type InstrumentInfo, type RangeLevel, type Transposition } from '../../model/instruments';
 import { applyOverrides, joinRuns, planShifts, tieChainOf, type FitEvent, type Shift } from 'pepperscore/instruments';
 import { eventStarts } from '../../model/query';
 import type { Event, Key, Part, Pitch } from '../../model/schema';
@@ -60,8 +60,8 @@ function tiePairs(events: { event: Event }[]): [string, string][] {
 export type FitOptions = {
   /** The concert key in force in bar `i` (used only to spell notes that cannot keep their spelling). */
   keyByMeasure: (i: number) => Key;
-  target: Instrument;
-  level: Level;
+  target: InstrumentInfo;
+  level: RangeLevel;
   /** A free transposition on top of the instruments'. */
   interval?: Transposition;
   /** Event id to the user's octave shift; beats the computed shift for that event only. */

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The instrument model (`INSTRUMENTS`, ranges, transpositions, spelling) and the range-fit core (phrase joining, tie chains, shift planning, overrides) now come from `pepperscore/instruments`, shared with the reader's instrument switch. The editor's exports and behaviour are unchanged.
+
 Phase 2: layouts, instrument swap and the design shells. `pepperscore-editor` stays private.
 
 ### Added

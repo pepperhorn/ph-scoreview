@@ -147,6 +147,16 @@ try {
       { p1: { instrument: 'trumpet', level: 'beginner', autoRange: true, octaves: {}, sound: { instrument: 'drum-kit' } }, p2: { level: 'beginner', autoRange: true, octaves: {}, sound: { instrument: 'violin', gmSoundfont: 'orchestral_harp' } } })));
     out.soundBuilt = [sounded.parts.p1.switch, sounded.parts.p2.switch];
     out.soundRoundTrip = parseFileState(sounded, hex(13))?.parts.p1.switch;
+    // The host's instrument settings fingerprint (optional, version 2): written when given, round-trips, an unusable one is dropped.
+    const { hostInstrumentKey } = await import('/packages/pepperscore/src/lib/instrument-switch-state.ts');
+    const fingerprint = hostInstrumentKey({ instrument: 'trumpet', rangeLevel: 'beginner' });
+    const hosted = JSON.parse(JSON.stringify(buildFileState(source(hex(14)), settings, switchScore, [], {}, undefined, 5, {}, fingerprint)));
+    out.hostBuilt = hosted.hostInstruments === fingerprint;
+    out.hostRoundTrip = parseFileState(hosted, hex(14))?.hostInstruments === fingerprint;
+    out.hostAbsent = 'hostInstruments' in buildFileState(source(hex(14)), settings, switchScore, [], {}, undefined, 5, {}, hostInstrumentKey({}));
+    const badHost = parseFileState({ ...hosted, hostInstruments: 7 }, hex(14));
+    out.hostBad = [!!badHost, badHost && 'hostInstruments' in badHost];
+    out.hostVersion = hosted.version;
     return out;
   });
 
@@ -184,6 +194,11 @@ try {
   assert.deepEqual(result.switchEdge, { arrayOctaves: null, good: { instrument: 'trumpet', level: 'advanced', autoRange: true, sound: { instrument: 'violin', gmSoundfont: 'orchestral_harp' } }, badSound: { instrument: 'trumpet', level: 'advanced', autoRange: true }, soundOnly: { level: 'advanced', autoRange: true } }, 'Array octaves drop the switch, a null part entry is dropped, a bad or instrument-less sound only loses the sound');
   assert.deepEqual(result.soundBuilt, [{ instrument: 'trumpet', level: 'beginner', autoRange: true, sound: { instrument: 'drum-kit' } }, { level: 'beginner', autoRange: true }], 'buildFileState writes a picked sound only with an instrument');
   assert.deepEqual(result.soundRoundTrip, { instrument: 'trumpet', level: 'beginner', autoRange: true, sound: { instrument: 'drum-kit' } }, 'A picked sound round-trips');
+  assert.equal(result.hostBuilt, true, 'buildFileState writes the host instrument fingerprint');
+  assert.equal(result.hostRoundTrip, true, 'The host instrument fingerprint round-trips');
+  assert.equal(result.hostAbsent, false, 'No fingerprint is written when the host gives no instrument settings');
+  assert.deepEqual(result.hostBad, [true, false], 'An unusable fingerprint is dropped; the record opens');
+  assert.equal(result.hostVersion, 2, 'The record stays version 2');
   assert.equal(result.afterFlush, 1.2, 'The latest debounced write wins');
   assert.equal(result.abcKey, result.abcKeyAgain, 'ABC key is stable');
   assert.notEqual(result.abcKey, result.xmlKey, 'Keys carry a format prefix');

@@ -56,7 +56,7 @@ export async function importFacts(xml: string) {
 }
 
 const ALTER: Record<string, number> = { s: 1, f: -1, n: 0, x: 2, ss: 2, ff: -2 };
-type DrawnNote = { id: string; source: string; staff: string; measure: number; pname: string; oct: number; alter: number | null; written: string | null };
+type DrawnNote = { id: string; source: string; staff: string; layer: string; measure: number; pname: string; oct: number; alter: number | null; written: string | null };
 type DrawnClef = { staff: string; shape: string | null; line: string | null; dis: string | null; disPlace: string | null };
 /** Notes (pitch name, octave, explicit alteration) and the opening clef of every staff of an MEI document. */
 function readMei(text: string, measureOffset = 0) {
@@ -70,7 +70,7 @@ function readMei(text: string, measureOffset = 0) {
       const written = note.getAttribute('accid') ?? accid?.getAttribute('accid') ?? null;
       const value = written ?? gestural;
       const id = note.getAttribute('xml:id') || '';
-      notes.push({ id, source: generatedPitchIdOf(id) ?? id, staff: note.closest('staff')?.getAttribute('n') || '', measure: index + measureOffset,
+      notes.push({ id, source: generatedPitchIdOf(id) ?? id, staff: note.closest('staff')?.getAttribute('n') || '', layer: note.closest('layer')?.getAttribute('n') || '', measure: index + measureOffset,
         pname: (note.getAttribute('pname') || '').toUpperCase(), oct: Number(note.getAttribute('oct')), alter: value !== null ? ALTER[value] ?? 0 : null, written });
     }
   });
@@ -261,16 +261,17 @@ export async function mountLive(xml: string, props: LiveProps = {}) {
  * are read straight from IndexedDB (`{ partId: octaves }` of each part with any).
  */
 export async function savedOctaves(ns: string): Promise<Record<string, Record<string, number>>> {
+  const out: Record<string, Record<string, number>> = {};
+  for (const record of await savedRecords(ns)) for (const [id, part] of Object.entries(record.parts ?? {})) if (part.switch?.octaves) out[id] = part.switch.octaves;
+  return out;
+}
+/** Every record saved under a persist namespace (pending writes flushed first), straight from IndexedDB. */
+export async function savedRecords(ns: string): Promise<{ hostInstruments?: string; parts?: Record<string, { switch?: { instrument?: string; octaves?: Record<string, number> } }> }[]> {
   await readerStorage(ns).scoreDb.flush();
   const db = await new Promise<IDBDatabase>((resolve, reject) => { const request = indexedDB.open(ns); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
   try {
-    if (!db.objectStoreNames.contains(SCORE_STORE)) return {};
-    const records = await new Promise<unknown[]>((resolve, reject) => { const request = db.transaction(SCORE_STORE).objectStore(SCORE_STORE).getAll(); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
-    const out: Record<string, Record<string, number>> = {};
-    for (const record of records as { parts?: Record<string, { switch?: { octaves?: Record<string, number> } }> }[]) {
-      for (const [id, part] of Object.entries(record.parts ?? {})) if (part.switch?.octaves) out[id] = part.switch.octaves;
-    }
-    return out;
+    if (!db.objectStoreNames.contains(SCORE_STORE)) return [];
+    return await new Promise((resolve, reject) => { const request = db.transaction(SCORE_STORE).objectStore(SCORE_STORE).getAll(); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
   } finally { db.close(); }
 }
 /** What the mounted full reader drew. */

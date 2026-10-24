@@ -1,7 +1,7 @@
 // The instrument switch's view of a score: a pure Score-model transform run after `scoreForView`. Each switched part
 // is fitted at its final sounding pitch (after `semitones` and the key flip) and rewritten as the target instrument,
 // so playback, note names and the timeline read what the MEI pass engraves from the same result (`staves`).
-import { INSTRUMENTS as MODEL, pitchMidi, transposePitchSpelled, writtenKeyFifths, writtenPitch, type InstrumentClef, type InstrumentId, type Level, type SpelledPitch, type Transposition as ModelTransposition } from './instrument-model';
+import { INSTRUMENTS as MODEL, pitchMidi, transposePitchSpelled, writtenKeyFifths, writtenPitch, type InstrumentClef, type InstrumentId, type RangeLevel, type SpelledPitch, type Transposition as ModelTransposition } from './instrument-model';
 import { applyOverrides, joinRuns, planShifts, tieChainOf, type FitEvent, type Shift } from './range-fit-core';
 import { gmProgramForNumber, type KeyMode, type Measure, type Part, type Pitch, type Score, type ScoreNote } from './score';
 import { keyFromFifths, spellChordSymbol } from './spelling';
@@ -22,7 +22,7 @@ export type PartSound = { instrument: InstrumentId; gmSoundfont?: string };
  * shift from its pitch in the view, overriding auto-fit along its tie chain; 0 keeps a note auto-fit would move);
  * `sound` overrides the target's main sound (only while switched; cleared when the instrument changes).
  */
-export type PartSwitch = { instrument?: InstrumentId; level: Level; autoRange: boolean; octaves: Record<string, Shift>; sound?: PartSound };
+export type PartSwitch = { instrument?: InstrumentId; level: RangeLevel; autoRange: boolean; octaves: Record<string, Shift>; sound?: PartSound };
 /**
  * The MEI pass's view of one switched (or octave-moved) staff: `shift` = [diatonic, semitones] from the baseline MEI
  * (the source's written pitch, after the global interval) to the pitch shown; `octaves` keyed by MEI note id.
@@ -193,7 +193,8 @@ export function applyInstrumentView(score: Score, switches: Record<string, PartS
     for (const measure of part.measures) for (const note of byStart(measure)) if (pitched(note)) notes.set(note.id, { note, measure });
     const midiOf = (id: string) => { const { note, measure } = notes.get(id)!; return note.pitches.filter(p => !p.unpitched).map(p => judged(measure, p)); };
     const phrases: FitEvent[][] = phrasesOf(part).map(phrase => phrase.map(id => ({ id, midi: midiOf(id) })));
-    const range = (target ?? MODEL[part.instrument])?.ranges?.[choice.level];
+    // An unswitched part is judged as the instrument it was imported as: a Sound pick (Timpani: the drum-kit icon) changes `instrument`, not the range.
+    const range = (target ?? MODEL[part.importedInstrument ?? part.instrument])?.ranges?.[choice.level];
     const plan = planShifts(phrases, range, !!target && choice.autoRange);
     const overrides = Object.fromEntries(Object.entries(choice.octaves ?? {}).filter(([id, value]) => notes.has(id) && (value === 0 || value === 12 || value === -12))) as Record<string, Shift>;
     const shifts = applyOverrides(plan.shifts, overrides, tieChainsOf(part));

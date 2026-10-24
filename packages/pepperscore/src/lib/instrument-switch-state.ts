@@ -2,19 +2,19 @@
 // records to per-staff-part switches, the pitch view rule for concert-basis scores, and what playback and the
 // highlights read from a switched view. Pure; PepperScore.tsx holds the state.
 import { isLevel, isSwitchTarget, type PartState } from './file-state';
-import { INSTRUMENT_IDS, INSTRUMENTS, instrumentName, type InstrumentId, type Level, type SwitchInstrumentId } from './instrument-model';
+import { INSTRUMENT_IDS, INSTRUMENTS, instrumentName, type InstrumentId, type RangeLevel, type SwitchInstrumentId } from './instrument-model';
 import { applyInstrumentView, byStart, phrasesOf, pitched, sourcePartOf, switchablePart, tieChainsOf, type InstrumentViewResult, type PartSound, type PartSwitch } from './instrument-view';
 import type { BaseTimeline } from './playback/timeline';
 import type { Shift } from './range-fit-core';
 import { gmProgramForSoundfont, type Part, type Score } from './score';
 import { scoreForView, soundingMidi } from './transpose';
 
-export const DEFAULT_RANGE_LEVEL: Level = 'intermediate';
+export const DEFAULT_RANGE_LEVEL: RangeLevel = 'intermediate';
 /** The instruments a pitched part can be switched to: the model's, in its order, without the drum kit. */
 export const SWITCH_TARGETS: InstrumentId[] = INSTRUMENT_IDS.filter(isSwitchTarget);
 /** The instrument keys of `PepperScoreSettings` (prefs.ts documents them). */
-export type InstrumentSettings = { instrument?: SwitchInstrumentId; instruments?: Record<string, SwitchInstrumentId>; rangeLevel?: Level; autoRange?: boolean };
-export type SwitchDefaults = { level: Level; autoRange: boolean };
+export type InstrumentSettings = { instrument?: SwitchInstrumentId; instruments?: Record<string, SwitchInstrumentId>; rangeLevel?: RangeLevel; autoRange?: boolean };
+export type SwitchDefaults = { level: RangeLevel; autoRange: boolean };
 type Switches = Record<string, PartSwitch>;
 
 /** Source parts in score order, numbered from 1 by the host (TAB doublings excluded), with their staff parts. */
@@ -216,6 +216,53 @@ export function applyHostSwitchChange(score: Score, current: Switches, previous:
 }
 
 /**
+ * A fingerprint of the host's instrument settings, saved with the record (`FileState.hostInstruments`): only the usable
+ * keys, `instruments` as [key, id] pairs sorted by key. Undefined when the host gives none.
+ */
+export function hostInstrumentKey(settings: InstrumentSettings): string | undefined {
+  const out: Record<string, unknown> = {};
+  if (isSwitchTarget(settings.instrument)) out.instrument = settings.instrument;
+  const given = settings.instruments && typeof settings.instruments === 'object' && !Array.isArray(settings.instruments) ? Object.entries(settings.instruments) : [];
+  const instruments = given.filter(([, id]) => isSwitchTarget(id)).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  if (instruments.length) out.instruments = instruments;
+  if (isLevel(settings.rangeLevel)) out.rangeLevel = settings.rangeLevel;
+  if (typeof settings.autoRange === 'boolean') out.autoRange = settings.autoRange;
+  return Object.keys(out).length ? JSON.stringify(out) : undefined;
+}
+
+/**
+ * The host's instrument settings applied again over restored switches: every switchable source part takes the host's
+ * instrument (or As written), level and fit. A part whose instrument changes loses its octave moves (and its picked
+ * sound); a part whose instrument stays keeps them.
+ */
+export function withHostSwitches(score: Score, switches: Switches, settings: InstrumentSettings): Switches {
+  const defaults = switchDefaults(settings);
+  const chosen = chosenInstruments(score, settings);
+  let out = switches;
+  for (const source of sourcePartsOf(score)) {
+    if (!source.switchable) continue;
+    const instrument = chosen.get(source.id);
+    const changed = source.parts.filter(part => switchablePart(part) && out[part.id]?.instrument !== instrument).map(part => part.id);
+    out = withSourceSwitch(score, out, source.id, { instrument, level: defaults.level, autoRange: defaults.autoRange }, defaults);
+    for (const id of changed) if (out[id]) out = withOctaves(out, id, {}, defaults);
+  }
+  return out;
+}
+
+/**
+ * The switches a score opens with. Without a saved record, the host's settings. With one, its switches, unless the
+ * host's instrument settings changed since it was saved (`hostInstrumentKey` differs from `hostInstruments`): then the
+ * host's are applied again over it (`withHostSwitches`), so a teacher's new instrument reaches returning readers. A host
+ * that gives no instrument settings, or the same ones, leaves the reader's saved choices.
+ */
+export function switchesOnLoad(score: Score, saved: { parts: Record<string, PartState>; hostInstruments?: string } | null, settings: InstrumentSettings): Switches {
+  if (!saved) return switchesFromSettings(score, settings);
+  const restored = switchesFromSaved(score, saved.parts, switchDefaults(settings));
+  const host = hostInstrumentKey(settings);
+  return host === undefined || host === saved.hostInstruments ? restored : withHostSwitches(score, restored, settings);
+}
+
+/**
  * Switches restored from a saved record's parts (already validated by file-state.ts). The staves of a source part
  * switch together, so they are normalised to its first staff with a saved switch (instrument, level, fit): a staff
  * whose switch differs or was dropped takes it, keeping its own octave moves (and its sound when the instrument matches).
@@ -262,6 +309,18 @@ export function readerPitch(score: Score, switches: Switches, preferred: 'writte
   const forcedConcert = concertBasis && !switchedTransposing;
   const hasTransposingParts = switchedTransposing || score.parts.some(part => part.transposition?.semitones || part.measures.some(measure => measure.transposition?.semitones));
   return { scorePitch: forcedConcert ? 'concert' as const : preferred, concertBasis, forcedConcert, switchedTransposing, hasTransposingParts };
+}
+
+/**
+ * The Pitch panel's hint for the pitch view `readerPitch` gives. In a concert-basis score the Transposing view moves
+ * only the parts switched to a transposing instrument: every other part (a transposing one included) stays at concert pitch.
+ */
+export function pitchHint(view: ReturnType<typeof readerPitch>): string {
+  const playback = 'Playback stays at concert pitch.';
+  if (view.forcedConcert) return `This score is written at concert pitch, so it is shown at concert pitch. ${playback}`;
+  if (view.concertBasis) return `This score is written at concert pitch: Transposing shows switched parts at their instrument's written pitch and the other parts at concert pitch; Concert shows sounding pitches. ${playback}`;
+  if (!view.hasTransposingParts) return 'This score has no instrument transposition data, so both views match.';
+  return `Transposing shows written parts; Concert shows sounding pitches.${view.switchedTransposing && view.scorePitch === 'written' ? ' Switched parts show their instrument\'s written pitch.' : ''} ${playback}`;
 }
 
 /** The switched view of `scoreForView`'s result (the switch runs last); with no switches, that result itself. */

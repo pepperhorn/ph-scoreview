@@ -8,13 +8,13 @@ export const INSTRUMENT_IDS = [
 export const LEVELS = ['beginner', 'intermediate', 'advanced'] as const;
 
 export type InstrumentId = typeof INSTRUMENT_IDS[number];
-export type Level = typeof LEVELS[number];
+export type RangeLevel = typeof LEVELS[number];
 /** An instrument a pitched part can be switched to: any but the drum kit (unpitched). */
 export type SwitchInstrumentId = Exclude<InstrumentId, 'drum-kit'>;
 export type Transposition = { semitones: number; diatonic: number };
 export type InstrumentClef = 'treble' | 'bass' | 'alto' | 'tenor' | 'percussion' | 'treble8vb';
 export type SpelledPitch = { step: 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G'; octave: number; alter: number };
-export type Instrument = {
+export type InstrumentInfo = {
   id: InstrumentId;
   label: string;
   /** The name the editor's controls and status line use when shorter than `label` ("Alto Sax"). */
@@ -25,20 +25,20 @@ export type Instrument = {
   /** Written minus sounding. */
   transposition: Transposition;
   /** Playable range per level in sounding MIDI, inclusive; absent for unpitched instruments. */
-  ranges?: Record<Level, { low: number; high: number }>;
+  ranges?: Record<RangeLevel, { low: number; high: number }>;
 };
 
 type Span = [number, number];
-const ranges = (beginner: Span, intermediate: Span, advanced: Span): Instrument['ranges'] => ({
-  beginner: { low: beginner[0], high: beginner[1] },
-  intermediate: { low: intermediate[0], high: intermediate[1] },
-  advanced: { low: advanced[0], high: advanced[1] },
+const ranges = (beginner: Span, intermediate: Span, advanced: Span): InstrumentInfo['ranges'] => Object.freeze({
+  beginner: Object.freeze({ low: beginner[0], high: beginner[1] }),
+  intermediate: Object.freeze({ low: intermediate[0], high: intermediate[1] }),
+  advanced: Object.freeze({ low: advanced[0], high: advanced[1] }),
 });
-const CONCERT: Transposition = { semitones: 0, diatonic: 0 };
-const OCTAVE: Transposition = { semitones: 12, diatonic: 7 };
-const B_FLAT: Transposition = { semitones: 2, diatonic: 1 };
+const CONCERT: Transposition = Object.freeze({ semitones: 0, diatonic: 0 });
+const OCTAVE: Transposition = Object.freeze({ semitones: 12, diatonic: 7 });
+const B_FLAT: Transposition = Object.freeze({ semitones: 2, diatonic: 1 });
 
-export const INSTRUMENTS: Record<InstrumentId, Instrument> = {
+const INSTRUMENT_TABLE: Record<InstrumentId, InstrumentInfo> = {
   piano: { id: 'piano', label: 'Piano', gmProgram: 1, clef: 'treble', transposition: CONCERT, ranges: ranges([21, 108], [21, 108], [21, 108]) },
   guitar: { id: 'guitar', label: 'Guitar', gmProgram: 25, clef: 'treble', transposition: OCTAVE, ranges: ranges([40, 64], [40, 76], [40, 88]) },
   bassguitar: { id: 'bassguitar', label: 'Bass Guitar', gmProgram: 34, clef: 'bass', transposition: OCTAVE, ranges: ranges([28, 48], [28, 55], [28, 60]) },
@@ -56,6 +56,9 @@ export const INSTRUMENTS: Record<InstrumentId, Instrument> = {
   cello: { id: 'cello', label: 'Cello', gmProgram: 43, clef: 'bass', transposition: CONCERT, ranges: ranges([36, 64], [36, 76], [36, 88]) },
   microphone: { id: 'microphone', label: 'Voice', gmProgram: 54, clef: 'treble', transposition: CONCERT, ranges: ranges([48, 72], [45, 76], [40, 81]) },
 };
+for (const info of Object.values(INSTRUMENT_TABLE)) { Object.freeze(info.transposition); Object.freeze(info); }
+/** The model's instruments by id (frozen). */
+export const INSTRUMENTS: Readonly<Record<InstrumentId, Readonly<InstrumentInfo>>> = Object.freeze(INSTRUMENT_TABLE);
 
 /** The instrument's short name for controls and the status line (`short`, else `label`). */
 export const instrumentName = (id: InstrumentId): string => INSTRUMENTS[id].short ?? INSTRUMENTS[id].label;
@@ -72,7 +75,7 @@ const GM_BLOCKS: [number, number, InstrumentId][] = [
 ];
 
 /** The instrument nearest a 1-based GM program; piano when none is near. */
-export function instrumentFor(gmProgram: number): Instrument {
+export function instrumentFor(gmProgram: number): Readonly<InstrumentInfo> {
   const block = GM_BLOCKS.find(([low, high]) => gmProgram >= low && gmProgram <= high);
   return INSTRUMENTS[block?.[2] ?? 'piano'];
 }
@@ -156,7 +159,7 @@ export function writtenKeyFifths(concertFifths: number, transposition: Transposi
   return fifths > 7 ? fifths - 12 : fifths < -7 ? fifths + 12 : fifths;
 }
 
-/** The instruments the embeds offer, in switch order. */
-export const EMBED_INSTRUMENTS: InstrumentId[] = [
+/** The instruments the embeds offer, in switch order (frozen). */
+export const EMBED_INSTRUMENTS: readonly InstrumentId[] = Object.freeze([
   'alto-saxophone', 'tenor-saxophone', 'bari-saxophone', 'trumpet', 'trombone', 'flute', 'clarinet', 'violin', 'viola', 'cello', 'double-bass',
-];
+] as const);
