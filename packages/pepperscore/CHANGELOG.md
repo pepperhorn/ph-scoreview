@@ -20,6 +20,7 @@
 
 ### Compatibility
 
+- A reader's "keep as written" octave pin (8vb on an auto-raised phrase) is dropped once a transpose, key flip, level, instrument or fit change means auto-fit no longer moves that note, and it is not restored when transposing back.
 - Saved records can now contain an octave override of 0. An older pepperscore reader sharing the same site storage accepts only +-12 and drops that part's whole saved switch.
 
 ### Known limitations
