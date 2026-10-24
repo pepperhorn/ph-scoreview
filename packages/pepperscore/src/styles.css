@@ -196,7 +196,8 @@
 .pepperscore .instrument-fit-toggle .ps-switch{flex:none}
 .pepperscore .instrument-chooser.is-compact{gap:8px}
 .pepperscore .instrument-chooser.is-compact .instrument-chooser-options{grid-template-columns:1fr;gap:2px}
-.pepperscore .instrument-chooser.is-compact .instrument-chooser-option{min-height:34px;flex-direction:row;justify-content:flex-start;gap:9px;padding:5px 9px;border-color:transparent;text-align:left}
+/* A row has room for the label at full size: the phone tiles' 9px (below) would leave gaps between hinted glyphs. */
+.pepperscore .instrument-chooser.is-compact .instrument-chooser-option{min-height:34px;flex-direction:row;justify-content:flex-start;gap:9px;padding:5px 9px;border-color:transparent;font-size:12px;text-align:left}
 .pepperscore .instrument-chooser.is-compact .instrument-chooser-icon{width:20px;height:20px}
 .pepperscore .instrument-chooser.is-compact .instrument-chooser-settings{flex-direction:column;align-items:stretch;padding-top:8px}
 @container pepperscore (max-width:580px){.pepperscore .instrument-chooser-options{gap:5px}.pepperscore .instrument-chooser-option{min-height:64px;padding:5px 2px;font-size:9px}.pepperscore .instrument-chooser-icon{width:26px;height:26px}.pepperscore .instrument-level button{padding:5px 7px;font-size:10px}}

@@ -721,6 +721,12 @@ try {
     }
   }
 
+  /** Each option label's computed font family, letter spacing and size in an open instrument menu. */
+  const labelStyle = menu => menu.evaluate(element => [...element.querySelectorAll('.instrument-chooser-option')].map(option => {
+    const style = getComputedStyle(option.querySelector('.instrument-chooser-name') ?? option);
+    return { font: style.fontFamily, spacing: style.letterSpacing, size: parseFloat(style.fontSize) };
+  }));
+  let desktopLabel;
   // 11. The instrument switcher of minimal chrome (controls.instrumentSwitch): a compact button beside the play button
   // opens a menu with "As written" and the embed instruments, the level and fit to range; a multi-part score lists its
   // switchable source parts first (a grand staff is one row). On a phone the button sits in the bottom toolbar.
@@ -773,6 +779,8 @@ try {
     assert.ok(await menu.evaluate(element => element.matches(':popover-open')), 'the menu is an open popover');
     assert.ok(inside({ left: 0, top: 0, right: 1280, bottom: 900 }, await rect(page, `${piano} .instrument-menu`)), 'the menu is inside the viewport');
     assert.equal(await menu.evaluate(element => getComputedStyle(element).fontFamily.includes('Poppins') && getComputedStyle(element.querySelector('.instrument-chooser-option')).borderRadius), '10px', 'scoped styles apply in the top layer');
+    desktopLabel = await labelStyle(menu);
+    assert.ok(desktopLabel.every(label => /^"?Poppins/.test(label.font) && label.spacing === 'normal' && label.size >= 11), `the menu labels are Poppins, normal spacing, at least 11px: ${JSON.stringify(desktopLabel)}`);
     assert.equal(await button.getAttribute('aria-expanded'), 'true');
     assert.equal(await menu.locator('.instrument-menu-part').count(), 0, 'one source part (a grand staff): no part list');
     assert.deepEqual(await menu.locator('.instrument-chooser-option').allTextContents(), ['As written', 'Alto Sax', 'Tenor Sax', 'Bari Sax', 'Trumpet', 'Trombone', 'Flute', 'Clarinet', 'Violin', 'Viola', 'Cello', 'Double Bass'], 'As written, then the eleven embed instruments in order');
@@ -842,6 +850,10 @@ try {
     const menuBox = await rect(page, `${piano} .instrument-menu`);
     assert.ok(inside({ left: 0, top: 0, right: 390, bottom: 844 }, menuBox), `the menu is inside the phone viewport: ${JSON.stringify(menuBox)}`);
     assert.equal((await rect(page, piano)).height, height, 'the snippet keeps its height');
+    // The phone container query shrinks the 4-column picker's tile labels to 9px, where hinted glyph advances leave
+    // gaps ("Ten or Sax"); the menu's compact rows keep the desktop label size.
+    const phoneLabel = await labelStyle(page.locator(`${piano} .instrument-menu`));
+    assert.deepEqual(phoneLabel, desktopLabel, 'the phone menu labels match the desktop menu (Poppins, normal letter spacing, same size)');
     assert.deepEqual(errors, []);
     await context.close();
   }
