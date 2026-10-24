@@ -721,5 +721,107 @@ try {
     }
   }
 
-  console.log(`${engine}: embedding (chrome presets, callbacks, host hooks, ref, settings, sounds and asset base, style isolation, containment, unique ids, focused keyboard, focus ring, landmark names, shared engine, persist, missing assets, verovioBaseUrl) passed`);
+  // 11. The instrument switcher of minimal chrome (controls.instrumentSwitch): a compact button beside the play button
+  // opens a menu with "As written" and the embed instruments, the level and fit to range; a multi-part score lists its
+  // switchable source parts first (a grand staff is one row). On a phone the button sits in the bottom toolbar.
+  {
+    const drawn = (page, root) => page.evaluate(root => {
+      const host = document.querySelector(root);
+      const glyph = use => (use?.getAttribute('xlink:href') || use?.getAttribute('href') || '').replace(/^#/, '').split('-')[0];
+      const clefs = {};
+      for (const staff of host.querySelectorAll('.score-system svg g.staff[data-n]')) clefs[staff.getAttribute('data-n')] ??= ({ E050: 'G', E062: 'F', E05C: 'C' })[glyph(staff.querySelector('g.clef use'))] ?? '?';
+      const notes = [...host.querySelectorAll('.score-system svg g.note')].map(note => `${note.closest('g.staff')?.getAttribute('data-n')}:${(note.getAttribute('data-pname') || '').toUpperCase()}${note.getAttribute('data-oct')}`);
+      return { clefs, notes, transposed: host.querySelectorAll('.score-system svg .ps-transposed').length };
+    }, root);
+    /** Run `change` and wait until the root's drawing differs from before (the switch re-engraves). */
+    const redrawn = async (page, root, change) => {
+      const before = JSON.stringify(await drawn(page, root));
+      await change();
+      let last = before;
+      for (let attempt = 0; attempt < 150; attempt++) {
+        const now = JSON.stringify(await drawn(page, root));
+        if (now !== before && now === last && !(await page.locator(`${root} .score-loading`).count())) return JSON.parse(now);
+        last = now;
+        await page.waitForTimeout(150);
+      }
+      throw new Error(`${root} did not redraw`);
+    };
+    const { context } = await hostContext();
+    const page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto(`${server.url}/embed-switch`);
+    const piano = '.pepperscore.embed-switch-piano', duo = '.pepperscore.embed-switch-duo', off = '.pepperscore.embed-switch-off';
+    await Promise.all([piano, duo, off].map(root => rendered(page, root)));
+    assert.equal(await page.locator(`${off} .instrument-switch`).count(), 0, 'without controls.instrumentSwitch there is no switcher');
+    assert.equal(await page.locator('.embed-a .instrument-switch, .embed-b .instrument-switch').count(), 0);
+    const button = page.locator(`${piano} .instrument-switch`);
+    assert.equal(await button.getAttribute('aria-label'), 'Choose your instrument');
+    assert.equal(await button.getAttribute('aria-expanded'), 'false');
+    const pianoIcon = await button.locator('img').getAttribute('src');
+    // Beside the play button, inside the snippet.
+    const [buttonBox, playBox, rootBox] = await Promise.all([rect(page, `${piano} .instrument-switch`), rect(page, `${piano} .ps-compact-play`), rect(page, piano)]);
+    assert.ok(inside(rootBox, buttonBox) && buttonBox.right <= playBox.left + 1 && Math.abs(buttonBox.top - playBox.top) < 4, `the switcher sits left of the play button: ${JSON.stringify({ buttonBox, playBox })}`);
+    const before = await drawn(page, piano);
+    assert.deepEqual([before.clefs, before.notes], [{ 1: 'G', 2: 'F' }, ['1:C5', '1:E5', '2:C3']], 'the piano as written');
+    await button.click();
+    const menu = page.locator(`${piano} .instrument-menu`);
+    await menu.waitFor();
+    assert.equal(await button.getAttribute('aria-expanded'), 'true');
+    assert.equal(await menu.locator('.instrument-menu-part').count(), 0, 'one source part (a grand staff): no part list');
+    assert.deepEqual(await menu.locator('.instrument-chooser-option').allTextContents(), ['As written', 'Alto Sax', 'Tenor Sax', 'Bari Sax', 'Trumpet', 'Trombone', 'Flute', 'Clarinet', 'Violin', 'Viola', 'Cello', 'Double Bass'], 'As written, then the eleven embed instruments in order');
+    assert.equal(await menu.locator('.instrument-chooser.is-compact').count(), 1, 'the compact chooser');
+    assert.equal(await menu.locator('.instrument-chooser-as-written img').getAttribute('src'), pianoIcon, 'the button shows the part\'s own instrument (As written)');
+    assert.ok(await menu.evaluate(element => element.contains(document.activeElement)), 'focus moves into the menu');
+    // Cello (36-76 at intermediate): both staves in bass clef, every note already in range.
+    const cello = await redrawn(page, piano, () => menu.getByRole('button', { name: 'Cello', exact: true }).click());
+    assert.deepEqual([cello.clefs, cello.notes], [{ 1: 'F', 2: 'F' }, ['1:C5', '1:E5', '2:C3']], 'Cello: both staves in bass clef, in range');
+    assert.equal(await menu.getByRole('button', { name: 'Cello', exact: true }).getAttribute('aria-pressed'), 'true');
+    assert.equal(await button.locator('img').getAttribute('src'), await menu.locator('.instrument-chooser-option-cello img').getAttribute('src'), 'the button shows the cello');
+    // Beginner cello (36-64): the right hand's phrase is above it and moves down an octave.
+    const beginner = await redrawn(page, piano, () => menu.getByRole('button', { name: 'Beginner', exact: true }).click());
+    assert.deepEqual([beginner.clefs, beginner.notes], [{ 1: 'F', 2: 'F' }, ['1:C4', '1:E4', '2:C3']], 'Beginner cello: fitted to range');
+    assert.ok(beginner.transposed > 0, 'the moved phrase is highlighted');
+    // Escape closes the menu and returns focus to the button; an outside click closes it too.
+    await page.keyboard.press('Escape');
+    await menu.waitFor({ state: 'detached' });
+    assert.equal(await button.evaluate(element => element === document.activeElement), true, 'Escape returns focus to the button');
+    assert.equal(await button.getAttribute('aria-expanded'), 'false');
+    await button.click();
+    await menu.waitFor();
+    await page.mouse.click(5, 5);
+    await menu.waitFor({ state: 'detached' });
+    // Two source parts (grand-staff piano and violin): the parts first, then the chooser for the picked one.
+    await page.locator(`${duo} .instrument-switch`).click();
+    const duoMenu = page.locator(`${duo} .instrument-menu`);
+    await duoMenu.waitFor();
+    assert.deepEqual(await duoMenu.locator('.instrument-menu-part').allTextContents(), ['Piano', 'Violin'], 'both source parts listed, the grand staff once');
+    assert.equal(await duoMenu.locator('.instrument-menu-part').first().getAttribute('aria-pressed'), 'true', 'the first part is picked');
+    await duoMenu.getByRole('button', { name: 'Violin', exact: true }).first().click();
+    assert.equal(await duoMenu.locator('.instrument-menu-part').nth(1).getAttribute('aria-pressed'), 'true', 'Violin picked');
+    const viola = await redrawn(page, duo, () => duoMenu.locator('.instrument-chooser-option-viola').click());
+    assert.deepEqual(viola.clefs, { 1: 'G', 2: 'F', 3: 'C' }, 'Viola for the violin part only: alto clef, the piano unchanged');
+    assert.deepEqual(errors, []);
+    await context.close();
+  }
+  // 12. On a phone the switcher sits in the bottom toolbar.
+  {
+    const { context } = await hostContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const page = await context.newPage();
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto(`${server.url}/embed-switch`);
+    const piano = '.pepperscore.embed-switch-piano';
+    await rendered(page, piano);
+    await page.locator(`${piano} .ps-embed-toolbar .instrument-switch`).waitFor();
+    const [toolbar, root] = await Promise.all([rect(page, `${piano} .ps-embed-toolbar`), rect(page, piano)]);
+    assert.ok(inside(root, toolbar) && root.bottom - toolbar.bottom < 16, `the toolbar is at the snippet's bottom: ${JSON.stringify({ toolbar, root })}`);
+    await page.locator(`${piano} .instrument-switch`).click();
+    await page.locator(`${piano} .instrument-menu`).waitFor();
+    assert.ok(inside(await rect(page, 'body'), await rect(page, `${piano} .instrument-menu`)), 'the menu fits on the phone');
+    assert.deepEqual(errors, []);
+    await context.close();
+  }
+
+  console.log(`${engine}: embedding (chrome presets, callbacks, host hooks, ref, settings, sounds and asset base, style isolation, containment, unique ids, focused keyboard, focus ring, landmark names, shared engine, persist, missing assets, verovioBaseUrl, instrument switcher) passed`);
 } finally { await browser.close(); await server.close(); }

@@ -7,7 +7,7 @@ import { portraitBarLimit, renderScore, type MeasureGeometry, type RenderResult 
 import { partControlMetrics, type PartControlMetrics } from '../lib/part-controls';
 import { HEADER_CONTROL_GROUP, HEADER_CONTROLS, MOBILE_HEADER_BREAKPOINT, type HeaderControlId } from '../lib/header-controls';
 import { resolveChrome, type ChromePreset, type PepperScoreControls } from '../lib/chrome';
-import { clampStaveScale, deviceClass, ENDLESS_STAVE_SCALE, minimumDefaultStaveScale, STAVE_SCALE_MAX, STAVE_SCALE_MIN, STAVE_SCALE_STEP } from '../lib/stave-scale';
+import { clampStaveScale, DESKTOP_QUERY, deviceClass, ENDLESS_STAVE_SCALE, minimumDefaultStaveScale, STAVE_SCALE_MAX, STAVE_SCALE_MIN, STAVE_SCALE_STEP } from '../lib/stave-scale';
 import { buildFileState, clampBpm, MAX_BPM, MIN_BPM, textSource, type FileSource, type FileState, type ScoreView } from '../lib/file-state';
 import { sampleSource, type ScoreDb } from '../lib/score-db';
 import { ANNOTATION_SCALE, ANNOTATION_SIZE_PREF_KEYS, ANNOTATION_SIZES, BARS_PER_LINE_MAX, defaults, sanitizeSavedPrefs, settingsToPrefs, viewToMode, type AnnotationSize, type AnnotationSizePref, type PepperScoreSettings, type Prefs } from '../lib/prefs';
@@ -35,7 +35,7 @@ import { measureSeekSeconds, noteSeekSeconds } from '../lib/playback/clock-time'
 import { nearestNote, noteInBox } from '../lib/hit-test';
 import { canShowTab, hiddenReaderParts, type TabView } from '../lib/tab/tab-parts';
 import { sourcePartOf, switchablePart, type PartSwitch } from '../lib/instrument-view';
-import type { InstrumentId, Level } from '../lib/instrument-model';
+import { EMBED_INSTRUMENTS, type InstrumentId, type Level } from '../lib/instrument-model';
 import { applyHostSwitchChange, readerPitch, restoredScorePitch, SWITCH_TARGETS, switchDefaults, switchedSoundParts, switchedTimeline, switchedView, switchesFromSaved, switchesFromSettings, switchHighlights, withOctaves, withSound, withSourceSwitch, type InstrumentSettings } from '../lib/instrument-switch-state';
 
 /** Short key name for readouts: 'Gb', 'C#m'. */
@@ -353,6 +353,13 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const rootRef = useRef<HTMLDivElement>(null);
   const uid = useId();
   const panelId = `${uid}-more`;
+  /** The embed instrument switcher (minimal chrome): its menu, the source part it shows, and whether it sits in the phone toolbar. */
+  const [switchMenu, setSwitchMenu] = useState(false);
+  const [switchSourceId, setSwitchSourceId] = useState<string | null>(null);
+  const [phoneToolbar, setPhoneToolbar] = useState(false);
+  const switchButtonRef = useRef<HTMLButtonElement>(null);
+  const switchMenuRef = useRef<HTMLDivElement>(null);
+  const switchMenuId = `${uid}-instrument-menu`;
   const overhangId = `${uid}-overhang`;
   const [scoreWidth, setScoreWidth] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -848,6 +855,21 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     document.addEventListener('keydown', escape);
     return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape); };
   }, [moreOpen]);
+  // The embed switcher's menu closes on a click outside it (Escape is handled on the root, onRootKeyDown).
+  useEffect(() => {
+    if (!switchMenu) return;
+    const outside = (event: PointerEvent) => { const target = event.target as Node; if (!switchMenuRef.current?.contains(target) && !switchButtonRef.current?.contains(target)) setSwitchMenu(false); };
+    document.addEventListener('pointerdown', outside);
+    return () => document.removeEventListener('pointerdown', outside);
+  }, [switchMenu]);
+  // Phones and tablets (deviceClass compact) get the switcher in a bottom toolbar, within thumb reach; set after mount so SSR markup matches.
+  useEffect(() => {
+    const query = window.matchMedia?.(DESKTOP_QUERY);
+    const update = () => setPhoneToolbar(deviceClass() === 'compact');
+    update();
+    query?.addEventListener?.('change', update);
+    return () => query?.removeEventListener?.('change', update);
+  }, []);
   // Sizes come from the root, not the viewport: short/tiny/wide replace the old max-height/orientation media queries,
   // and a root wider than the header breakpoint closes the More panel.
   useEffect(() => {
@@ -1158,6 +1180,10 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   revealTargetRef.current = revealTarget;
   // Keys act on the focused reader only: the handler sits on the root, so another instance (or the host page) never turns this one.
   const onRootKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (switchMenu) {
+      if (event.key === 'Escape') { setSwitchMenu(false); switchButtonRef.current?.focus({ preventScroll: true }); }
+      return;
+    }
     if (event.key === 'Escape' && pickerPartId) { setPickerPartId(null); return; }
     if (event.key === 'Escape' && mixer) { setMixer(false); return; }
     if (pickerPartId || mixer || openDialog) return;
@@ -1669,7 +1695,25 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const heightMode = height === 'fill' ? 'fill' : height ? 'fixed' : natural ? 'natural' : 'auto';
   const compactLabel = playing || loadingAudio ? 'Stop playback' : 'Play score';
   const compactPlay = chrome.compactPlay && loaded && !clock ? <button type="button" className={`ps-compact-play icon-button ${loadingAudio ? 'is-loading' : ''}`} aria-label={compactLabel} title={compactLabel} onClick={() => { if (playing || loadingAudio) stop(true); else void play(); }}>{playing || loadingAudio ? <Square size={15} fill="currentColor"/> : <Play size={15} fill="currentColor"/>}</button> : null;
-  return <div ref={rootRef} className={`pepperscore ${className ?? ''}`.trim()} data-ps-height={heightMode} data-ps-clock={clock ? '' : undefined} data-ps-clickable={onElementClick ? '' : undefined} style={heightMode === 'fixed' ? { height } : undefined}
+  /** One row per switchable source part (a grand staff's staves share one), in score order. */
+  const switchSources = readerParts.filter((part, index) => switchablePart(part) && readerParts.findIndex(other => sourcePartOf(other) === sourcePartOf(part)) === index);
+  const switchSource = switchSources.find(part => sourcePartOf(part) === switchSourceId) ?? switchSources[0];
+  const embedSwitchShown = preset === 'minimal' && chrome.instrumentSwitch && loaded && Boolean(switchSource);
+  const embedSwitch = embedSwitchShown ? <button ref={switchButtonRef} type="button" className={`instrument-switch icon-button ${switchMenu ? 'is-open' : ''}`} aria-label="Choose your instrument" title="Choose your instrument" aria-haspopup="dialog" aria-expanded={switchMenu} aria-controls={switchMenu ? switchMenuId : undefined} onClick={() => setSwitchMenu(open => !open)}>
+    <img className="instrument-switch-icon" src={instrumentDetails(shownInstrument(switchSource)).icon} alt=""/>
+  </button> : null;
+  const switchState = switchSource && partSwitches[switchSource.id];
+  const embedSwitchMenu = embedSwitchShown && switchMenu ? <div ref={element => { switchMenuRef.current = element; focusOnMount(element); }} id={switchMenuId} tabIndex={-1} className={`instrument-menu ${phoneToolbar ? 'is-toolbar' : ''} ${chrome.header ? 'has-header' : ''}`} role="dialog" aria-label="Choose your instrument">
+    {switchSources.length > 1 && <div className="instrument-menu-parts" role="group" aria-label="Part">
+      {switchSources.map(part => <button key={part.id} type="button" className={`instrument-menu-part ${part === switchSource ? 'is-selected' : ''}`} aria-pressed={part === switchSource} onClick={() => setSwitchSourceId(sourcePartOf(part))}>
+        <img className="instrument-menu-part-icon" src={instrumentDetails(shownInstrument(part)).icon} alt=""/><span className="instrument-menu-part-name">{part.name}</span>
+      </button>)}
+    </div>}
+    <InstrumentChooser compact instruments={EMBED_INSTRUMENTS} current={switchState?.instrument} level={switchState?.level ?? hostSwitchDefaults().level} autoRange={switchState?.autoRange ?? hostSwitchDefaults().autoRange} asWrittenIcon={instrumentDetails(switchSource.instrument).icon}
+      onInstrument={id => setPartInstrument(sourcePartOf(switchSource), id)} onLevel={level => setPartLevel(sourcePartOf(switchSource), level)} onAutoRange={on => setPartAutoRange(sourcePartOf(switchSource), on)}/>
+  </div> : null;
+  const cornerSwitch = phoneToolbar ? null : embedSwitch;
+  return <div ref={rootRef} className={`pepperscore ${className ?? ''}`.trim()} data-ps-height={heightMode} data-ps-clock={clock ? '' : undefined} data-ps-clickable={onElementClick ? '' : undefined} data-ps-menu={embedSwitchMenu ? '' : undefined} style={heightMode === 'fixed' ? { height } : undefined}
     tabIndex={0} role="region" aria-label={ariaLabel || (loaded && score.title ? `Score: ${score.title}` : 'Score reader')} onKeyDown={onRootKeyDown}>
   <main className={`app-shell ${chrome.drawer ? '' : 'no-drawer'}`}>
     {chrome.header && <header className="topbar" aria-label="Playback transport">
@@ -1683,11 +1727,14 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
           <div id={panelId} className="header-secondary-panel" role="group" aria-label="Secondary controls">{secondaryControls}</div>
         </div>}
       </div>
+      {cornerSwitch && <div className={`ps-corner-controls ${compactPlay ? 'has-compact-play' : ''}`}>{cornerSwitch}</div>}
       {compactPlay}
     </header>}
     {/* Shown once a score has loaded: an empty or failed snippet has nothing to play. With a header (minimal + controls)
         it sits in the header's right end, above the sticky header rather than under it. */}
+    {!chrome.header && cornerSwitch && <div className={`ps-corner-controls ${compactPlay ? 'has-compact-play' : ''}`}>{cornerSwitch}</div>}
     {!chrome.header && compactPlay}
+    {embedSwitchMenu}
 
     {chrome.mixer && mixer && <div className="mixer-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setMixer(false); }}>
       <section ref={focusOnMount} tabIndex={-1} className="mixer-panel" role="dialog" aria-modal="true" aria-label="Track mixer">
@@ -1760,6 +1807,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
       </div>
       {chrome.zoom && <div className="page-controls"><button aria-label="Previous view" onClick={() => turn(-1)}><ChevronLeft size={18}/></button><span>{prefs.mode === 'portrait' ? 'SCROLL TO READ' : 'SWIPE TO READ'}</span><button aria-label="Next view" onClick={() => turn(1)}><ChevronRight size={18}/></button></div>}
     </section>
+    {phoneToolbar && embedSwitch && <div className="ps-embed-toolbar" role="toolbar" aria-label="Score controls">{embedSwitch}</div>}
 
     {chrome.drawer && <>
     <button className={`drawer-handle ${drawer ? 'is-open' : ''}`} onClick={() => setDrawer(!drawer)} aria-expanded={drawer}><span className="handle-grip"/><span>{drawer ? 'Close options' : 'Options'}</span><ChevronDown size={16}/></button>
