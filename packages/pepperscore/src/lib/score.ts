@@ -39,7 +39,13 @@ export type Part = { id: string;
   tabOf?: string };
 export type Score = { title: string; subtitle?: string; composer?: string; credits?: string[]; source: string; tempo: number; beats: number; beatType: number; key: number; keyMode?: KeyMode; parts: Part[];
   /** Set on a transposed or flipped view of a score (transpose.ts `scoreForView`). */
-  pitchView?: import('./transpose').PitchView; document?: SourceDocument };
+  pitchView?: import('./transpose').PitchView;
+  /**
+   * Set on an instrument-switched view (instrument-view.ts `applyInstrumentView`): the MEI pass's switched staves by
+   * part id, and the Score the switch was applied to (for the parts' keys as written before the switch).
+   */
+  instrumentView?: { staves: Record<string, import('./instrument-view').StaffSwitch>; base: Score };
+  document?: SourceDocument };
 export type InstrumentId = ModelInstrumentId;
 export const GM_FAMILIES = ['Keyboard', 'Guitar', 'Voice', 'Percussion', 'Drums', 'Woodwinds', 'Brass', 'Strings', 'FX / Other'] as const;
 export type GmFamily = typeof GM_FAMILIES[number];

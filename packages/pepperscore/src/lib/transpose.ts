@@ -119,29 +119,39 @@ export function scoreForView(score: Score, view: ScorePitchView, semitones: numb
 }
 
 /**
- * The worker's spelling plan for a Score view (`scoreForView`'s result) with its staff numbers: the same interval,
- * flip, per-staff profiles and moved staves, and which staves are percussion (never given a key signature).
+ * The worker's spelling plan for a Score view (`scoreForView`'s result, optionally instrument-switched by
+ * `applyInstrumentView`) with its staff numbers: the same interval, flip, per-staff profiles and moved staves, which
+ * staves are percussion (never given a key signature), and the switched staves' shift, clef and octave moves.
  */
 export function spellingSpecFor(score: Score, staffOf: Map<string, string>): SpellingSpec {
   const pitchView = score.pitchView;
   const view = pitchView?.view ?? 'written';
   const staves: SpellingSpec['staves'] = {};
+  // The parts as written before the view (and the switch): the view's source, else the Score the switch was applied to.
+  const original = pitchView?.source ?? score.instrumentView?.base;
   for (const part of score.parts) {
     const n = staffOf.get(part.id);
     if (!n) continue;
     if (part.clef === 'percussion') { staves[n] = { profile: 'neutral', moved: false, percussion: true }; continue; }
     // The part's keys in this view before the transposition (its written keys, or sounding keys at concert pitch).
-    const source = pitchView?.source.parts.find(item => item.id === part.id) ?? part;
+    const source = original?.parts.find(item => item.id === part.id) ?? part;
+    // A switched staff moves by the switch's shift from the baseline (the source's written pitch); it replaces the
+    // concert view's own move, which it already includes. Its keys are the source's moved by the same interval.
+    const switched = score.instrumentView?.staves[part.id];
+    const switchShift = switched?.clef ? { diatonic: switched.shift[0], chromatic: switched.shift[1] } : undefined;
     const keys: [number, number, KeyMode][] = [];
     source.measures.forEach((measure, index) => {
-      const fifths = (measure.key ?? source.key ?? score.key) + intervalFifths(viewInterval(source, measure, view));
+      const fifths = (measure.key ?? source.key ?? score.key) + intervalFifths(switchShift ?? viewInterval(source, measure, view));
       const mode = measure.keyMode ?? source.keyMode ?? score.keyMode ?? 'major';
       const last = keys.at(-1);
       if (!last || last[1] !== fifths || last[2] !== mode) keys.push([index, fifths, mode]);
     });
-    const moved = !!pitchView?.viewMoved.includes(part.id);
-    const shift = moved ? viewInterval(source, source.measures[0], view) : undefined;
-    staves[n] = { profile: viewProfile(part, view), moved, ...(keys.length ? { keys } : {}), ...(shift?.chromatic ? { shift: [shift.diatonic, shift.chromatic] as [number, number] } : {}) };
+    const moved = !!pitchView?.viewMoved.includes(part.id) || !!switchShift?.chromatic || !!switchShift?.diatonic;
+    const shift = switchShift ?? (moved ? viewInterval(source, source.measures[0], view) : undefined);
+    const octaves = switched && Object.keys(switched.octaves).length ? { octaves: switched.octaves } : {};
+    staves[n] = { profile: viewProfile(part, view), moved, ...(keys.length ? { keys } : {}),
+      ...(shift?.chromatic || shift?.diatonic ? { shift: [shift.diatonic, shift.chromatic] as [number, number] } : {}),
+      ...octaves, ...(switched?.clef ? { clef: switched.clef } : {}) };
   }
   return { interval: pitchView?.interval ?? '', semitones: pitchView?.semitones ?? 0, concert: !!pitchView?.viewMoved.length, flip: !!pitchView?.flip, staves };
 }

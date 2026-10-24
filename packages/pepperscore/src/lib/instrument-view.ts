@@ -173,5 +173,7 @@ export function applyInstrumentView(score: Score, switches: Record<string, PartS
   });
   // A TAB staff doubling a switched or octave-moved part (every such part has a `staves` entry) no longer matches its frets.
   const hiddenTab = score.parts.filter(part => part.tabOf && staves[part.tabOf]).map(part => part.id);
-  return { score: { ...score, parts }, moved, outOfRange, staves, hiddenTab };
+  // The renderer reads the staves from the Score (transpose.ts `spellingSpecFor`), so the engraving follows this view.
+  const instrumentView = Object.keys(staves).length ? { staves, base: score } : undefined;
+  return { score: { ...score, parts, instrumentView }, moved, outOfRange, staves, hiddenTab };
 }
