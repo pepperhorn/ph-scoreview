@@ -31,7 +31,7 @@ assert.equal(resolveChrome('full', { tabToggle: false }).tabToggle, false, 'full
 {
   const prefsSource = readFileSync(new URL('../packages/pepperscore/src/lib/prefs.ts', import.meta.url), 'utf8');
   const settingsType = prefsSource.slice(prefsSource.indexOf('export type PepperScoreSettings'), prefsSource.indexOf('}>;', prefsSource.indexOf('export type PepperScoreSettings')));
-  for (const key of ['instrument: InstrumentId', 'instruments: Record<string, InstrumentId>', 'rangeLevel: Level', 'autoRange: boolean']) assert.ok(settingsType.includes(key), `PepperScoreSettings has ${key}`);
+  for (const key of ['instrument: SwitchInstrumentId', 'instruments: Record<string, SwitchInstrumentId>', 'rangeLevel: Level', 'autoRange: boolean']) assert.ok(settingsType.includes(key), `PepperScoreSettings has ${key}`);
   const chromeSource = readFileSync(new URL('../packages/pepperscore/src/lib/chrome.ts', import.meta.url), 'utf8');
   const controlsType = chromeSource.slice(chromeSource.indexOf('export type PepperScoreControls'), chromeSource.indexOf('\n', chromeSource.indexOf('export type PepperScoreControls')));
   for (const key of ["'instrumentSwitch'", "'octaveTool'"]) assert.ok(controlsType.includes(key), `PepperScoreControls has ${key}`);
@@ -47,7 +47,12 @@ assert.equal(resolveChrome('full', { tabToggle: false }).tabToggle, false, 'full
   assert.deepEqual(switchSchema.properties.sound?.properties.instrument.enum, [...INSTRUMENT_IDS], 'switch.sound.instrument lists INSTRUMENT_IDS (a GM sound\'s icon id)');
   assert.deepEqual(switchSchema.properties.sound.properties.gmSoundfont, partSchema.properties.gmSoundfont, 'switch.sound.gmSoundfont matches parts[].gmSoundfont');
   const index = readFileSync(new URL('../packages/pepperscore/src/index.ts', import.meta.url), 'utf8');
-  assert.match(index, /export type \{[^}]*\bInstrumentId\b[^}]*\bLevel\b[^}]*\} from '\.\/lib\/instrument-model'/, 'index.ts exports InstrumentId and Level');
+  assert.match(index, /export type \{[^}]*\bInstrumentId\b[^}]*\bLevel as RangeLevel\b[^}]*\bSwitchInstrumentId\b[^}]*\} from '\.\/lib\/instrument-model'/, 'index.ts exports InstrumentId, RangeLevel and SwitchInstrumentId');
+  assert.doesNotMatch(index, /\bLevel\b(?! as RangeLevel)/, 'index.ts exports no bare Level');
+  const modelSource = readFileSync(new URL('../packages/pepperscore/src/lib/instrument-model.ts', import.meta.url), 'utf8');
+  assert.match(modelSource, /export type SwitchInstrumentId = Exclude<InstrumentId, 'drum-kit'>;/, 'SwitchInstrumentId excludes the drum kit');
+  const readyType = readFileSync(new URL('../packages/pepperscore/src/components/PepperScore.tsx', import.meta.url), 'utf8');
+  assert.match(readyType, /parts: Array<\{ id: string; name: string; sourcePart: number; switchable: boolean \}>/, 'onReady parts carry sourcePart and switchable');
 }
 
 assert.deepEqual(settingsToPrefs({ noteNames: true, chordSymbols: true, inferChords: true, beatCounts: true, subdivisions: false, musicFont: 'Petaluma', staveFont: 'Serif', barsPerLine: 3, zoom: 1.5, semitones: 2, concert: true, overlap: 2 }),

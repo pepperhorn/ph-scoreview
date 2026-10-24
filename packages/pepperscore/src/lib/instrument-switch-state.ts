@@ -2,7 +2,7 @@
 // records to per-staff-part switches, the pitch view rule for concert-basis scores, and what playback and the
 // highlights read from a switched view. Pure; PepperScore.tsx holds the state.
 import { isLevel, isSwitchTarget, type PartState } from './file-state';
-import { INSTRUMENT_IDS, INSTRUMENTS, type InstrumentId, type Level } from './instrument-model';
+import { INSTRUMENT_IDS, INSTRUMENTS, type InstrumentId, type Level, type SwitchInstrumentId } from './instrument-model';
 import { applyInstrumentView, sourcePartOf, switchablePart, type InstrumentViewResult, type PartSound, type PartSwitch } from './instrument-view';
 import type { BaseTimeline } from './playback/timeline';
 import { gmProgramForSoundfont, type Part, type Score } from './score';
@@ -11,11 +11,10 @@ import { soundingMidi } from './transpose';
 export const DEFAULT_RANGE_LEVEL: Level = 'intermediate';
 /** The instruments a pitched part can be switched to: the model's, in its order, without the drum kit. */
 export const SWITCH_TARGETS: InstrumentId[] = INSTRUMENT_IDS.filter(isSwitchTarget);
-/** The instrument keys of `PepperScoreSettings`. */
-export type InstrumentSettings = { instrument?: InstrumentId; instruments?: Record<string, InstrumentId>; rangeLevel?: Level; autoRange?: boolean };
+/** The instrument keys of `PepperScoreSettings` (prefs.ts documents them). */
+export type InstrumentSettings = { instrument?: SwitchInstrumentId; instruments?: Record<string, SwitchInstrumentId>; rangeLevel?: Level; autoRange?: boolean };
 export type SwitchDefaults = { level: Level; autoRange: boolean };
 type Switches = Record<string, PartSwitch>;
-
 
 /** Source parts in score order, numbered from 1 by the host (TAB doublings excluded), with their staff parts. */
 export function sourcePartsOf(score: Score): { id: string; parts: Part[]; switchable: boolean }[] {
@@ -29,14 +28,34 @@ export const switchDefaults = (settings: InstrumentSettings): SwitchDefaults => 
   autoRange: typeof settings.autoRange === 'boolean' ? settings.autoRange : true,
 });
 
-/** The host's instrument per source part id: `instrument` for the first switchable source part, `instruments` (1-based numbers) over it. */
+/**
+ * The parts `onReady` lists (every staff, TAB doublings excluded), each with its 1-based source part number (the
+ * `settings.instruments` key; a grand staff's staves share one) and whether the switch applies to it.
+ */
+export function readerPartsInfo(score: Score): { id: string; name: string; sourcePart: number; switchable: boolean }[] {
+  return sourcePartsOf(score).flatMap((source, index) => source.parts.map(part => ({ id: part.id, name: part.name, sourcePart: index + 1, switchable: switchablePart(part) })));
+}
+
+/**
+ * The source part a `settings.instruments` key names: digits are the 1-based source part number, anything else a
+ * part id (`onReady`'s `parts[].id`, a staff naming its whole source part) or a source part id.
+ */
+function sourceForKey(sources: ReturnType<typeof sourcePartsOf>, key: string) {
+  if (/^\d+$/.test(key)) return sources[Number(key) - 1];
+  return sources.find(source => source.id === key || source.parts.some(part => part.id === key));
+}
+
+/**
+ * The host's instrument per source part id: `instrument` for the first switchable source part, `instruments` over it
+ * (keyed by source part number or part id; for one source part, a later key in the object wins).
+ */
 function chosenInstruments(score: Score, settings: InstrumentSettings): Map<string, InstrumentId> {
   const sources = sourcePartsOf(score);
   const chosen = new Map<string, InstrumentId>();
   const first = sources.find(source => source.switchable);
   if (first && isSwitchTarget(settings.instrument)) chosen.set(first.id, settings.instrument);
   for (const [key, id] of Object.entries(settings.instruments ?? {})) {
-    const source = /^\d+$/.test(key) ? sources[Number(key) - 1] : undefined;
+    const source = sourceForKey(sources, key);
     if (source?.switchable && isSwitchTarget(id)) chosen.set(source.id, id);
   }
   return chosen;
@@ -46,8 +65,9 @@ function chosenInstruments(score: Score, settings: InstrumentSettings): Map<stri
 const plain = (entry: PartSwitch, defaults: SwitchDefaults) => !entry.instrument && !entry.sound && !Object.keys(entry.octaves).length && entry.level === defaults.level && entry.autoRange === defaults.autoRange;
 
 /**
- * Change one source part's switch on every staff part it has (a grand staff switches together). Choosing an
- * instrument (or As written) drops a picked sound: the instrument's main sound plays again.
+ * Change one source part's switch on every staff part it has (a grand staff switches together). Choosing another
+ * instrument (or As written) drops a picked sound: the instrument's main sound plays again. Choosing the current one
+ * keeps it.
  */
 export function withSourceSwitch(score: Score, switches: Switches, sourcePart: string, patch: Partial<Omit<PartSwitch, 'octaves'>>, defaults: SwitchDefaults): Switches {
   if (patch.instrument !== undefined && !isSwitchTarget(patch.instrument)) return switches;
@@ -55,7 +75,7 @@ export function withSourceSwitch(score: Score, switches: Switches, sourcePart: s
   for (const part of score.parts) {
     if (sourcePartOf(part) !== sourcePart || part.tabOf || !switchablePart(part)) continue;
     const entry: PartSwitch = { ...(out[part.id] ?? { instrument: undefined, ...defaults, octaves: {} }), ...patch };
-    if ('instrument' in patch) delete entry.sound;
+    if ('instrument' in patch && patch.instrument !== out[part.id]?.instrument) delete entry.sound;
     if (plain(entry, defaults)) delete out[part.id]; else out[part.id] = entry;
   }
   return out;
@@ -105,8 +125,9 @@ export function applyHostSwitchChange(score: Score, current: Switches, previous:
  * Switches restored from a saved record's parts (already validated by file-state.ts). The staves of a source part
  * switch together, so they are normalised to its first staff with a saved switch (instrument, level, fit): a staff
  * whose switch differs or was dropped takes it, keeping its own octave moves (and its sound when the instrument matches).
+ * A staff left as written with the defaults and no octave moves gets no entry, as `withSourceSwitch` would leave it.
  */
-export function switchesFromSaved(score: Score, parts: Record<string, PartState>): Switches {
+export function switchesFromSaved(score: Score, parts: Record<string, PartState>, defaults: SwitchDefaults = switchDefaults({})): Switches {
   const out: Switches = {};
   for (const source of sourcePartsOf(score)) {
     const staves = source.parts.filter(switchablePart);
@@ -115,7 +136,8 @@ export function switchesFromSaved(score: Score, parts: Record<string, PartState>
     for (const part of staves) {
       const saved = parts[part.id]?.switch;
       const sound = saved?.sound && saved.instrument === lead.instrument && lead.instrument ? { sound: { ...saved.sound } } : {};
-      out[part.id] = { instrument: lead.instrument, level: lead.level, autoRange: lead.autoRange, octaves: { ...saved?.octaves }, ...sound };
+      const entry: PartSwitch = { instrument: lead.instrument, level: lead.level, autoRange: lead.autoRange, octaves: { ...saved?.octaves }, ...sound };
+      if (!plain(entry, defaults)) out[part.id] = entry;
     }
   }
   return out;

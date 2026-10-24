@@ -199,7 +199,7 @@
 .pepperscore .instrument-chooser.is-compact .instrument-chooser-option{min-height:34px;flex-direction:row;justify-content:flex-start;gap:9px;padding:5px 9px;border-color:transparent;text-align:left}
 .pepperscore .instrument-chooser.is-compact .instrument-chooser-icon{width:20px;height:20px}
 .pepperscore .instrument-chooser.is-compact .instrument-chooser-settings{flex-direction:column;align-items:stretch;padding-top:8px}
-@container pepperscore (max-width:580px){.pepperscore .instrument-chooser-options{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}.pepperscore .instrument-chooser-option{min-height:64px;padding:5px 2px;font-size:9px}.pepperscore .instrument-chooser-icon{width:26px;height:26px}.pepperscore .instrument-level button{padding:5px 7px;font-size:10px}}
+@container pepperscore (max-width:580px){.pepperscore .instrument-chooser-options{gap:5px}.pepperscore .instrument-chooser-option{min-height:64px;padding:5px 2px;font-size:9px}.pepperscore .instrument-chooser-icon{width:26px;height:26px}.pepperscore .instrument-level button{padding:5px 7px;font-size:10px}}
 .pepperscore[data-ps-short] .instrument-chooser-option{min-height:48px;gap:2px}
 .pepperscore[data-ps-short] .instrument-chooser-icon{width:22px;height:22px}
 
