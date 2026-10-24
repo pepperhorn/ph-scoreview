@@ -63,6 +63,21 @@ describe('instrument view', () => {
     expect(names(out)).toEqual(['C4', 'D4', 'E4', 'F4']);
     expect(sounding(out)).toEqual([60, 62, 64, 65]);
     expect(out.instrument).toBe('trumpet');
+    // A transposing source in the concert view: clarinet written D4 E4 sounds C4 D4, shown so on trumpet.
+    const clarinet = score(part('K', 'a:D4 b:E4', CLARINET));
+    const concert = applyInstrumentView(scoreForView(clarinet, 'concert', 0), { K: sw('trumpet') }, 'concert');
+    const outK = concert.score.parts[0];
+    expect(names(outK)).toEqual(['C4', 'D4']);
+    expect(sounding(outK)).toEqual([60, 62]);
+    expect(outK.transposition).toBeUndefined();
+    expect(concert.staves.K.shift).toEqual([-1, -2]);
+  });
+
+  it('switch keeps the source spelling', () => {
+    const source = score(part('P', 'a:Bb4 b:Eb5 c:C#5'));
+    expect(names(applyInstrumentView(source, { P: sw('flute') }, 'written').score.parts[0])).toEqual(['Bb4', 'Eb5', 'C#5']);
+    expect(names(applyInstrumentView(source, { P: sw('violin') }, 'written').score.parts[0])).toEqual(['Bb4', 'Eb5', 'C#5']);
+    expect(names(applyInstrumentView(source, { P: sw('trumpet') }, 'written').score.parts[0])).toEqual(['C5', 'F5', 'D#5']);
   });
 
   it('phrase below alto beginner range moves up and is listed in moved', () => {
@@ -81,6 +96,8 @@ describe('instrument view', () => {
     const result = applyInstrumentView(score(part('P', 'a:A3 r b:D4~ | c:D4 d:C3')), { P: sw('alto-saxophone', 'beginner') }, 'written');
     expect(result.moved).toEqual(['b', 'c', 'd']);
     expect(sounding(result.score.parts[0])).toEqual([57, 74, 74, 60]);
+    // The tied D4 moved up to D5 (74) is above alto beginner's top (69): still out, and flagged.
+    expect(result.outOfRange).toEqual(['b', 'c']);
   });
 
   it('transposing source part: B-flat clarinet to alto sax uses the clarinet sounding pitch', () => {
@@ -136,6 +153,8 @@ describe('instrument view', () => {
     const tab = part('T', 'a:E3', { clef: 'tab', instrument: 'guitar', tab: true, tabOf: 'G' });
     expect(applyInstrumentView(score(guitar, tab), { G: sw('cello') }, 'written').hiddenTab).toEqual(['T']);
     expect(applyInstrumentView(score(guitar, tab), { G: sw(undefined) }, 'written').hiddenTab).toEqual([]);
+    // An unswitched guitar with a reader's octave move: the TAB frets no longer match, so it is hidden too.
+    expect(applyInstrumentView(score(guitar, tab), { G: sw(undefined, 'intermediate', { a: 12 }) }, 'written').hiddenTab).toEqual(['T']);
   });
 
   it('playback invariant: soundingMidi of every output note is the judged pitch plus its shift', () => {

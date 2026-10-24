@@ -1,7 +1,7 @@
 // The instrument switch's view of a score: a pure Score-model transform run after `scoreForView`. Each switched part
 // is fitted at its final sounding pitch (after `semitones` and the key flip) and rewritten as the target instrument,
 // so playback, note names and the timeline read what the MEI pass engraves from the same result (`staves`).
-import { INSTRUMENTS as MODEL, writtenKeyFifths, writtenPitch, type InstrumentClef, type InstrumentId, type Level, type Transposition as ModelTransposition } from './instrument-model';
+import { INSTRUMENTS as MODEL, pitchMidi, transposePitchSpelled, writtenKeyFifths, writtenPitch, type InstrumentClef, type InstrumentId, type Level, type SpelledPitch, type Transposition as ModelTransposition } from './instrument-model';
 import { applyOverrides, joinRuns, planShifts, tieChainOf, type FitEvent, type Shift } from './range-fit-core';
 import { gmProgramForNumber, type Measure, type Part, type Pitch, type Score, type ScoreNote } from './score';
 import { keyFromFifths, spellChordSymbol } from './spelling';
@@ -92,8 +92,6 @@ export function applyInstrumentView(score: Score, switches: Record<string, PartS
   const moved: string[] = [];
   const outOfRange: string[] = [];
   const staves: Record<string, StaffSwitch> = {};
-  const switched = (id: string) => { const part = score.parts.find(item => item.id === id); return !!part && switchablePart(part) && !!switches[id]?.instrument; };
-  const hiddenTab = score.parts.filter(part => part.tabOf && switched(part.tabOf)).map(part => part.id);
   const viewMoved = new Set(score.pitchView?.view === 'concert' ? score.pitchView.viewMoved : []);
 
   const parts = score.parts.map(part => {
@@ -125,6 +123,8 @@ export function applyInstrumentView(score: Score, switches: Record<string, PartS
       if (out && (target || shift)) outOfRange.push(id);
     }
 
+    // Known limitation: the MEI shift is the first measure's; a mid-score `measure.transposition` change in a switched
+    // part is not reflected in `StaffSwitch.shift` (the Score pitches below do follow it per measure).
     const own = sourceInterval(part, part.measures[0]);
     if (!target) {
       if (!Object.keys(octaves).length) return part;
@@ -154,9 +154,14 @@ export function applyInstrumentView(score: Score, switches: Record<string, PartS
         const shift = shifts[note.id] ?? 0;
         return { ...note, transposition: undefined,
           pitches: note.pitches.map(p => {
-            if (p.unpitched || note.rest) return p;
-            const spelled = writtenPitch(judged(measure, p) + shift, shown, fifths);
-            return { ...p, ...spelled, midi: judged(measure, p) + shift + shown.semitones, accidental: undefined, cautionary: undefined };
+            if (p.unpitched) return p;
+            // The source spelling moved by the interval (view pitch -> sounding -> target written, plus the octave);
+            // spelled afresh from MIDI only where that passes a double accidental or the source spelling is unusable.
+            const midi = judged(measure, p) + shift + shown.semitones;
+            const interval = { diatonic: source.diatonic + shown.diatonic + (shift / 12) * 7, semitones: source.chromatic + shown.semitones + shift };
+            const carried = transposePitchSpelled({ step: p.step as SpelledPitch['step'], octave: p.octave, alter: p.alter }, interval, fifths).pitch;
+            const spelled = pitchMidi(carried) === midi ? carried : writtenPitch(judged(measure, p) + shift, shown, fifths);
+            return { ...p, ...spelled, midi, accidental: undefined, cautionary: undefined };
           }),
           chordSymbol: note.chordSymbol ? spellChordSymbol(moveChordSymbol(note.chordSymbol, symbolMove), keyFromFifths(foldFifths(fifths), mode)) : undefined,
         };
@@ -166,5 +171,7 @@ export function applyInstrumentView(score: Score, switches: Record<string, PartS
       pitchBasis: 'written' as const, transposition: written ? partTransposition(target.transposition) : undefined,
       key: measures[0]?.key ?? part.key, keyMode: measures[0]?.keyMode ?? part.keyMode, measures };
   });
+  // A TAB staff doubling a switched or octave-moved part (every such part has a `staves` entry) no longer matches its frets.
+  const hiddenTab = score.parts.filter(part => part.tabOf && staves[part.tabOf]).map(part => part.id);
   return { score: { ...score, parts }, moved, outOfRange, staves, hiddenTab };
 }
