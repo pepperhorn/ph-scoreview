@@ -7,11 +7,11 @@ import { readFileSync } from 'node:fs';
 import { ANNOTATION_SCALE, ANNOTATION_SIZES, defaults, sanitizeSavedPrefs, settingsToPrefs, viewToMode } from '../packages/pepperscore/src/lib/prefs.ts';
 import { nearestNote, noteInBox } from '../packages/pepperscore/src/lib/hit-test.ts';
 
-const all = { header: true, transport: true, viewToggle: true, openFile: true, mixer: true, drawer: true, zoom: true, tabToggle: true, compactPlay: false, playhead: true, partControls: true, audio: true };
+const all = { header: true, transport: true, viewToggle: true, openFile: true, mixer: true, drawer: true, zoom: true, tabToggle: true, instrumentSwitch: true, octaveTool: true, compactPlay: false, playhead: true, partControls: true, audio: true };
 assert.deepEqual(resolveChrome(), all, 'full is the default');
 assert.deepEqual(resolveChrome('full'), all);
-assert.deepEqual(resolveChrome('minimal'), { header: false, transport: false, viewToggle: false, openFile: false, mixer: false, drawer: false, zoom: false, tabToggle: false, compactPlay: true, playhead: true, partControls: false, audio: true });
-assert.deepEqual(resolveChrome('none'), { header: false, transport: false, viewToggle: false, openFile: false, mixer: false, drawer: false, zoom: false, tabToggle: false, compactPlay: false, playhead: false, partControls: false, audio: false });
+assert.deepEqual(resolveChrome('minimal'), { header: false, transport: false, viewToggle: false, openFile: false, mixer: false, drawer: false, zoom: false, tabToggle: false, instrumentSwitch: false, octaveTool: false, compactPlay: true, playhead: true, partControls: false, audio: true });
+assert.deepEqual(resolveChrome('none'), { header: false, transport: false, viewToggle: false, openFile: false, mixer: false, drawer: false, zoom: false, tabToggle: false, instrumentSwitch: false, octaveTool: false, compactPlay: false, playhead: false, partControls: false, audio: false });
 assert.deepEqual(resolveChrome('full', { mixer: false, openFile: false }), { ...all, mixer: false, openFile: false, partControls: false });
 const minimalWithToggle = resolveChrome('minimal', { viewToggle: true });
 assert.equal(minimalWithToggle.header, true); assert.equal(minimalWithToggle.compactPlay, true);
@@ -21,6 +21,32 @@ assert.equal(resolveChrome('none', { transport: true }).audio, true, 'a host can
 const minimalWithTab = resolveChrome('minimal', { tabToggle: true });
 assert.equal(minimalWithTab.tabToggle, true); assert.equal(minimalWithTab.header, true, 'the TAB switch alone shows the header');
 assert.equal(resolveChrome('full', { tabToggle: false }).tabToggle, false, 'full can hide the TAB switch');
+{
+  const hidden = resolveChrome('full', { instrumentSwitch: false, octaveTool: false });
+  assert.deepEqual([hidden.instrumentSwitch, hidden.octaveTool], [false, false], 'full can hide the instrument switcher and the octave tool');
+  const shown = resolveChrome('minimal', { instrumentSwitch: true, octaveTool: true });
+  assert.deepEqual([shown.instrumentSwitch, shown.octaveTool], [true, true], 'minimal can show them');
+}
+// Instrument switch settings and controls are public (type text), and the saved switch schema lists the model's ids and levels.
+{
+  const prefsSource = readFileSync(new URL('../packages/pepperscore/src/lib/prefs.ts', import.meta.url), 'utf8');
+  const settingsType = prefsSource.slice(prefsSource.indexOf('export type PepperScoreSettings'), prefsSource.indexOf('}>;', prefsSource.indexOf('export type PepperScoreSettings')));
+  for (const key of ['instrument: InstrumentId', 'instruments: Record<string, InstrumentId>', 'rangeLevel: Level', 'autoRange: boolean']) assert.ok(settingsType.includes(key), `PepperScoreSettings has ${key}`);
+  const chromeSource = readFileSync(new URL('../packages/pepperscore/src/lib/chrome.ts', import.meta.url), 'utf8');
+  const controlsType = chromeSource.slice(chromeSource.indexOf('export type PepperScoreControls'), chromeSource.indexOf('\n', chromeSource.indexOf('export type PepperScoreControls')));
+  for (const key of ["'instrumentSwitch'", "'octaveTool'"]) assert.ok(controlsType.includes(key), `PepperScoreControls has ${key}`);
+  assert.deepEqual(settingsToPrefs({ instrument: 'alto-saxophone', instruments: { 1: 'flute' }, rangeLevel: 'beginner', autoRange: false }), {}, 'instrument settings are per-part state, not prefs');
+  const { INSTRUMENT_IDS, LEVELS } = await import('../packages/pepperscore/src/lib/instrument-model.ts');
+  const partSchema = JSON.parse(readFileSync(new URL('../packages/pepperscore/src/lib/file-state.schema.json', import.meta.url), 'utf8')).properties.parts.additionalProperties;
+  const switchSchema = partSchema.properties.switch;
+  assert.ok(switchSchema && !partSchema.required.includes('switch'), 'parts[].switch is optional in the schema');
+  assert.deepEqual(switchSchema.properties.instrument.enum, [...INSTRUMENT_IDS], 'switch.instrument lists INSTRUMENT_IDS');
+  assert.deepEqual(switchSchema.properties.level.enum, [...LEVELS], 'switch.level lists LEVELS');
+  assert.deepEqual(switchSchema.properties.octaves.additionalProperties.enum, [12, -12], 'octave moves are ±12');
+  assert.equal(switchSchema.additionalProperties, false);
+  const index = readFileSync(new URL('../packages/pepperscore/src/index.ts', import.meta.url), 'utf8');
+  assert.match(index, /export type \{[^}]*\bInstrumentId\b[^}]*\bLevel\b[^}]*\} from '\.\/lib\/instrument-model'/, 'index.ts exports InstrumentId and Level');
+}
 
 assert.deepEqual(settingsToPrefs({ noteNames: true, chordSymbols: true, inferChords: true, beatCounts: true, subdivisions: false, musicFont: 'Petaluma', staveFont: 'Serif', barsPerLine: 3, zoom: 1.5, semitones: 2, concert: true, overlap: 2 }),
   { names: true, chordSymbols: true, inferChordSymbols: true, counts: true, subdivisions: false, notationFont: 'Petaluma', annotationFont: 'Serif', barsPerLine: 3, zoom: 1.5, semitones: 2, scorePitch: 'concert', overlap: 2 });

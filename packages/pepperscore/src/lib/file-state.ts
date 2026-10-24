@@ -2,6 +2,8 @@ import { isGmSoundfont, type InstrumentId, type Score } from './score';
 import { STAVE_SCALE_FLOOR, STAVE_SCALE_MAX, type DeviceClass } from './stave-scale';
 import { ANNOTATION_SIZE_PREF_KEYS, BARS_PER_LINE_MAX, BARS_PER_LINE_MIN, clampBpm, clampCapo, isAnnotationSize, MAX_BPM, MIN_BPM, STANDARD_TAB_TUNING, validTabTuning, validTabView, type AnnotationSize } from './prefs';
 import type { TabView } from './tab/tab-parts';
+import type { PartSwitch } from './instrument-view';
+import { INSTRUMENTS, INSTRUMENT_IDS, LEVELS, type Level } from './instrument-model';
 
 export type FileSource = { name: string; size: number; sha256: string; format: string };
 export type FileSettings = {
@@ -21,7 +23,11 @@ export type LateSettingKey = 'tabView' | 'tabTuning' | 'capo';
 export type SavedSettings = Omit<FileSettings, LateSettingKey> & Partial<Pick<FileSettings, LateSettingKey>>;
 /** Saved view: an absolute stave scale and the device class it was chosen on (see stave-scale.ts). */
 export type ScoreView = { zoom: number; zoomDevice: DeviceClass };
-export type PartState = { visible: boolean; instrument: InstrumentId; gmSoundfont?: string; volume?: number };
+/**
+ * `switch`: the reader's instrument switch of this staff part (instrument-view.ts `PartSwitch`; `octaves` by
+ * `ScoreNote.id`). Added after version 2 shipped: optional, and an unusable one is dropped (the part opens as written).
+ */
+export type PartState = { visible: boolean; instrument: InstrumentId; gmSoundfont?: string; volume?: number; switch?: SavedSwitch };
 /** Per-score record (schema: file-state.schema.json). Only settings and hashes, never score content. */
 export type FileState = {
   version: 2;
@@ -138,6 +144,24 @@ export function textSource(format: string, text: string, name: string): FileSour
   return { name, size: bytes.length - format.length - 1, sha256: sha256Hex(bytes), format };
 }
 
+/** A part's switch as saved in its record (`PartState.switch`). */
+export type SavedSwitch = { instrument?: InstrumentId; level: Level; autoRange: boolean; octaves?: Record<string, 12 | -12> };
+export const isLevel = (value: unknown): value is Level => LEVELS.includes(value as Level);
+/** A switch target: any model instrument but the drum kit (unpitched). */
+export const isSwitchTarget = (value: unknown): value is InstrumentId => INSTRUMENT_IDS.includes(value as InstrumentId) && INSTRUMENTS[value as InstrumentId].clef !== 'percussion';
+/** A part's switch as saved, or undefined for no entry. */
+export function savedSwitch(entry: PartSwitch | undefined): SavedSwitch | undefined {
+  if (!entry) return undefined;
+  return { ...(entry.instrument ? { instrument: entry.instrument } : {}), level: entry.level, autoRange: entry.autoRange, ...(Object.keys(entry.octaves).length ? { octaves: { ...entry.octaves } } : {}) };
+}
+/** A saved switch, or undefined when it is unusable. */
+function validSwitch(value: unknown): SavedSwitch | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const { instrument, level, autoRange, octaves } = value as Record<string, unknown>;
+  if ((instrument !== undefined && !isSwitchTarget(instrument)) || !isLevel(level) || typeof autoRange !== 'boolean') return undefined;
+  if (octaves !== undefined && (!octaves || typeof octaves !== 'object' || Object.values(octaves).some(shift => shift !== 12 && shift !== -12))) return undefined;
+  return { ...(instrument !== undefined ? { instrument } : {}), level, autoRange, ...(octaves && Object.keys(octaves).length ? { octaves: { ...(octaves as Record<string, 12 | -12>) } } : {}) };
+}
 const validZoom = (zoom: unknown): zoom is number => typeof zoom === 'number' && Number.isFinite(zoom) && zoom >= STAVE_SCALE_FLOOR && zoom <= STAVE_SCALE_MAX;
 /** Validate and normalise shared v1/v2 fields in place; false when the record is unusable. */
 function validSettingsAndParts(state: { settings: SavedSettings; parts: Record<string, PartState> }): boolean {
@@ -160,7 +184,10 @@ function validSettingsAndParts(state: { settings: SavedSettings; parts: Record<s
   if (validTabTuning(settings.tabTuning)) late.tabTuning = [...settings.tabTuning];
   if (typeof settings.capo === 'number' && Number.isFinite(settings.capo)) late.capo = clampCapo(settings.capo);
   if (['names', 'chordSymbols', 'inferChordSymbols', 'counts', 'subdivisions'].some(key => typeof settings[key as keyof FileSettings] !== 'boolean')) return false;
-  Object.values(state.parts).forEach(part => { part.instrument = legacyInstruments[part.instrument] || part.instrument; });
+  Object.values(state.parts).forEach(part => {
+    part.instrument = legacyInstruments[part.instrument] || part.instrument;
+    if (part && 'switch' in part) { const valid = validSwitch(part.switch); if (valid) part.switch = valid; else delete part.switch; }
+  });
   if (Object.values(state.parts).some(part => typeof part.visible !== 'boolean' || !instruments.has(part.instrument) || (part.gmSoundfont !== undefined && !isGmSoundfont(part.gmSoundfont)) || (part.volume !== undefined && (!Number.isInteger(part.volume) || part.volume < 0 || part.volume > 100)))) return false;
   const { tabView: _view, tabTuning: _tuning, capo: _capo, ...rest } = settings;
   state.settings = { ...rest, annotationFont: settings.annotationFont ?? 'Sans', semitones: settings.semitones ?? 0, scorePitch: settings.scorePitch ?? 'written', keyFlip: settings.keyFlip ?? false, ...late } as SavedSettings;
@@ -210,11 +237,12 @@ export function readFileState(source: FileSource): FileStateV1 | null {
   catch { return null; }
 }
 
-export function buildFileState(source: FileSource, settings: FileSettings, score: Score, hiddenIds: string[], volumes: Record<string, number> = {}, view?: ScoreView, lastOpened = Date.now()): FileState {
+export function buildFileState(source: FileSource, settings: FileSettings, score: Score, hiddenIds: string[], volumes: Record<string, number> = {}, view?: ScoreView, lastOpened = Date.now(), switches: Record<string, PartSwitch> = {}): FileState {
   const hidden = new Set(hiddenIds);
   const parts: FileState['parts'] = {};
   // A TAB part that doubles a guitar is saved with the guitar's visibility (the reader lists and hides the guitar).
   for (const part of score.parts) parts[part.id] = { visible: !hidden.has(part.tabOf ?? part.id), instrument: part.instrument, ...(part.gmSoundfont ? { gmSoundfont: part.gmSoundfont } : {}), volume: volumes[part.id] ?? 100 };
+  for (const part of score.parts) { const saved = savedSwitch(switches[part.id]); if (saved) parts[part.id].switch = saved; }
   const { mode, notationFont, barsPerLine, overlap, names, chordSymbols, inferChordSymbols, counts, subdivisions, annotationFont, bpm, semitones, scorePitch, keyFlip, tabView, tabTuning, capo } = settings;
   const sizes = Object.fromEntries(ANNOTATION_SIZE_PREF_KEYS.map(key => [key, isAnnotationSize(settings[key]) ? settings[key] : 'rg'])) as Pick<FileSettings, typeof ANNOTATION_SIZE_PREF_KEYS[number]>;
   return { version: 2, source, lastOpened, settings: { mode, notationFont, barsPerLine, overlap, names, chordSymbols, inferChordSymbols, counts, subdivisions, annotationFont, ...sizes, bpm: clampBpm(bpm), semitones, scorePitch, keyFlip: !!keyFlip,

@@ -193,6 +193,58 @@ try {
   assert.ok(tieStartsAtChunk > 0, 'Some chunk starts with the end of a tie from the chunk before');
   console.log('Instrument switch: chunked spelling moves both tied notes and drops the source clef changes passed');
 
+  // --- The reader: settings, pipeline and playback (Task 6) -------------------------------------------------------
+  const mount = (xml, props) => page.evaluate(async ([xml, props]) => (await import('/validation/instrument-switch-harness.ts')).mountReader(xml, props), [xml, props]);
+  const playback = (xml, settings, options) => page.evaluate(async ([xml, settings, options]) => (await import('/validation/instrument-switch-harness.ts')).readerPlayback(xml, settings, options), [xml, settings, options]);
+  const staffPitches = (result, staff) => result.notes.filter(note => note.staff === staff).map(note => note.pitch);
+  const plainReader = await mount(pianoXml, {});
+  assert.deepEqual([staffPitches(plainReader, '1'), staffPitches(plainReader, '2'), plainReader.clefs], [['C5', 'E5'], ['C3'], { 1: 'G', 2: 'F' }], 'Reader without instrument settings: the piano as written');
+  assert.deepEqual([plainReader.transposed, plainReader.outOfRange], [[], []], 'Nothing is highlighted as written');
+  const altoReader = await mount(pianoXml, { settings: { instrument: 'alto-saxophone' }, highlights: [{ ids: [pianoAlto.pitches[lowId].note], className: 'host-mark' }] });
+  assert.deepEqual(altoReader.clefs, { 1: 'G', 2: 'G' }, 'settings.instrument alto sax: both piano staves in treble clef');
+  assert.deepEqual([staffPitches(altoReader, '1'), staffPitches(altoReader, '2')], [['A5', 'C6'], ['A4']], 'Both staves at the alto sax written pitch (C#6 drawn as C with a sharp), the low phrase an octave up');
+  assert.deepEqual(altoReader.transposed, ['2:A4'], 'The moved phrase carries ps-transposed');
+  assert.deepEqual(altoReader.host, [['2:A4']], 'Host highlights still apply on top of the internal ones');
+  const beginner = await mount(pianoXml, { settings: { instrument: 'alto-saxophone', rangeLevel: 'beginner', autoRange: false } });
+  // Beginner alto (sounding 49-69): C5 and E5 are above it, C3 below; fit to range off leaves them, flagged.
+  assert.deepEqual([staffPitches(beginner, '1'), staffPitches(beginner, '2'), beginner.transposed], [['A5', 'C6'], ['A3'], []], 'Fit to range off: no octave moves');
+  assert.deepEqual(beginner.outOfRange.sort(), ['1:A5', '1:C6', '2:A3'], 'Notes outside the level\'s range carry ps-out-of-range');
+  assert.equal(beginner.outOfRangeColor, 'rgb(198, 40, 40)', 'ps-out-of-range is drawn in --ps-out-of-range (#c62828)');
+  // The render call site: a switched view is never transposed twice, an unswitched one is transposed once as before.
+  const transposedPlain = await mount(pianoXml, { settings: { semitones: 2 } });
+  assert.deepEqual([staffPitches(transposedPlain, '1'), staffPitches(transposedPlain, '2')], [['D5', 'F5'], ['D3']], 'Unswitched +2: transposed once (D5 F#5 / D3)');
+  const transposedAlto = await mount(pianoXml, { settings: { semitones: 2, instrument: 'alto-saxophone' } });
+  // +2 sounds D5 F#5 / D3; F#5 is above the alto: the phrase moves down (D4 F#4), written B4 D#5; D3 written B3.
+  assert.deepEqual([staffPitches(transposedAlto, '1'), staffPitches(transposedAlto, '2')], [['B4', 'D5'], ['B3']], 'Switched +2: fitted after the transpose, written once');
+  // Concert-basis score: unswitched shows concert pitch; a part switched to a transposing instrument shows its written pitch.
+  const concertPianoXml = pianoXml.replace('<part-list>', '<defaults><concert-score/></defaults><part-list>');
+  assert.deepEqual(staffPitches(await mount(concertPianoXml, {}), '1'), ['C5', 'E5'], 'Concert-basis piano as written');
+  assert.deepEqual(staffPitches(await mount(concertPianoXml, { settings: { instrument: 'alto-saxophone' } }), '1'), ['A5', 'C6'], 'Concert-basis score switched to alto sax: written pitch by default');
+  assert.deepEqual(staffPitches(await mount(concertPianoXml, { settings: { instrument: 'flute' } }), '1'), ['C5', 'E5'], 'Concert-basis score switched to a concert-pitch instrument stays at concert pitch');
+  console.log('Instrument switch: reader settings switch both piano staves (clef, written pitch, ps-transposed / ps-out-of-range, host highlights), no double transposition, concert-basis rule passed');
+
+  const played = await playback(pianoXml, { instrument: 'alto-saxophone' });
+  const [rh, lh] = Object.keys(played.midi);
+  assert.deepEqual([played.programs[rh], played.programs[lh]], [66, 66], 'Switched staves play the alto sax (GM program 66)');
+  assert.deepEqual([played.midi[rh], played.midi[lh]], [[72, 76], [60]], 'Playback sounds the fitted pitches (C5 E5 / C4)');
+  const playedUp = await playback(pianoXml, { instrument: 'alto-saxophone' }, { semitones: 2 });
+  assert.deepEqual([playedUp.midi[rh], playedUp.midi[lh]], [[62, 66], [50]], 'Transposed +2: playback follows the refit');
+  // An unswitched B-flat clarinet beside the switched piano sounds as before in both views (never counted twice).
+  const clarinetPart = '<score-part id="PCl"><part-name>Clarinet in Bb</part-name></score-part>';
+  const clarinetMusic = '<part id="PCl"><measure number="1"><attributes><divisions>1</divisions><key><fifths>2</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef><transpose><diatonic>-1</diatonic><chromatic>-2</chromatic></transpose></attributes><note><pitch><step>D</step><octave>5</octave></pitch><duration>4</duration><type>whole</type></note></measure></part>';
+  const duoXml = pianoXml.replace('</part-list>', `${clarinetPart}</part-list>`).replace('</score-partwise>', `${clarinetMusic}</score-partwise>`);
+  for (const scorePitch of ['written', 'concert']) {
+    const duo = await playback(duoXml, { instrument: 'alto-saxophone' }, { scorePitch });
+    assert.equal(duo.scorePitch, scorePitch);
+    const cl = Object.keys(duo.midi)[2];
+    assert.deepEqual(duo.midi[cl], [72], `${scorePitch} view: the unswitched clarinet's written D5 sounds C5`);
+    assert.deepEqual([duo.midi[rh], duo.midi[lh]], [[72, 76], [60]], `${scorePitch} view: the switched piano sounds its fitted pitches`);
+    assert.notEqual(duo.programs[cl], 66, `${scorePitch} view: the unswitched clarinet keeps its own sound`);
+  }
+  const duoConcert = await mount(duoXml, { settings: { instrument: 'alto-saxophone', concert: true } });
+  assert.deepEqual([staffPitches(duoConcert, '1'), staffPitches(duoConcert, '3')], [['C5', 'E5'], ['C5']], 'Concert view: switched piano and clarinet at sounding pitch');
+  console.log('Instrument switch: playback plays alto sax program 66 at the fitted sounding pitch; unswitched transposing parts unchanged in both views passed');
+
   // The reader's own render with forced chunks (the worker's chunk path and its spelling cache).
   const chunkedPage = await browser.newPage();
   chunkedPage.on('pageerror', error => errors.push(error.message));

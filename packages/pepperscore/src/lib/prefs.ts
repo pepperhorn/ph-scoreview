@@ -1,5 +1,6 @@
 import type { FileSettings } from './file-state';
 import type { TabView } from './tab/tab-parts';
+import type { InstrumentId, Level } from './instrument-model';
 
 // No runtime imports: validation/api.mjs loads this module in Node.
 export const MIN_BPM = 30, MAX_BPM = 240;
@@ -87,6 +88,17 @@ export type PepperScoreSettings = Partial<{
   bpm: number;
   /** Spell a transposed view in the enharmonic key (F# major shown as Gb major). */
   keyFlip: boolean;
+  /**
+   * Show the first switchable part (every staff of a grand staff) as this instrument: its sound, clef, written pitch
+   * and range. Applied when the score has no saved record, like the other settings.
+   */
+  instrument: InstrumentId;
+  /** Instruments per part, keyed by the 1-based part number as a string (`{ '2': 'trumpet' }`); wins over `instrument`. */
+  instruments: Record<string, InstrumentId>;
+  /** Range level the switched parts are fitted to: `'beginner'`, `'intermediate'` (default) or `'advanced'`. */
+  rangeLevel: Level;
+  /** Move phrases outside the instrument's range by an octave (default `true`). */
+  autoRange: boolean;
 }>;
 const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, Math.round(value)));
 
