@@ -9,14 +9,19 @@
  *   degrees, Fb/Cb only as passing notes in keys of 6+ flats, flats-only/sharps-only per key, no double accidentals;
  * - accidentals are re-shown or cancelled within each measure to match the new spellings (@accid / @accid.ges);
  * - chord symbols (`<harm>`) are respelled for their staff's key;
- * - percussion staves never get a key signature or key change (in every view, transposed or not).
+ * - percussion staves never get a key signature or key change (in every view, transposed or not);
+ * - an instrument-switched staff (instrument-view.ts) moves by its own `shift`, takes the target's clef (the source's
+ *   clef changes are dropped), and notes an octave move names (`octaves`) move by an octave, before accidentals are
+ *   re-evaluated.
  *
  * Keys are rewritten from a per-staff timeline (the spec's Score keys, else the MEI's): every key signature is removed
  * from the score definitions and each staff's keys are written where they start or change.
  *
  * String-level like mei-view.ts (the worker has no DOMParser); the input is Verovio's own `getMEI` output.
  */
-import { spellChordSymbol, type KeyMode, type SpellingKey, type SpellingProfile } from '../spelling';
+import type { InstrumentClef } from '../instrument-model';
+import { keyFromFifths, spellChordSymbol, type KeyMode, type SpellingKey, type SpellingProfile } from '../spelling';
+import { generatedPitchIdOf } from './document';
 import { attributeOf, scan } from './mei-view';
 import { accidentalDisplay, fifthsOf, intervalFifths, moveChordSymbol, parseInterval, transposeSpelled, respellLine, sigOf, viewKey, type LineNote, type SpelledPitch, type StaffSpelling } from './respell';
 
@@ -46,7 +51,29 @@ export type StaffSpec = StaffSpelling & {
    * spellings, e.g. a B♭ trumpet in Ab sounding in F# with C double sharps), the way the Score view does.
    */
   shift?: [number, number];
+  /** Octave moves of notes (instrument switch, range fit or the reader's): semitones by MEI note xml:id. */
+  octaves?: Record<string, 12 | -12>;
+  /** The staff's clef replaced by an instrument switch: set on its staff definitions, its clef changes removed. */
+  clef?: InstrumentClef;
 };
+
+/** MEI clef attributes of an instrument clef (none for percussion: a switch never targets it). */
+const CLEFS: Partial<Record<InstrumentClef, [string, string, string?]>> = { treble: ['G', '2'], bass: ['F', '4'], alto: ['C', '3'], tenor: ['C', '4'], treble8vb: ['G', '2', '8'] };
+const CLEF_ATTRIBUTES = ['clef.shape', 'clef.line', 'clef.dis', 'clef.dis.place'];
+/** A `<clef>` element for an instrument clef (keeping the replaced element's xml:id). */
+function clefElement(clef: InstrumentClef, id: string | null): string {
+  const [shape, line, dis] = CLEFS[clef]!;
+  return `<clef${id ? ` xml:id="${id}"` : ''} shape="${shape}" line="${line}"${dis ? ` dis="${dis}" dis.place="below"` : ''}/>`;
+}
+/** A staffDef tag with its clef attributes replaced by `clef`'s (only where it carries them), or removed (`clef` undefined). */
+function withClefAttributes(tag: string, clef: InstrumentClef | undefined): string {
+  if (!/\sclef\.shape\s*=/.test(tag)) return tag;
+  let out = CLEF_ATTRIBUTES.reduce(removeAttribute, tag);
+  if (!clef || !CLEFS[clef]) return out;
+  const [shape, line, dis] = CLEFS[clef]!;
+  out = setAttribute(setAttribute(out, 'clef.shape', shape), 'clef.line', line);
+  return dis ? setAttribute(setAttribute(out, 'clef.dis', dis), 'clef.dis.place', 'below') : out;
+}
 
 const LETTERS = 'CDEFGAB';
 const NATURAL_PC = [0, 2, 4, 5, 7, 9, 11];
@@ -87,7 +114,7 @@ const keySigTag = (key: SpellingKey) => `<keySig sig="${sigOf(key.fifths)}"${key
 type Range = { start: number; end: number };
 type Edit = Range & { text: string };
 type Key = { fifths: number; mode: KeyMode };
-type StaffDefRecord = Range & { n: string; tag: string; selfClosing: boolean; clefEnd?: number };
+type StaffDefRecord = Range & { n: string; tag: string; selfClosing: boolean; clefEnd?: number; clef?: Range & { id: string | null } };
 type ScoreDefRecord = Range & { initial: boolean; measure: number; content: boolean; keyRanges: Range[]; tagEdits: Edit[];
   /** Keys this definition sets (MEI values, after Verovio's transposition): '*' for every staff. */
   keys: Map<string, Key> };
@@ -106,7 +133,8 @@ export function spellingNeeded(mei: string, spec: SpellingSpec | undefined): boo
   if (!spec) return false;
   // Key changes are rewritten from the Score too: Verovio's MusicXML import gives every staff the first part's key change.
   return !!spec.interval || spec.concert || spec.flip || spec.semitones !== 0 || /\b(?:clef\.)?shape="perc"/.test(mei)
-    || Object.values(spec.staves).some(staff => staff.percussion || (staff.keys?.length ?? 0) > 1);
+    || Object.values(spec.staves).some(staff => staff.percussion || (staff.keys?.length ?? 0) > 1 || !!staff.clef || !!staff.shift?.[1] || !!staff.shift?.[0]
+      || Object.keys(staff.octaves ?? {}).length > 0);
 }
 
 /** Verovio's transposition of an MEI document (load with these options, then `getMEI`). */
@@ -144,8 +172,22 @@ export function respellMei(mei: string, spec: SpellingSpec, measureOffset = 0): 
   const layerKeySigs: (Range & { staff: string; measure: number; key: Key | null })[] = [];
   const percussion = new Set(Object.entries(spec.staves).filter(([, staff]) => staff.percussion).map(([n]) => n));
   const staffSpec = (n: string): StaffSpec => spec.staves[n] ?? { profile: 'neutral' as SpellingProfile, moved: spec.semitones !== 0 };
-  // Any staff Verovio moved (an interval moves every staff) is respelled, as is every staff of a flipped view.
-  const respelled = (n: string) => !percussion.has(n) && (staffSpec(n).moved || spec.semitones !== 0 || spec.flip || !!spec.interval);
+  const viewShift = (n: string) => { const value = staffSpec(n).shift; return value && (value[0] || value[1]) ? { diatonic: value[0], chromatic: value[1] } : undefined; };
+  // Any staff Verovio moved (an interval moves every staff) is respelled, as is every staff of a flipped view and a
+  // staff with its own shift. A staff with octave moves only keeps its spellings (its notes are read to move them).
+  const respelled = (n: string) => !percussion.has(n) && (staffSpec(n).moved || spec.semitones !== 0 || spec.flip || !!spec.interval || !!viewShift(n));
+  // A generated MEI (ABC, MIDI) draws a note's continuations and split pieces as notes of their own (`_cN`, `_sN`):
+  // they move with the note.
+  const octaveOf = (n: string, id: string) => {
+    const octaves = percussion.has(n) ? undefined : staffSpec(n).octaves;
+    if (!octaves) return 0;
+    const base = octaves[id] === undefined ? generatedPitchIdOf(id) : null;
+    return (octaves[id] ?? (base ? octaves[base] : undefined) ?? 0) / 12;
+  };
+  const octaveMoves = (n: string) => !percussion.has(n) && Object.keys(staffSpec(n).octaves ?? {}).length > 0;
+  /** Clefs of switched staves: the opening clef replaced, clef changes in the staff (layers, later definitions) removed. */
+  const clefOf = (n: string) => { const clef = percussion.has(n) ? undefined : staffSpec(n).clef; return clef && CLEFS[clef] ? clef : undefined; };
+  const clefEdits: Edit[] = [];
   const staves: string[] = [];
 
   const stack: string[] = [];
@@ -195,7 +237,8 @@ export function respellMei(mei: string, spec: SpellingSpec, measureOffset = 0): 
       if (scoreDef) {
         const key = keyFrom(attributes, 'key.sig', 'key.mode');
         if (key) scoreDef.keys.set(n, key);
-        const stripped = withoutKeyAttributes(tag);
+        // A switched staff: its opening clef is the target's, a later definition's clef is dropped.
+        const stripped = clefOf(n) ? withClefAttributes(withoutKeyAttributes(tag), scoreDef.initial ? clefOf(n) : undefined) : withoutKeyAttributes(tag);
         if (stripped !== tag) scoreDef.tagEdits.push({ start: index, end: index + length, text: stripped });
         if (!KEY_ONLY_STAFF_DEF.test(attributes)) scoreDef.content = true;
         if (scoreDef.initial) { initialStaffDefs.push(record); if (n && !staves.includes(n)) staves.push(n); }
@@ -205,8 +248,10 @@ export function respellMei(mei: string, spec: SpellingSpec, measureOffset = 0): 
     }
     if (name === 'clef' && staffDef) {
       if (attributeOf(attributes, 'shape') === 'perc') percussion.add(staffDef.n);
-      if (selfClosing) staffDef.clefEnd = index + length;
+      if (selfClosing) { staffDef.clefEnd = index + length; staffDef.clef = { start: index, end: index + length, id: attributeOf(attributes, 'xml:id') }; }
       if (scoreDef) scoreDef.content = true;
+      // A later definition's clef in a switched staff goes (the opening one is replaced below).
+      if (selfClosing && scoreDef && !scoreDef.initial && clefOf(staffDef.n)) clefEdits.push({ start: index, end: index + length, text: '' });
       return;
     }
     if (name === 'keySig') {
@@ -230,6 +275,7 @@ export function respellMei(mei: string, spec: SpellingSpec, measureOffset = 0): 
       }
       return;
     }
+    if (name === 'clef') { if (clefOf(staff) && selfClosing) clefEdits.push({ start: index, end: index + length, text: '' }); return; }
     if (name === 'tuplet') {
       const num = Number(attributeOf(attributes, 'num')) || 1; const numbase = Number(attributeOf(attributes, 'numbase')) || 1;
       if (!selfClosing) tuplets.push(numbase / num);
@@ -246,7 +292,7 @@ export function respellMei(mei: string, spec: SpellingSpec, measureOffset = 0): 
       if (!inChord) time += quarters(attributes) * scale();
       const pname = (attributeOf(attributes, 'pname') || '').toUpperCase();
       const oct = Number(attributeOf(attributes, 'oct'));
-      if (!pname || !LETTERS.includes(pname) || !Number.isFinite(oct) || !respelled(staff)) return;
+      if (!pname || !LETTERS.includes(pname) || !Number.isFinite(oct) || !(respelled(staff) || octaveMoves(staff))) return;
       const id = attributeOf(attributes, 'xml:id') || '';
       const tie = attributeOf(attributes, 'tie');
       const written = attributeOf(attributes, 'accid'); const gestural = attributeOf(attributes, 'accid.ges');
@@ -302,7 +348,6 @@ export function respellMei(mei: string, spec: SpellingSpec, measureOffset = 0): 
     if (!shown) { shown = viewKey(key.fifths, spec.semitones, key.mode, staffSpec(n), spec.flip); shownCache.set(cacheKey, shown); }
     return shown;
   };
-  const viewShift = (n: string) => { const value = staffSpec(n).shift; return value ? { diatonic: value[0], chromatic: value[1] } : undefined; };
   // The MEI's key: the view key moved by the interval, less the staff's own sounding shift (its notes are written).
   const sourceFifths = (n: string, local: number) => {
     const own = viewShift(n);
@@ -332,10 +377,14 @@ export function respellMei(mei: string, spec: SpellingSpec, measureOffset = 0): 
     const input: LineNote[] = line.map(item => {
       const own = viewShift(item.staff);
       const read = { step: item.pname, octave: item.oct, alter: sourceAlter.get(item) ?? 0 };
-      const source = own ? transposeSpelled(read, own) : read;
+      const shifted = own ? transposeSpelled(read, own) : read;
+      // An octave move after the staff's shift: same spelling, an octave higher or lower.
+      const source = { ...shifted, octave: shifted.octave + octaveOf(item.staff, item.id) };
       const from = tiedFrom.get(item.id);
       return { midi: midiOf(source), source, key: shownKey(item.staff, item.measure), chord: item.chord, tiedFrom: from !== undefined ? indexById.get(from) : undefined };
     });
+    // A staff that is not respelled (octave moves only) keeps its spellings.
+    if (!respelled(line[0].staff)) { input.forEach((note, index) => spelled.set(line[index], note.source)); continue; }
     respellLine(input).forEach((pitch, index) => spelled.set(line[index], pitch));
   }
   // A tie from another voice keeps the start's spelling too.
@@ -344,10 +393,20 @@ export function respellMei(mei: string, spec: SpellingSpec, measureOffset = 0): 
     const from = byId.get(tiedFrom.get(item.id) || '');
     if (from && spelled.has(from) && midiOf(spelled.get(from)!) === midiOf(spelled.get(item)!)) spelled.set(item, spelled.get(from)!);
   }
+  // Courtesy accidentals of switched and octave-moved staves: a written accidental the source did not need (in its
+  // own key and measure) stays shown after the move, as one marked cautionary does.
+  const courtesy = new Set<NoteRecord>();
+  const sourceKey = (n: string, local: number) => ({ ...keyFromFifths(0), scale: LETTERS.split('').map(step => ({ step, alter: fifthsAlter(step, sourceFifths(n, local)) })) });
+  for (const group of groups.values()) {
+    const n = group[0].staff;
+    if (!clefOf(n) && !octaveMoves(n)) continue;
+    const needed = accidentalDisplay(group.map(item => ({ pitch: { step: item.pname as SpelledPitch['step'], octave: item.oct, alter: sourceAlter.get(item) ?? 0 }, onset: item.onset, key: sourceKey(item.staff, item.measure), tieEnd: item.tieEnd })));
+    group.forEach((item, index) => { if (item.written !== null && !item.tieEnd && !needed[index]) courtesy.add(item); });
+  }
   // Accidental display per staff-measure.
   const shown = new Map<NoteRecord, boolean>();
   for (const group of groups.values()) {
-    const flags = accidentalDisplay(group.map(item => ({ pitch: spelled.get(item)!, onset: item.onset, key: shownKey(item.staff, item.measure), tieEnd: item.tieEnd, cautionary: item.cautionary })));
+    const flags = accidentalDisplay(group.map(item => ({ pitch: spelled.get(item)!, onset: item.onset, key: shownKey(item.staff, item.measure), tieEnd: item.tieEnd, cautionary: item.cautionary || courtesy.has(item) })));
     group.forEach((item, index) => shown.set(item, flags[index]));
   }
 
@@ -357,6 +416,9 @@ export function respellMei(mei: string, spec: SpellingSpec, measureOffset = 0): 
     const written = shown.get(item)!;
     let tag = removeAttribute(removeAttribute(item.tag, 'accid'), 'accid.ges');
     tag = setAttribute(setAttribute(tag, 'pname', pitch.step.toLowerCase()), 'oct', String(pitch.octave));
+    // A sounding octave (under an octave line) moves with the written one.
+    const gesturalOctave = Number(attributeOf(item.tag, 'oct.ges') ?? NaN);
+    if (Number.isFinite(gesturalOctave) && pitch.octave !== item.oct) tag = setAttribute(tag, 'oct.ges', String(gesturalOctave + pitch.octave - item.oct));
     // Gestural accidentals are always explicit, naturals included, so the pitch never depends on the key signature.
     if (!written) tag = setAttribute(tag, 'accid.ges', GESTURAL(pitch.alter));
     const old = item.accids.find(accid => attributeOf(accid.attributes, 'accid') !== null) ?? item.accids[0];
@@ -386,18 +448,23 @@ export function respellMei(mei: string, spec: SpellingSpec, measureOffset = 0): 
     for (const range of record.keyRanges) edits.push({ start: range.start, end: range.end, text: '' });
   }
   const pitched = staves.filter(n => !percussion.has(n));
+  edits.push(...clefEdits);
   for (const def of initialStaffDefs) {
     if (percussion.has(def.n) || !pitched.includes(def.n)) continue;
     const sig = keySigTag(shownKey(def.n, 0));
-    const tag = withoutKeyAttributes(def.tag);
+    const clef = clefOf(def.n);
+    const tag = clef ? withClefAttributes(withoutKeyAttributes(def.tag), clef) : withoutKeyAttributes(def.tag);
+    // A switched staff's opening clef: its <clef> replaced, else (no clef attributes either) one added.
+    const clefChild = clef && !def.clef && !/\sclef\.shape\s*=/.test(def.tag) ? clefElement(clef, null) : '';
+    if (clef && def.clef) edits.push({ start: def.clef.start, end: def.clef.end, text: clefElement(clef, def.clef.id) });
     if (def.selfClosing) {
       // Replaces the tag edit recorded for this staffDef, if any.
       const at = edits.findIndex(edit => edit.start === def.start && edit.end === def.end);
       if (at >= 0) edits.splice(at, 1);
-      edits.push({ start: def.start, end: def.end, text: `${openTag(tag)}${sig}</staffDef>` });
+      edits.push({ start: def.start, end: def.end, text: `${openTag(tag)}${clefChild}${sig}</staffDef>` });
     } else {
       const at = def.clefEnd ?? def.start + def.tag.length;
-      edits.push({ start: at, end: at, text: sig });
+      edits.push({ start: at, end: at, text: clefChild + sig });
     }
   }
   for (let local = 1; local < measureCount; local++) {

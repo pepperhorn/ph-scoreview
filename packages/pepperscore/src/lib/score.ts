@@ -27,7 +27,9 @@ export type MeasureNavigation = {
   barlines?: BarlineNavigation[];
 };
 export type Measure = { index: number; beats: number; notes: ScoreNote[]; dynamics?: { start: number; symbol: string }[]; directions?: ScoreDirection[]; nominalBeats?: number; number?: string; implicit?: boolean; key?: number; keyMode?: KeyMode; clef?: string; beatsPerBar?: number; beatType?: number; transposition?: Transposition; navigation?: MeasureNavigation };
-export type Part = { id: string; name: string; clef: string; key?: number; keyMode?: KeyMode; instrument: InstrumentId; gmProgram?: number; gmSoundfont?: string; pitchBasis?: 'written' | 'concert'; transposition?: Transposition; measures: Measure[];
+export type Part = { id: string;
+  /** The MusicXML <score-part id> every staff of one part shares; absent for ABC/MIDI single parts (use `id`). */
+  sourcePartId?: string; name: string; clef: string; key?: number; keyMode?: KeyMode; instrument: InstrumentId; gmProgram?: number; gmSoundfont?: string; pitchBasis?: 'written' | 'concert'; transposition?: Transposition; measures: Measure[];
   /** A tablature staff (MusicXML clef sign TAB), imported by Verovio as a `tab.guitar` staff. */
   tab?: boolean;
   /**
@@ -37,7 +39,13 @@ export type Part = { id: string; name: string; clef: string; key?: number; keyMo
   tabOf?: string };
 export type Score = { title: string; subtitle?: string; composer?: string; credits?: string[]; source: string; tempo: number; beats: number; beatType: number; key: number; keyMode?: KeyMode; parts: Part[];
   /** Set on a transposed or flipped view of a score (transpose.ts `scoreForView`). */
-  pitchView?: import('./transpose').PitchView; document?: SourceDocument };
+  pitchView?: import('./transpose').PitchView;
+  /**
+   * Set on an instrument-switched view (instrument-view.ts `applyInstrumentView`): what the MEI pass needs of its
+   * switched and octave-moved staves, by part id. Dropped by `scoreForView` whenever it moves pitches.
+   */
+  instrumentView?: { staves: Record<string, import('./instrument-view').EngravedSwitch> };
+  document?: SourceDocument };
 export type InstrumentId = ModelInstrumentId;
 export const GM_FAMILIES = ['Keyboard', 'Guitar', 'Voice', 'Percussion', 'Drums', 'Woodwinds', 'Brass', 'Strings', 'FX / Other'] as const;
 export type GmFamily = typeof GM_FAMILIES[number];

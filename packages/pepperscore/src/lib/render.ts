@@ -214,7 +214,8 @@ export function planStaves(info: BaselineInfo, score: Score, hiddenIds: Readonly
   // Transposition and spelling: the worker moves and respells the baseline (notation/mei-spelling.ts) with the plan
   // `scoreForView` used for this Score view, so the view is loaded untransposed.
   const spelling = spellingSpecFor(score, staffOf);
-  // Guitar TAB: imported TAB staves show in a TAB view unless the view moves pitches (their frets would be stale);
+  // Guitar TAB: imported TAB staves show in a TAB view unless the view moves pitches (their frets would be stale; an
+  // instrument view's switched or octave-moved parts make their own TAB stale, see planTab);
   // otherwise TAB is generated after spelling. In TAB view the notation staff is hidden and read from its TAB staff.
   const tabView = tab?.view ?? 'notation';
   const tabPlan = planTab(score, staffOf, tabView, {
@@ -336,8 +337,11 @@ export async function renderScore(
   barsPerLine: 'auto' | number, showChordSymbols: boolean, inferChordSymbols: boolean,
   availableHeight = 0, zoom: number | 'fit' = 1, firstSystemGutter = 0, options: RenderOptions = {},
 ): Promise<RenderResult> {
-  // A caller passing the source Score with pitch options gets its view here (Reader passes `scoreForView`'s result).
-  if (!score.pitchView) score = scoreForView(score, score.parts.some(part => part.pitchBasis === 'concert') ? 'concert' : options.scorePitch ?? 'written', options.transpose ?? options.semitones ?? 0, !!options.flip);
+  // A caller passing the source Score with pitch options gets its view here (Reader passes `scoreForView`'s result,
+  // optionally switched by `applyInstrumentView`).
+  // An instrument-switched Score (instrument-view.ts) is already a view: switched parts are rewritten as their target,
+  // and moving them again (a concert-basis score picks the concert view) would double the move.
+  if (!score.pitchView && !score.instrumentView) score = scoreForView(score, score.parts.some(part => part.pitchBasis === 'concert') ? 'concert' : options.scorePitch ?? 'written', options.transpose ?? options.semitones ?? 0, !!options.flip);
   const generation = options.generation ?? (latestGeneration.get(container) || 0) + 1;
   latestGeneration.set(container, generation);
   const isCurrent = () => latestGeneration.get(container) === generation;

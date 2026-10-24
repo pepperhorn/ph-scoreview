@@ -35,6 +35,8 @@ export type TabSpec = {
   capo: number;
   /** Use `tab.course`/`tab.fret` already on notation notes as fixed fingerings (false when the view moved pitches). */
   fixed: boolean;
+  /** Generated staves whose `tab.course`/`tab.fret` do not apply even when `fixed` (an instrument view moved their notes). */
+  unfixed?: string[];
   /**
    * Generated staves whose notes are already at sounding pitch (the concert view of a transposing part): their
    * `trans.semi` was applied by spelling and must not be applied again.
@@ -237,7 +239,7 @@ function collect(mei: string, spec: TabSpec): { staves: Map<string, EventRec[]>;
       const course = Number(attributeOf(attributes, 'tab.course')), fret = Number(attributeOf(attributes, 'tab.fret'));
       // `tab.course` alone (a string number without a fret) fixes the string; the solver picks the fret.
       const hasFret = Number.isInteger(fret) && attributeOf(attributes, 'tab.fret') !== null;
-      const fixed = spec.fixed && generate.has(staff) && Number.isInteger(course) && course >= 1 ? (hasFret ? { string: course, fret } : { string: course }) : undefined;
+      const fixed = spec.fixed && generate.has(staff) && !spec.unfixed?.includes(staff) && Number.isInteger(course) && course >= 1 ? (hasFret ? { string: course, fret } : { string: course }) : undefined;
       const rec: NoteRec = { id, midi: null, fixed, continuation: /[mt]/.test(tie), tieStart: /[im]/.test(tie), dur: event.dur };
       event.notes.push(rec);
       note = { rec, attributes, event, inChord: !!chord };

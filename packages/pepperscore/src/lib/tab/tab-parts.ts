@@ -49,15 +49,28 @@ export function linkTabParts(score: Score): Score {
   return score;
 }
 
+const guitarSound = (part: Part) => (part.gmProgram !== undefined && part.gmProgram >= 25 && part.gmProgram <= 32) || part.instrument === 'guitar';
 /** A guitar part: GM programs 25-32 (1-based; nylon to guitar harmonics), the guitar sound, or "guitar" in its name. */
-export const isGuitarPart = (part: Part) => !part.tab && part.clef !== 'percussion' && ((part.gmProgram !== undefined && part.gmProgram >= 25 && part.gmProgram <= 32) || part.instrument === 'guitar' || (/guitar/i.test(part.name) && !/bass/i.test(part.name)));
+export const isGuitarPart = (part: Part) => !part.tab && part.clef !== 'percussion' && (guitarSound(part) || (/guitar/i.test(part.name) && !/bass/i.test(part.name)));
+/** Parts an instrument switch rewrote as another instrument (instrument-view.ts; an octave move alone keeps the instrument). */
+const switchedParts = (score: Score) => new Set(Object.entries(score.instrumentView?.staves ?? {}).filter(([, staff]) => staff.clef).map(([id]) => id));
+/**
+ * Parts whose imported TAB frets no longer match their notes: every part of an instrument view's staves (switched or
+ * octave-moved). Their TAB is generated again, or hidden when the part was switched to another instrument.
+ */
+const staleTabOf = (score: Score) => new Set(Object.keys(score.instrumentView?.staves ?? {}));
 
-/** Notation parts that take TAB: every guitar part (and every part an imported TAB doubles), else the first pitched part. */
+/**
+ * Notation parts that take TAB: every guitar part (and every part an imported TAB doubles), else the first pitched
+ * part. A part switched to another instrument (instrument-view.ts) takes TAB only if its new instrument is a guitar
+ * (its name and its imported TAB no longer count).
+ */
 export function tabParts(score: Score): Part[] {
+  const switched = switchedParts(score);
   const doubled = new Set(score.parts.flatMap(part => part.tabOf ? [part.tabOf] : []));
-  const guitars = score.parts.filter(part => !part.tab && (isGuitarPart(part) || doubled.has(part.id)));
+  const guitars = score.parts.filter(part => !part.tab && (switched.has(part.id) ? part.clef !== 'percussion' && guitarSound(part) : isGuitarPart(part) || doubled.has(part.id)));
   if (guitars.length) return guitars;
-  const first = score.parts.find(pitched);
+  const first = score.parts.find(part => pitched(part) && !switched.has(part.id));
   return first ? [first] : [];
 }
 /** Whether the Notation / TAB / Both switch has anything to switch. */
@@ -90,7 +103,9 @@ export function hiddenReaderParts(score: Score, parts: Record<string, PartState 
  * Plan a view: `staffOf` maps parts to baseline staff numbers, `hiddenIds` are parts the reader hid, `stale` is true
  * when the view moves sounding pitches (transposition: imported `tab.fret`s no longer match, so imported TAB is replaced
  * by generated TAB and a TAB-only staff is re-fingered). A concert view moves written notes to the pitches they already
- * sound, so it never makes TAB stale. `sounding` lists staves whose spelled notes are at sounding pitch (their
+ * sound, so it never makes TAB stale. A part of the Score's instrument view (switched or octave-moved,
+ * `score.instrumentView`) makes its own TAB stale: generated (its fingerings not fixed) while it is a guitar, else
+ * none (it is no longer a TAB part, and its imported TAB staff is hidden). `sounding` lists staves whose spelled notes are at sounding pitch (their
  * `trans.semi` no longer applies).
  */
 export function planTab(score: Score, staffOf: Map<string, string>, view: TabView, options: { tuning: number[]; capo: number; stale: boolean; semitones?: number; sounding?: string[]; hiddenIds?: Set<string> }): TabPlan {
@@ -103,6 +118,9 @@ export function planTab(score: Score, staffOf: Map<string, string>, view: TabVie
   const used = new Set<Part>();
   const generate: string[] = [];
   const retarget: Record<string, string> = {};
+  // Switched or octave-moved parts: their imported TAB and the fingerings on their notes are stale.
+  const stale = staleTabOf(score);
+  const unfixed: string[] = [];
   if (view !== 'notation') {
     for (const part of tabParts(score)) {
       const n = staffOf.get(part.id);
@@ -110,8 +128,8 @@ export function planTab(score: Score, staffOf: Map<string, string>, view: TabVie
       const partner = partnerOf.get(part.id);
       const partnerN = partner && staffOf.get(partner.id);
       let tabN: string;
-      if (partner && partnerN && !options.stale) { tabN = partnerN; used.add(partner); plan.importedFor.set(part.id, partner); }
-      else { tabN = tabStaffNumber(n); generate.push(n); plan.added.push(tabN); }
+      if (partner && partnerN && !options.stale && !stale.has(part.id)) { tabN = partnerN; used.add(partner); plan.importedFor.set(part.id, partner); }
+      else { tabN = tabStaffNumber(n); generate.push(n); plan.added.push(tabN); if (stale.has(part.id)) unfixed.push(n); }
       if (view === 'tab') { hide(n); retarget[n] = tabN; plan.display.set(part.id, tabN); }
     }
   }
@@ -124,7 +142,7 @@ export function planTab(score: Score, staffOf: Map<string, string>, view: TabVie
   }
   const sounding = (options.sounding ?? []).filter(n => generate.includes(n));
   if (generate.length || Object.keys(retarget).length || Object.keys(refret).length) {
-    plan.spec = { generate, retarget, tuning: options.tuning, capo: options.capo, fixed: !options.stale, ...(sounding.length ? { sounding } : {}), ...(Object.keys(refret).length ? { refret } : {}) };
+    plan.spec = { generate, retarget, tuning: options.tuning, capo: options.capo, fixed: !options.stale, ...(sounding.length ? { sounding } : {}), ...(unfixed.length && !options.stale ? { unfixed } : {}), ...(Object.keys(refret).length ? { refret } : {}) };
   }
   return plan;
 }
