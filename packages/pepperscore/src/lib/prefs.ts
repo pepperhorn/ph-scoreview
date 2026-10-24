@@ -1,6 +1,6 @@
 import type { FileSettings } from './file-state';
 import type { TabView } from './tab/tab-parts';
-import type { InstrumentId, Level } from './instrument-model';
+import type { Level, SwitchInstrumentId } from './instrument-model';
 
 // No runtime imports: validation/api.mjs loads this module in Node.
 export const MIN_BPM = 30, MAX_BPM = 240;
@@ -92,9 +92,14 @@ export type PepperScoreSettings = Partial<{
    * Show the first switchable part (every staff of a grand staff) as this instrument: its sound, clef, written pitch
    * and range. Applied when the score has no saved record, like the other settings.
    */
-  instrument: InstrumentId;
-  /** Instruments per part, keyed by the 1-based part number as a string (`{ '2': 'trumpet' }`); wins over `instrument`. */
-  instruments: Record<string, InstrumentId>;
+  instrument: SwitchInstrumentId;
+  /**
+   * Instruments per part; wins over `instrument`. A key is either the 1-based source part number as a string
+   * (`{ '2': 'trumpet' }`: score parts in order, a grand staff counted once, a drum kit counted too; `onReady`'s
+   * `parts[].sourcePart`) or an `onReady` part id (`parts[].id`; a staff of a grand staff switches its whole part).
+   * Keys of parts that cannot be switched (`parts[].switchable` false) are ignored.
+   */
+  instruments: Record<string, SwitchInstrumentId>;
   /** Range level the switched parts are fitted to: `'beginner'`, `'intermediate'` (default) or `'advanced'`. */
   rangeLevel: Level;
   /** Move phrases outside the instrument's range by an octave (default `true`). */

@@ -34,9 +34,9 @@ import type { ExternalClock } from '../lib/clock';
 import { measureSeekSeconds, noteSeekSeconds } from '../lib/playback/clock-time';
 import { nearestNote, noteInBox } from '../lib/hit-test';
 import { canShowTab, hiddenReaderParts, type TabView } from '../lib/tab/tab-parts';
-import { sourcePartOf, switchablePart, type PartSwitch } from '../lib/instrument-view';
+import { sourcePartOf, switchablePart, withPickedSound, type PartSwitch } from '../lib/instrument-view';
 import type { InstrumentId, Level } from '../lib/instrument-model';
-import { applyHostSwitchChange, readerPitch, restoredScorePitch, SWITCH_TARGETS, switchDefaults, switchedSoundParts, switchedTimeline, switchedView, switchesFromSaved, switchesFromSettings, switchHighlights, withOctaves, withSound, withSourceSwitch, type InstrumentSettings } from '../lib/instrument-switch-state';
+import { applyHostSwitchChange, readerPartsInfo, readerPitch, restoredScorePitch, SWITCH_TARGETS, switchDefaults, switchedSoundParts, switchedTimeline, switchedView, switchesFromSaved, switchesFromSettings, switchHighlights, withOctaves, withSound, withSourceSwitch, type InstrumentSettings } from '../lib/instrument-switch-state';
 
 /** Short key name for readouts: 'Gb', 'C#m'. */
 const keyName = (key: SpellingKey) => `${key.tonic}${key.mode === 'minor' ? 'm' : ''}`;
@@ -59,7 +59,16 @@ const LOOKAHEAD_SYSTEMS = 2;
 const TIME_UPDATE_MS = 100;
 /** A click this many px outside a note's drawn box still hits it (a thin stem or a lone notehead). */
 const NOTE_HIT_SLOP = 2;
-export type PepperScoreReadyInfo = { title: string; composer?: string; parts: Array<{ id: string; name: string }>; measures: number };
+export type PepperScoreReadyInfo = {
+  title: string; composer?: string;
+  /**
+   * One entry per listed staff (a grand staff lists each staff; a TAB staff doubling a part is not listed). `sourcePart`
+   * is the 1-based source part number (a grand staff's staves share one), `switchable` whether the instrument switch
+   * applies to it. `settings.instruments` takes either `String(sourcePart)` or `id` as a key.
+   */
+  parts: Array<{ id: string; name: string; sourcePart: number; switchable: boolean }>;
+  measures: number;
+};
 /** What a click on the engraving hit (`onElementClick`). */
 export type PepperScoreClickInfo = {
   /** Viewer note id (data-note-id) when a note or rest was hit. */
@@ -404,8 +413,6 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const hiddenSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
   /** Parts the reader lists, plays and controls: a TAB staff that doubles a notation part shows with it (tab/tab-parts.ts). */
   const readerParts = useMemo(() => score.parts.filter(part => !part.tabOf), [score]);
-  /** The Notation / TAB / Both switch only shows for a score with a stave that can take TAB. */
-  const tabAvailable = useMemo(() => canShowTab(score), [score]);
   const tabTuningKey = prefs.tabTuning.join(',');
   /** Hidden reader parts (the hidden-staves bar lists them; an ID of no reader part is never shown there). */
   const hiddenReader = useMemo(() => readerParts.filter(part => hiddenSet.has(part.id)), [readerParts, hiddenSet]);
@@ -427,6 +434,8 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   // renderer never re-views it.
   const instrumentView = useMemo(() => switchedView(viewedScore, partSwitches, scorePitch), [viewedScore, partSwitches, scorePitch]);
   const displayScore = instrumentView.score;
+  /** The Notation / TAB / Both switch only shows when a stave of the score as shown (switched) can take TAB. */
+  const tabAvailable = useMemo(() => canShowTab(displayScore), [displayScore]);
   const switchKey = JSON.stringify(partSwitches);
   // TAB staves doubling a switched part are hidden while it is (rendering only, never saved).
   const hiddenTabKey = instrumentView.hiddenTab.join('\u0000');
@@ -447,6 +456,9 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const timelineRef = useRef<{ key: object; visible: string; view: object | null; timeline: BaseTimeline } | null>(null);
   /** The switched view the timeline follows (none without switched or moved parts: a sound pick or transpose keeps it). */
   const timelineView = Object.keys(instrumentView.staves).length ? instrumentView : null;
+  // Without switched parts nothing the timeline reads changes with the view, so a transpose, key flip or pitch view
+  // change keeps `loadTimeline` (and a host clock's subscription) as on a reader without the switch.
+  const timelineSemitones = timelineView ? prefs.semitones : 0;
   const timelineKey: object = score.document || score;
   const visibleKey = visibleScore.parts.map(part => part.id).join('\u0000');
   const timelineOf = useCallback((): BaseTimeline | null => {
@@ -457,10 +469,11 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     const cached = timelineOf();
     if (cached) return cached;
     // Switched (and octave-moved) parts play the view's pitches; every other part plays the source as before.
-    const timeline = switchedTimeline(deriveTimeline(await baseTimelineFor(score), { visiblePartIds: visibleScore.parts.map(part => part.id) }), instrumentView, prefs.semitones);
+    const base = deriveTimeline(await baseTimelineFor(score), { visiblePartIds: visibleScore.parts.map(part => part.id) });
+    const timeline = timelineView ? switchedTimeline(base, timelineView, timelineSemitones) : base;
     timelineRef.current = { key: timelineKey, visible: visibleKey, view: timelineView, timeline };
     return timeline;
-  }, [timelineOf, score, visibleScore, timelineKey, visibleKey, instrumentView, timelineView, prefs.semitones]);
+  }, [timelineOf, score, visibleScore, timelineKey, visibleKey, timelineView, timelineSemitones]);
 
   useEffect(() => {
     setPrefs({ ...sanitizeSavedPrefs(storage.readPrefs()), ...hostPrefsRef.current });
@@ -557,7 +570,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     const restored = saved ? { ...next, parts: next.parts.map(part => {
       const state = saved.parts[part.id];
       if (!state) return part;
-      return { ...part, instrument: state.instrument, gmSoundfont: state.gmSoundfont || (state.instrument === part.instrument ? part.gmSoundfont : instrumentDetails(state.instrument).soundfont || undefined) };
+      return { ...part, importedInstrument: part.importedInstrument ?? part.instrument, instrument: state.instrument, gmSoundfont: state.gmSoundfont || (state.instrument === part.instrument ? part.gmSoundfont : instrumentDetails(state.instrument).soundfont || undefined) };
     }) } : next;
     stop(true); setPickerPartId(null); setScore(restored);
     if (inPlace) inPlaceRenderRef.current = true;
@@ -565,7 +578,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     // Only reader parts hide (a TAB part that doubles a guitar shows with it: tab/tab-parts.ts hiddenReaderParts).
     setHiddenIds(saved ? hiddenReaderParts(next, saved.parts) : []);
     // Like the other settings, the host's instruments apply only to a score without a saved record.
-    const switches = saved ? switchesFromSaved(next, saved.parts) : switchesFromSettings(next, instrumentSettingsRef.current);
+    const switches = saved ? switchesFromSaved(next, saved.parts, switchDefaults(instrumentSettingsRef.current)) : switchesFromSettings(next, instrumentSettingsRef.current);
     setPartSwitches(switches);
     setTrackVolumes(saved ? Object.fromEntries(next.parts.map(part => [part.id, saved.parts[part.id]?.volume ?? 100])) : {});
     setError('');
@@ -960,7 +973,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
         drawnRevisionRef.current = scoreRevision;
         if (scoreRevision > 0 && readyRevisionRef.current !== scoreRevision) {
           readyRevisionRef.current = scoreRevision;
-          callbacks.current.onReady?.({ title: score.title, composer: score.composer || undefined, parts: readerParts.map(part => ({ id: part.id, name: part.name })), measures: score.parts[0]?.measures.length ?? 0 });
+          callbacks.current.onReady?.({ title: score.title, composer: score.composer || undefined, parts: readerPartsInfo(score), measures: score.parts[0]?.measures.length ?? 0 });
         }
         if (largeNoticeArmedRef.current) { largeNoticeArmedRef.current = false; setLargeNotice(''); }
       } catch (e) {
@@ -1580,7 +1593,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const changeInstrument = (partId: string, sound: GmSound) => {
     const picked = withSound(partSwitches, partId, { instrument: sound.iconId, gmSoundfont: sound.soundfont || undefined });
     if (picked) { changeSwitches(() => picked); setPickerPartId(null); return; }
-    stop(true); setScore(prev => ({ ...prev, parts: prev.parts.map(p => p.id === partId ? { ...p, instrument: sound.iconId, gmProgram: sound.program || undefined, gmSoundfont: sound.soundfont || undefined } : p) }));
+    stop(true); setScore(prev => ({ ...prev, parts: prev.parts.map(p => p.id === partId ? withPickedSound(p, { instrument: sound.iconId, gmProgram: sound.program || undefined, gmSoundfont: sound.soundfont || undefined }) : p) }));
     setPickerPartId(null);
   };
   const pickerPart = score.parts.find(part => part.id === pickerPartId);
@@ -1702,8 +1715,8 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     {chrome.partControls && pickerPart && <div className="instrument-picker-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setPickerPartId(null); }}>
       <section ref={focusOnMount} tabIndex={-1} className="instrument-picker-panel" role="dialog" aria-modal="true" aria-label={`Choose voice for ${pickerPart.name}`}>
         <div className="instrument-picker-heading"><div><h2>{pickerPart.name}</h2><p>{pickerSection === 'instrument' ? 'Choose an instrument to read as' : 'Choose a playback sound'}</p></div><button className="icon-button" aria-label="Close voice picker" onClick={() => setPickerPartId(null)}><X size={19}/></button></div>
-        {switchOffered(pickerPart) && <div className="font-toggle instrument-picker-sections" role="tablist" aria-label="Instrument or sound">{(['instrument', 'sound'] as const).map(section => <button key={section} role="tab" className={`instrument-picker-section-tab instrument-picker-section-${section} ${pickerSection === section ? 'is-selected' : ''}`} aria-selected={pickerSection === section} onClick={() => openInstrumentPicker(pickerPart, section)}>{section === 'instrument' ? 'Instrument' : 'Sound'}</button>)}</div>}
-        {pickerSection === 'instrument' && switchOffered(pickerPart) ? <section className="instrument-picker-section instrument-picker-instrument" role="tabpanel" aria-label="Instrument">
+        {switchOffered(pickerPart) && <div className="font-toggle instrument-picker-sections" role="group" aria-label="Instrument or sound">{(['instrument', 'sound'] as const).map(section => <button key={section} type="button" className={`instrument-picker-section-tab instrument-picker-section-${section} ${pickerSection === section ? 'is-selected' : ''}`} aria-pressed={pickerSection === section} onClick={() => openInstrumentPicker(pickerPart, section)}>{section === 'instrument' ? 'Instrument' : 'Sound'}</button>)}</div>}
+        {pickerSection === 'instrument' && switchOffered(pickerPart) ? <section className="instrument-picker-section instrument-picker-instrument" aria-label="Instrument">
           <InstrumentChooser instruments={SWITCH_TARGETS} current={partSwitches[pickerPart.id]?.instrument} level={partSwitches[pickerPart.id]?.level ?? hostSwitchDefaults().level} autoRange={partSwitches[pickerPart.id]?.autoRange ?? hostSwitchDefaults().autoRange} asWrittenIcon={instrumentDetails(pickerPart.instrument).icon}
             onInstrument={id => setPartInstrument(sourcePartOf(pickerPart), id)} onLevel={level => setPartLevel(sourcePartOf(pickerPart), level)} onAutoRange={on => setPartAutoRange(sourcePartOf(pickerPart), on)}/>
         </section> : <section className="instrument-picker-section instrument-picker-sound" aria-label="Sound">

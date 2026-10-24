@@ -33,6 +33,11 @@ export type Part = { id: string;
   /** A tablature staff (MusicXML clef sign TAB), imported by Verovio as a `tab.guitar` staff. */
   tab?: boolean;
   /**
+   * The instrument the part was imported as, kept when a reader's Sound pick (or a saved one) replaces `instrument`
+   * with the sound's icon id. What the instrument switch offers keys on it (instrument-view.ts `switchablePart`).
+   */
+  importedInstrument?: InstrumentId;
+  /**
    * The part this TAB staff doubles (its notation staff). A doubling TAB part is engraved but never performed, has no
    * annotation lanes and is not listed in part controls, so the instrument shows and plays once (lib/tab/tab-parts.ts).
    */

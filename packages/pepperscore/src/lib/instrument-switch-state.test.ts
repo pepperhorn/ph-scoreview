@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { applyHostSwitchChange, readerPitch, restoredScorePitch, sourcePartsOf, switchedSoundParts, switchedTimeline, switchedView, switchesFromSaved, switchesFromSettings, switchHighlights, withOctaves, withSound, withSourceSwitch } from './instrument-switch-state';
+import { applyHostSwitchChange, readerPartsInfo, readerPitch, restoredScorePitch, sourcePartsOf, switchedSoundParts, switchedTimeline, switchedView, switchesFromSaved, switchesFromSettings, switchHighlights, withOctaves, withSound, withSourceSwitch } from './instrument-switch-state';
 import { buildBaseTimeline, playbackEventsFrom } from './playback/timeline';
 import { gmProgramForSoundfont, pitch, type Part, type Score } from './score';
 import { scoreForView } from './transpose';
+import { switchablePart, withPickedSound } from './instrument-view';
 
 const note = (id: string, step: string, octave: number, start = 0) => ({ id, start, duration: 1, voice: '1', pitches: [{ ...pitch(step, octave), sourceId: `m-${id}` }] });
 const part = (id: string, notes: ReturnType<typeof note>[], extra: Partial<Part> = {}): Part => ({ id, name: id, clef: 'treble', instrument: 'piano', gmProgram: 1, pitchBasis: 'written', measures: [{ index: 0, beats: 4, notes }], ...extra });
@@ -33,9 +34,45 @@ describe('instrument switch state', () => {
     expect(switchesFromSettings(input, { instrument: 'alto-saxophone', instruments: { 2: 'trumpet' } })).toEqual({ 'P1-1': { ...alto, instrument: 'trumpet' }, 'P1-2': { ...alto, instrument: 'trumpet' } });
     expect(switchesFromSettings(input, { instruments: { 3: 'flute' } })).toEqual({ P2: { ...alto, instrument: 'flute' } });
     // Unknown ids, the drum kit, part 1 (the drum kit here), part numbers out of range and bad levels are ignored.
-    expect(switchesFromSettings(input, { instruments: { 1: 'flute', 9: 'flute', x: 'flute', 2: 'kazoo' as never, 3: 'drum-kit' } })).toEqual({});
+    expect(switchesFromSettings(input, { instruments: { 1: 'flute', 9: 'flute', x: 'flute', 2: 'kazoo' as never, 3: 'drum-kit' as never } })).toEqual({});
     expect(switchesFromSettings(input, { instrument: 'flute', rangeLevel: 'expert' as never })['P1-1'].level).toBe('intermediate');
     expect(switchesFromSettings(input, {})).toEqual({});
+  });
+
+  it('`instruments` also keys by onReady part id (a staff switches its whole source part); onReady lists source numbers and switchability', () => {
+    const input = score(drums(), ...piano(), clarinet());
+    expect(switchesFromSettings(input, { instruments: { 'P1-2': 'trumpet' } })).toEqual({ 'P1-1': { ...alto, instrument: 'trumpet' }, 'P1-2': { ...alto, instrument: 'trumpet' } });
+    expect(switchesFromSettings(input, { instruments: { P1: 'flute', P2: 'trumpet' } })).toEqual({ 'P1-1': { ...alto, instrument: 'flute' }, 'P1-2': { ...alto, instrument: 'flute' }, P2: { ...alto, instrument: 'trumpet' } });
+    // The number and the id name the same part: both forms give the same switch; the drum kit and unknown ids are ignored.
+    expect(switchesFromSettings(input, { instruments: { 3: 'flute' } })).toEqual(switchesFromSettings(input, { instruments: { P2: 'flute' } }));
+    expect(switchesFromSettings(input, { instruments: { P0: 'flute', nope: 'flute' } })).toEqual({});
+    expect(readerPartsInfo(input)).toEqual([
+      { id: 'P0', name: 'P0', sourcePart: 1, switchable: false },
+      { id: 'P1-1', name: 'P1-1', sourcePart: 2, switchable: true }, { id: 'P1-2', name: 'P1-2', sourcePart: 2, switchable: true },
+      { id: 'P2', name: 'P2', sourcePart: 3, switchable: true },
+    ]);
+    // Every listed part's `String(sourcePart)` and `id` keys switch the same staves.
+    for (const info of readerPartsInfo(input).filter(item => item.switchable)) {
+      expect(switchesFromSettings(input, { instruments: { [info.id]: 'cello' } })).toEqual(switchesFromSettings(input, { instruments: { [String(info.sourcePart)]: 'cello' } }));
+    }
+  });
+
+  it('a Sound pick never changes what can be switched (pitched GM sounds with the drum kit icon, e.g. Timpani)', () => {
+    const [rh, lh] = piano();
+    // The mixer writes the sound's icon id: Timpani (GM 48) uses the drum kit icon.
+    const timpani = withPickedSound(rh, { instrument: 'drum-kit', gmProgram: 48, gmSoundfont: 'timpani' });
+    expect([timpani.instrument, timpani.importedInstrument, switchablePart(timpani)]).toEqual(['drum-kit', 'piano', true]);
+    // A second pick keeps the instrument it was imported as.
+    expect(withPickedSound(timpani, { instrument: 'violin', gmProgram: 47, gmSoundfont: 'orchestral_harp' }).importedInstrument).toBe('piano');
+    const picked = score(timpani, lh, clarinet());
+    expect(sourcePartsOf(picked).map(source => source.switchable)).toEqual([true, true]);
+    expect(switchesFromSettings(picked, { instrument: 'flute' })).toEqual({ 'P1-1': { ...alto, instrument: 'flute' }, 'P1-2': { ...alto, instrument: 'flute' } });
+    expect(switchesFromSettings(picked, { instruments: { 2: 'trumpet' } })).toEqual({ P2: { ...alto, instrument: 'trumpet' } });
+    // A real drum kit stays unswitchable, whatever sound it is given.
+    const kit = drums();
+    expect(switchablePart(kit)).toBe(false);
+    expect(switchablePart(withPickedSound(kit, { instrument: 'piano', gmProgram: 1, gmSoundfont: 'acoustic_grand_piano' }))).toBe(false);
+    expect(switchablePart({ ...kit, clef: 'treble' })).toBe(false);
   });
 
   it('a host change re-applies only the changed keys', () => {
@@ -77,6 +114,15 @@ describe('instrument switch state', () => {
       'P1-1': { instrument: 'trumpet', level: 'beginner', autoRange: true, octaves: {}, sound: { instrument: 'violin', gmSoundfont: 'orchestral_harp' } },
       'P1-2': { instrument: 'trumpet', level: 'beginner', autoRange: true, octaves: { lh1: 12 } },
     });
+    // A plain lead (as written, defaults, only its own octave moves): the other staff gets no no-op entry, the shape
+    // withSourceSwitch / withOctaves leave.
+    const defaults = { level: 'intermediate' as const, autoRange: true };
+    const plainLead = { 'P1-1': { visible: true, instrument: 'piano' as const, switch: { level: 'intermediate' as const, autoRange: true, octaves: { rh1: 12 as const } } }, 'P1-2': { visible: true, instrument: 'piano' as const } };
+    expect(switchesFromSaved(input, plainLead, defaults)).toEqual(withOctaves({}, 'P1-1', { rh1: 12 }, defaults));
+    expect(switchesFromSaved(input, plainLead, defaults)).toEqual({ 'P1-1': { level: 'intermediate', autoRange: true, octaves: { rh1: 12 } } });
+    // A saved level differing from the host's default is kept on every staff, as withSourceSwitch sets it.
+    const levelOnly = { 'P1-1': { visible: true, instrument: 'piano' as const, switch: { level: 'beginner' as const, autoRange: true } } };
+    expect(switchesFromSaved(input, levelOnly, defaults)).toEqual(withSourceSwitch(input, {}, 'P1', { level: 'beginner' }, defaults));
   });
 
   it('a saved concert pitch view of a concert-basis score (forced, never chosen) restores as written', () => {
@@ -107,6 +153,8 @@ describe('instrument switch state', () => {
     // The drum kit sound (no soundfont) is the kit.
     const kit = switchedSoundParts(input.parts, view, withSound(trumpet, 'P1-1', { instrument: 'drum-kit' })!);
     expect([kit[0].instrument, kit[0].gmSoundfont]).toEqual(['drum-kit', undefined]);
+    // Choosing the current instrument again keeps the picked sound.
+    expect(withSourceSwitch(input, harp, 'P1', { instrument: 'trumpet' }, defaults)).toEqual(harp);
     // A new instrument (or As written) plays its main sound again.
     expect(withSourceSwitch(input, harp, 'P1', { instrument: 'flute' }, defaults)['P1-1'].sound).toBeUndefined();
     expect(withSourceSwitch(input, harp, 'P1', { instrument: undefined }, defaults)).toEqual({});

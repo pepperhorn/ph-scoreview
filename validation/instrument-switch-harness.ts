@@ -17,7 +17,7 @@ import { verovioBaseline } from '../packages/pepperscore/src/lib/verovio-runtime
 import { gmProgramForSoundfont, type Score } from '../packages/pepperscore/src/lib/score';
 import { createElement } from 'react';
 import { createRoot } from 'react-dom/client';
-import PepperScore from '../packages/pepperscore/src/components/PepperScore';
+import PepperScore, { type PepperScoreReadyInfo } from '../packages/pepperscore/src/components/PepperScore';
 import type { PepperScoreSettings } from '../packages/pepperscore/src/lib/prefs';
 import type { PepperScoreControls } from '../packages/pepperscore/src/lib/chrome';
 import { readerPitch, switchedSoundParts, switchedTimeline, switchedView, switchesFromSettings } from '../packages/pepperscore/src/lib/instrument-switch-state';
@@ -193,14 +193,16 @@ export async function mountReader(xml: string, props: MountProps = {}) {
   host.style.width = '1200px';
   document.body.appendChild(host);
   const root = createRoot(host);
+  let ready: PepperScoreReadyInfo | undefined;
   try {
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('PepperScore did not render')), 60000);
       root.render(createElement(PepperScore, { musicXml: xml, chrome: 'minimal', persist: false, audio: false, settings: props.settings, highlights: props.highlights,
         onError: error => { clearTimeout(timer); reject(error); },
+        onReady: info => { ready = info; },
         onRender: () => { clearTimeout(timer); resolve(); } }));
     });
-    return await readReader(host, props);
+    return { ...await readReader(host, props), ready };
   } finally { root.unmount(); host.remove(); }
 }
 

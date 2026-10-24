@@ -193,7 +193,14 @@ try {
     assert.deepEqual(switched.generate.length, 2, `Piano as guitar, ${pitch} view: both staves get generated TAB`);
     assert.deepEqual(sorted(switched.tabNotes.map(note => pitchOf(note))), [48, 72, 76], `Piano as guitar, ${pitch} view: frets sound the piano's pitches (${JSON.stringify(switched.tabNotes)})`);
   }
-  console.log('TAB: a part switched to guitar gets frets at its sounding pitch passed');
+  // With a transposition and a capo: frets (relative to the capo) sound the piano's pitches moved by the semitones.
+  for (const pitch of ['written', 'concert']) for (const [semitones, capo] of [[2, 2], [-3, 4]]) {
+    const switched = await call('engraveTab', switchPiano, { view: 'tab', pitch, semitones, capo, switches: { 0: toGuitar, 1: toGuitar } });
+    assert.deepEqual(switched.generate.length, 2, `Piano as guitar ${semitones > 0 ? '+' : ''}${semitones}, capo ${capo}, ${pitch} view: both staves get generated TAB`);
+    assert.deepEqual(sorted(switched.tabNotes.map(note => pitchOf(note, TUNING, capo))), [48, 72, 76].map(midi => midi + semitones), `Piano as guitar ${semitones > 0 ? '+' : ''}${semitones}, capo ${capo}, ${pitch} view: frets sound the transposed pitches (${JSON.stringify(switched.tabNotes)})`);
+    assert.ok(switched.tabNotes.every(note => note.fret >= 0), `Piano as guitar, capo ${capo}: no fret below the capo`);
+  }
+  console.log('TAB: a part switched to guitar gets frets at its sounding pitch (with transposition and capo) passed');
 
   // 10. Capo and tuning at the TAB boundary: a fractional capo is rounded; the TAB staff has one line per string.
   const fractionalCapo = await call('engraveTab', NOTATION, { view: 'tab', capo: 2.5 });

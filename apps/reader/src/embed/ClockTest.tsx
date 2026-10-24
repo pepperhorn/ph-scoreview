@@ -7,13 +7,13 @@ const tune = (title: string, bars: number) => `X:1\nT:${title}\nM:4/4\nL:1/4\nQ:
 type Listener = (event: ClockEvent) => void;
 /** A clock the test moves by hand: seek/play/pause emit events; advance() only moves now() (read every frame while playing). */
 function manualClock() {
-  let time = 0, playing = false;
+  let time = 0, playing = false, subscriptions = 0;
   const listeners = new Set<Listener>();
   const emit = (type: ClockEvent['type']) => listeners.forEach(listener => listener({ type, time }));
   const clock: ExternalClock = {
     now: () => time,
     get playing() { return playing; },
-    subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    subscribe(listener) { subscriptions++; listeners.add(listener); return () => { listeners.delete(listener); }; },
   };
   return {
     clock,
@@ -22,6 +22,8 @@ function manualClock() {
     pause() { playing = false; emit('pause'); },
     advance(seconds: number) { time = seconds; },
     listeners: () => listeners.size,
+    /** Subscriptions made so far (a reader re-subscribes when its clock or timeline changes). */
+    subscriptions: () => subscriptions,
   };
 }
 const clocks = { a: manualClock(), b: manualClock() };
