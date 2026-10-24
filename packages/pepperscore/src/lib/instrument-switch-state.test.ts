@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyHostSwitchChange, readerPartsInfo, readerPitch, restoredScorePitch, sourcePartsOf, switchedSoundParts, switchedTimeline, switchedView, switchesFromSaved, switchesFromSettings, switchHighlights, withOctaves, withSound, withSourceSwitch } from './instrument-switch-state';
+import { applyHostSwitchChange, readerPartsInfo, readerPitch, restoredScorePitch, selectOctaveNote, selectOctavePhrase, sourcePartsOf, steppedOctaves, switchedSoundParts, switchedTimeline, switchedView, switchesFromSaved, switchesFromSettings, switchHighlights, withOctaves, withoutStalePins, withSound, withSourceSwitch, partLabel } from './instrument-switch-state';
 import { buildBaseTimeline, playbackEventsFrom } from './playback/timeline';
 import { gmProgramForSoundfont, pitch, type Part, type Score } from './score';
 import { scoreForView } from './transpose';
@@ -210,5 +210,91 @@ describe('instrument switch state', () => {
     const sound = switchedSoundParts(input.parts, fitted, { 'P1-1': alto, 'P1-2': alto });
     expect(sound.map(p => [p.instrument, gmProgramForSoundfont(p.gmSoundfont!)])).toEqual([['alto-saxophone', 66], ['alto-saxophone', 66]]);
     expect(switchedSoundParts(input.parts, fitted, {})).toBe(input.parts);
+  });
+
+  it('octave tool selection: a tie chain, a passage across voices (Shift or a second click), the phrase; 8va / 8vb steps', () => {
+    // Bar 1: a C5, b D5 tied into bar 2's c, voice 2 v E4; bar 2: c, a rest, d F5.
+    const tied = (id: string, step: string, octave: number, start: number, tie: { tieStart?: boolean; tieStop?: boolean }) => { const n = note(id, step, octave, start); n.pitches[0] = { ...n.pitches[0], ...tie }; return n; };
+    const line = part('P', [], { measures: [
+      { index: 0, beats: 4, notes: [note('a', 'C', 5, 0), { ...note('v', 'E', 4, 0), voice: '2' }, tied('b', 'D', 5, 1, { tieStart: true })] },
+      { index: 1, beats: 4, notes: [tied('c', 'D', 5, 0, { tieStop: true }), { id: 'r', start: 1, duration: 1, voice: '1', rest: true, pitches: [] }, note('d', 'F', 5, 2)] },
+    ] });
+    const input = score(line, drums());
+    const a = selectOctaveNote(input, null, 'a', false)!;
+    expect(a).toEqual({ partId: 'P', anchor: 'a', ids: ['a'], extendable: true });
+    expect(selectOctaveNote(input, null, 'c', false)!.ids).toEqual(['b', 'c']);
+    // A second click (or Shift-click) selects the passage between, every voice, tie chains whole.
+    const passage = selectOctaveNote(input, a, 'b', false)!;
+    expect(passage).toEqual({ partId: 'P', anchor: 'a', ids: ['a', 'v', 'b', 'c'], extendable: false });
+    expect(selectOctaveNote(input, selectOctaveNote(input, null, 'd', false), 'b', true)!.ids).toEqual(['b', 'c', 'd']);
+    // After a passage a plain click starts again; Shift-click extends from the anchor.
+    expect(selectOctaveNote(input, passage, 'd', false)!.ids).toEqual(['d']);
+    expect(selectOctaveNote(input, passage, 'd', true)!.ids).toEqual(['a', 'v', 'b', 'c', 'd']);
+    // Rests and drum notes keep the selection.
+    expect(selectOctaveNote(input, a, 'r', false)).toBe(a);
+    expect(selectOctaveNote(input, a, 'dr1', false)).toBe(a);
+    // The phrase: broken at the rest, joined across the tie.
+    expect(selectOctavePhrase(input, a).ids).toEqual(['a', 'b', 'c']);
+    expect(selectOctavePhrase(input, selectOctaveNote(input, null, 'd', false)!).ids).toEqual(['d']);
+    // 8va / 8vb on an unswitched staff: up an octave, then back as written (no override left); values stay within ±12.
+    const up = steppedOctaves({}, ['a', 'b'], 12);
+    expect(up).toEqual({ a: 12, b: 12 });
+    const upView = switchedView(input, { P: { level: 'intermediate', autoRange: true, octaves: up } }, 'written');
+    // The override on b extends along its tie to c.
+    expect([upView.shifts, upView.planned]).toEqual([{ a: 12, b: 12, c: 12 }, {}]);
+    expect(steppedOctaves(up, ['a', 'b'], 12, upView.shifts, upView.planned)).toEqual({ a: 12, b: 12 });
+    expect(steppedOctaves(up, ['a'], -12, upView.shifts, upView.planned)).toEqual({ b: 12 });
+    expect(steppedOctaves({}, ['a'], -12)).toEqual({ a: -12 });
+  });
+
+  it('octave tool steps from the shown shift: 8vb on an auto-raised phrase keeps it as written (an explicit 0), 8va on an auto-lowered one too', () => {
+    // Piano as alto sax: the left hand's C3 is below the alto, auto-fit raises it.
+    const input = score(...piano());
+    const fitted = switchedView(input, { 'P1-1': alto, 'P1-2': alto }, 'written');
+    expect([fitted.shifts, fitted.planned]).toEqual([{ lh1: 12 }, { lh1: 12 }]);
+    const kept = steppedOctaves({}, ['lh1'], -12, fitted.shifts, fitted.planned);
+    expect(kept).toEqual({ lh1: 0 });
+    const asWritten = switchedView(input, { 'P1-1': alto, 'P1-2': { ...alto, octaves: kept } }, 'written');
+    expect([asWritten.moved, asWritten.shifts, asWritten.outOfRange]).toEqual([[], {}, ['lh1']]);
+    expect(asWritten.score.parts[1].measures[0].notes[0].pitches[0].midi).toBe(fitted.score.parts[1].measures[0].notes[0].pitches[0].midi - 12);
+    // 8va from there is what auto-fit gives: no override.
+    expect(steppedOctaves(kept, ['lh1'], 12, asWritten.shifts, asWritten.planned)).toEqual({});
+    // A C7 is above the alto, auto-fit lowers it; 8va keeps it as written.
+    const high = score(part('H', [note('h1', 'C', 7)]));
+    const lowered = switchedView(high, { H: alto }, 'written');
+    expect([lowered.shifts, lowered.planned]).toEqual([{ h1: -12 }, { h1: -12 }]);
+    expect(steppedOctaves({}, ['h1'], 12, lowered.shifts, lowered.planned)).toEqual({ h1: 0 });
+    expect(switchedView(high, { H: { ...alto, octaves: { h1: 0 } } }, 'written').moved).toEqual([]);
+  });
+  it('stale "as written" pins: a 0 override the new auto-fit plan no longer overrides is dropped; one it still overrides stays', () => {
+    const input = score(...piano());
+    const defaults = { level: 'intermediate' as const, autoRange: true };
+    const view = { scorePitch: 'written' as const, semitones: 0 };
+    // Piano as alto sax, the reader's 8vb on the auto-raised C3: an explicit 0 (as written), and an 8va on rh1.
+    const pinned = { 'P1-1': { ...alto, octaves: { rh1: 12 as const } }, 'P1-2': { ...alto, octaves: { lh1: 0 as const } } };
+    expect(withoutStalePins(input, pinned, view, defaults)).toBe(pinned);
+    // Cello: C3 is in range, auto-fit no longer moves it, so its pin goes; the 8va stays.
+    const cello = withoutStalePins(input, withSourceSwitch(input, pinned, 'P1', { instrument: 'cello' }, defaults), view, defaults);
+    expect(cello).toEqual({ 'P1-1': { ...alto, instrument: 'cello', octaves: { rh1: 12 } }, 'P1-2': { ...alto, instrument: 'cello', octaves: {} } });
+    // Fit to range off: no plan, the pin goes. Beginner alto: C3 is still raised, the pin stays.
+    expect(withoutStalePins(input, withSourceSwitch(input, pinned, 'P1', { autoRange: false }, defaults), view, defaults)['P1-2'].octaves).toEqual({});
+    expect(withoutStalePins(input, withSourceSwitch(input, pinned, 'P1', { level: 'beginner' }, defaults), view, defaults)['P1-2'].octaves).toEqual({ lh1: 0 });
+    // As written: nothing is planned, so a staff with only a pin left is plain again (no entry).
+    const asWritten = withoutStalePins(input, withSourceSwitch(input, pinned, 'P1', { instrument: undefined }, defaults), view, defaults);
+    expect(asWritten).toEqual({ 'P1-1': { ...alto, instrument: undefined, octaves: { rh1: 12 } } });
+    // Transposed down a fifth (F2, still below the alto): the plan is the transposed view's, so the pin stays.
+    expect(withoutStalePins(input, pinned, { ...view, semitones: -7 }, defaults)).toBe(pinned);
+  });
+
+  it('part labels: the source name, and the instrument a switched staff is shown as', () => {
+    const [rh, lh] = piano();
+    const guitar = { ...alto, instrument: 'guitar' as const };
+    expect(partLabel(rh, {})).toEqual({ name: 'P1-1' });
+    expect([partLabel(rh, { 'P1-1': guitar, 'P1-2': guitar }), partLabel(lh, { 'P1-1': guitar, 'P1-2': guitar })]).toEqual([{ name: 'P1-1', switched: 'Guitar' }, { name: 'P1-2', switched: 'Guitar' }]);
+    expect(partLabel(rh, { 'P1-1': alto })).toEqual({ name: 'P1-1', switched: 'Alto Sax' });
+    // Octave moves only, or switched to the instrument it already is: no switch shown.
+    expect(partLabel(rh, { 'P1-1': { ...alto, instrument: undefined, octaves: { rh1: 12 } } })).toEqual({ name: 'P1-1' });
+    expect(partLabel(rh, { 'P1-1': { ...alto, instrument: 'piano' } })).toEqual({ name: 'P1-1' });
+    expect(partLabel(drums(), { P0: alto })).toEqual({ name: 'P0' });
   });
 });

@@ -293,10 +293,11 @@
                 "additionalProperties": {
                   "enum": [
                     12,
-                    -12
+                    -12,
+                    0
                   ]
                 },
-                "description": "The reader's octave moves by Score note id."
+                "description": "The reader's octave moves by Score note id: the note's shift from its pitch in the view (0 keeps a note auto-fit would move where it is)."
               },
               "sound": {
                 "type": "object",

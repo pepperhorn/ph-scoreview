@@ -193,6 +193,17 @@ try {
     assert.deepEqual(switched.generate.length, 2, `Piano as guitar, ${pitch} view: both staves get generated TAB`);
     assert.deepEqual(sorted(switched.tabNotes.map(note => pitchOf(note))), [48, 72, 76], `Piano as guitar, ${pitch} view: frets sound the piano's pitches (${JSON.stringify(switched.tabNotes)})`);
   }
+  // Both view: every staff of the grand staff switched to guitar keeps its notation and gets its own TAB staff (the
+  // left hand too, not only the first staff), each fretting its own notes: RH C5 E5 (B string 13, high E 12), LH C3
+  // (A string 3).
+  for (const pitch of ['written', 'concert']) {
+    const both = await call('engraveTab', switchPiano, { view: 'both', pitch, switches: { 0: toGuitar, 1: toGuitar } });
+    assert.deepEqual(both.generate, ['1', '2'], `Piano as guitar, Both ${pitch} view: both staves get generated TAB`);
+    assert.deepEqual(both.staves, ['1', '101', '2', '102'], `Piano as guitar, Both ${pitch} view: each notation staff is followed by its TAB staff`);
+    const frets = n => (both.staffNotes[n] ?? []).map(note => [note.course, note.fret, pitchOf(note)]);
+    assert.deepEqual(frets('101'), [[2, 13, 72], [1, 12, 76]], `Piano as guitar, Both ${pitch} view: the right hand's TAB frets C5 E5`);
+    assert.deepEqual(frets('102'), [[5, 3, 48]], `Piano as guitar, Both ${pitch} view: the left hand's TAB frets C3`);
+  }
   // With a transposition and a capo: frets (relative to the capo) sound the piano's pitches moved by the semitones.
   for (const pitch of ['written', 'concert']) for (const [semitones, capo] of [[2, 2], [-3, 4]]) {
     const switched = await call('engraveTab', switchPiano, { view: 'tab', pitch, semitones, capo, switches: { 0: toGuitar, 1: toGuitar } });

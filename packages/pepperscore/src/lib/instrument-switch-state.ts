@@ -2,11 +2,12 @@
 // records to per-staff-part switches, the pitch view rule for concert-basis scores, and what playback and the
 // highlights read from a switched view. Pure; PepperScore.tsx holds the state.
 import { isLevel, isSwitchTarget, type PartState } from './file-state';
-import { INSTRUMENT_IDS, INSTRUMENTS, type InstrumentId, type Level, type SwitchInstrumentId } from './instrument-model';
-import { applyInstrumentView, sourcePartOf, switchablePart, type InstrumentViewResult, type PartSound, type PartSwitch } from './instrument-view';
+import { INSTRUMENT_IDS, INSTRUMENTS, instrumentName, type InstrumentId, type Level, type SwitchInstrumentId } from './instrument-model';
+import { applyInstrumentView, byStart, phrasesOf, pitched, sourcePartOf, switchablePart, tieChainsOf, type InstrumentViewResult, type PartSound, type PartSwitch } from './instrument-view';
 import type { BaseTimeline } from './playback/timeline';
+import type { Shift } from './range-fit-core';
 import { gmProgramForSoundfont, type Part, type Score } from './score';
-import { soundingMidi } from './transpose';
+import { scoreForView, soundingMidi } from './transpose';
 
 export const DEFAULT_RANGE_LEVEL: Level = 'intermediate';
 /** The instruments a pitched part can be switched to: the model's, in its order, without the drum kit. */
@@ -82,10 +83,103 @@ export function withSourceSwitch(score: Score, switches: Switches, sourcePart: s
 }
 
 /** Set the reader's octave moves (by `ScoreNote.id`) of one staff part. */
-export function withOctaves(switches: Switches, partId: string, octaves: Record<string, 12 | -12>, defaults: SwitchDefaults): Switches {
+export function withOctaves(switches: Switches, partId: string, octaves: Record<string, Shift>, defaults: SwitchDefaults): Switches {
   const entry = { ...(switches[partId] ?? { instrument: undefined, ...defaults, octaves: {} }), octaves: { ...octaves } };
   const out = { ...switches };
   if (plain(entry, defaults)) delete out[partId]; else out[partId] = entry;
+  return out;
+}
+
+/**
+ * Drop the reader's "keep as written" pins (an octave override of 0) that the auto-fit plan no longer overrides: after
+ * a level, instrument or fit change (or a host change) the plan of the view these switches give may not move that note
+ * any more, and a stale pin would keep its staff "non-plain" (a saved entry) and block auto-fit if the plan moves the
+ * note again later. A 0 on a note the plan still moves (8vb on an auto-raised phrase: as written) stays, as do 8va / 8vb
+ * moves. The view is the reader's: `scoreForView` at `semitones`, in the pitch view `readerPitch` gives these switches.
+ */
+export function withoutStalePins(score: Score, switches: Switches, view: { scorePitch: 'written' | 'concert'; semitones: number; keyFlip?: boolean }, defaults: SwitchDefaults): Switches {
+  const pinned = Object.entries(switches).filter(([, entry]) => Object.values(entry.octaves).some(value => value === 0));
+  if (!pinned.length) return switches;
+  const { scorePitch } = readerPitch(score, switches, view.scorePitch);
+  const { planned } = switchedView(scoreForView(score, scorePitch, view.semitones, view.keyFlip ?? false), switches, scorePitch);
+  let out = switches;
+  for (const [id, entry] of pinned) {
+    const octaves = Object.fromEntries(Object.entries(entry.octaves).filter(([noteId, value]) => value !== 0 || planned[noteId]));
+    if (Object.keys(octaves).length !== Object.keys(entry.octaves).length) out = withOctaves(out, id, octaves, defaults);
+  }
+  return out;
+}
+
+/**
+ * A staff part's label: its own name and, while it is switched to another instrument, that instrument's short name
+ * (the reader shows "Piano → Guitar"). No `switched` when as written, or switched to the instrument the part already is.
+ */
+export function partLabel(part: Part, switches: Switches): { name: string; switched?: string } {
+  const target = switches[part.id]?.instrument;
+  if (!target || !switchablePart(part) || target === (part.importedInstrument ?? part.instrument)) return { name: part.name };
+  return { name: part.name, switched: instrumentName(target) };
+}
+
+/**
+ * The octave tool's selection on one staff part: `ids` (ScoreNote ids, score order, whole tie chains), the note the
+ * selection started from (`anchor`) and whether a plain click extends it to a passage (only after a single-note pick).
+ */
+export type OctaveSelection = { partId: string; anchor: string; ids: string[]; extendable: boolean };
+
+/** A part's pitched notes in score order with their (measure, start) positions. */
+function notePositions(part: Part): Map<string, [number, number]> {
+  const positions = new Map<string, [number, number]>();
+  part.measures.forEach((measure, index) => {
+    for (const note of byStart(measure)) if (pitched(note)) positions.set(note.id, [index, note.start]);
+  });
+  return positions;
+}
+const before = (a: [number, number], b: [number, number]) => a[0] - b[0] || a[1] - b[1];
+/** `ids` deduplicated, in score order. */
+function inScoreOrder(positions: Map<string, [number, number]>, ids: Iterable<string>): string[] {
+  const wanted = new Set(ids);
+  return [...positions.keys()].filter(id => wanted.has(id));
+}
+
+/**
+ * A click on a note with the octave tool on. A note of a switchable part selects its tie chain; with `extend`
+ * (Shift-click), or a plain click after a single-note pick in the same part, it selects every note of that part whose
+ * (measure, start) lies between the anchor and this note, in all voices, each with its tie chain. A note the tool can't
+ * move (a rest, a drum or TAB staff) keeps the selection.
+ */
+export function selectOctaveNote(score: Score, current: OctaveSelection | null, noteId: string, extend: boolean): OctaveSelection | null {
+  const part = score.parts.find(item => !item.tabOf && switchablePart(item) && item.measures.some(measure => measure.notes.some(note => note.id === noteId)));
+  const positions = part && notePositions(part);
+  const at = positions?.get(noteId);
+  if (!part || !positions || !at) return current;
+  const chainOf = tieChainsOf(part);
+  const from = current?.partId === part.id && (extend || current.extendable) ? positions.get(current.anchor) : undefined;
+  if (!current || !from) return { partId: part.id, anchor: noteId, ids: chainOf(noteId), extendable: true };
+  const [low, high] = before(from, at) <= 0 ? [from, at] : [at, from];
+  const inside = [...positions].filter(([, position]) => before(position, low) >= 0 && before(position, high) <= 0).flatMap(([id]) => chainOf(id));
+  return { partId: part.id, anchor: current.anchor, ids: inScoreOrder(positions, inside), extendable: false };
+}
+
+/** "Select phrase": the selection widened to the auto-fit phrases (`phrasesOf`) that contain any of its notes. */
+export function selectOctavePhrase(score: Score, selection: OctaveSelection): OctaveSelection {
+  const part = score.parts.find(item => item.id === selection.partId);
+  if (!part) return selection;
+  const selected = new Set(selection.ids);
+  const phrases = phrasesOf(part).filter(phrase => phrase.some(id => selected.has(id)));
+  return { ...selection, ids: inScoreOrder(notePositions(part), [...selection.ids, ...phrases.flat()]), extendable: false };
+}
+
+/**
+ * 8va / 8vb on the selected notes, from where each is shown (`shifts`: auto-fit and the reader's moves): the new shift
+ * (kept within ±12) is stored as the note's override, 0 included (a note auto-fit moved goes back as written); a
+ * shift auto-fit alone gives (`planned`) needs no override and drops it.
+ */
+export function steppedOctaves(octaves: Record<string, Shift>, ids: string[], step: 12 | -12, shifts: Record<string, Shift> = {}, planned: Record<string, Shift> = {}): Record<string, Shift> {
+  const out = { ...octaves };
+  for (const id of ids) {
+    const next = Math.max(-12, Math.min(12, (shifts[id] ?? 0) + step)) as Shift;
+    if (next === (planned[id] ?? 0)) delete out[id]; else out[id] = next;
+  }
   return out;
 }
 
@@ -172,7 +266,7 @@ export function readerPitch(score: Score, switches: Switches, preferred: 'writte
 
 /** The switched view of `scoreForView`'s result (the switch runs last); with no switches, that result itself. */
 export function switchedView(viewed: Score, switches: Switches, scorePitch: 'written' | 'concert'): InstrumentViewResult {
-  if (!Object.keys(switches).length) return { score: viewed, moved: [], outOfRange: [], staves: {}, hiddenTab: [] };
+  if (!Object.keys(switches).length) return { score: viewed, moved: [], outOfRange: [], shifts: {}, planned: {}, staves: {}, hiddenTab: [] };
   return applyInstrumentView(viewed, switches, scorePitch);
 }
 

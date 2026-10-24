@@ -303,6 +303,16 @@ try {
   assert.equal(await picker.getByRole('button', { name: 'Trumpet', exact: true }).getAttribute('aria-pressed'), 'true', 'Trumpet is selected');
   assert.match(await partIcon(), /trumpet/, 'The part icon shows the trumpet');
   assert.match(await page.locator('.mixer-track-icon').first().getAttribute('src'), /trumpet/, 'The mixer track icon shows the trumpet');
+  // The staff labels name the switch on both staves ("Piano → Trumpet"); a screen reader hears "Piano as Trumpet".
+  const partLabels = () => page.locator('.part-control .part-name').evaluateAll(names => names.map(name => {
+    const text = keep => { const copy = name.cloneNode(true); copy.querySelectorAll(keep).forEach(node => node.remove()); return [...copy.children].length ? [...copy.children].map(child => child.textContent.trim()).join(' ') : copy.textContent; };
+    return { shown: text('.ps-visually-hidden'), spoken: text('[aria-hidden="true"]').replace(/\s+/g, ' ').trim(), title: name.title };
+  }));
+  const switchedNames = (await partLabels()).map(label => label.shown);
+  assert.equal(switchedNames.length, 2, 'Both staves have a label');
+  assert.ok(switchedNames.every(name => / → Trumpet$/.test(name)) && switchedNames[0].startsWith('Piano'), `Trumpet: both staff labels show the switch: ${JSON.stringify(switchedNames)}`);
+  const firstLabel = (await partLabels())[0];
+  assert.deepEqual([firstLabel.spoken, firstLabel.title], [`${switchedNames[0].replace(' → Trumpet', '')} as Trumpet`, `${switchedNames[0].replace(' → Trumpet', '')}, shown as Trumpet`], 'The label reads "<part> as Trumpet"');
   // A sound pick changes only the sound: the notes and the instrument stay the trumpet's.
   await section('Sound').click();
   assert.match(await picker.locator('.instrument-picker-grid button.is-selected').textContent(), /Trumpet/, 'Choosing the trumpet set its main sound');
@@ -323,6 +333,7 @@ try {
   const backUi = await redraw(() => picker.getByRole('button', { name: 'As written', exact: true }).click());
   assert.deepEqual([staffPitches(backUi, '1'), staffPitches(backUi, '2'), backUi.clefs], [['C5', 'E5'], ['C3'], { 1: 'G', 2: 'F' }], 'As written: the original engraving');
   assert.equal(await partIcon(), pianoIcon, 'As written: the piano icon again');
+  assert.ok((await partLabels()).every(label => !label.shown.includes('→')), 'As written: the staff labels are the part names again');
   assert.equal(await page.getByRole('button', { name: 'Voice for Piano', exact: true }).first().textContent(), pianoVoice, 'As written: the part\'s own sound again');
   await page.getByRole('button', { name: 'Close voice picker', exact: true }).click();
   await page.getByRole('button', { name: 'Close track mixer', exact: true }).click();
@@ -360,6 +371,166 @@ try {
   assert.deepEqual([await picker.locator('.instrument-chooser, .instrument-picker-sections').count(), await picker.locator('.instrument-picker-grid button').count() > 0], [0, true], 'Drum kit: Sound only');
   await page.evaluate(async () => (await import('/validation/instrument-switch-harness.ts')).unmountLive());
   console.log('Instrument switch: full reader picker (Instrument and Sound sections, trumpet, harp sound, level and fit, as written, hidden by the host, drum kit) passed');
+
+  // --- The octave tool (Task 9) -----------------------------------------------------------------------------------
+  const events = () => page.evaluate(() => window.__psEvents);
+  const staffNote = (staff, index) => page.locator(`.instrument-switch-live .score-system svg g.staff[data-n="${staff}"] g.note`).nth(index).locator('.notehead').first();
+  /** Wait until the drawn notes carrying ps-octave-selection are `expected` (a selection only re-applies highlights). */
+  const selected = async expected => {
+    await page.waitForFunction(want => JSON.stringify([...document.querySelectorAll('.instrument-switch-live .score-system svg .ps-octave-selection')].flatMap(el => (el.matches('g.note') ? [el] : [...el.querySelectorAll('g.note')]))
+      .map(note => `${note.closest('g.staff')?.getAttribute('data-n')}:${(note.getAttribute('data-pname') || '').toUpperCase()}${note.getAttribute('data-oct')}`)) === JSON.stringify(want), expected, { timeout: 10000 })
+      .catch(async () => assert.deepEqual((await readLive()).selection, expected, 'Selection'));
+  };
+  const toolbar = page.locator('.octave-toolbar');
+  const openOctaveTool = async () => {
+    await page.getByRole('button', { name: 'Options', exact: true }).click();
+    await page.locator('.pitch-panel .octave-tool-toggle').click();
+    await toolbar.waitFor();
+    await page.waitForFunction(() => document.activeElement?.classList.contains('octave-toolbar'), null, { timeout: 5000 });
+    // The drawer slides away (a CSS transition) before notes can be clicked.
+    await page.waitForFunction(() => document.querySelector('.bottom-drawer')?.getAnimations().length === 0);
+  };
+  await live(pianoXml, { listen: true });
+  // Tool off: a note click is reported and seeks (the host clock).
+  await staffNote('1', 0).click({ force: true });
+  assert.ok((await events()).some(event => event.startsWith('click:')) && (await events()).some(event => event.startsWith('seek:')), 'Tool off: a note click reports and seeks');
+  await openOctaveTool();
+  assert.equal(await page.locator('.pitch-panel .octave-tool-toggle').getAttribute('aria-pressed'), 'true', 'The toggle is pressed while the tool is on');
+  assert.equal(await page.locator('.bottom-drawer').getAttribute('aria-hidden'), 'true', 'Turning the tool on closes the drawer so notes can be tapped');
+  assert.deepEqual(await toolbar.getByRole('button').allTextContents(), ['8va ↑', '8vb ↓', 'Select phrase', 'Reset', 'Done'], 'The octave toolbar buttons');
+  assert.equal(await toolbar.locator('.octave-up').getAttribute('aria-label'), '8va ↑ Move selection up an octave', 'The accessible name starts with the visible text');
+  assert.equal(await toolbar.locator('.octave-down').getAttribute('aria-label'), '8vb ↓ Move selection down an octave');
+  assert.equal(await toolbar.locator('.octave-up').getAttribute('aria-disabled'), 'true', 'Nothing selected: 8va is unavailable');
+  const before = (await events()).length;
+  await staffNote('1', 0).click({ force: true });
+  await selected(['1:C5']);
+  assert.equal((await events()).length, before, 'Tool on: a note click selects; it neither seeks nor reports');
+  await staffNote('1', 1).click({ force: true, modifiers: ['Shift'] });
+  await selected(['1:C5', '1:E5']);
+  assert.match(await toolbar.locator('.octave-toolbar-status').textContent(), /2 notes selected/, 'The toolbar names the selection');
+  const upUi = await redraw(() => toolbar.locator('.octave-up').click());
+  assert.deepEqual([staffPitches(upUi, '1'), staffPitches(upUi, '2'), upUi.clefs], [['C6', 'E6'], ['C3'], { 1: 'G', 2: 'F' }], '8va: the passage renders an octave up, nothing else changes');
+  assert.deepEqual(upUi.transposed, ['1:C6', '1:E6'], 'Moved notes carry ps-transposed');
+  await selected(['1:C6', '1:E6']);
+  const downUi = await redraw(() => toolbar.locator('.octave-down').click());
+  assert.deepEqual([staffPitches(downUi, '1'), downUi.transposed], [['C5', 'E5'], []], '8vb after 8va: back as written');
+  // A plain second click selects the passage too; Select phrase; Reset clears the part's moves.
+  await staffNote('2', 0).click({ force: true });
+  await selected(['2:C3']);
+  await staffNote('1', 0).click({ force: true });
+  await staffNote('1', 1).click({ force: true });
+  await selected(['1:C5', '1:E5']);
+  await staffNote('1', 1).click({ force: true });
+  await selected(['1:E5']);
+  await toolbar.locator('.octave-phrase').click();
+  await selected(['1:C5', '1:E5']);
+  await redraw(() => toolbar.locator('.octave-down').click());
+  const resetUi = await redraw(() => toolbar.locator('.octave-reset').click());
+  assert.deepEqual([staffPitches(resetUi, '1'), resetUi.transposed], [['C5', 'E5'], []], 'Reset clears the octave moves');
+  // Escape with the drawer open closes the drawer first; the next Escape exits the tool: the selection goes, clicks seek again.
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => document.querySelector('.bottom-drawer')?.getAttribute('aria-hidden') === 'true');
+  assert.equal(await toolbar.count(), 1, 'Escape with the drawer open closes the drawer, the tool stays on');
+  await page.keyboard.press('Escape');
+  await toolbar.waitFor({ state: 'detached' });
+  await selected([]);
+  const afterExit = (await events()).length;
+  await staffNote('1', 0).click({ force: true });
+  assert.ok((await events()).length > afterExit, 'After Escape a note click reports and seeks again');
+  // Past the range: the piano as alto sax (intermediate, sounding up to 77), C5 E5 an octave up are out of range.
+  await live(pianoXml, { settings: { instrument: 'alto-saxophone' } });
+  await openOctaveTool();
+  await staffNote('1', 0).click({ force: true });
+  await staffNote('1', 1).click({ force: true, modifiers: ['Shift'] });
+  await selected(['1:A5', '1:C6']);
+  const outUi = await redraw(() => toolbar.locator('.octave-up').click());
+  assert.deepEqual(staffPitches(outUi, '1'), ['A6', 'C7'], 'Alto sax 8va: written an octave up');
+  assert.deepEqual(outUi.outOfRange.sort(), ['1:A6', '1:C7'], 'Moved past the range: ps-out-of-range');
+  await selected(['1:A6', '1:C7']);
+  assert.equal((await readLive()).outOfRangeColor, 'rgb(198, 40, 40)', 'Selected out-of-range notes keep their colour (the selection is a halo)');
+  assert.match(await toolbar.locator('.octave-toolbar-status').textContent(), /2 notes selected · Piano · 2 out of range/, 'The status counts the selected notes out of range');
+  // 8vb on the left hand's auto-raised phrase (C3 below the alto, written A4): as written again (an explicit 0), flagged.
+  await staffNote('2', 0).click({ force: true });
+  await selected(['2:A4']);
+  assert.deepEqual((await readLive()).transposed.filter(id => id.startsWith('2:')), ['2:A4'], 'The low phrase is auto-raised');
+  const keptUi = await redraw(() => toolbar.locator('.octave-down').click());
+  assert.deepEqual([staffPitches(keptUi, '2'), keptUi.transposed.filter(id => id.startsWith('2:')), keptUi.outOfRange.filter(id => id.startsWith('2:'))], [['A3'], [], ['2:A3']], '8vb on an auto-raised phrase: as written (written A3), out of range');
+  const refitUi = await redraw(() => toolbar.locator('.octave-up').click());
+  assert.deepEqual([staffPitches(refitUi, '2'), refitUi.transposed.filter(id => id.startsWith('2:'))], [['A4'], ['2:A4']], '8va from there: back to the auto-fit');
+  await toolbar.locator('.octave-done').click();
+  await toolbar.waitFor({ state: 'detached' });
+  assert.ok(await page.evaluate(() => document.activeElement?.classList.contains('pepperscore')), 'Done returns focus to the reader');
+  // A transpose changes the auto-fit plan too, so it drops the "as written" pin the plan no longer overrides: +2 puts the
+  // low phrase in the alto's range (no auto-raise left to pin against), and back at 0 the auto-raise applies again.
+  await live(pianoXml, { settings: { instrument: 'alto-saxophone' } });
+  await openOctaveTool();
+  await staffNote('2', 0).click({ force: true });
+  await selected(['2:A4']);
+  const pinnedUi = await redraw(() => toolbar.locator('.octave-down').click());
+  assert.deepEqual(staffPitches(pinnedUi, '2'), ['A3'], 'The 8vb pin shows the phrase as written');
+  await toolbar.locator('.octave-done').click();
+  await toolbar.waitFor({ state: 'detached' });
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  const semitone = direction => page.locator(`.pitch-panel button[aria-label="Transpose ${direction} a semitone"]`);
+  await redraw(() => semitone('up').click());
+  await redraw(() => semitone('up').click());
+  await redraw(() => semitone('down').click());
+  const unpinnedUi = await redraw(() => semitone('down').click());
+  assert.deepEqual([staffPitches(unpinnedUi, '2'), unpinnedUi.transposed.filter(id => id.startsWith('2:'))], [['A4'], ['2:A4']], 'Transposing away and back: the stale pin is gone and the low phrase is auto-raised again');
+  // Saved: an octave move on an unswitched part is restored on reload.
+  const persist = `octave-tool-${Date.now()}`;
+  await live(pianoXml, { persist });
+  await openOctaveTool();
+  await staffNote('2', 0).click({ force: true });
+  await selected(['2:C3']);
+  await redraw(() => toolbar.locator('.octave-up').click());
+  const saved = () => page.evaluate(async ns => (await import('/validation/instrument-switch-harness.ts')).savedOctaves(ns), persist);
+  for (let attempt = 0; !Object.keys(await saved()).length; attempt++) { assert.ok(attempt < 50, 'The octave move is saved'); await delay(100); }
+  assert.deepEqual(Object.values(await saved()).map(octaves => Object.values(octaves)), [[12]], 'The saved record holds the move on the left hand');
+  await page.evaluate(async () => (await import('/validation/instrument-switch-harness.ts')).unmountLive());
+  await live(pianoXml, { persist });
+  const restored = await readLive();
+  assert.deepEqual([staffPitches(restored, '1'), staffPitches(restored, '2'), restored.transposed], [['C5', 'E5'], ['C4'], ['2:C4']], 'Reload with persist restores the octave move');
+  // Hidden by the host; the embed's instrument menu offers it when the host enables it.
+  await live(pianoXml, { controls: { octaveTool: false } });
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  assert.equal(await page.locator('.octave-tool-toggle').count(), 0, 'controls.octaveTool false hides the toggle');
+  await live(pianoXml, { chrome: 'minimal', controls: { instrumentSwitch: true } });
+  await page.locator('.instrument-switch').click();
+  await page.locator('.instrument-menu').waitFor();
+  assert.equal(await page.locator('.octave-tool-toggle').count(), 0, 'Minimal chrome: the instrument menu has no octave tool by default');
+  await live(pianoXml, { chrome: 'minimal', controls: { instrumentSwitch: true, octaveTool: true } });
+  await page.locator('.instrument-switch').click();
+  await page.locator('.instrument-menu .octave-tool-toggle').click();
+  await toolbar.waitFor();
+  assert.equal(await page.locator('.instrument-menu').count(), 0, 'The embed menu closes when the tool turns on');
+  await staffNote('1', 0).click({ force: true });
+  await selected(['1:C5']);
+  const embedUp = await redraw(() => toolbar.locator('.octave-up').click());
+  assert.deepEqual(staffPitches(embedUp, '1'), ['C6', 'E5'], 'Embed: 8va moves the selected note');
+  // Without the instrument switcher, minimal chrome shows the tool's own compact button (corner; phone toolbar).
+  await live(pianoXml, { chrome: 'minimal', controls: { octaveTool: true } });
+  assert.equal(await page.locator('.instrument-switch').count(), 0, 'No instrument switcher');
+  await page.locator('.ps-corner-controls .octave-tool-toggle-compact').click();
+  await toolbar.waitFor();
+  assert.equal(await page.locator('.octave-tool-toggle-compact').getAttribute('aria-pressed'), 'true', 'The compact entry is pressed');
+  await staffNote('1', 1).click({ force: true });
+  await selected(['1:E5']);
+  await page.evaluate(async () => (await import('/validation/instrument-switch-harness.ts')).unmountLive());
+  const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const phonePage = await phone.newPage();
+  phonePage.on('pageerror', error => errors.push(error.message));
+  await phonePage.goto(`${baseUrl}/validation/performance.html`);
+  for (let attempt = 0; ; attempt++) {
+    try { await phonePage.evaluate(async xml => (await import('/validation/instrument-switch-harness.ts')).mountLive(xml, { chrome: 'minimal', controls: { octaveTool: true } }), pianoXml); break; }
+    catch (error) { if (attempt > 5) throw error; await phonePage.waitForLoadState('load'); }
+  }
+  await phonePage.locator('.ps-embed-toolbar .octave-tool-toggle-compact').click();
+  await phonePage.locator('.octave-toolbar').waitFor();
+  assert.equal(await phonePage.locator('.ps-corner-controls .octave-tool-toggle').count(), 0, 'Phone: the compact entry sits in the bottom toolbar, not the corner');
+  await phone.close();
+  console.log('Instrument switch: octave tool (select, Shift/second-click passage, phrase, 8va/8vb, out of range, auto-fit kept as written, reset, Escape, focus, saved, hidden, embed menu and compact entry) passed');
 
   // The reader's own render with forced chunks (the worker's chunk path and its spelling cache).
   const chunkedPage = await browser.newPage();

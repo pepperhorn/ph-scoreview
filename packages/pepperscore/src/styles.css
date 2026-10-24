@@ -107,6 +107,8 @@
 .pepperscore .score-stage .part-controls{width:var(--control-gutter,128px)}
 .pepperscore .score-stage .part-control{width:calc(var(--control-gutter,128px) - 8px);justify-content:flex-start}
 .pepperscore .part-name{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#66766a;font-size:var(--part-font,11px);line-height:1.2}
+/* A switched staff: its name, then the instrument it is shown as ("→ Guitar") on a second, smaller line. */
+.pepperscore .part-name.is-switched{display:flex;flex-direction:column}.pepperscore .part-name-source,.pepperscore .part-name-target{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pepperscore .part-name-target{color:#345642;font-size:.72em;font-weight:600}
 .pepperscore .ps-portrait .score-system svg{overflow:hidden}
 .pepperscore .ps-portrait .score-system{contain:paint}
 .pepperscore .part-control{gap:4px}.pepperscore .instrument-control{position:relative;display:grid;place-items:center;width:calc(var(--part-icon,28px) + 4px);height:var(--part-control-height,30px);flex:none}
@@ -196,7 +198,8 @@
 .pepperscore .instrument-fit-toggle .ps-switch{flex:none}
 .pepperscore .instrument-chooser.is-compact{gap:8px}
 .pepperscore .instrument-chooser.is-compact .instrument-chooser-options{grid-template-columns:1fr;gap:2px}
-.pepperscore .instrument-chooser.is-compact .instrument-chooser-option{min-height:34px;flex-direction:row;justify-content:flex-start;gap:9px;padding:5px 9px;border-color:transparent;text-align:left}
+/* A row has room for the label at full size: the phone tiles' 9px (below) would leave gaps between hinted glyphs. */
+.pepperscore .instrument-chooser.is-compact .instrument-chooser-option{min-height:34px;flex-direction:row;justify-content:flex-start;gap:9px;padding:5px 9px;border-color:transparent;font-size:12px;text-align:left}
 .pepperscore .instrument-chooser.is-compact .instrument-chooser-icon{width:20px;height:20px}
 .pepperscore .instrument-chooser.is-compact .instrument-chooser-settings{flex-direction:column;align-items:stretch;padding-top:8px}
 @container pepperscore (max-width:580px){.pepperscore .instrument-chooser-options{gap:5px}.pepperscore .instrument-chooser-option{min-height:64px;padding:5px 2px;font-size:9px}.pepperscore .instrument-chooser-icon{width:26px;height:26px}.pepperscore .instrument-level button{padding:5px 7px;font-size:10px}}
@@ -372,6 +375,24 @@
 .pepperscore .topbar .ps-compact-play{top:50%;transform:translateY(-50%)}
 .pepperscore .ps-compact-play:hover{background:#254633}
 .pepperscore .ps-compact-play.is-loading{opacity:.75}
+/* The embed instrument switcher (minimal chrome, controls.instrumentSwitch): a round button left of the play button (or
+   in the corner without one); on phones and tablets both sit in a bottom toolbar. Its menu is a manual popover (top
+   layer, placed by PepperScore from the button's rect), so the root neither clips it nor grows. */
+.pepperscore .ps-corner-controls{position:absolute;top:8px;right:8px;z-index:9;display:flex;gap:8px}
+.pepperscore .ps-corner-controls.has-compact-play{right:52px}
+.pepperscore .topbar .ps-corner-controls{top:50%;transform:translateY(-50%)}
+.pepperscore .instrument-switch{width:36px;height:36px;border-radius:50%;background:#fff;border:1px solid #d7e0d5;box-shadow:0 3px 8px #34564222}
+.pepperscore .instrument-switch:hover,.pepperscore .instrument-switch.is-open{background:#eef4ec;border-color:#8fb89a}
+.pepperscore .instrument-switch-icon{width:22px;height:22px;object-fit:contain}
+.pepperscore .ps-embed-toolbar{flex:none;display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:6px 8px;border-top:1px solid #eef0ec;background:#fbfaf8}
+.pepperscore .ps-embed-toolbar .ps-compact-play{position:static;transform:none}
+.pepperscore .instrument-menu{inset:auto;margin:0;box-sizing:border-box;overflow:auto;display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid #e2e8e0;border-radius:12px;background:#fff;color:#242824;box-shadow:0 12px 36px #1d2b2033;outline:none;font-family:Poppins,Arial,sans-serif;line-height:normal;text-align:left}
+.pepperscore .instrument-menu .instrument-chooser.is-compact .instrument-chooser-options{grid-template-columns:1fr 1fr;overflow:visible}
+.pepperscore .instrument-menu-parts{display:flex;flex-wrap:wrap;gap:4px;padding-bottom:8px;border-bottom:1px solid #f0f2ee}
+.pepperscore .instrument-menu-part{display:flex;align-items:center;gap:7px;min-height:32px;padding:4px 10px;border:1px solid #e5eae2;border-radius:16px;background:#fff;color:#3c5040;font-size:11px}
+.pepperscore .instrument-menu-part:hover,.pepperscore .instrument-menu-part:focus-visible{background:#f2f7f1;border-color:#8fb89a}
+.pepperscore .instrument-menu-part.is-selected{background:#eaf3e9;border-color:#6c9875;font-weight:700}
+.pepperscore .instrument-menu-part-icon{width:18px;height:18px;object-fit:contain}
 /* Without the page-controls row (controls.zoom off) the edge fades end at the viewport's bottom edge. */
 .pepperscore .no-page-controls.ps-portrait .edge-end,.pepperscore .no-page-controls.ps-landscape .edge-fade{bottom:0}
 /* Without the drawer handle at the bottom, toasts and notices sit near the bottom edge; an empty or failed natural-height
@@ -394,3 +415,28 @@
 @container ps-annotations (min-width:360px){.pepperscore .annotation-row .annotation-size{order:0;flex:0 0 auto}.pepperscore .annotation-size button{flex:none;padding:4px 7px}}
 /* Off-beat counts (e, &, a) take the subdivisions size; the scales are set per system by render.ts (1 = regular). */
 .pepperscore .count-label.is-subdivision{font-size:calc(13px * var(--ps-subdivision-scale, 1))}
+/* The octave tool: its entry (drawer Pitch panel, embed instrument menu) and its toolbar, docked at the bottom of the
+   reader within thumb reach on phones (above the drawer handle, or the embed's phone toolbar). The tool's selection is
+   a halo, so a selected note keeps its moved / out-of-range colour. */
+.pepperscore .score-system svg .ps-octave-selection{filter:drop-shadow(0 0 1.5px var(--ps-selection,#2f6a9a)) drop-shadow(0 0 3px var(--ps-selection,#2f6a9a))}
+.pepperscore .octave-tool-entry{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;font-family:Poppins,Arial,sans-serif}
+.pepperscore .octave-tool-entry-drawer{flex-basis:100%;margin-top:16px}
+.pepperscore .octave-tool-entry-menu{padding-top:8px;border-top:1px solid #f0f2ee}
+.pepperscore .octave-tool-toggle{min-height:32px;padding:5px 12px;border:1px solid #dfe6dc;border-radius:8px;background:#fff;color:#3e6047;font-size:11px;font-weight:700}
+.pepperscore .octave-tool-toggle:hover,.pepperscore .octave-tool-toggle:focus-visible{background:#f2f7f1;border-color:#8fb89a}
+.pepperscore .octave-tool-toggle.is-selected{background:#365c42;border-color:#365c42;color:#fff}
+.pepperscore .octave-tool-toggle-compact{min-height:36px;border-radius:18px;box-shadow:0 3px 8px #34564222}
+.pepperscore .octave-tool-hint{color:#87968a;font-size:11px}
+.pepperscore .octave-tool-dock{position:absolute;z-index:32;left:50%;bottom:58px;transform:translateX(-50%);width:max-content;max-width:calc(100% - 16px)}
+.pepperscore .app-shell.no-drawer .octave-tool-dock{bottom:12px}
+.pepperscore .app-shell .octave-tool-dock.is-above-toolbar{bottom:58px}
+.pepperscore .octave-toolbar{display:flex;align-items:center;flex-wrap:wrap;justify-content:center;gap:8px 12px;padding:8px 10px;border:1px solid #dfe6dc;border-radius:12px;background:#fff;box-shadow:0 8px 28px #1d2b2026;font-family:Poppins,Arial,sans-serif;outline:none}
+.pepperscore .octave-toolbar:focus-visible{outline:2px solid #8fb89a;outline-offset:2px}
+.pepperscore .octave-toolbar-status{color:#5d6b61;font-size:11px;max-width:260px}
+.pepperscore .octave-toolbar-actions{display:flex;flex-wrap:wrap;gap:6px}
+.pepperscore .octave-toolbar-button{min-height:34px;padding:5px 11px;border:1px solid #dfe6dc;border-radius:8px;background:#fff;color:#3e6047;font-size:12px;font-weight:600;white-space:nowrap}
+.pepperscore .octave-toolbar-button:hover:not([aria-disabled=true]),.pepperscore .octave-toolbar-button:focus-visible{background:#f2f7f1;border-color:#8fb89a}
+.pepperscore .octave-toolbar-button[aria-disabled=true]{cursor:default;opacity:.45}
+.pepperscore .octave-toolbar-button.is-primary{background:#365c42;border-color:#365c42;color:#fff}
+.pepperscore .octave-toolbar-button.is-primary:hover{background:#284c34}
+@container pepperscore (max-width:580px){.pepperscore .octave-tool-dock{left:8px;right:8px;transform:none;width:auto;max-width:none}.pepperscore .octave-toolbar{justify-content:stretch}.pepperscore .octave-toolbar-status{max-width:none;flex:1 0 100%;text-align:center}.pepperscore .octave-toolbar-actions{flex:1 0 100%}.pepperscore .octave-toolbar-button{flex:1 1 auto;min-height:40px;padding:5px 6px}}

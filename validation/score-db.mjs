@@ -117,7 +117,7 @@ try {
     const legacy = parseLegacyFileState({ version: 1, source: source(hex(8)), settings: { ...settings, zoom: 1 }, parts: {} }, hex(8));
     out.sizesLegacy = legacy && sizesOf(migrateFileState(legacy, 'desktop'));
     // Instrument switch per staff part (optional, version 2): round trip, and malformed entries dropped per part.
-    const alto = { instrument: 'alto-saxophone', level: 'beginner', autoRange: false, octaves: { n1: 12, n2: -12 } };
+    const alto = { instrument: 'alto-saxophone', level: 'beginner', autoRange: false, octaves: { n1: 12, n2: -12, n3: 0 } };
     const switchScore = { parts: [{ id: 'p1', instrument: 'piano' }, { id: 'p2', instrument: 'piano' }, { id: 'p3', instrument: 'flute' }] };
     const built = JSON.parse(JSON.stringify(buildFileState(source(hex(10)), settings, switchScore, [], {}, undefined, 5, { p1: alto, p2: { instrument: undefined, level: 'advanced', autoRange: true, octaves: {} } })));
     out.switchBuilt = [built.parts.p1.switch, built.parts.p2.switch, 'switch' in built.parts.p3];
@@ -177,8 +177,8 @@ try {
   assert.deepEqual(result.sizesRoundTrip, ['xl', 'sm', 'lg', 'xs'], 'Add-on sizes round-trip through buildFileState and parseFileState');
   assert.deepEqual(result.sizesBuiltDefault, ['rg', 'rg', 'rg', 'rg'], 'buildFileState writes regular sizes when unset');
   assert.deepEqual(result.sizesLegacy, ['rg', 'rg', 'rg', 'rg'], 'A v1 record migrates with regular sizes');
-  assert.deepEqual(result.switchBuilt, [{ instrument: 'alto-saxophone', level: 'beginner', autoRange: false, octaves: { n1: 12, n2: -12 } }, { level: 'advanced', autoRange: true }, false], 'buildFileState writes each part\'s switch (no octaves key when none, no entry when unswitched)');
-  assert.deepEqual(result.switchRoundTrip, { instrument: 'alto-saxophone', level: 'beginner', autoRange: false, octaves: { n1: 12, n2: -12 } }, 'A switch round-trips through buildFileState and parseFileState');
+  assert.deepEqual(result.switchBuilt, [{ instrument: 'alto-saxophone', level: 'beginner', autoRange: false, octaves: { n1: 12, n2: -12, n3: 0 } }, { level: 'advanced', autoRange: true }, false], 'buildFileState writes each part\'s switch (no octaves key when none, no entry when unswitched)');
+  assert.deepEqual(result.switchRoundTrip, { instrument: 'alto-saxophone', level: 'beginner', autoRange: false, octaves: { n1: 12, n2: -12, n3: 0 } }, 'A switch (an explicit 0 octave move included) round-trips through buildFileState and parseFileState');
   assert.deepEqual(result.switchMalformed, { bad: null, expert: null, seven: null, noRange: null, drums: null, good: { instrument: 'trumpet', level: 'advanced', autoRange: true } }, 'Malformed switches (bad id, level expert, octave 7, missing fields, drum kit) are dropped per part; the record opens');
   assert.equal(result.switchMalformedVisible, false, 'The rest of a part with a dropped switch is kept');
   assert.deepEqual(result.switchEdge, { arrayOctaves: null, good: { instrument: 'trumpet', level: 'advanced', autoRange: true, sound: { instrument: 'violin', gmSoundfont: 'orchestral_harp' } }, badSound: { instrument: 'trumpet', level: 'advanced', autoRange: true }, soundOnly: { level: 'advanced', autoRange: true } }, 'Array octaves drop the switch, a null part entry is dropped, a bad or instrument-less sound only loses the sound');
