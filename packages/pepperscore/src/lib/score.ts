@@ -27,7 +27,9 @@ export type MeasureNavigation = {
   barlines?: BarlineNavigation[];
 };
 export type Measure = { index: number; beats: number; notes: ScoreNote[]; dynamics?: { start: number; symbol: string }[]; directions?: ScoreDirection[]; nominalBeats?: number; number?: string; implicit?: boolean; key?: number; keyMode?: KeyMode; clef?: string; beatsPerBar?: number; beatType?: number; transposition?: Transposition; navigation?: MeasureNavigation };
-export type Part = { id: string; name: string; clef: string; key?: number; keyMode?: KeyMode; instrument: InstrumentId; gmProgram?: number; gmSoundfont?: string; pitchBasis?: 'written' | 'concert'; transposition?: Transposition; measures: Measure[];
+export type Part = { id: string;
+  /** The MusicXML <score-part id> every staff of one part shares; absent for ABC/MIDI single parts (use `id`). */
+  sourcePartId?: string; name: string; clef: string; key?: number; keyMode?: KeyMode; instrument: InstrumentId; gmProgram?: number; gmSoundfont?: string; pitchBasis?: 'written' | 'concert'; transposition?: Transposition; measures: Measure[];
   /** A tablature staff (MusicXML clef sign TAB), imported by Verovio as a `tab.guitar` staff. */
   tab?: boolean;
   /**
