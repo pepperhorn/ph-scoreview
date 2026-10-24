@@ -4,7 +4,8 @@
 // pass with the switched staves, the view MEI) or through the reader's own renderScore (worker, chunks).
 import createVerovioModule from 'verovio/wasm';
 import { VerovioToolkit } from 'verovio/esm';
-import { parseMusicXml } from '../packages/pepperscore/src/lib/import';
+import { parseAbc, parseMusicXml } from '../packages/pepperscore/src/lib/import';
+import { generatedPitchId, generatedPitchIdOf } from '../packages/pepperscore/src/lib/notation/document';
 import { applyInstrumentView, sourcePartOf, type PartSwitch } from '../packages/pepperscore/src/lib/instrument-view';
 import { buildViewMei, scanBaseline } from '../packages/pepperscore/src/lib/notation/mei-view';
 import { respellMei, spellBaseline, type SpellingSpec, type StaffSpec } from '../packages/pepperscore/src/lib/notation/mei-spelling';
@@ -45,7 +46,7 @@ export async function importFacts(xml: string) {
 }
 
 const ALTER: Record<string, number> = { s: 1, f: -1, n: 0, x: 2, ss: 2, ff: -2 };
-type DrawnNote = { id: string; staff: string; measure: number; pname: string; oct: number; alter: number | null; written: string | null };
+type DrawnNote = { id: string; source: string; staff: string; measure: number; pname: string; oct: number; alter: number | null; written: string | null };
 type DrawnClef = { staff: string; shape: string | null; line: string | null; dis: string | null; disPlace: string | null };
 /** Notes (pitch name, octave, explicit alteration) and the opening clef of every staff of an MEI document. */
 function readMei(text: string, measureOffset = 0) {
@@ -58,7 +59,8 @@ function readMei(text: string, measureOffset = 0) {
       const gestural = note.getAttribute('accid.ges') ?? accid?.getAttribute('accid.ges') ?? null;
       const written = note.getAttribute('accid') ?? accid?.getAttribute('accid') ?? null;
       const value = written ?? gestural;
-      notes.push({ id: note.getAttribute('xml:id') || '', staff: note.closest('staff')?.getAttribute('n') || '', measure: index + measureOffset,
+      const id = note.getAttribute('xml:id') || '';
+      notes.push({ id, source: generatedPitchIdOf(id) ?? id, staff: note.closest('staff')?.getAttribute('n') || '', measure: index + measureOffset,
         pname: (note.getAttribute('pname') || '').toUpperCase(), oct: Number(note.getAttribute('oct')), alter: value !== null ? ALTER[value] ?? 0 : null, written });
     }
   });
@@ -78,12 +80,14 @@ function readMei(text: string, measureOffset = 0) {
   return { notes, clefs, keys, inlineClefs };
 }
 
-export type SwitchCase = { switches: Record<number, PartSwitch>; view?: ScorePitchView; semitones?: number; slices?: number };
+/** `format: 'abc'`: the text is ABC (engraved from the MEI the Score generates), else MusicXML. */
+export type SwitchCase = { switches: Record<number, PartSwitch>; view?: ScorePitchView; semitones?: number; slices?: number; format?: 'abc' };
+const parse = (text: string, test?: SwitchCase): Promise<Score> => (test?.format === 'abc' ? parseAbc(text) : Promise.resolve(parseMusicXml(text)));
 const scores = new Map<string, { score: Score; baseline: string }>();
-async function prepare(xml: string) {
+async function prepare(xml: string, test?: SwitchCase) {
   let entry = scores.get(xml);
   if (!entry) {
-    const score = parseMusicXml(xml);
+    const score = await parse(xml, test);
     entry = { score, baseline: await convert(new TextDecoder().decode(score.document!.engravingBytes())) };
     scores.set(xml, entry);
   }
@@ -94,10 +98,10 @@ function displayOf(score: Score, test: SwitchCase) {
   const view = test.view ?? 'written';
   return applyInstrumentView(scoreForView(score, view, test.semitones ?? 0), switchesById(score, test.switches), view);
 }
-/** The display Score's pitches by MEI note id (`Pitch.sourceId`), and its parts. */
+/** The display Score's pitches by MEI note id (`Pitch.sourceId`, or the id the Score's generated MEI gives it), and its parts. */
 function scoreFacts(result: ReturnType<typeof applyInstrumentView>) {
   const pitches: Record<string, { step: string; octave: number; alter: number; midi: number; note: string }> = {};
-  for (const part of result.score.parts) for (const measure of part.measures) for (const note of measure.notes) for (const p of note.pitches) if (p.sourceId) pitches[p.sourceId] = { step: p.step, octave: p.octave, alter: p.alter, midi: p.midi, note: note.id };
+  for (const part of result.score.parts) for (const measure of part.measures) for (const note of measure.notes) note.pitches.forEach((p, index) => { pitches[p.sourceId ?? generatedPitchId(note, index)] = { step: p.step, octave: p.octave, alter: p.alter, midi: p.midi, note: note.id }; });
   return { pitches, parts: result.score.parts.map(part => ({ id: part.id, clef: part.clef, instrument: part.instrument, key: part.measures[0]?.key ?? part.key })),
     moved: result.moved, outOfRange: result.outOfRange, staves: result.staves };
 }
@@ -107,7 +111,7 @@ function scoreFacts(result: ReturnType<typeof applyInstrumentView>) {
  * spelled with its measure offset) and read back what Verovio would draw.
  */
 export async function engraveSwitch(xml: string, test: SwitchCase) {
-  const { score, baseline } = await prepare(xml);
+  const { score, baseline } = await prepare(xml, test);
   const result = displayOf(score, test);
   const plan = planStaves(scanBaseline(baseline), result.score, new Set(result.hiddenTab));
   const target = await verovio();
@@ -132,7 +136,7 @@ export async function engraveSwitch(xml: string, test: SwitchCase) {
  * before the page loaded forces chunks) and read the drawn noteheads (`data-pname` / `data-oct`) and clef glyphs.
  */
 export async function renderSwitch(xml: string, test: SwitchCase) {
-  const score = parseMusicXml(xml);
+  const score = await parse(xml, test);
   const result = displayOf(score, test);
   const info = await verovioBaseline(score.document!);
   const container = document.createElement('div');

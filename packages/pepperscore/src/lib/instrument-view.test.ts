@@ -165,11 +165,48 @@ describe('instrument view', () => {
     expect(applyInstrumentView(score(guitar, tab), { G: sw(undefined, 'intermediate', { a: 12 }) }, 'written').hiddenTab).toEqual(['T']);
   });
 
+  it('octave moves of a Score engraved from itself (ABC, MIDI) key on the generated MEI ids', () => {
+    const abc = (p: Part): Part => ({ ...p, measures: p.measures.map(m => ({ ...m, notes: m.notes.map(n => ({ ...n, pitches: n.pitches.map(({ sourceId: _, ...x }) => x) })) })) });
+    const flute = abc(part('abc-1', 'a:C5 b:E5', { instrument: 'flute', gmProgram: 74 }));
+    flute.measures[0].notes[1].pitches.push(pitch('G', 5));
+    const doc = { format: 'abc', engravingFormat: 'mei' } as Score['document'];
+    const result = applyInstrumentView({ ...score(flute), document: doc }, { 'abc-1': sw(undefined, 'intermediate', { a: 12, b: -12 }) }, 'written');
+    expect(result.staves['abc-1'].octaves).toEqual({ n_a: 12, n_b_p1: -12, n_b_p2: -12 });
+    expect(result.score.instrumentView?.staves['abc-1'].octaves).toEqual({ n_a: 12, n_b_p1: -12, n_b_p2: -12 });
+    // A switched part too; and the generated ids win over source ids of a generated engraving.
+    const withIds = { ...score(part('abc-1', 'a:C3')), document: doc };
+    expect(applyInstrumentView(withIds, { 'abc-1': sw('alto-saxophone', 'beginner') }, 'written').staves['abc-1'].octaves).toEqual({ n_a: 12 });
+  });
+
+  it('a percussion (or rangeless) target is treated as written', () => {
+    const source = score(part('P', 'a:C4 b:E4'));
+    const result = applyInstrumentView(source, { P: sw('drum-kit') }, 'written');
+    expect(result.score.parts[0]).toBe(source.parts[0]);
+    expect(result.staves).toEqual({});
+    expect(result.score.instrumentView).toBeUndefined();
+  });
+
+  it('refuses a Score that already carries an instrument view', () => {
+    const once = applyInstrumentView(score(part('P', 'a:C4')), { P: sw('trumpet') }, 'written').score;
+    expect(() => applyInstrumentView(once, { P: sw('trumpet') }, 'written')).toThrow(/already has an instrument view/);
+  });
+
+  it('takes the view from the Score, the scorePitch argument only without one', () => {
+    const clarinet = score(part('K', 'a:D4 b:E4', CLARINET));
+    const concert = scoreForView(clarinet, 'concert', 0);
+    const out = applyInstrumentView(concert, { K: sw('trumpet') }, 'written').score.parts[0];
+    expect(names(out)).toEqual(['C4', 'D4']);
+    expect(out.transposition).toBeUndefined();
+    expect(names(applyInstrumentView(score(part('P', 'a:C4')), { P: sw('trumpet') }, 'concert').score.parts[0])).toEqual(['C4']);
+  });
+
   it('playback invariant: soundingMidi of every output note is the judged pitch plus its shift', () => {
     const source = score(
       part('C', 'a:D4 b:E4) c:C6 | d:G3~ | e:G3 r f:B5', CLARINET),
       part('F', 'g:C4 h:D4 r i:C7', { instrument: 'flute', gmProgram: 74 }),
       part('K', 'j:D4 k:F4', CLARINET),
+      // Untouched transposing part: no switch, no move.
+      part('U', 'l:D4 m:A4', CLARINET),
     );
     for (const view of ['written', 'concert'] as const) for (const semitones of [0, 3, -5]) {
       const viewed = scoreForView(source, view, semitones);
