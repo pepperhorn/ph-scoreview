@@ -112,7 +112,7 @@ export function fitToRange(part: Part, options: FitOptions): FitResult {
       else if (stillOut.has(ids[0])) diagnostics.push(`range: ${where(ids)} is still out of ${span} after moving ${shifts[ids[0]] > 0 ? '8va' : '8vb'}`);
     }
   }
-  shifts = applyOverrides(shifts, overrides, tieChainOf(tiePairs(events)));
+  shifts = applyOverrides(shifts, overrides, tieChainOf(tiePairs(events), events.map(({ event }) => event.id)));
 
   const moved: Record<string, 12 | -12> = {};
   const fitted = structuredClone(part);

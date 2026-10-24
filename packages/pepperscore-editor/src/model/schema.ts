@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { DURATION_BASES } from './durations';
-import { INSTRUMENT_IDS, LEVELS, type InstrumentClef, type SpelledPitch } from './instruments';
+import { INSTRUMENT_IDS, LEVELS } from './instruments';
+import type { InstrumentClef, SpelledPitch } from 'pepperscore/instruments';
 
 const CLEFS = ['treble', 'bass', 'alto', 'tenor', 'percussion', 'treble8vb'] as const;
 const ARTICULATIONS = ['staccato', 'tenuto', 'accent', 'marcato', 'staccatissimo', 'fermata'] as const;

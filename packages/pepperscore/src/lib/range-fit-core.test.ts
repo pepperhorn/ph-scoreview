@@ -52,6 +52,11 @@ describe('range-fit core', () => {
     const chainOf = tieChainOf([['a', 'b'], ['b', 'c']]);
     expect(applyOverrides({}, { c: -12, b: 12 }, chainOf)).toEqual({ a: 12, b: 12, c: 12 });
   });
+  it('tieChainOf orders a chain by event order when given', () => {
+    const ties: [string, string][] = [['a', 'c'], ['b', 'c']];
+    expect(tieChainOf(ties)('c')).toEqual(['a', 'c', 'b']);
+    expect(tieChainOf(ties, ['a', 'b', 'c'])('c')).toEqual(['a', 'b', 'c']);
+  });
   it('override beats planned shift', () => {
     const plan = planShifts([[ev('a', range.low - 1)]], range, true);
     expect(applyOverrides(plan.shifts, { a: 0 }, tieChainOf([])).a).toBe(0);

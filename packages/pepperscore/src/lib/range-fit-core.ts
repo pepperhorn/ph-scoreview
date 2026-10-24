@@ -25,22 +25,26 @@ export function joinRuns(runs: string[][], ties: [string, string][]): string[][]
   return [...merged.values()];
 }
 
-/** The ordered chain of events the ties link around `id` (itself alone when untied). */
-export function tieChainOf(ties: [string, string][]): (id: string) => string[] {
+/** The ordered chain of events the ties link around `id` (itself alone when untied), in `order` (event order) when given, else by first appearance in the ties. */
+export function tieChainOf(ties: [string, string][], order?: string[]): (id: string) => string[] {
   const parent = new Map<string, string>();
   const root = (id: string): string => { let r = id; while (parent.has(r)) r = parent.get(r)!; return r; };
-  const order: string[] = [];
+  const appearance: string[] = [];
   const seen = new Set<string>();
-  const note = (id: string) => { if (!seen.has(id)) { seen.add(id); order.push(id); } };
+  const note = (id: string) => { if (!seen.has(id)) { seen.add(id); appearance.push(id); } };
   for (const [from, to] of ties) {
     note(from); note(to);
     const [a, b] = [root(from), root(to)];
     if (a !== b) parent.set(b, a);
   }
   const groups = new Map<string, string[]>();
-  for (const id of order) {
+  for (const id of appearance) {
     const r = root(id);
     groups.set(r, [...(groups.get(r) ?? []), id]);
+  }
+  if (order) {
+    const rank = new Map(order.map((id, i) => [id, i]));
+    for (const chain of groups.values()) chain.sort((x, y) => (rank.get(x) ?? Infinity) - (rank.get(y) ?? Infinity));
   }
   return (id) => (seen.has(id) ? groups.get(root(id))! : [id]);
 }
