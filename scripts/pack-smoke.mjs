@@ -110,6 +110,14 @@ const IMPORT_GUARD = [
   "if (touched.length) throw new Error(`importing pepperscore read ${touched.join(', ')}`);",
 ].join('\n');
 
+/** The packed `pepperscore/instruments` subpath resolves in plain Node and carries the instrument model. */
+const INSTRUMENTS_CHECK = [
+  "const { INSTRUMENTS, EMBED_INSTRUMENTS } = await import('pepperscore/instruments');",
+  "if (!INSTRUMENTS) throw new Error('no INSTRUMENTS export');",
+  "if (EMBED_INSTRUMENTS.length !== 11) throw new Error(`EMBED_INSTRUMENTS has ${EMBED_INSTRUMENTS.length}, not 11`);",
+  "console.log('ok');",
+].join('\n');
+
 const freePort = () => new Promise((done, fail) => {
   const probe = createServer().once('error', fail).listen(0, '127.0.0.1', () => { const { port } = probe.address(); probe.close(() => done(port)); });
 });
@@ -119,6 +127,8 @@ async function astroSsrHost(work, tarball) {
   const app = astroApp(work, 'astro-ssr-app', 'client:visible', true);
   install(app, tarball, [...astroPackages(), '@astrojs/node@^11.0.1']);
   execFileSync(process.execPath, ['--input-type=module', '-e', IMPORT_GUARD, 'pepperscore'], { cwd: app, stdio: ['ignore', 'inherit', 'inherit'] });
+  const subpath = execFileSync(process.execPath, ['--input-type=module', '-e', INSTRUMENTS_CHECK], { cwd: app, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] });
+  assert.equal(subpath.trim(), 'ok', 'pepperscore/instruments imports from the packed tarball');
   console.log('Pack smoke: importing pepperscore in Node touches no window, document, storage or location');
   run(['exec', '--', 'astro', 'build'], app);
   assertHostOutput('Astro SSR', join(app, 'dist/client/_astro'));
@@ -157,6 +167,8 @@ try {
   const manifest = readJson('packages/pepperscore/package.json');
   assert.deepEqual(manifest.peerDependencies, { react: '>=19', 'react-dom': '>=19' });
   assert.equal(manifest.license, 'MIT AND LGPL-3.0-or-later', 'MIT component code, LGPL-3.0-or-later Verovio shipped in dist/verovio/');
+  const instrumentsExport = manifest.exports?.['./instruments'];
+  assert.ok(instrumentsExport, 'package.json exports ./instruments');
   console.log(`Pack smoke: ${packed.filename} (${files.length} files) has the build output and no sources`);
 
   const tarball = join(work, packed.filename);

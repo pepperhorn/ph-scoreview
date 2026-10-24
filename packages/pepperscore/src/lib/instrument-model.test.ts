@@ -1,4 +1,4 @@
-import { INSTRUMENTS, instrumentFor, soundingMidi, transposePitch, transposePitchSpelled, writtenPitch, type InstrumentId } from './instruments';
+import { EMBED_INSTRUMENTS, INSTRUMENTS, writtenKeyFifths, instrumentFor, spelledSoundingMidi as soundingMidi, transposePitch, transposePitchSpelled, writtenPitch, type InstrumentId } from './instrument-model';
 
 const alto = INSTRUMENTS['alto-saxophone'];
 const clarinet = INSTRUMENTS.clarinet;
@@ -88,4 +88,18 @@ test('transposePitch falls back to writtenPitch spelling when the alter would pa
   expect(spelled.respelled).toBe(true);
   expect(spelled.pitch).toEqual(writtenPitch(67 + 8, { semitones: 0, diatonic: 0 }, 0));
   expect(transposePitchSpelled(P('C', 5), { semitones: -2, diatonic: -1 }, 0)).toEqual({ pitch: P('B', 4, -1), respelled: false });
+});
+
+test('embed list is the eleven embed instruments in order', () => {
+  expect(EMBED_INSTRUMENTS).toEqual(['alto-saxophone', 'tenor-saxophone', 'bari-saxophone', 'trumpet', 'trombone', 'flute', 'clarinet', 'violin', 'viola', 'cello', 'double-bass']);
+  for (const id of EMBED_INSTRUMENTS) expect(INSTRUMENTS[id].ranges).toBeDefined();
+});
+
+test('writtenKeyFifths adds the transposition as fifths, normalised to -6..6 and wrapped into -7..7', () => {
+  expect(writtenKeyFifths(0, alto.transposition)).toBe(3);
+  expect(writtenKeyFifths(0, INSTRUMENTS.clarinet.transposition)).toBe(2);
+  expect(writtenKeyFifths(0, INSTRUMENTS['tenor-saxophone'].transposition)).toBe(2);
+  expect(writtenKeyFifths(-2, INSTRUMENTS.guitar.transposition)).toBe(-2);
+  expect(writtenKeyFifths(0, { semitones: -2, diatonic: -1 })).toBe(-2);
+  expect(writtenKeyFifths(6, alto.transposition)).toBe(-3);
 });
