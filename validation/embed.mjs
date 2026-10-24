@@ -754,7 +754,6 @@ try {
     const piano = '.pepperscore.embed-switch-piano', duo = '.pepperscore.embed-switch-duo', off = '.pepperscore.embed-switch-off';
     await Promise.all([piano, duo, off].map(root => rendered(page, root)));
     assert.equal(await page.locator(`${off} .instrument-switch`).count(), 0, 'without controls.instrumentSwitch there is no switcher');
-    assert.equal(await page.locator('.embed-a .instrument-switch, .embed-b .instrument-switch').count(), 0);
     const button = page.locator(`${piano} .instrument-switch`);
     assert.equal(await button.getAttribute('aria-label'), 'Choose your instrument');
     assert.equal(await button.getAttribute('aria-expanded'), 'false');
@@ -764,9 +763,16 @@ try {
     assert.ok(inside(rootBox, buttonBox) && buttonBox.right <= playBox.left + 1 && Math.abs(buttonBox.top - playBox.top) < 4, `the switcher sits left of the play button: ${JSON.stringify({ buttonBox, playBox })}`);
     const before = await drawn(page, piano);
     assert.deepEqual([before.clefs, before.notes], [{ 1: 'G', 2: 'F' }, ['1:C5', '1:E5', '2:C3']], 'the piano as written');
+    // The menu is a top-layer popover: opening it changes neither the snippet's height nor the host content below it.
+    const hostBelow = async () => ({ root: (await rect(page, piano)).height, next: (await rect(page, duo)).top });
+    const closedLayout = await hostBelow();
     await button.click();
     const menu = page.locator(`${piano} .instrument-menu`);
     await menu.waitFor();
+    assert.deepEqual(await hostBelow(), closedLayout, 'opening the menu shifts nothing on the host page');
+    assert.ok(await menu.evaluate(element => element.matches(':popover-open')), 'the menu is an open popover');
+    assert.ok(inside({ left: 0, top: 0, right: 1280, bottom: 900 }, await rect(page, `${piano} .instrument-menu`)), 'the menu is inside the viewport');
+    assert.equal(await menu.evaluate(element => getComputedStyle(element).fontFamily.includes('Poppins') && getComputedStyle(element.querySelector('.instrument-chooser-option')).borderRadius), '10px', 'scoped styles apply in the top layer');
     assert.equal(await button.getAttribute('aria-expanded'), 'true');
     assert.equal(await menu.locator('.instrument-menu-part').count(), 0, 'one source part (a grand staff): no part list');
     assert.deepEqual(await menu.locator('.instrument-chooser-option').allTextContents(), ['As written', 'Alto Sax', 'Tenor Sax', 'Bari Sax', 'Trumpet', 'Trombone', 'Flute', 'Clarinet', 'Violin', 'Viola', 'Cello', 'Double Bass'], 'As written, then the eleven embed instruments in order');
@@ -777,11 +783,17 @@ try {
     const cello = await redrawn(page, piano, () => menu.getByRole('button', { name: 'Cello', exact: true }).click());
     assert.deepEqual([cello.clefs, cello.notes], [{ 1: 'F', 2: 'F' }, ['1:C5', '1:E5', '2:C3']], 'Cello: both staves in bass clef, in range');
     assert.equal(await menu.getByRole('button', { name: 'Cello', exact: true }).getAttribute('aria-pressed'), 'true');
+    assert.ok(await menu.getByRole('button', { name: 'Cello', exact: true }).evaluate(element => element === document.activeElement), 'focus stays on the chosen option after the redraw');
     assert.equal(await button.locator('img').getAttribute('src'), await menu.locator('.instrument-chooser-option-cello img').getAttribute('src'), 'the button shows the cello');
     // Beginner cello (36-64): the right hand's phrase is above it and moves down an octave.
     const beginner = await redrawn(page, piano, () => menu.getByRole('button', { name: 'Beginner', exact: true }).click());
     assert.deepEqual([beginner.clefs, beginner.notes], [{ 1: 'F', 2: 'F' }, ['1:C4', '1:E4', '2:C3']], 'Beginner cello: fitted to range');
     assert.ok(beginner.transposed > 0, 'the moved phrase is highlighted');
+    assert.ok(await menu.getByRole('button', { name: 'Beginner', exact: true }).evaluate(element => element === document.activeElement), 'focus stays on the level');
+    // Fit to range off: the moved phrase returns to its written octave.
+    const unfitted = await redrawn(page, piano, () => menu.locator('.instrument-fit-toggle [role=switch]').click());
+    assert.deepEqual([unfitted.notes, unfitted.transposed], [['1:C5', '1:E5', '2:C3'], 0], 'Fit to range off: no octave moves');
+    assert.equal(await menu.locator('.instrument-fit-toggle [role=switch]').getAttribute('aria-checked'), 'false');
     // Escape closes the menu and returns focus to the button; an outside click closes it too.
     await page.keyboard.press('Escape');
     await menu.waitFor({ state: 'detached' });
@@ -790,6 +802,11 @@ try {
     await button.click();
     await menu.waitFor();
     await page.mouse.click(5, 5);
+    await menu.waitFor({ state: 'detached' });
+    // Focus leaving the menu and its button closes it.
+    await button.click();
+    await menu.waitFor();
+    await page.locator(`${off}`).focus();
     await menu.waitFor({ state: 'detached' });
     // Two source parts (grand-staff piano and violin): the parts first, then the chooser for the picked one.
     await page.locator(`${duo} .instrument-switch`).click();
@@ -804,7 +821,7 @@ try {
     assert.deepEqual(errors, []);
     await context.close();
   }
-  // 12. On a phone the switcher sits in the bottom toolbar.
+  // 12. On a phone the switcher and the play button sit in the bottom toolbar; the menu opens above it, on screen.
   {
     const { context } = await hostContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
     const page = await context.newPage();
@@ -814,11 +831,17 @@ try {
     const piano = '.pepperscore.embed-switch-piano';
     await rendered(page, piano);
     await page.locator(`${piano} .ps-embed-toolbar .instrument-switch`).waitFor();
+    assert.equal(await page.locator(`${piano} .ps-embed-toolbar .ps-compact-play`).count(), 1, 'the play button is in the toolbar');
+    assert.equal(await page.locator(`${piano} .ps-compact-play`).count(), 1, 'and only there');
+    assert.equal(await page.locator('.embed-switch-off .ps-embed-toolbar').count(), 0, 'no toolbar without the switcher');
     const [toolbar, root] = await Promise.all([rect(page, `${piano} .ps-embed-toolbar`), rect(page, piano)]);
     assert.ok(inside(root, toolbar) && root.bottom - toolbar.bottom < 16, `the toolbar is at the snippet's bottom: ${JSON.stringify({ toolbar, root })}`);
+    const height = (await rect(page, piano)).height;
     await page.locator(`${piano} .instrument-switch`).click();
     await page.locator(`${piano} .instrument-menu`).waitFor();
-    assert.ok(inside(await rect(page, 'body'), await rect(page, `${piano} .instrument-menu`)), 'the menu fits on the phone');
+    const menuBox = await rect(page, `${piano} .instrument-menu`);
+    assert.ok(inside({ left: 0, top: 0, right: 390, bottom: 844 }, menuBox), `the menu is inside the phone viewport: ${JSON.stringify(menuBox)}`);
+    assert.equal((await rect(page, piano)).height, height, 'the snippet keeps its height');
     assert.deepEqual(errors, []);
     await context.close();
   }

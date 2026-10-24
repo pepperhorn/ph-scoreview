@@ -373,8 +373,8 @@
 .pepperscore .ps-compact-play:hover{background:#254633}
 .pepperscore .ps-compact-play.is-loading{opacity:.75}
 /* The embed instrument switcher (minimal chrome, controls.instrumentSwitch): a round button left of the play button (or
-   in the corner without one), and on phones and tablets in a bottom toolbar. Its menu sits inside the root (which clips),
-   so a natural-height snippet grows to fit it while it is open, and the menu scrolls when the root is still shorter. */
+   in the corner without one); on phones and tablets both sit in a bottom toolbar. Its menu is a manual popover (top
+   layer, placed by PepperScore from the button's rect), so the root neither clips it nor grows. */
 .pepperscore .ps-corner-controls{position:absolute;top:8px;right:8px;z-index:9;display:flex;gap:8px}
 .pepperscore .ps-corner-controls.has-compact-play{right:52px}
 .pepperscore .topbar .ps-corner-controls{top:50%;transform:translateY(-50%)}
@@ -382,10 +382,8 @@
 .pepperscore .instrument-switch:hover,.pepperscore .instrument-switch.is-open{background:#eef4ec;border-color:#8fb89a}
 .pepperscore .instrument-switch-icon{width:22px;height:22px;object-fit:contain}
 .pepperscore .ps-embed-toolbar{flex:none;display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:6px 8px;border-top:1px solid #eef0ec;background:#fbfaf8}
-.pepperscore[data-ps-menu][data-ps-height=natural]{min-height:400px}
-.pepperscore .instrument-menu{position:absolute;z-index:40;top:52px;right:8px;width:min(320px,calc(100% - 16px));max-height:calc(100% - 60px);overflow:auto;display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid #e2e8e0;border-radius:12px;background:#fff;box-shadow:0 12px 36px #1d2b2033;outline:none;font-family:Poppins,Arial,sans-serif}
-.pepperscore .instrument-menu.has-header{top:calc(var(--ps-header-height,76px) + 6px);max-height:calc(100% - var(--ps-header-height,76px) - 14px)}
-.pepperscore .instrument-menu.is-toolbar{top:auto;bottom:56px;left:8px;right:8px;width:auto;max-height:calc(100% - 64px)}
+.pepperscore .ps-embed-toolbar .ps-compact-play{position:static;transform:none}
+.pepperscore .instrument-menu{inset:auto;margin:0;box-sizing:border-box;overflow:auto;display:flex;flex-direction:column;gap:8px;padding:10px;border:1px solid #e2e8e0;border-radius:12px;background:#fff;color:#242824;box-shadow:0 12px 36px #1d2b2033;outline:none;font-family:Poppins,Arial,sans-serif;line-height:normal;text-align:left}
 .pepperscore .instrument-menu .instrument-chooser.is-compact .instrument-chooser-options{grid-template-columns:1fr 1fr;overflow:visible}
 .pepperscore .instrument-menu-parts{display:flex;flex-wrap:wrap;gap:4px;padding-bottom:8px;border-bottom:1px solid #f0f2ee}
 .pepperscore .instrument-menu-part{display:flex;align-items:center;gap:7px;min-height:32px;padding:4px 10px;border:1px solid #e5eae2;border-radius:16px;background:#fff;color:#3c5040;font-size:11px}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { ChevronDown, ChevronLeft, ChevronRight, Ellipsis, Eye, EyeOff, FileMusic, Focus, FolderOpen, History, Hourglass, Minus, Pause, Play, Plus, RotateCcw, SlidersHorizontal, Square, Settings2, Trash2, Type, VolumeX, X } from 'lucide-react';
 import { exampleScore, gmProgramForSoundfont, gmSoundfontLabel, GM_FAMILIES, GM_SOUNDS, instrumentDetails, type GmFamily, type GmSound, type Part, type Score } from '../lib/score';
@@ -862,6 +862,36 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     document.addEventListener('pointerdown', outside);
     return () => document.removeEventListener('pointerdown', outside);
   }, [switchMenu]);
+  // The menu takes focus once, when it opens (choosing an option re-renders it and must leave focus on that option).
+  useEffect(() => { if (switchMenu) switchMenuRef.current?.focus({ preventScroll: true }); }, [switchMenu]);
+  // The menu is a manual popover in the top layer, so it is never clipped by the root (overflow hidden) and the root never
+  // grows; it stays under .pepperscore in the DOM, so the scoped styles still apply. It is placed from the button's rect:
+  // below it (or above, from the bottom toolbar), right-aligned to it and clamped to the viewport, and follows scrolls and resizes.
+  useLayoutEffect(() => {
+    const menu = switchMenuRef.current;
+    if (!switchMenu || !menu) return;
+    const place = () => {
+      const button = switchButtonRef.current;
+      if (!button || !menu.isConnected) return;
+      const gap = 8, rect = button.getBoundingClientRect(), width = window.innerWidth, height = window.innerHeight;
+      menu.style.maxHeight = '';
+      menu.style.width = `${Math.min(320, width - 2 * gap)}px`;
+      const natural = menu.scrollHeight + 2;
+      const below = height - rect.bottom - 2 * gap, above = rect.top - 2 * gap;
+      const downward = natural <= below || below >= above;
+      const room = Math.max(120, downward ? below : above);
+      const menuHeight = Math.min(natural, room);
+      const top = downward ? rect.bottom + gap : rect.top - gap - menuHeight;
+      menu.style.maxHeight = `${Math.min(room, height - 2 * gap)}px`;
+      menu.style.top = `${Math.max(gap, Math.min(top, height - gap - menuHeight))}px`;
+      menu.style.left = `${Math.max(gap, Math.min(rect.right - menu.offsetWidth, width - gap - menu.offsetWidth))}px`;
+    };
+    if (typeof menu.showPopover === 'function') { if (!menu.matches(':popover-open')) menu.showPopover(); } else menu.style.position = 'fixed';
+    place();
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => { window.removeEventListener('scroll', place, true); window.removeEventListener('resize', place); };
+  });
   // Phones and tablets (deviceClass compact) get the switcher in a bottom toolbar, within thumb reach; set after mount so SSR markup matches.
   useEffect(() => {
     const query = window.matchMedia?.(DESKTOP_QUERY);
@@ -1699,11 +1729,16 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const switchSources = readerParts.filter((part, index) => switchablePart(part) && readerParts.findIndex(other => sourcePartOf(other) === sourcePartOf(part)) === index);
   const switchSource = switchSources.find(part => sourcePartOf(part) === switchSourceId) ?? switchSources[0];
   const embedSwitchShown = preset === 'minimal' && chrome.instrumentSwitch && loaded && Boolean(switchSource);
-  const embedSwitch = embedSwitchShown ? <button ref={switchButtonRef} type="button" className={`instrument-switch icon-button ${switchMenu ? 'is-open' : ''}`} aria-label="Choose your instrument" title="Choose your instrument" aria-haspopup="dialog" aria-expanded={switchMenu} aria-controls={switchMenu ? switchMenuId : undefined} onClick={() => setSwitchMenu(open => !open)}>
+  /** Focus leaving both the menu and its button closes the menu (focus has already moved on, so nothing is restored). */
+  const closeSwitchOnFocusOut = (event: React.FocusEvent) => {
+    const next = event.relatedTarget as Node | null;
+    if (next && !switchMenuRef.current?.contains(next) && !switchButtonRef.current?.contains(next)) setSwitchMenu(false);
+  };
+  const embedSwitch = embedSwitchShown ? <button ref={switchButtonRef} onBlur={closeSwitchOnFocusOut} type="button" className={`instrument-switch icon-button ${switchMenu ? 'is-open' : ''}`} aria-label="Choose your instrument" title="Choose your instrument" aria-haspopup="dialog" aria-expanded={switchMenu} aria-controls={switchMenu ? switchMenuId : undefined} onClick={() => setSwitchMenu(open => !open)}>
     <img className="instrument-switch-icon" src={instrumentDetails(shownInstrument(switchSource)).icon} alt=""/>
   </button> : null;
   const switchState = switchSource && partSwitches[switchSource.id];
-  const embedSwitchMenu = embedSwitchShown && switchMenu ? <div ref={element => { switchMenuRef.current = element; focusOnMount(element); }} id={switchMenuId} tabIndex={-1} className={`instrument-menu ${phoneToolbar ? 'is-toolbar' : ''} ${chrome.header ? 'has-header' : ''}`} role="dialog" aria-label="Choose your instrument">
+  const embedSwitchMenu = embedSwitchShown && switchMenu ? <div ref={switchMenuRef} popover="manual" onBlur={closeSwitchOnFocusOut} id={switchMenuId} tabIndex={-1} className="instrument-menu" role="dialog" aria-label="Choose your instrument">
     {switchSources.length > 1 && <div className="instrument-menu-parts" role="group" aria-label="Part">
       {switchSources.map(part => <button key={part.id} type="button" className={`instrument-menu-part ${part === switchSource ? 'is-selected' : ''}`} aria-pressed={part === switchSource} onClick={() => setSwitchSourceId(sourcePartOf(part))}>
         <img className="instrument-menu-part-icon" src={instrumentDetails(shownInstrument(part)).icon} alt=""/><span className="instrument-menu-part-name">{part.name}</span>
@@ -1712,8 +1747,11 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     <InstrumentChooser compact instruments={EMBED_INSTRUMENTS} current={switchState?.instrument} level={switchState?.level ?? hostSwitchDefaults().level} autoRange={switchState?.autoRange ?? hostSwitchDefaults().autoRange} asWrittenIcon={instrumentDetails(switchSource.instrument).icon}
       onInstrument={id => setPartInstrument(sourcePartOf(switchSource), id)} onLevel={level => setPartLevel(sourcePartOf(switchSource), level)} onAutoRange={on => setPartAutoRange(sourcePartOf(switchSource), on)}/>
   </div> : null;
-  const cornerSwitch = phoneToolbar ? null : embedSwitch;
-  return <div ref={rootRef} className={`pepperscore ${className ?? ''}`.trim()} data-ps-height={heightMode} data-ps-clock={clock ? '' : undefined} data-ps-clickable={onElementClick ? '' : undefined} data-ps-menu={embedSwitchMenu ? '' : undefined} style={heightMode === 'fixed' ? { height } : undefined}
+  /** On phones and tablets the switcher and the play button move to a bottom toolbar, within thumb reach. */
+  const inToolbar = phoneToolbar && Boolean(embedSwitch);
+  const cornerSwitch = inToolbar ? null : embedSwitch;
+  const cornerPlay = inToolbar ? null : compactPlay;
+  return <div ref={rootRef} className={`pepperscore ${className ?? ''}`.trim()} data-ps-height={heightMode} data-ps-clock={clock ? '' : undefined} data-ps-clickable={onElementClick ? '' : undefined} style={heightMode === 'fixed' ? { height } : undefined}
     tabIndex={0} role="region" aria-label={ariaLabel || (loaded && score.title ? `Score: ${score.title}` : 'Score reader')} onKeyDown={onRootKeyDown}>
   <main className={`app-shell ${chrome.drawer ? '' : 'no-drawer'}`}>
     {chrome.header && <header className="topbar" aria-label="Playback transport">
@@ -1728,12 +1766,12 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
         </div>}
       </div>
       {cornerSwitch && <div className={`ps-corner-controls ${compactPlay ? 'has-compact-play' : ''}`}>{cornerSwitch}</div>}
-      {compactPlay}
+      {cornerPlay}
     </header>}
     {/* Shown once a score has loaded: an empty or failed snippet has nothing to play. With a header (minimal + controls)
         it sits in the header's right end, above the sticky header rather than under it. */}
     {!chrome.header && cornerSwitch && <div className={`ps-corner-controls ${compactPlay ? 'has-compact-play' : ''}`}>{cornerSwitch}</div>}
-    {!chrome.header && compactPlay}
+    {!chrome.header && cornerPlay}
     {embedSwitchMenu}
 
     {chrome.mixer && mixer && <div className="mixer-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setMixer(false); }}>
@@ -1807,7 +1845,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
       </div>
       {chrome.zoom && <div className="page-controls"><button aria-label="Previous view" onClick={() => turn(-1)}><ChevronLeft size={18}/></button><span>{prefs.mode === 'portrait' ? 'SCROLL TO READ' : 'SWIPE TO READ'}</span><button aria-label="Next view" onClick={() => turn(1)}><ChevronRight size={18}/></button></div>}
     </section>
-    {phoneToolbar && embedSwitch && <div className="ps-embed-toolbar" role="toolbar" aria-label="Score controls">{embedSwitch}</div>}
+    {inToolbar && <div className="ps-embed-toolbar" role="toolbar" aria-label="Score controls">{embedSwitch}{compactPlay}</div>}
 
     {chrome.drawer && <>
     <button className={`drawer-handle ${drawer ? 'is-open' : ''}`} onClick={() => setDrawer(!drawer)} aria-expanded={drawer}><span className="handle-grip"/><span>{drawer ? 'Close options' : 'Options'}</span><ChevronDown size={16}/></button>
