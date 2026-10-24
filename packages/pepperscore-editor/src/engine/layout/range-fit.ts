@@ -1,9 +1,10 @@
 import { pitchMidi, transposePitchSpelled, writtenKeyFifths, type Instrument, type Level, type Transposition } from '../../model/instruments';
+import { applyOverrides, joinRuns, planShifts, tieChainOf, type FitEvent, type Shift } from 'pepperscore/instruments';
 import { eventStarts } from '../../model/query';
 import type { Event, Key, Part, Pitch } from '../../model/schema';
 
 export type Phrase = { eventIds: string[] };
-export type Shift = 0 | 12 | -12;
+export type { Shift };
 
 const CONCERT: Transposition = { semitones: 0, diatonic: 0 };
 
@@ -26,15 +27,10 @@ function partEvents(part: Part): { event: Event; measure: number; sequence: stri
  */
 export function phrases(part: Part): Phrase[] {
   const slurEnds = new Set<string>();
-  const noteOwner = new Map<string, string>();
   const events = partEvents(part);
-  for (const { event } of events) {
-    for (const slur of event.slurs ?? []) slurEnds.add(slur.target);
-    for (const n of event.notes ?? []) noteOwner.set(n.id, event.id);
-  }
+  for (const { event } of events) for (const slur of event.slurs ?? []) slurEnds.add(slur.target);
 
   const runs: string[][] = [];
-  const runOf = new Map<string, number>();
   let current: string[] | undefined;
   let where = '';
   for (const { event, measure, sequence } of events) {
@@ -42,27 +38,23 @@ export function phrases(part: Part): Phrase[] {
     if (event.rest || !event.notes?.length) { current = undefined; continue; }
     if (!current) { current = []; runs.push(current); }
     current.push(event.id);
-    runOf.set(event.id, runs.length - 1);
     if (slurEnds.has(event.id)) current = undefined;
   }
 
-  // Union the runs a tie links, keeping the first run's position.
-  const parent = runs.map((_, i) => i);
-  const root = (i: number): number => (parent[i] === i ? i : (parent[i] = root(parent[i])));
+  return joinRuns(runs, tiePairs(events)).map((eventIds) => ({ eventIds }));
+}
+
+/** Every tie as (event holding the tied note, event owning its target note), in event order. */
+function tiePairs(events: { event: Event }[]): [string, string][] {
+  const noteOwner = new Map<string, string>();
+  for (const { event } of events) for (const n of event.notes ?? []) noteOwner.set(n.id, event.id);
+  const ties: [string, string][] = [];
   for (const { event } of events)
     for (const n of event.notes ?? []) {
       const owner = n.tie && noteOwner.get(n.tie.target);
-      const a = runOf.get(event.id), b = owner !== undefined ? runOf.get(owner) : undefined;
-      if (a === undefined || b === undefined) continue;
-      const [ra, rb] = [root(a), root(b)];
-      if (ra !== rb) parent[Math.max(ra, rb)] = Math.min(ra, rb);
+      if (owner) ties.push([event.id, owner]);
     }
-  const merged = new Map<number, string[]>();
-  runs.forEach((run, i) => {
-    const r = root(i);
-    merged.set(r, [...(merged.get(r) ?? []), ...run]);
-  });
-  return [...merged.values()].map((eventIds) => ({ eventIds }));
+  return ties;
 }
 
 export type FitOptions = {
@@ -82,29 +74,6 @@ export type FitOptions = {
 };
 
 export type FitResult = { part: Part; moved: Record<string, 12 | -12>; diagnostics: string[] };
-
-/** Each event's tie chain (the events its ties link, both ways, in order); untied events are absent. */
-function tieChains(events: { event: Event }[]): Map<string, string[]> {
-  const noteOwner = new Map<string, string>();
-  for (const { event } of events) for (const n of event.notes ?? []) noteOwner.set(n.id, event.id);
-  const parent = new Map<string, string>();
-  const root = (id: string): string => { let r = id; while (parent.has(r)) r = parent.get(r)!; return r; };
-  for (const { event } of events)
-    for (const n of event.notes ?? []) {
-      const owner = n.tie && noteOwner.get(n.tie.target);
-      if (!owner) continue;
-      const [a, b] = [root(event.id), root(owner)];
-      if (a !== b) parent.set(b, a);
-    }
-  const groups = new Map<string, string[]>();
-  for (const { event } of events) {
-    const r = root(event.id);
-    groups.set(r, [...(groups.get(r) ?? []), event.id]);
-  }
-  const chains = new Map<string, string[]>();
-  for (const chain of groups.values()) if (chain.length > 1) for (const id of chain) chains.set(id, chain);
-  return chains;
-}
 
 /**
  * Shows `part` for `target`: every note goes to sounding pitch, then up the `interval`, then (when
@@ -127,31 +96,23 @@ export function fitToRange(part: Part, options: FitOptions): FitResult {
   const where = (ids: string[]) => `part ${part.name} bar ${(measureOf.get(ids[0]) ?? 0) + 1} phrase ${ids[0]}..${ids.at(-1)}`;
   const span = `the ${target.label} ${level} range`;
 
-  const shifts = new Map<string, Shift>();
+  let shifts: Record<string, Shift> = {};
   if (autoRange && range) {
     const soundingMidi = (p: Pitch) => pitchMidi(p) - source.semitones + interval.semitones;
     const byId = new Map(events.map(({ event }) => [event.id, event]));
-    const outside = (midis: number[]) => ({ below: midis.some((m) => m < range.low), above: midis.some((m) => m > range.high) });
-    for (const phrase of phrases(part)) {
-      const midis = phrase.eventIds.flatMap((id) => (byId.get(id)?.notes ?? []).map((n) => soundingMidi(n.pitch)));
-      const { below, above } = outside(midis);
-      if (below && above) {
-        diagnostics.push(`range: ${where(phrase.eventIds)} is out of ${span} both ways; not moved`);
-        continue;
-      }
-      if (!below && !above) continue;
-      const shift = below ? 12 : -12;
-      for (const id of phrase.eventIds) shifts.set(id, shift);
-      const after = outside(midis.map((m) => m + shift));
-      if (after.below || after.above) diagnostics.push(`range: ${where(phrase.eventIds)} is still out of ${span} after moving ${shift > 0 ? '8va' : '8vb'}`);
+    const fitEvents = (ids: string[]): FitEvent[] => ids.map((id) => ({ id, midi: (byId.get(id)?.notes ?? []).map((n) => soundingMidi(n.pitch)) }));
+    const phraseIds = phrases(part).map((p) => p.eventIds);
+    const plan = planShifts(phraseIds.map(fitEvents), range, true);
+    shifts = plan.shifts;
+    // Report in phrase order, keyed by each phrase's first event.
+    const bothWays = new Set(plan.bothWays.map((ids) => ids[0]));
+    const stillOut = new Set(plan.stillOut.map((ids) => ids[0]));
+    for (const ids of phraseIds) {
+      if (bothWays.has(ids[0])) diagnostics.push(`range: ${where(ids)} is out of ${span} both ways; not moved`);
+      else if (stillOut.has(ids[0])) diagnostics.push(`range: ${where(ids)} is still out of ${span} after moving ${shifts[ids[0]] > 0 ? '8va' : '8vb'}`);
     }
   }
-
-  const chains = tieChains(events);
-  const overrideFor = (id: string): Shift | undefined => {
-    const owner = (chains.get(id) ?? [id]).find((e) => overrides[e] !== undefined);
-    return owner === undefined ? undefined : overrides[owner];
-  };
+  shifts = applyOverrides(shifts, overrides, tieChainOf(tiePairs(events)));
 
   const moved: Record<string, 12 | -12> = {};
   const fitted = structuredClone(part);
@@ -163,7 +124,7 @@ export function fitToRange(part: Part, options: FitOptions): FitResult {
       const octaved = { ...sounding, octave: sounding.octave + shift / 12 };
       return transposing ? spell(octaved, target.transposition, writtenKeyFifths(concert, add(interval, target.transposition)), diagnostics, n.id) : octaved;
     });
-    let shift = overrideFor(event.id) ?? shifts.get(event.id) ?? 0;
+    let shift = shifts[event.id] ?? 0;
     let pitches = written(shift);
     if (shift !== 0 && pitches.some((p) => p.octave < 0 || p.octave > 9)) {
       diagnostics.push(`range: event ${event.id} in part ${part.name} cannot move ${shift > 0 ? '8va' : '8vb'} past octave ${shift > 0 ? 9 : 0}; not moved`);
