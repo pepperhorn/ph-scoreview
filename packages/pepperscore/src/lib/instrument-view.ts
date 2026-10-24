@@ -12,8 +12,16 @@ import { soundingMidi } from './transpose';
 /** The part all staves of one source part share: the MusicXML <score-part id>, or the part's own id for ABC/MIDI. */
 export const sourcePartOf = (part: Part): string => part.sourcePartId ?? part.id;
 
-/** A reader's switch for one staff part: `instrument` undefined = as written; `octaves` keyed by `ScoreNote.id`. */
-export type PartSwitch = { instrument?: InstrumentId; level: Level; autoRange: boolean; octaves: Record<string, 12 | -12> };
+/**
+ * The playback sound a reader picked for a switched part (the mixer's Sound grid, like `Part.instrument` and
+ * `gmSoundfont`: the GM sound's icon id and FluidR3 name; no `gmSoundfont` with `instrument: 'drum-kit'` = the kit).
+ */
+export type PartSound = { instrument: InstrumentId; gmSoundfont?: string };
+/**
+ * A reader's switch for one staff part: `instrument` undefined = as written; `octaves` keyed by `ScoreNote.id`;
+ * `sound` overrides the target's main sound (only while switched; cleared when the instrument changes).
+ */
+export type PartSwitch = { instrument?: InstrumentId; level: Level; autoRange: boolean; octaves: Record<string, 12 | -12>; sound?: PartSound };
 /**
  * The MEI pass's view of one switched (or octave-moved) staff: `shift` = [diatonic, semitones] from the baseline MEI
  * (the source's written pitch, after the global interval) to the pitch shown; `octaves` keyed by MEI note id.

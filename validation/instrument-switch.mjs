@@ -266,6 +266,80 @@ try {
   assert.deepEqual([staffPitches(duoConcert, '1'), staffPitches(duoConcert, '3')], [['C5', 'E5'], ['C5']], 'Concert view: switched piano and clarinet at sounding pitch');
   console.log('Instrument switch: playback plays alto sax program 66 at the fitted sounding pitch; unswitched transposing parts unchanged in both views passed');
 
+  // --- The full reader's picker: Instrument separate from Sound (Task 7) -----------------------------------------
+  const live = (xml, props = {}) => page.evaluate(async ([xml, props]) => (await import('/validation/instrument-switch-harness.ts')).mountLive(xml, props), [xml, props]);
+  const readLive = () => page.evaluate(async () => (await import('/validation/instrument-switch-harness.ts')).readLive());
+  const draws = () => page.evaluate(() => window.__psDraws);
+  /** Run `action` and wait for the reader to finish the draw it causes. */
+  const redraw = async action => { const before = await draws(); await action(); await page.waitForFunction(count => window.__psDraws > count, before, { timeout: 30000 }); return readLive(); };
+  const picker = page.locator('.instrument-picker-panel');
+  const partIcon = () => page.locator('.part-control .part-icon').first().getAttribute('src');
+  await live(pianoXml);
+  const writtenUi = await readLive();
+  assert.deepEqual([staffPitches(writtenUi, '1'), staffPitches(writtenUi, '2'), writtenUi.clefs], [['C5', 'E5'], ['C3'], { 1: 'G', 2: 'F' }], 'Full reader: the piano as written');
+  const pianoIcon = await partIcon();
+  // The mixer's voice button opens the picker on Sound; its Instrument section switches the part.
+  await page.getByRole('button', { name: 'Track mixer', exact: true }).click();
+  const pianoVoice = await page.getByRole('button', { name: 'Voice for Piano', exact: true }).first().textContent();
+  await page.getByRole('button', { name: 'Voice for Piano', exact: true }).first().click();
+  assert.equal(await picker.getByRole('tab', { name: 'Sound', exact: true }).getAttribute('aria-selected'), 'true', 'The voice button opens the Sound section');
+  assert.match(await picker.locator('.instrument-picker-heading p').textContent(), /Choose a playback sound/, 'Sound keeps its heading');
+  await picker.getByRole('tab', { name: 'Instrument', exact: true }).click();
+  const options = await picker.locator('.instrument-chooser-option').allTextContents();
+  assert.deepEqual(options, ['As written', 'Piano', 'Guitar', 'Bass Guitar', 'Double Bass', 'Alto Sax', 'Tenor Sax', 'Bari Sax', 'Flute', 'Clarinet', 'Trumpet', 'Trombone', 'Violin', 'Viola', 'Cello', 'Voice'], 'As written, then the 15 model instruments (no drum kit)');
+  assert.equal(await picker.locator('.instrument-chooser-as-written').getAttribute('aria-pressed'), 'true', 'As written is selected');
+  assert.deepEqual([await picker.locator('.instrument-level .is-selected').textContent(), await picker.locator('.instrument-fit-toggle [role=switch]').getAttribute('aria-checked')], ['Intermediate', 'true'], 'Level Intermediate and Fit to range on by default');
+  // Trumpet (B-flat, sounding 54-79 at intermediate): C5 E5 written D5 F#5; C3 is below, moved up to C4, written D4.
+  const trumpetUi = await redraw(() => picker.getByRole('button', { name: 'Trumpet', exact: true }).click());
+  assert.deepEqual([staffPitches(trumpetUi, '1'), staffPitches(trumpetUi, '2'), trumpetUi.clefs], [['D5', 'F5'], ['D4'], { 1: 'G', 2: 'G' }], 'Trumpet: both staves in treble, a tone up (F#5 drawn as F with a sharp), the low phrase an octave up');
+  assert.equal(await picker.getByRole('button', { name: 'Trumpet', exact: true }).getAttribute('aria-pressed'), 'true', 'Trumpet is selected');
+  assert.match(await partIcon(), /trumpet/, 'The part icon shows the trumpet');
+  assert.match(await page.locator('.mixer-track-icon').first().getAttribute('src'), /trumpet/, 'The mixer track icon shows the trumpet');
+  // A sound pick changes only the sound: the notes and the instrument stay the trumpet's.
+  await picker.getByRole('tab', { name: 'Sound', exact: true }).click();
+  assert.match(await picker.locator('.instrument-picker-grid button.is-selected').textContent(), /Trumpet/, 'Choosing the trumpet set its main sound');
+  await picker.getByRole('button', { name: 'Strings', exact: true }).click();
+  const harpUi = await redraw(() => picker.getByRole('button', { name: 'Orchestral Harp', exact: true }).click());
+  assert.deepEqual([staffPitches(harpUi, '1'), staffPitches(harpUi, '2'), harpUi.clefs], [['D5', 'F5'], ['D4'], { 1: 'G', 2: 'G' }], 'Orchestral Harp sound: the notes are unchanged');
+  assert.match(await partIcon(), /trumpet/, 'Orchestral Harp sound: the instrument is still the trumpet');
+  assert.equal(await page.getByRole('button', { name: 'Voice for Piano', exact: true }).first().textContent(), 'Orchestral Harp', 'The mixer shows the picked sound');
+  await page.getByRole('button', { name: 'Voice for Piano', exact: true }).first().click();
+  assert.match(await picker.locator('.instrument-picker-grid button.is-selected').textContent(), /Orchestral Harp/, 'The picked sound is selected');
+  await picker.getByRole('tab', { name: 'Instrument', exact: true }).click();
+  assert.equal(await picker.getByRole('button', { name: 'Trumpet', exact: true }).getAttribute('aria-pressed'), 'true', 'The instrument is still the trumpet');
+  // Level and fit: beginner trumpet (55-72) with fit off leaves E5 (76) and C3 out of range, flagged.
+  await redraw(() => picker.getByRole('button', { name: 'Beginner', exact: true }).click());
+  const unfitted = await redraw(() => picker.locator('.instrument-fit-toggle [role=switch]').click());
+  assert.deepEqual([staffPitches(unfitted, '2'), unfitted.outOfRange.sort()], [['D3'], ['1:F5', '2:D3']], 'Beginner, fit off: no octave moves, out-of-range notes flagged');
+  // As written: the original engraving and sound.
+  const backUi = await redraw(() => picker.getByRole('button', { name: 'As written', exact: true }).click());
+  assert.deepEqual([staffPitches(backUi, '1'), staffPitches(backUi, '2'), backUi.clefs], [['C5', 'E5'], ['C3'], { 1: 'G', 2: 'F' }], 'As written: the original engraving');
+  assert.equal(await partIcon(), pianoIcon, 'As written: the piano icon again');
+  assert.equal(await page.getByRole('button', { name: 'Voice for Piano', exact: true }).first().textContent(), pianoVoice, 'As written: the part\'s own sound again');
+  await page.getByRole('button', { name: 'Close voice picker', exact: true }).click();
+  await page.getByRole('button', { name: 'Close track mixer', exact: true }).click();
+  // The staff's part icon opens the picker on Instrument.
+  await page.locator('.part-control .instrument-control').first().click();
+  assert.equal(await picker.getByRole('tab', { name: 'Instrument', exact: true }).getAttribute('aria-selected'), 'true', 'The part icon opens the Instrument section');
+  await page.getByRole('button', { name: 'Close voice picker', exact: true }).click();
+  // The Pitch panel's hint names switched parts' written pitch only in the Transposing view (Concert shows sounding pitch).
+  await live(pianoXml, { settings: { instrument: 'alto-saxophone' } });
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  assert.match(await page.locator('.pitch-hint').textContent(), /Switched parts show their instrument's written pitch/, 'Transposing view: the switched-part hint shows');
+  await redraw(() => page.getByRole('button', { name: 'Concert', exact: true }).click());
+  assert.doesNotMatch(await page.locator('.pitch-hint').textContent(), /Switched parts/, 'Concert view: no switched-part hint');
+  // Hidden by the host: only the Sound grid.
+  await live(pianoXml, { controls: { instrumentSwitch: false } });
+  await page.locator('.part-control .instrument-control').first().click();
+  assert.deepEqual([await picker.locator('.instrument-chooser, .instrument-picker-sections').count(), await picker.locator('.instrument-picker-grid button').count()], [0, 16], 'controls.instrumentSwitch false: no Instrument section, the Sound grid as before');
+  // A drum kit part shows only Sound.
+  const drumXml = '<?xml version="1.0"?><score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Drums</part-name></score-part></part-list><part id="P1"><measure number="1"><attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>percussion</sign></clef></attributes><note><unpitched><display-step>C</display-step><display-octave>5</display-octave></unpitched><duration>4</duration><type>whole</type></note></measure></part></score-partwise>';
+  await live(drumXml);
+  await page.locator('.part-control .instrument-control').first().click();
+  assert.deepEqual([await picker.locator('.instrument-chooser, .instrument-picker-sections').count(), await picker.locator('.instrument-picker-grid button').count() > 0], [0, true], 'Drum kit: Sound only');
+  await page.evaluate(async () => (await import('/validation/instrument-switch-harness.ts')).unmountLive());
+  console.log('Instrument switch: full reader picker (Instrument and Sound sections, trumpet, harp sound, level and fit, as written, hidden by the host, drum kit) passed');
+
   // The reader's own render with forced chunks (the worker's chunk path and its spelling cache).
   const chunkedPage = await browser.newPage();
   chunkedPage.on('pageerror', error => errors.push(error.message));

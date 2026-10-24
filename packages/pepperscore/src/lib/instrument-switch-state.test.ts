@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyHostSwitchChange, readerPitch, sourcePartsOf, switchedSoundParts, switchedTimeline, switchedView, switchesFromSaved, switchesFromSettings, switchHighlights, withOctaves, withSourceSwitch } from './instrument-switch-state';
+import { applyHostSwitchChange, readerPitch, restoredScorePitch, sourcePartsOf, switchedSoundParts, switchedTimeline, switchedView, switchesFromSaved, switchesFromSettings, switchHighlights, withOctaves, withSound, withSourceSwitch } from './instrument-switch-state';
 import { buildBaseTimeline, playbackEventsFrom } from './playback/timeline';
 import { gmProgramForSoundfont, pitch, type Part, type Score } from './score';
 import { scoreForView } from './transpose';
@@ -61,10 +61,58 @@ describe('instrument switch state', () => {
     expect(withOctaves({}, 'P2', {}, defaults)).toEqual({});
   });
 
-  it('saved switches restore per staff part, only for switchable parts', () => {
+  it('saved switches restore per staff part, only for switchable parts; a grand staff is normalised to its first switch', () => {
     const input = score(drums(), ...piano());
     const restored = switchesFromSaved(input, { 'P1-1': { visible: true, instrument: 'piano', switch: { instrument: 'alto-saxophone', level: 'advanced', autoRange: false, octaves: { rh1: 12 } } }, P0: { visible: true, instrument: 'drum-kit', switch: { instrument: 'flute', level: 'beginner', autoRange: true } } });
-    expect(restored).toEqual({ 'P1-1': { instrument: 'alto-saxophone', level: 'advanced', autoRange: false, octaves: { rh1: 12 } } });
+    // The left hand's switch was missing (dropped as malformed): it takes the right hand's, without its octave moves.
+    const saxRestored = { instrument: 'alto-saxophone', level: 'advanced', autoRange: false };
+    expect(restored).toEqual({ 'P1-1': { ...saxRestored, octaves: { rh1: 12 } }, 'P1-2': { ...saxRestored, octaves: {} } });
+    // Differing staves: the first staff's instrument, level and fit for both, each keeping its own octave moves and
+    // its sound only where the instrument matches.
+    const differing = switchesFromSaved(input, {
+      'P1-1': { visible: true, instrument: 'piano', switch: { instrument: 'trumpet', level: 'beginner', autoRange: true, sound: { instrument: 'violin', gmSoundfont: 'orchestral_harp' } } },
+      'P1-2': { visible: true, instrument: 'piano', switch: { instrument: 'flute', level: 'advanced', autoRange: false, octaves: { lh1: 12 }, sound: { instrument: 'flute', gmSoundfont: 'piccolo' } } },
+    });
+    expect(differing).toEqual({
+      'P1-1': { instrument: 'trumpet', level: 'beginner', autoRange: true, octaves: {}, sound: { instrument: 'violin', gmSoundfont: 'orchestral_harp' } },
+      'P1-2': { instrument: 'trumpet', level: 'beginner', autoRange: true, octaves: { lh1: 12 } },
+    });
+  });
+
+  it('a saved concert pitch view of a concert-basis score (forced, never chosen) restores as written', () => {
+    const concert = score(...piano().map(p => ({ ...p, pitchBasis: 'concert' as const })));
+    expect(restoredScorePitch(concert, {}, 'concert')).toBe('written');
+    expect(restoredScorePitch(concert, { 'P1-1': { ...alto, instrument: 'flute' } }, 'concert')).toBe('written');
+    // A part switched to a transposing instrument offered the choice: a saved concert view was the reader's.
+    expect(restoredScorePitch(concert, { 'P1-1': alto, 'P1-2': alto }, 'concert')).toBe('concert');
+    expect(restoredScorePitch(score(clarinet()), {}, 'concert')).toBe('concert');
+    expect(restoredScorePitch(concert, {}, 'written')).toBe('written');
+    // Restored as written, a later switch to alto sax shows its written pitch.
+    const switched = { 'P1-1': alto, 'P1-2': alto };
+    expect(readerPitch(concert, switched, restoredScorePitch(concert, {}, 'concert')).scorePitch).toBe('written');
+  });
+
+  it('a sound picked while switched overrides only the sound; choosing an instrument again drops it', () => {
+    const input = score(...piano());
+    const defaults = { level: 'intermediate' as const, autoRange: true };
+    const trumpet = withSourceSwitch(input, {}, 'P1', { instrument: 'trumpet' }, defaults);
+    expect(withSound({}, 'P1-1', { instrument: 'violin', gmSoundfont: 'orchestral_harp' })).toBeUndefined();
+    const harp = withSound(trumpet, 'P1-1', { instrument: 'violin', gmSoundfont: 'orchestral_harp' })!;
+    expect(harp['P1-1']).toEqual({ ...trumpet['P1-1'], sound: { instrument: 'violin', gmSoundfont: 'orchestral_harp' } });
+    const view = switchedView(input, harp, 'written');
+    // The engraving is the trumpet's either way; only the sound differs.
+    expect(view.score.parts.map(p => [p.instrument, p.clef])).toEqual(switchedView(input, trumpet, 'written').score.parts.map(p => [p.instrument, p.clef]));
+    const sounds = switchedSoundParts(input.parts, view, harp);
+    expect(sounds.map(p => [p.instrument, p.gmSoundfont, p.gmProgram])).toEqual([['violin', 'orchestral_harp', 47], ['trumpet', 'trumpet', 57]]);
+    // The drum kit sound (no soundfont) is the kit.
+    const kit = switchedSoundParts(input.parts, view, withSound(trumpet, 'P1-1', { instrument: 'drum-kit' })!);
+    expect([kit[0].instrument, kit[0].gmSoundfont]).toEqual(['drum-kit', undefined]);
+    // A new instrument (or As written) plays its main sound again.
+    expect(withSourceSwitch(input, harp, 'P1', { instrument: 'flute' }, defaults)['P1-1'].sound).toBeUndefined();
+    expect(withSourceSwitch(input, harp, 'P1', { instrument: undefined }, defaults)).toEqual({});
+    // Level, fit and octave moves keep the picked sound.
+    expect(withSourceSwitch(input, harp, 'P1', { level: 'beginner' }, defaults)['P1-1'].sound).toEqual({ instrument: 'violin', gmSoundfont: 'orchestral_harp' });
+    expect(withOctaves(harp, 'P1-1', { rh1: 12 }, defaults)['P1-1'].sound).toEqual({ instrument: 'violin', gmSoundfont: 'orchestral_harp' });
   });
 
   it('concert-basis scores show concert pitch unless a part is switched to a transposing instrument', () => {

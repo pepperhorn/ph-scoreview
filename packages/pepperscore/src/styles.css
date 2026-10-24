@@ -180,6 +180,28 @@
 .pepperscore[data-ps-short] .instrument-picker-grid button{min-height:53px;gap:2px}
 .pepperscore[data-ps-short] .instrument-picker-grid img{width:23px;height:23px}
 .pepperscore[data-ps-short] .instrument-picker-pages{padding-top:5px}
+/* Instrument switch: the picker's Instrument / Sound sections and the chooser (components/InstrumentChooser.tsx). */
+.pepperscore .instrument-picker-sections{align-self:flex-start;margin:0 0 12px}
+.pepperscore .instrument-picker-sections button{padding:7px 14px;font-size:11px}
+.pepperscore .instrument-picker-section{display:flex;flex-direction:column;min-height:0}
+.pepperscore .instrument-chooser{display:flex;flex-direction:column;gap:12px;min-height:0;font-family:Poppins,Arial,sans-serif}
+.pepperscore .instrument-chooser-options{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;overflow:auto;padding:2px;scrollbar-width:thin}
+.pepperscore .instrument-chooser-option{min-height:78px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:8px 5px;border:1px solid #e5eae2;border-radius:10px;background:#fff;color:#3c5040;font-size:11px;text-align:center;line-height:1.2}
+.pepperscore .instrument-chooser-option:hover,.pepperscore .instrument-chooser-option:focus-visible{background:#f2f7f1;border-color:#8fb89a}
+.pepperscore .instrument-chooser-option.is-selected{background:#eaf3e9;border-color:#6c9875;box-shadow:inset 0 0 0 1px #6c9875;font-weight:700}
+.pepperscore .instrument-chooser-icon{width:34px;height:34px;object-fit:contain;color:#597660}
+.pepperscore .instrument-chooser-settings{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;border-top:1px solid #f0f2ee;padding-top:12px}
+.pepperscore .instrument-level button{padding:6px 10px;font-size:11px}
+.pepperscore .instrument-fit-toggle{display:flex;align-items:center;gap:9px;font-size:11px;color:#5d6b61}
+.pepperscore .instrument-fit-toggle .ps-switch{flex:none}
+.pepperscore .instrument-chooser.is-compact{gap:8px}
+.pepperscore .instrument-chooser.is-compact .instrument-chooser-options{grid-template-columns:1fr;gap:2px}
+.pepperscore .instrument-chooser.is-compact .instrument-chooser-option{min-height:34px;flex-direction:row;justify-content:flex-start;gap:9px;padding:5px 9px;border-color:transparent;text-align:left}
+.pepperscore .instrument-chooser.is-compact .instrument-chooser-icon{width:20px;height:20px}
+.pepperscore .instrument-chooser.is-compact .instrument-chooser-settings{flex-direction:column;align-items:stretch;padding-top:8px}
+@container pepperscore (max-width:580px){.pepperscore .instrument-chooser-options{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}.pepperscore .instrument-chooser-option{min-height:64px;padding:5px 2px;font-size:9px}.pepperscore .instrument-chooser-icon{width:26px;height:26px}.pepperscore .instrument-level button{padding:5px 7px;font-size:10px}}
+.pepperscore[data-ps-short] .instrument-chooser-option{min-height:48px;gap:2px}
+.pepperscore[data-ps-short] .instrument-chooser-icon{width:22px;height:22px}
 
 /* Staff controls: sized from the rendered stave (see src/lib/part-controls.ts). */
 .pepperscore .score-stage .part-control{height:var(--part-control-height,36px)}

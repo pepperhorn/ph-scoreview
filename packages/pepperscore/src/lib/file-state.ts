@@ -2,7 +2,7 @@ import { isGmSoundfont, type InstrumentId, type Score } from './score';
 import { STAVE_SCALE_FLOOR, STAVE_SCALE_MAX, type DeviceClass } from './stave-scale';
 import { ANNOTATION_SIZE_PREF_KEYS, BARS_PER_LINE_MAX, BARS_PER_LINE_MIN, clampBpm, clampCapo, isAnnotationSize, MAX_BPM, MIN_BPM, STANDARD_TAB_TUNING, validTabTuning, validTabView, type AnnotationSize } from './prefs';
 import type { TabView } from './tab/tab-parts';
-import type { PartSwitch } from './instrument-view';
+import type { PartSound, PartSwitch } from './instrument-view';
 import { INSTRUMENTS, INSTRUMENT_IDS, LEVELS, type Level } from './instrument-model';
 
 export type FileSource = { name: string; size: number; sha256: string; format: string };
@@ -144,23 +144,33 @@ export function textSource(format: string, text: string, name: string): FileSour
   return { name, size: bytes.length - format.length - 1, sha256: sha256Hex(bytes), format };
 }
 
-/** A part's switch as saved in its record (`PartState.switch`). */
-export type SavedSwitch = { instrument?: InstrumentId; level: Level; autoRange: boolean; octaves?: Record<string, 12 | -12> };
+/** A part's switch as saved in its record (`PartState.switch`); `sound` only with an `instrument`. */
+export type SavedSwitch = { instrument?: InstrumentId; level: Level; autoRange: boolean; octaves?: Record<string, 12 | -12>; sound?: PartSound };
 export const isLevel = (value: unknown): value is Level => LEVELS.includes(value as Level);
 /** A switch target: any model instrument but the drum kit (unpitched). */
 export const isSwitchTarget = (value: unknown): value is InstrumentId => INSTRUMENT_IDS.includes(value as InstrumentId) && INSTRUMENTS[value as InstrumentId].clef !== 'percussion';
 /** A part's switch as saved, or undefined for no entry. */
 export function savedSwitch(entry: PartSwitch | undefined): SavedSwitch | undefined {
   if (!entry) return undefined;
-  return { ...(entry.instrument ? { instrument: entry.instrument } : {}), level: entry.level, autoRange: entry.autoRange, ...(Object.keys(entry.octaves).length ? { octaves: { ...entry.octaves } } : {}) };
+  return { ...(entry.instrument ? { instrument: entry.instrument } : {}), level: entry.level, autoRange: entry.autoRange, ...(Object.keys(entry.octaves).length ? { octaves: { ...entry.octaves } } : {}),
+    ...(entry.instrument && entry.sound ? { sound: { instrument: entry.sound.instrument, ...(entry.sound.gmSoundfont ? { gmSoundfont: entry.sound.gmSoundfont } : {}) } } : {}) };
+}
+const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
+/** A saved sound pick: a known icon id and, when given, a known GM sound; undefined when unusable. */
+function validSound(value: unknown): PartSound | undefined {
+  if (!isRecord(value) || !instruments.has(value.instrument as InstrumentId)) return undefined;
+  if (value.gmSoundfont !== undefined && (typeof value.gmSoundfont !== 'string' || !isGmSoundfont(value.gmSoundfont))) return undefined;
+  return { instrument: value.instrument as InstrumentId, ...(value.gmSoundfont ? { gmSoundfont: value.gmSoundfont as string } : {}) };
 }
 /** A saved switch, or undefined when it is unusable. */
 function validSwitch(value: unknown): SavedSwitch | undefined {
-  if (!value || typeof value !== 'object') return undefined;
-  const { instrument, level, autoRange, octaves } = value as Record<string, unknown>;
+  if (!isRecord(value)) return undefined;
+  const { instrument, level, autoRange, octaves, sound } = value;
   if ((instrument !== undefined && !isSwitchTarget(instrument)) || !isLevel(level) || typeof autoRange !== 'boolean') return undefined;
-  if (octaves !== undefined && (!octaves || typeof octaves !== 'object' || Object.values(octaves).some(shift => shift !== 12 && shift !== -12))) return undefined;
-  return { ...(instrument !== undefined ? { instrument } : {}), level, autoRange, ...(octaves && Object.keys(octaves).length ? { octaves: { ...(octaves as Record<string, 12 | -12>) } } : {}) };
+  if (octaves !== undefined && (!isRecord(octaves) || Object.values(octaves).some(shift => shift !== 12 && shift !== -12))) return undefined;
+  // An unusable sound (or one without an instrument) only loses the sound: the instrument's main sound plays.
+  const picked = instrument !== undefined ? validSound(sound) : undefined;
+  return { ...(instrument !== undefined ? { instrument } : {}), level, autoRange, ...(octaves && Object.keys(octaves).length ? { octaves: { ...(octaves as Record<string, 12 | -12>) } } : {}), ...(picked ? { sound: picked } : {}) };
 }
 const validZoom = (zoom: unknown): zoom is number => typeof zoom === 'number' && Number.isFinite(zoom) && zoom >= STAVE_SCALE_FLOOR && zoom <= STAVE_SCALE_MAX;
 /** Validate and normalise shared v1/v2 fields in place; false when the record is unusable. */
@@ -184,9 +194,11 @@ function validSettingsAndParts(state: { settings: SavedSettings; parts: Record<s
   if (validTabTuning(settings.tabTuning)) late.tabTuning = [...settings.tabTuning];
   if (typeof settings.capo === 'number' && Number.isFinite(settings.capo)) late.capo = clampCapo(settings.capo);
   if (['names', 'chordSymbols', 'inferChordSymbols', 'counts', 'subdivisions'].some(key => typeof settings[key as keyof FileSettings] !== 'boolean')) return false;
+  // A null (or non-object) part entry is dropped, not a reason to drop the record.
+  for (const [id, part] of Object.entries(state.parts)) if (!isRecord(part)) delete state.parts[id];
   Object.values(state.parts).forEach(part => {
     part.instrument = legacyInstruments[part.instrument] || part.instrument;
-    if (part && 'switch' in part) { const valid = validSwitch(part.switch); if (valid) part.switch = valid; else delete part.switch; }
+    if ('switch' in part) { const valid = validSwitch(part.switch); if (valid) part.switch = valid; else delete part.switch; }
   });
   if (Object.values(state.parts).some(part => typeof part.visible !== 'boolean' || !instruments.has(part.instrument) || (part.gmSoundfont !== undefined && !isGmSoundfont(part.gmSoundfont)) || (part.volume !== undefined && (!Number.isInteger(part.volume) || part.volume < 0 || part.volume > 100)))) return false;
   const { tabView: _view, tabTuning: _tuning, capo: _capo, ...rest } = settings;

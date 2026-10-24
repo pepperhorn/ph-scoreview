@@ -297,6 +297,41 @@
                   ]
                 },
                 "description": "The reader's octave moves by Score note id."
+              },
+              "sound": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "instrument"
+                ],
+                "properties": {
+                  "instrument": {
+                    "enum": [
+                      "piano",
+                      "guitar",
+                      "bassguitar",
+                      "double-bass",
+                      "drum-kit",
+                      "alto-saxophone",
+                      "tenor-saxophone",
+                      "bari-saxophone",
+                      "flute",
+                      "clarinet",
+                      "trumpet",
+                      "trombone",
+                      "violin",
+                      "viola",
+                      "cello",
+                      "microphone"
+                    ],
+                    "description": "The picked GM sound's icon id (drum-kit without gmSoundfont = the drum kit)."
+                  },
+                  "gmSoundfont": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_]+$"
+                  }
+                },
+                "description": "The playback sound picked while the part is switched (overrides the instrument's main sound); readers ignore it without an instrument or when unusable."
               }
             },
             "description": "The reader's instrument switch of this staff part. Optional (added in version 2); readers drop an unusable one, so the part opens as written."

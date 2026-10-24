@@ -44,6 +44,8 @@ assert.equal(resolveChrome('full', { tabToggle: false }).tabToggle, false, 'full
   assert.deepEqual(switchSchema.properties.level.enum, [...LEVELS], 'switch.level lists LEVELS');
   assert.deepEqual(switchSchema.properties.octaves.additionalProperties.enum, [12, -12], 'octave moves are ±12');
   assert.equal(switchSchema.additionalProperties, false);
+  assert.deepEqual(switchSchema.properties.sound?.properties.instrument.enum, [...INSTRUMENT_IDS], 'switch.sound.instrument lists INSTRUMENT_IDS (a GM sound\'s icon id)');
+  assert.deepEqual(switchSchema.properties.sound.properties.gmSoundfont, partSchema.properties.gmSoundfont, 'switch.sound.gmSoundfont matches parts[].gmSoundfont');
   const index = readFileSync(new URL('../packages/pepperscore/src/index.ts', import.meta.url), 'utf8');
   assert.match(index, /export type \{[^}]*\bInstrumentId\b[^}]*\bLevel\b[^}]*\} from '\.\/lib\/instrument-model'/, 'index.ts exports InstrumentId and Level');
 }

@@ -133,6 +133,20 @@ try {
     const parsed = parseFileState(malformed, hex(11));
     out.switchMalformed = parsed && Object.fromEntries(Object.entries(parsed.parts).map(([id, part]) => [id, part.switch ?? null]));
     out.switchMalformedVisible = parsed?.parts.good.visible;
+    // Arrays are not octave maps; a null part entry is dropped (the record still opens); a picked sound round-trips,
+    // and an unusable sound (or one without an instrument) only loses the sound.
+    const edge = parseFileState({ version: 2, source: source(hex(12)), lastOpened: 1, settings, parts: {
+      arrayOctaves: { visible: true, instrument: 'piano', switch: { instrument: 'flute', level: 'beginner', autoRange: true, octaves: [12] } },
+      gone: null,
+      good: { visible: true, instrument: 'piano', switch: { instrument: 'trumpet', level: 'advanced', autoRange: true, sound: { instrument: 'violin', gmSoundfont: 'orchestral_harp' } } },
+      badSound: { visible: true, instrument: 'piano', switch: { instrument: 'trumpet', level: 'advanced', autoRange: true, sound: { instrument: 'violin', gmSoundfont: 'kazoo' } } },
+      soundOnly: { visible: true, instrument: 'piano', switch: { level: 'advanced', autoRange: true, sound: { instrument: 'drum-kit' } } },
+    } }, hex(12));
+    out.switchEdge = edge && Object.fromEntries(Object.entries(edge.parts).map(([id, part]) => [id, part.switch ?? null]));
+    const sounded = JSON.parse(JSON.stringify(buildFileState(source(hex(13)), settings, { parts: [{ id: 'p1', instrument: 'piano' }, { id: 'p2', instrument: 'piano' }] }, [], {}, undefined, 5,
+      { p1: { instrument: 'trumpet', level: 'beginner', autoRange: true, octaves: {}, sound: { instrument: 'drum-kit' } }, p2: { level: 'beginner', autoRange: true, octaves: {}, sound: { instrument: 'violin', gmSoundfont: 'orchestral_harp' } } })));
+    out.soundBuilt = [sounded.parts.p1.switch, sounded.parts.p2.switch];
+    out.soundRoundTrip = parseFileState(sounded, hex(13))?.parts.p1.switch;
     return out;
   });
 
@@ -167,6 +181,9 @@ try {
   assert.deepEqual(result.switchRoundTrip, { instrument: 'alto-saxophone', level: 'beginner', autoRange: false, octaves: { n1: 12, n2: -12 } }, 'A switch round-trips through buildFileState and parseFileState');
   assert.deepEqual(result.switchMalformed, { bad: null, expert: null, seven: null, noRange: null, drums: null, good: { instrument: 'trumpet', level: 'advanced', autoRange: true } }, 'Malformed switches (bad id, level expert, octave 7, missing fields, drum kit) are dropped per part; the record opens');
   assert.equal(result.switchMalformedVisible, false, 'The rest of a part with a dropped switch is kept');
+  assert.deepEqual(result.switchEdge, { arrayOctaves: null, good: { instrument: 'trumpet', level: 'advanced', autoRange: true, sound: { instrument: 'violin', gmSoundfont: 'orchestral_harp' } }, badSound: { instrument: 'trumpet', level: 'advanced', autoRange: true }, soundOnly: { level: 'advanced', autoRange: true } }, 'Array octaves drop the switch, a null part entry is dropped, a bad or instrument-less sound only loses the sound');
+  assert.deepEqual(result.soundBuilt, [{ instrument: 'trumpet', level: 'beginner', autoRange: true, sound: { instrument: 'drum-kit' } }, { level: 'beginner', autoRange: true }], 'buildFileState writes a picked sound only with an instrument');
+  assert.deepEqual(result.soundRoundTrip, { instrument: 'trumpet', level: 'beginner', autoRange: true, sound: { instrument: 'drum-kit' } }, 'A picked sound round-trips');
   assert.equal(result.afterFlush, 1.2, 'The latest debounced write wins');
   assert.equal(result.abcKey, result.abcKeyAgain, 'ABC key is stable');
   assert.notEqual(result.abcKey, result.xmlKey, 'Keys carry a format prefix');
