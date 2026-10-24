@@ -3,7 +3,7 @@
 // highlights read from a switched view. Pure; PepperScore.tsx holds the state.
 import { isLevel, isSwitchTarget, type PartState } from './file-state';
 import { INSTRUMENT_IDS, INSTRUMENTS, type InstrumentId, type Level, type SwitchInstrumentId } from './instrument-model';
-import { applyInstrumentView, sourcePartOf, switchablePart, type InstrumentViewResult, type PartSound, type PartSwitch } from './instrument-view';
+import { applyInstrumentView, phrasesOf, sourcePartOf, switchablePart, tieChainsOf, type InstrumentViewResult, type PartSound, type PartSwitch } from './instrument-view';
 import type { BaseTimeline } from './playback/timeline';
 import { gmProgramForSoundfont, type Part, type Score } from './score';
 import { soundingMidi } from './transpose';
@@ -86,6 +86,62 @@ export function withOctaves(switches: Switches, partId: string, octaves: Record<
   const entry = { ...(switches[partId] ?? { instrument: undefined, ...defaults, octaves: {} }), octaves: { ...octaves } };
   const out = { ...switches };
   if (plain(entry, defaults)) delete out[partId]; else out[partId] = entry;
+  return out;
+}
+
+/**
+ * The octave tool's selection on one staff part: `ids` (ScoreNote ids, score order, whole tie chains), the note the
+ * selection started from (`anchor`) and whether a plain click extends it to a passage (only after a single-note pick).
+ */
+export type OctaveSelection = { partId: string; anchor: string; ids: string[]; extendable: boolean };
+
+/** A part's pitched notes in score order with their (measure, start) positions. */
+function notePositions(part: Part): Map<string, [number, number]> {
+  const positions = new Map<string, [number, number]>();
+  part.measures.forEach((measure, index) => {
+    for (const note of [...measure.notes].sort((a, b) => a.start - b.start)) if (!note.rest && note.pitches.some(p => !p.unpitched)) positions.set(note.id, [index, note.start]);
+  });
+  return positions;
+}
+const before = (a: [number, number], b: [number, number]) => a[0] - b[0] || a[1] - b[1];
+/** `ids` deduplicated, in score order. */
+function inScoreOrder(positions: Map<string, [number, number]>, ids: Iterable<string>): string[] {
+  const wanted = new Set(ids);
+  return [...positions.keys()].filter(id => wanted.has(id));
+}
+
+/**
+ * A click on a note with the octave tool on. A note of a switchable part selects its tie chain; with `extend`
+ * (Shift-click), or a plain click after a single-note pick in the same part, it selects every note of that part whose
+ * (measure, start) lies between the anchor and this note, in all voices, each with its tie chain. A note the tool can't
+ * move (a rest, a drum or TAB staff) keeps the selection.
+ */
+export function selectOctaveNote(score: Score, current: OctaveSelection | null, noteId: string, extend: boolean): OctaveSelection | null {
+  const part = score.parts.find(item => !item.tabOf && switchablePart(item) && item.measures.some(measure => measure.notes.some(note => note.id === noteId)));
+  const positions = part && notePositions(part);
+  const at = positions?.get(noteId);
+  if (!part || !positions || !at) return current;
+  const chainOf = tieChainsOf(part);
+  const from = current?.partId === part.id && (extend || current.extendable) ? positions.get(current.anchor) : undefined;
+  if (!current || !from) return { partId: part.id, anchor: noteId, ids: chainOf(noteId), extendable: true };
+  const [low, high] = before(from, at) <= 0 ? [from, at] : [at, from];
+  const inside = [...positions].filter(([, position]) => before(position, low) >= 0 && before(position, high) <= 0).flatMap(([id]) => chainOf(id));
+  return { partId: part.id, anchor: current.anchor, ids: inScoreOrder(positions, inside), extendable: false };
+}
+
+/** "Select phrase": the selection widened to the auto-fit phrases (`phrasesOf`) that contain any of its notes. */
+export function selectOctavePhrase(score: Score, selection: OctaveSelection): OctaveSelection {
+  const part = score.parts.find(item => item.id === selection.partId);
+  if (!part) return selection;
+  const selected = new Set(selection.ids);
+  const phrases = phrasesOf(part).filter(phrase => phrase.some(id => selected.has(id)));
+  return { ...selection, ids: inScoreOrder(notePositions(part), [...selection.ids, ...phrases.flat()]), extendable: false };
+}
+
+/** 8va / 8vb on the selected notes: an opposite move cancels to none (as written or auto-fit), values stay ±12. */
+export function steppedOctaves(octaves: Record<string, 12 | -12>, ids: string[], step: 12 | -12): Record<string, 12 | -12> {
+  const out = { ...octaves };
+  for (const id of ids) { if (out[id] === -step) delete out[id]; else out[id] = step; }
   return out;
 }
 

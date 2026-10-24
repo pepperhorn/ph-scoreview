@@ -26,6 +26,7 @@ import { PAGE_PAD_PX, pageOfSystem, systemPages, turnTarget, type ReadingPage, t
 import { fetchScoreFile } from '../lib/remote-score';
 import OpenScoreDialog from './OpenScoreDialog';
 import InstrumentChooser from './InstrumentChooser';
+import OctaveTool from './OctaveTool';
 import { loadPackInfo, resolveAssetBase, warnAssetBase, type SoundPackName } from '../lib/assets';
 import { fallbackSf2Url, planKey, planSound, type SoundPlan, type SoundRequest, type SoundSource } from '../lib/sounds';
 import { addDrumFallback, loadPlayers, type AudioPlayer } from '../lib/sound-players';
@@ -36,7 +37,7 @@ import { nearestNote, noteInBox } from '../lib/hit-test';
 import { canShowTab, hiddenReaderParts, type TabView } from '../lib/tab/tab-parts';
 import { sourcePartOf, switchablePart, withPickedSound, type PartSwitch } from '../lib/instrument-view';
 import { EMBED_INSTRUMENTS, type InstrumentId, type Level } from '../lib/instrument-model';
-import { applyHostSwitchChange, readerPartsInfo, readerPitch, restoredScorePitch, SWITCH_TARGETS, switchDefaults, switchedSoundParts, switchedTimeline, switchedView, switchesFromSaved, switchesFromSettings, switchHighlights, withOctaves, withSound, withSourceSwitch, type InstrumentSettings } from '../lib/instrument-switch-state';
+import { applyHostSwitchChange, readerPartsInfo, readerPitch, restoredScorePitch, selectOctaveNote, selectOctavePhrase, steppedOctaves, SWITCH_TARGETS, switchDefaults, switchedSoundParts, switchedTimeline, switchedView, switchesFromSaved, switchesFromSettings, switchHighlights, withOctaves, withSound, withSourceSwitch, type InstrumentSettings, type OctaveSelection } from '../lib/instrument-switch-state';
 
 /** Short key name for readouts: 'Gb', 'C#m'. */
 const keyName = (key: SpellingKey) => `${key.tonic}${key.mode === 'minor' ? 'm' : ''}`;
@@ -283,6 +284,9 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const [hiddenIds, setHiddenIds] = useState<string[]>([]);
   /** The reader's instrument switch per staff part (instrument-view.ts); a grand staff's staves share one choice. */
   const [partSwitches, setPartSwitches] = useState<Record<string, PartSwitch>>({});
+  /** The octave tool (on: a note click selects instead of seeking) and its selection. */
+  const [octaveTool, setOctaveTool] = useState(false);
+  const [octaveSelection, setOctaveSelection] = useState<OctaveSelection | null>(null);
   const [trackVolumes, setTrackVolumes] = useState<Record<string, number>>({});
   const [drawer, setDrawer] = useState(false);
   const [mixer, setMixer] = useState(false);
@@ -448,12 +452,15 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const hiddenTabKey = instrumentView.hiddenTab.join('\u0000');
   const renderHiddenIds = useMemo(() => instrumentView.hiddenTab.length ? [...hiddenIds, ...instrumentView.hiddenTab] : hiddenIds, [hiddenIds, hiddenTabKey]);
   /** Switched parts play the target instrument's sound. */
+  /** The octave tool is on (the host may hide it, and only a loaded score has notes to select). */
+  const octaveOn = octaveTool && chrome.octaveTool && loaded;
+  const selectionIds = octaveOn ? octaveSelection?.ids : undefined;
   const playParts = useMemo(() => switchedSoundParts(visibleScore.parts, instrumentView, partSwitches), [visibleScore, instrumentView, partSwitches]);
-  /** Moved and out-of-range notes of the switch, then the host's highlights. */
+  /** Moved and out-of-range notes of the switch, the octave tool's selection, then the host's highlights. */
   const allHighlights = useMemo((): PepperScoreHighlight[] | undefined => {
-    const own = switchHighlights(instrumentView);
+    const own = [...switchHighlights(instrumentView), ...(selectionIds?.length ? [{ ids: selectionIds, className: 'ps-selection' }] : [])];
     return own.length ? [...own, ...(highlights ?? [])] : highlights;
-  }, [instrumentView, highlights]);
+  }, [instrumentView, highlights, selectionIds]);
   // The key readout ("+2 · D") and the enharmonic key the flip offers, for the score as it is shown (header and drawer).
   const readout = useMemo(() => transposeReadout(score, scorePitch, prefs.semitones, prefs.keyFlip), [score, scorePitch, prefs.semitones, prefs.keyFlip]);
   // The performance timeline is built when playback first needs it, not while a score loads: on a large score it is
@@ -566,6 +573,17 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const setPartAutoRange = (sourcePart: string, autoRange: boolean) => changeSwitches(current => withSourceSwitch(score, current, sourcePart, { autoRange }, hostSwitchDefaults()));
   /** The reader's octave moves (by ScoreNote id) of one staff part. */
   const setOctaves = (partId: string, octaves: Record<string, 12 | -12>) => changeSwitches(current => withOctaves(current, partId, octaves, hostSwitchDefaults()));
+  /** Turn the octave tool on or off; it starts with nothing selected. Focus goes to its toolbar, then back to the reader. */
+  const setOctaveToolOn = (on: boolean) => {
+    setOctaveSelection(null);
+    setOctaveTool(on);
+    if (on) { setDrawer(false); setSwitchMenu(false); requestAnimationFrame(() => rootRef.current?.querySelector<HTMLElement>('.octave-toolbar')?.focus({ preventScroll: true })); }
+    else rootRef.current?.focus({ preventScroll: true });
+  };
+  /** 8va / 8vb on the selection (an opposite move cancels). */
+  const stepSelection = (step: 12 | -12) => { if (octaveSelection) setOctaves(octaveSelection.partId, steppedOctaves(partSwitches[octaveSelection.partId]?.octaves ?? {}, octaveSelection.ids, step)); };
+  /** Reset: the selection's staff, else every staff's octave moves. */
+  const resetOctaves = () => changeSwitches(current => (octaveSelection ? [octaveSelection.partId] : Object.keys(current)).reduce((out, partId) => withOctaves(out, partId, {}, hostSwitchDefaults()), current));
   /**
    * Show a score with its saved record (if any). The saved zoom applies only on the device class it was chosen on.
    * `inPlace` replaces the score on screen without the paint reveal and keeps the scroll position.
@@ -581,7 +599,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     }) } : next;
     stop(true); setPickerPartId(null); setScore(restored);
     if (inPlace) inPlaceRenderRef.current = true;
-    else setPainting(true); setScoreRevision(value => value + 1); setSource(nextSource); setLoaded(true);
+    else setPainting(true); setOctaveSelection(null); setScoreRevision(value => value + 1); setSource(nextSource); setLoaded(true);
     // Only reader parts hide (a TAB part that doubles a guitar shows with it: tab/tab-parts.ts hiddenReaderParts).
     setHiddenIds(saved ? hiddenReaderParts(next, saved.parts) : []);
     // Like the other settings, the host's instruments apply only to a score without a saved record.
@@ -1229,6 +1247,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     }
     if (event.key === 'Escape' && pickerPartId) { setPickerPartId(null); return; }
     if (event.key === 'Escape' && mixer) { setMixer(false); return; }
+    if (event.key === 'Escape' && octaveOn && !openDialog) { setOctaveToolOn(false); return; }
     if (pickerPartId || mixer || openDialog) return;
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes((event.target as HTMLElement).tagName)) return;
     if (['PageDown', 'ArrowRight', 'ArrowDown', ' '].includes(event.key)) { event.preventDefault(); turn(1); }
@@ -1440,7 +1459,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   }, [clock, loaded, loadTimeline]);
   /** A click on the engraving: `onElementClick` gets what it hit; with a clock, the note's (or measure's) time goes to `onSeek`. */
   const onScoreClick = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (!clock && !callbacks.current.onElementClick) return; // nothing listens: skip the hit testing (layout reads)
+    if (!octaveOn && !clock && !callbacks.current.onElementClick) return; // nothing listens: skip the hit testing (layout reads)
     const result = renderRef.current;
     let noteId = (event.target as Element).closest?.('[data-note-id]')?.getAttribute('data-note-id') ?? undefined;
     const hit = result?.measures.find(measure => {
@@ -1456,6 +1475,12 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     // A click inside a note's drawn box (its stem, flag, accidental, dots, or the gaps between them, not only the ink
     // under the pointer) hits that note; overlapping boxes go to the nearest notehead (stacked voices split by y).
     if (!noteId) noteId = noteInBox(drawn, event.clientX, event.clientY, NOTE_HIT_SLOP)?.point.id;
+    // The octave tool: a note click selects (Shift-click extends); it neither seeks nor reports the click.
+    if (octaveOn) {
+      const id = noteId;
+      if (id) setOctaveSelection(current => selectOctaveNote(score, current, id, event.shiftKey));
+      return;
+    }
     const sourceOf = (id: string) => score.document?.identity?.noteIdToSourceId?.[id] ?? id;
     if (callbacks.current.onElementClick) {
       const rect = hit?.element?.getBoundingClientRect();
@@ -1751,6 +1776,13 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     <img className="instrument-switch-icon" src={instrumentDetails(shownInstrument(switchSource)).icon} alt=""/>
   </button> : null;
   const switchState = switchSource && partSwitches[switchSource.id];
+  /** The octave tool's entry (embed instrument menu and drawer Pitch panel), shown when the host allows it. */
+  const octaveToggle = (placement: 'menu' | 'drawer') => chrome.octaveTool ? <div className={`octave-tool-entry octave-tool-entry-${placement}`}>
+    <button type="button" className={`octave-tool-toggle ${octaveOn ? 'is-selected' : ''}`} aria-pressed={octaveOn} title="Select notes to move them by an octave" onClick={() => setOctaveToolOn(!octaveOn)}>Octave tool</button>
+    {placement === 'drawer' && <span className="octave-tool-hint">Move notes or a passage up or down an octave.</span>}
+  </div> : null;
+  const octaveSelectionInfo = octaveOn && octaveSelection ? { count: octaveSelection.ids.length, partName: score.parts.find(part => part.id === octaveSelection.partId)?.name ?? '' } : null;
+  const octaveCanReset = octaveSelection ? Object.keys(partSwitches[octaveSelection.partId]?.octaves ?? {}).length > 0 : Object.values(partSwitches).some(entry => Object.keys(entry.octaves).length > 0);
   const embedSwitchMenu = embedSwitchShown && switchMenu ? <div ref={switchMenuRef} popover="manual" onBlur={closeSwitchOnFocusOut} id={switchMenuId} tabIndex={-1} className="instrument-menu" role="dialog" aria-label="Choose your instrument">
     {switchSources.length > 1 && <div className="instrument-menu-parts" role="group" aria-label="Part">
       {switchSources.map(part => <button key={part.id} type="button" className={`instrument-menu-part ${part === switchSource ? 'is-selected' : ''}`} aria-pressed={part === switchSource} onClick={() => setSwitchSourceId(sourcePartOf(part))}>
@@ -1759,12 +1791,13 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     </div>}
     <InstrumentChooser compact instruments={EMBED_INSTRUMENTS} current={switchState?.instrument} level={switchState?.level ?? hostSwitchDefaults().level} autoRange={switchState?.autoRange ?? hostSwitchDefaults().autoRange} asWrittenIcon={instrumentDetails(switchSource.instrument).icon}
       onInstrument={id => setPartInstrument(sourcePartOf(switchSource), id)} onLevel={level => setPartLevel(sourcePartOf(switchSource), level)} onAutoRange={on => setPartAutoRange(sourcePartOf(switchSource), on)}/>
+    {octaveToggle('menu')}
   </div> : null;
   /** On phones and tablets the switcher and the play button move to a bottom toolbar, within thumb reach. */
   const inToolbar = phoneToolbar && Boolean(embedSwitch);
   const cornerSwitch = inToolbar ? null : embedSwitch;
   const cornerPlay = inToolbar ? null : compactPlay;
-  return <div ref={rootRef} className={`pepperscore ${className ?? ''}`.trim()} data-ps-height={heightMode} data-ps-clock={clock ? '' : undefined} data-ps-clickable={onElementClick ? '' : undefined} style={heightMode === 'fixed' ? { height } : undefined}
+  return <div ref={rootRef} className={`pepperscore ${className ?? ''}`.trim()} data-ps-height={heightMode} data-ps-clock={clock ? '' : undefined} data-ps-clickable={onElementClick || octaveOn ? '' : undefined} data-ps-octave-tool={octaveOn ? '' : undefined} style={heightMode === 'fixed' ? { height } : undefined}
     tabIndex={0} role="region" aria-label={ariaLabel || (loaded && score.title ? `Score: ${score.title}` : 'Score reader')} onKeyDown={onRootKeyDown}>
   <main className={`app-shell ${chrome.drawer ? '' : 'no-drawer'}`}>
     {chrome.header && <header className="topbar" aria-label="Playback transport">
@@ -1859,6 +1892,10 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
       {chrome.zoom && <div className="page-controls"><button aria-label="Previous view" onClick={() => turn(-1)}><ChevronLeft size={18}/></button><span>{prefs.mode === 'portrait' ? 'SCROLL TO READ' : 'SWIPE TO READ'}</span><button aria-label="Next view" onClick={() => turn(1)}><ChevronRight size={18}/></button></div>}
     </section>
     {inToolbar && <div className="ps-embed-toolbar" role="toolbar" aria-label="Score controls">{embedSwitch}{compactPlay}</div>}
+    {octaveOn && <div className={`octave-tool-dock ${inToolbar ? 'is-above-toolbar' : ''}`}>
+      <OctaveTool selection={octaveSelectionInfo} canReset={octaveCanReset} onUp={() => stepSelection(12)} onDown={() => stepSelection(-12)}
+        onPhrase={() => setOctaveSelection(current => current && selectOctavePhrase(score, current))} onReset={resetOctaves} onDone={() => setOctaveToolOn(false)}/>
+    </div>}
 
     {chrome.drawer && <>
     <button className={`drawer-handle ${drawer ? 'is-open' : ''}`} onClick={() => setDrawer(!drawer)} aria-expanded={drawer}><span className="handle-grip"/><span>{drawer ? 'Close options' : 'Options'}</span><ChevronDown size={16}/></button>
@@ -1869,7 +1906,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
 
         <div className="drawer-panel reading-panel"><h3><Settings2 size={17}/> Reading</h3><div className="font-choice"><span>Notation font</span><div className="font-toggle" role="group" aria-label="Notation font"><button className={prefs.notationFont === 'Bravura' ? 'is-selected' : ''} aria-pressed={prefs.notationFont === 'Bravura'} onClick={() => update({ notationFont: 'Bravura' })}>Bravura</button><button className={prefs.notationFont === 'Petaluma' ? 'is-selected' : ''} aria-pressed={prefs.notationFont === 'Petaluma'} onClick={() => update({ notationFont: 'Petaluma' })}>Petaluma</button></div></div><div className="font-choice"><span>Stave text font</span><div className="font-toggle" role="group" aria-label="Stave text font">{(['Sans', 'Serif', 'Mono'] as const).map(font => <button key={font} className={prefs.annotationFont === font ? 'is-selected' : ''} aria-pressed={prefs.annotationFont === font} onClick={() => update({ annotationFont: font })}>{font}</button>)}</div></div><label className="field-label" htmlFor={overhangId}>Overhang <span>{prefs.overlap === 0 ? 'Off' : `${prefs.overlap} ${prefs.mode === 'portrait' ? (prefs.overlap === 1 ? 'system' : 'systems') : (prefs.overlap === 1 ? 'bar' : 'bars')}`}</span></label><input id={overhangId} className="ps-range" type="range" min="0" max="3" step="1" value={prefs.overlap} onChange={e => update({ overlap: Number(e.target.value) })}/>{chrome.tabToggle && tabAvailable && <div className="font-choice tab-view-choice"><span>TAB</span>{tabToggle('drawer')}</div>}{readerParts.length > 4 && <button className="text-action reset-staves" onClick={resetStaves}><RotateCcw size={15}/> Reset score staves</button>}</div>
         <div className="drawer-panel annotations-panel"><h3><Type size={17}/> Annotations</h3>{annotationRow('Note names', 'names', 'namesSize', () => update({ names: !prefs.names }))}{annotationRow('Chord symbols', 'chordSymbols', 'chordSymbolsSize', () => update({ chordSymbols: !prefs.chordSymbols }))}<label className="ps-switch-row inference-row"><span>Infer chord symbols</span><input type="checkbox" checked={prefs.inferChordSymbols} onChange={e => update({ inferChordSymbols: e.target.checked })}/></label>{annotationRow('Beat counts', 'counts', 'countsSize', () => update({ counts: !prefs.counts }))}{annotationRow('Count subdivisions', 'subdivisions', 'subdivisionsSize', () => update({ subdivisions: !prefs.subdivisions, counts: true }), prefs.counts && prefs.subdivisions)}</div>
-        <div className="drawer-panel pitch-panel"><h3><Settings2 size={17}/> Pitch</h3><div className="pitch-options"><div><span className="pitch-label">Transpose score</span><div className="semitone-control"><button aria-label="Transpose down a semitone" disabled={prefs.semitones <= -12} onClick={() => transposeBy(-1)}><Minus size={16}/></button><output aria-live={drawer ? 'polite' : 'off'}>{prefs.semitones > 0 ? '+' : ''}{prefs.semitones} semitones</output><button aria-label="Transpose up a semitone" disabled={prefs.semitones >= 12} onClick={() => transposeBy(1)}><Plus size={16}/></button><button className="pitch-reset" aria-label="Reset transposition" title="Reset transposition" disabled={prefs.semitones === 0 && !prefs.keyFlip} onClick={() => changePitch({ semitones: 0, keyFlip: false })}><RotateCcw size={15}/></button></div></div><div className="pitch-key"><span className="pitch-label">Key</span><div className="pitch-key-control"><output className="pitch-key-readout" aria-live={drawer ? 'polite' : 'off'}>{readout.text}</output><button className={`pitch-key-flip ${flipTo ? '' : 'is-disabled'}`} aria-label={flipLabel} title={flipLabel} aria-disabled={!flipTo} onClick={flipKey}><span className="pitch-key-flip-icon" aria-hidden="true">⇄</span><span className="pitch-key-flip-label">{flipText}</span></button></div></div>{!forcedConcert && <div><span className="pitch-label">Score view</span><div className="font-toggle pitch-view" role="group" aria-label="Score pitch view"><button className={prefs.scorePitch === 'written' ? 'is-selected' : ''} aria-pressed={prefs.scorePitch === 'written'} onClick={() => changePitch({ scorePitch: 'written' })}>Transposing</button><button className={prefs.scorePitch === 'concert' ? 'is-selected' : ''} aria-pressed={prefs.scorePitch === 'concert'} onClick={() => changePitch({ scorePitch: 'concert' })}>Concert</button></div></div>}</div><p className="pitch-hint">{forcedConcert ? 'This score is written at concert pitch, so it is shown at concert pitch. Playback stays at concert pitch.' : hasTransposingParts ? `Transposing shows written parts; Concert shows sounding pitches.${switchedTransposing && scorePitch === 'written' ? ' Switched parts show their instrument\'s written pitch.' : ''} Playback stays at concert pitch.` : 'This score has no instrument transposition data, so both views match.'}</p></div>
+        <div className="drawer-panel pitch-panel"><h3><Settings2 size={17}/> Pitch</h3><div className="pitch-options"><div><span className="pitch-label">Transpose score</span><div className="semitone-control"><button aria-label="Transpose down a semitone" disabled={prefs.semitones <= -12} onClick={() => transposeBy(-1)}><Minus size={16}/></button><output aria-live={drawer ? 'polite' : 'off'}>{prefs.semitones > 0 ? '+' : ''}{prefs.semitones} semitones</output><button aria-label="Transpose up a semitone" disabled={prefs.semitones >= 12} onClick={() => transposeBy(1)}><Plus size={16}/></button><button className="pitch-reset" aria-label="Reset transposition" title="Reset transposition" disabled={prefs.semitones === 0 && !prefs.keyFlip} onClick={() => changePitch({ semitones: 0, keyFlip: false })}><RotateCcw size={15}/></button></div></div><div className="pitch-key"><span className="pitch-label">Key</span><div className="pitch-key-control"><output className="pitch-key-readout" aria-live={drawer ? 'polite' : 'off'}>{readout.text}</output><button className={`pitch-key-flip ${flipTo ? '' : 'is-disabled'}`} aria-label={flipLabel} title={flipLabel} aria-disabled={!flipTo} onClick={flipKey}><span className="pitch-key-flip-icon" aria-hidden="true">⇄</span><span className="pitch-key-flip-label">{flipText}</span></button></div></div>{!forcedConcert && <div><span className="pitch-label">Score view</span><div className="font-toggle pitch-view" role="group" aria-label="Score pitch view"><button className={prefs.scorePitch === 'written' ? 'is-selected' : ''} aria-pressed={prefs.scorePitch === 'written'} onClick={() => changePitch({ scorePitch: 'written' })}>Transposing</button><button className={prefs.scorePitch === 'concert' ? 'is-selected' : ''} aria-pressed={prefs.scorePitch === 'concert'} onClick={() => changePitch({ scorePitch: 'concert' })}>Concert</button></div></div>}</div>{octaveToggle('drawer')}<p className="pitch-hint">{forcedConcert ? 'This score is written at concert pitch, so it is shown at concert pitch. Playback stays at concert pitch.' : hasTransposingParts ? `Transposing shows written parts; Concert shows sounding pitches.${switchedTransposing && scorePitch === 'written' ? ' Switched parts show their instrument\'s written pitch.' : ''} Playback stays at concert pitch.` : 'This score has no instrument transposition data, so both views match.'}</p></div>
         <div className="drawer-panel abc-panel"><h3><FileMusic size={17}/> ABC notation</h3><p>Paste ABC text here, or use the open button in the header for files and folders.</p><textarea value={abcDraft} onChange={e => setAbcDraft(e.target.value)} spellCheck={false} aria-label="ABC notation"/><button className="primary-action" onClick={() => void readAbc(abcDraft)}>View notation <ChevronRight size={17}/></button><button className="text-action" onClick={loadSample}><FileMusic size={16}/> Open sample score</button>{lastFileInfo && <button className="text-action forget-last-file" title={LAST_FILE_PRIVACY} onClick={forgetLast}><Trash2 size={15}/> Forget last opened file</button>}</div>
       </div>
       {error && <div className="ps-error" role="alert"><span className="ps-error-text">{error}</span>{oomButton}</div>}

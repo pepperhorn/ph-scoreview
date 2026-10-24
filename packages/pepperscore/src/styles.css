@@ -412,3 +412,27 @@
 @container ps-annotations (min-width:360px){.pepperscore .annotation-row .annotation-size{order:0;flex:0 0 auto}.pepperscore .annotation-size button{flex:none;padding:4px 7px}}
 /* Off-beat counts (e, &, a) take the subdivisions size; the scales are set per system by render.ts (1 = regular). */
 .pepperscore .count-label.is-subdivision{font-size:calc(13px * var(--ps-subdivision-scale, 1))}
+/* The octave tool: its entry (drawer Pitch panel, embed instrument menu) and its toolbar, docked at the bottom of the
+   reader within thumb reach on phones (above the drawer handle, or the embed's phone toolbar). The selection is drawn
+   over the moved / out-of-range highlights. */
+.pepperscore .score-system svg .ps-selection{stroke:var(--ps-selection,#2f6a9a);fill:var(--ps-selection,#2f6a9a);filter:drop-shadow(0 0 3px #2f6a9a66)}
+.pepperscore .octave-tool-entry{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;font-family:Poppins,Arial,sans-serif}
+.pepperscore .octave-tool-entry-drawer{flex-basis:100%;margin-top:16px}
+.pepperscore .octave-tool-entry-menu{padding-top:8px;border-top:1px solid #f0f2ee}
+.pepperscore .octave-tool-toggle{min-height:32px;padding:5px 12px;border:1px solid #dfe6dc;border-radius:8px;background:#fff;color:#3e6047;font-size:11px;font-weight:700}
+.pepperscore .octave-tool-toggle:hover,.pepperscore .octave-tool-toggle:focus-visible{background:#f2f7f1;border-color:#8fb89a}
+.pepperscore .octave-tool-toggle.is-selected{background:#365c42;border-color:#365c42;color:#fff}
+.pepperscore .octave-tool-hint{color:#87968a;font-size:11px}
+.pepperscore .octave-tool-dock{position:absolute;z-index:32;left:50%;bottom:58px;transform:translateX(-50%);width:max-content;max-width:calc(100% - 16px)}
+.pepperscore .app-shell.no-drawer .octave-tool-dock{bottom:12px}
+.pepperscore .app-shell .octave-tool-dock.is-above-toolbar{bottom:58px}
+.pepperscore .octave-toolbar{display:flex;align-items:center;flex-wrap:wrap;justify-content:center;gap:8px 12px;padding:8px 10px;border:1px solid #dfe6dc;border-radius:12px;background:#fff;box-shadow:0 8px 28px #1d2b2026;font-family:Poppins,Arial,sans-serif;outline:none}
+.pepperscore .octave-toolbar:focus-visible{outline:2px solid #8fb89a;outline-offset:2px}
+.pepperscore .octave-toolbar-status{color:#5d6b61;font-size:11px;max-width:260px}
+.pepperscore .octave-toolbar-actions{display:flex;flex-wrap:wrap;gap:6px}
+.pepperscore .octave-toolbar-button{min-height:34px;padding:5px 11px;border:1px solid #dfe6dc;border-radius:8px;background:#fff;color:#3e6047;font-size:12px;font-weight:600;white-space:nowrap}
+.pepperscore .octave-toolbar-button:hover:not([aria-disabled=true]),.pepperscore .octave-toolbar-button:focus-visible{background:#f2f7f1;border-color:#8fb89a}
+.pepperscore .octave-toolbar-button[aria-disabled=true]{cursor:default;opacity:.45}
+.pepperscore .octave-toolbar-button.is-primary{background:#365c42;border-color:#365c42;color:#fff}
+.pepperscore .octave-toolbar-button.is-primary:hover{background:#284c34}
+@container pepperscore (max-width:580px){.pepperscore .octave-tool-dock{left:8px;right:8px;transform:none;width:auto;max-width:none}.pepperscore .octave-toolbar{justify-content:stretch}.pepperscore .octave-toolbar-status{max-width:none;flex:1 0 100%;text-align:center}.pepperscore .octave-toolbar-actions{flex:1 0 100%}.pepperscore .octave-toolbar-button{flex:1 1 auto;min-height:40px;padding:5px 6px}}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyHostSwitchChange, readerPartsInfo, readerPitch, restoredScorePitch, sourcePartsOf, switchedSoundParts, switchedTimeline, switchedView, switchesFromSaved, switchesFromSettings, switchHighlights, withOctaves, withSound, withSourceSwitch } from './instrument-switch-state';
+import { applyHostSwitchChange, readerPartsInfo, readerPitch, restoredScorePitch, selectOctaveNote, selectOctavePhrase, sourcePartsOf, steppedOctaves, switchedSoundParts, switchedTimeline, switchedView, switchesFromSaved, switchesFromSettings, switchHighlights, withOctaves, withSound, withSourceSwitch } from './instrument-switch-state';
 import { buildBaseTimeline, playbackEventsFrom } from './playback/timeline';
 import { gmProgramForSoundfont, pitch, type Part, type Score } from './score';
 import { scoreForView } from './transpose';
@@ -210,5 +210,37 @@ describe('instrument switch state', () => {
     const sound = switchedSoundParts(input.parts, fitted, { 'P1-1': alto, 'P1-2': alto });
     expect(sound.map(p => [p.instrument, gmProgramForSoundfont(p.gmSoundfont!)])).toEqual([['alto-saxophone', 66], ['alto-saxophone', 66]]);
     expect(switchedSoundParts(input.parts, fitted, {})).toBe(input.parts);
+  });
+
+  it('octave tool selection: a tie chain, a passage across voices (Shift or a second click), the phrase; 8va / 8vb steps', () => {
+    // Bar 1: a C5, b D5 tied into bar 2's c, voice 2 v E4; bar 2: c, a rest, d F5.
+    const tied = (id: string, step: string, octave: number, start: number, tie: { tieStart?: boolean; tieStop?: boolean }) => { const n = note(id, step, octave, start); n.pitches[0] = { ...n.pitches[0], ...tie }; return n; };
+    const line = part('P', [], { measures: [
+      { index: 0, beats: 4, notes: [note('a', 'C', 5, 0), { ...note('v', 'E', 4, 0), voice: '2' }, tied('b', 'D', 5, 1, { tieStart: true })] },
+      { index: 1, beats: 4, notes: [tied('c', 'D', 5, 0, { tieStop: true }), { id: 'r', start: 1, duration: 1, voice: '1', rest: true, pitches: [] }, note('d', 'F', 5, 2)] },
+    ] });
+    const input = score(line, drums());
+    const a = selectOctaveNote(input, null, 'a', false)!;
+    expect(a).toEqual({ partId: 'P', anchor: 'a', ids: ['a'], extendable: true });
+    expect(selectOctaveNote(input, null, 'c', false)!.ids).toEqual(['b', 'c']);
+    // A second click (or Shift-click) selects the passage between, every voice, tie chains whole.
+    const passage = selectOctaveNote(input, a, 'b', false)!;
+    expect(passage).toEqual({ partId: 'P', anchor: 'a', ids: ['a', 'v', 'b', 'c'], extendable: false });
+    expect(selectOctaveNote(input, selectOctaveNote(input, null, 'd', false), 'b', true)!.ids).toEqual(['b', 'c', 'd']);
+    // After a passage a plain click starts again; Shift-click extends from the anchor.
+    expect(selectOctaveNote(input, passage, 'd', false)!.ids).toEqual(['d']);
+    expect(selectOctaveNote(input, passage, 'd', true)!.ids).toEqual(['a', 'v', 'b', 'c', 'd']);
+    // Rests and drum notes keep the selection.
+    expect(selectOctaveNote(input, a, 'r', false)).toBe(a);
+    expect(selectOctaveNote(input, a, 'dr1', false)).toBe(a);
+    // The phrase: broken at the rest, joined across the tie.
+    expect(selectOctavePhrase(input, a).ids).toEqual(['a', 'b', 'c']);
+    expect(selectOctavePhrase(input, selectOctaveNote(input, null, 'd', false)!).ids).toEqual(['d']);
+    // 8va adds +12; 8vb after it cancels to none; values stay ±12.
+    const up = steppedOctaves({}, ['a', 'b'], 12);
+    expect(up).toEqual({ a: 12, b: 12 });
+    expect(steppedOctaves(up, ['a', 'b'], 12)).toEqual({ a: 12, b: 12 });
+    expect(steppedOctaves(up, ['a'], -12)).toEqual({ b: 12 });
+    expect(steppedOctaves({}, ['a'], -12)).toEqual({ a: -12 });
   });
 });

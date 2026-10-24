@@ -217,15 +217,20 @@ async function readReader(host: HTMLElement, props: MountProps = {}) {
   /** Drawn pitches inside elements with the class (a chord's notes count for the chord). */
   const classed = (name: string) => [...host.querySelectorAll(`.score-system svg .${name}`)].flatMap(element => (element.matches('g.note') ? [element] : [...element.querySelectorAll('g.note')])
     .map(note => `${note.closest('g.staff')?.getAttribute('data-n')}:${(note.getAttribute('data-pname') || '').toUpperCase()}${note.getAttribute('data-oct')}`));
-  return { notes, clefs, transposed: classed('ps-transposed'), outOfRange: classed('ps-out-of-range'), host: props.highlights?.map(item => classed(item.className)) ?? [],
+  return { notes, clefs, transposed: classed('ps-transposed'), selection: classed('ps-selection'), outOfRange: classed('ps-out-of-range'), host: props.highlights?.map(item => classed(item.className)) ?? [],
     outOfRangeColor: (() => { const element = host.querySelector('.score-system svg .ps-out-of-range'); return element ? getComputedStyle(element).fill : null; })() };
 }
 
 // --- A full reader left mounted for UI tests (the page drives it; `window.__psDraws` counts finished draws) ---------
 let live: { root: ReturnType<typeof createRoot>; host: HTMLElement } | undefined;
-type LiveWindow = Window & { __psDraws?: number };
-/** Mount the full reader (nothing saved, silent) on `xml` and resolve after its first draw. */
-export async function mountLive(xml: string, props: { controls?: PepperScoreControls; settings?: PepperScoreSettings } = {}) {
+/** `__psEvents`: what a `listen` reader reported (onSeek seconds, onElementClick note ids). */
+type LiveWindow = Window & { __psDraws?: number; __psEvents?: string[] };
+type LiveProps = { controls?: PepperScoreControls; settings?: PepperScoreSettings; chrome?: 'full' | 'minimal'; persist?: string; listen?: boolean };
+/**
+ * Mount the reader (full chrome unless `chrome`; silent; nothing saved unless `persist` names a namespace) on `xml`
+ * and resolve after its first draw. `listen` gives it a stopped host clock and records onSeek / onElementClick.
+ */
+export async function mountLive(xml: string, props: LiveProps = {}) {
   unmountLive();
   const host = document.createElement('div');
   host.className = 'instrument-switch-live';
@@ -234,12 +239,19 @@ export async function mountLive(xml: string, props: { controls?: PepperScoreCont
   document.body.appendChild(host);
   const root = createRoot(host);
   live = { root, host };
-  (window as LiveWindow).__psDraws = 0;
+  const win = window as LiveWindow;
+  win.__psDraws = 0;
+  win.__psEvents = [];
+  const listeners = props.listen ? {
+    clock: { now: () => 0, playing: false, subscribe: () => () => {} },
+    onSeek: (seconds: number) => { win.__psEvents!.push(`seek:${seconds}`); },
+    onElementClick: (info: { noteId?: string }) => { win.__psEvents!.push(`click:${info.noteId ?? ''}`); },
+  } : {};
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('PepperScore did not render')), 60000);
-    root.render(createElement(PepperScore, { musicXml: xml, chrome: 'full', controls: props.controls, settings: props.settings, persist: false, audio: false,
+    root.render(createElement(PepperScore, { musicXml: xml, chrome: props.chrome ?? 'full', controls: props.controls, settings: props.settings, persist: props.persist ?? false, audio: false, ...listeners,
       onError: error => { clearTimeout(timer); reject(error); },
-      onRender: () => { clearTimeout(timer); (window as LiveWindow).__psDraws = ((window as LiveWindow).__psDraws ?? 0) + 1; resolve(); } }));
+      onRender: () => { clearTimeout(timer); win.__psDraws = (win.__psDraws ?? 0) + 1; resolve(); } }));
   });
 }
 /** What the mounted full reader drew. */

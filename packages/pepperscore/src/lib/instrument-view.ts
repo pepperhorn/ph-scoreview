@@ -84,6 +84,12 @@ function tiesOf(part: Part): [string, string][] {
   return ties;
 }
 
+/** Each pitched note's tie chain in a part, in score order (a note alone when untied). */
+export function tieChainsOf(part: Part): (id: string) => string[] {
+  const order = part.measures.flatMap(measure => byStart(measure).filter(pitched).map(note => note.id));
+  return tieChainOf(tiesOf(part), order);
+}
+
 /** Runs of pitched notes per voice per measure, broken at rests and after a slur end, joined across ties. */
 export function phrasesOf(part: Part): string[][] {
   const runs: string[][] = [];
@@ -184,7 +190,7 @@ export function applyInstrumentView(score: Score, switches: Record<string, PartS
     const range = (target ?? MODEL[part.instrument])?.ranges?.[choice.level];
     const plan = planShifts(phrases, range, !!target && choice.autoRange);
     const overrides = Object.fromEntries(Object.entries(choice.octaves ?? {}).filter(([id, value]) => notes.has(id) && (value === 12 || value === -12))) as Record<string, Shift>;
-    const shifts = applyOverrides(plan.shifts, overrides, tieChainOf(tiesOf(part), [...notes.keys()]));
+    const shifts = applyOverrides(plan.shifts, overrides, tieChainsOf(part));
     const octaves: Record<string, 12 | -12> = {};
     for (const [id, { note }] of notes) {
       const shift = shifts[id] ?? 0;
