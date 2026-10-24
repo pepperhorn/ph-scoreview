@@ -18,10 +18,11 @@ export const sourcePartOf = (part: Part): string => part.sourcePartId ?? part.id
  */
 export type PartSound = { instrument: InstrumentId; gmSoundfont?: string };
 /**
- * A reader's switch for one staff part: `instrument` undefined = as written; `octaves` keyed by `ScoreNote.id`;
+ * A reader's switch for one staff part: `instrument` undefined = as written; `octaves` keyed by `ScoreNote.id` (a note's
+ * shift from its pitch in the view, overriding auto-fit along its tie chain; 0 keeps a note auto-fit would move);
  * `sound` overrides the target's main sound (only while switched; cleared when the instrument changes).
  */
-export type PartSwitch = { instrument?: InstrumentId; level: Level; autoRange: boolean; octaves: Record<string, 12 | -12>; sound?: PartSound };
+export type PartSwitch = { instrument?: InstrumentId; level: Level; autoRange: boolean; octaves: Record<string, Shift>; sound?: PartSound };
 /**
  * The MEI pass's view of one switched (or octave-moved) staff: `shift` = [diatonic, semitones] from the baseline MEI
  * (the source's written pitch, after the global interval) to the pitch shown; `octaves` keyed by MEI note id.
@@ -39,6 +40,9 @@ export type InstrumentViewResult = {
   moved: string[];
   /** `ScoreNote.id`s still outside the level's range (switched parts), or moved outside it (unswitched parts). */
   outOfRange: string[];
+  /** Each moved note's octave shift (auto-fit and the reader's), and what auto-fit alone would shift (nonzero only). */
+  shifts: Record<string, Shift>;
+  planned: Record<string, Shift>;
   /** Keyed by part id. */
   staves: Record<string, StaffSwitch>;
   /**
@@ -61,8 +65,8 @@ export const switchablePart = (part: Part): boolean => part.clef !== 'percussion
 export const withPickedSound = (part: Part, sound: { instrument: InstrumentId; gmProgram?: number; gmSoundfont?: string }): Part =>
   ({ ...part, importedInstrument: part.importedInstrument ?? part.instrument, instrument: sound.instrument, gmProgram: sound.gmProgram, gmSoundfont: sound.gmSoundfont });
 
-const pitched = (note: ScoreNote) => !note.rest && note.pitches.some(p => !p.unpitched);
-const byStart = (measure: Measure) => [...measure.notes].sort((a, b) => a.start - b.start);
+export const pitched = (note: ScoreNote) => !note.rest && note.pitches.some(p => !p.unpitched);
+export const byStart = (measure: Measure) => [...measure.notes].sort((a, b) => a.start - b.start);
 
 /**
  * Tie pairs [from, to] of note ids: a tie-start pitch to the next same-MIDI tie-stop pitch in the same voice, across
@@ -165,6 +169,8 @@ export function applyInstrumentView(score: Score, switches: Record<string, PartS
   const view = score.pitchView?.view ?? scorePitch;
   const moved: string[] = [];
   const outOfRange: string[] = [];
+  const allShifts: Record<string, Shift> = {};
+  const planned: Record<string, Shift> = {};
   const staves: Record<string, StaffSwitch> = {};
   const viewMoved = new Set(score.pitchView?.view === 'concert' ? score.pitchView.viewMoved : []);
   // The MEI ids octave moves are keyed by: the pitch's source id, or for an engraving made from the Score (ABC, MIDI)
@@ -189,14 +195,16 @@ export function applyInstrumentView(score: Score, switches: Record<string, PartS
     const phrases: FitEvent[][] = phrasesOf(part).map(phrase => phrase.map(id => ({ id, midi: midiOf(id) })));
     const range = (target ?? MODEL[part.instrument])?.ranges?.[choice.level];
     const plan = planShifts(phrases, range, !!target && choice.autoRange);
-    const overrides = Object.fromEntries(Object.entries(choice.octaves ?? {}).filter(([id, value]) => notes.has(id) && (value === 12 || value === -12))) as Record<string, Shift>;
+    const overrides = Object.fromEntries(Object.entries(choice.octaves ?? {}).filter(([id, value]) => notes.has(id) && (value === 0 || value === 12 || value === -12))) as Record<string, Shift>;
     const shifts = applyOverrides(plan.shifts, overrides, tieChainsOf(part));
     const octaves: Record<string, 12 | -12> = {};
     for (const [id, { note }] of notes) {
       const shift = shifts[id] ?? 0;
       const out = !!range && midiOf(id).some(m => m + shift < range.low || m + shift > range.high);
+      if (plan.shifts[id]) planned[id] = plan.shifts[id];
       if (shift) {
         moved.push(id);
+        allShifts[id] = shift;
         note.pitches.forEach((p, index) => { if (!p.unpitched) octaves[meiIdOf(note, index)] = shift; });
       }
       // Unswitched parts are as written: only the reader's moves are flagged.
@@ -274,5 +282,5 @@ export function applyInstrumentView(score: Score, switches: Record<string, PartS
     engraved[id] = { ...entry, ...(keys.length ? { keys } : {}) };
   }
   const instrumentView = Object.keys(engraved).length ? { staves: engraved } : undefined;
-  return { score: { ...score, parts, instrumentView }, moved, outOfRange, staves, hiddenTab };
+  return { score: { ...score, parts, instrumentView }, moved, outOfRange, shifts: allShifts, planned, staves, hiddenTab };
 }

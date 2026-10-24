@@ -236,11 +236,34 @@ describe('instrument switch state', () => {
     // The phrase: broken at the rest, joined across the tie.
     expect(selectOctavePhrase(input, a).ids).toEqual(['a', 'b', 'c']);
     expect(selectOctavePhrase(input, selectOctaveNote(input, null, 'd', false)!).ids).toEqual(['d']);
-    // 8va adds +12; 8vb after it cancels to none; values stay ±12.
+    // 8va / 8vb on an unswitched staff: up an octave, then back as written (no override left); values stay within ±12.
     const up = steppedOctaves({}, ['a', 'b'], 12);
     expect(up).toEqual({ a: 12, b: 12 });
-    expect(steppedOctaves(up, ['a', 'b'], 12)).toEqual({ a: 12, b: 12 });
-    expect(steppedOctaves(up, ['a'], -12)).toEqual({ b: 12 });
+    const upView = switchedView(input, { P: { level: 'intermediate', autoRange: true, octaves: up } }, 'written');
+    // The override on b extends along its tie to c.
+    expect([upView.shifts, upView.planned]).toEqual([{ a: 12, b: 12, c: 12 }, {}]);
+    expect(steppedOctaves(up, ['a', 'b'], 12, upView.shifts, upView.planned)).toEqual({ a: 12, b: 12 });
+    expect(steppedOctaves(up, ['a'], -12, upView.shifts, upView.planned)).toEqual({ b: 12 });
     expect(steppedOctaves({}, ['a'], -12)).toEqual({ a: -12 });
+  });
+
+  it('octave tool steps from the shown shift: 8vb on an auto-raised phrase keeps it as written (an explicit 0), 8va on an auto-lowered one too', () => {
+    // Piano as alto sax: the left hand's C3 is below the alto, auto-fit raises it.
+    const input = score(...piano());
+    const fitted = switchedView(input, { 'P1-1': alto, 'P1-2': alto }, 'written');
+    expect([fitted.shifts, fitted.planned]).toEqual([{ lh1: 12 }, { lh1: 12 }]);
+    const kept = steppedOctaves({}, ['lh1'], -12, fitted.shifts, fitted.planned);
+    expect(kept).toEqual({ lh1: 0 });
+    const asWritten = switchedView(input, { 'P1-1': alto, 'P1-2': { ...alto, octaves: kept } }, 'written');
+    expect([asWritten.moved, asWritten.shifts, asWritten.outOfRange]).toEqual([[], {}, ['lh1']]);
+    expect(asWritten.score.parts[1].measures[0].notes[0].pitches[0].midi).toBe(fitted.score.parts[1].measures[0].notes[0].pitches[0].midi - 12);
+    // 8va from there is what auto-fit gives: no override.
+    expect(steppedOctaves(kept, ['lh1'], 12, asWritten.shifts, asWritten.planned)).toEqual({});
+    // A C7 is above the alto, auto-fit lowers it; 8va keeps it as written.
+    const high = score(part('H', [note('h1', 'C', 7)]));
+    const lowered = switchedView(high, { H: alto }, 'written');
+    expect([lowered.shifts, lowered.planned]).toEqual([{ h1: -12 }, { h1: -12 }]);
+    expect(steppedOctaves({}, ['h1'], 12, lowered.shifts, lowered.planned)).toEqual({ h1: 0 });
+    expect(switchedView(high, { H: { ...alto, octaves: { h1: 0 } } }, 'written').moved).toEqual([]);
   });
 });

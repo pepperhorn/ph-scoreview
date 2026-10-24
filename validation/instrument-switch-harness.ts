@@ -22,6 +22,8 @@ import type { PepperScoreSettings } from '../packages/pepperscore/src/lib/prefs'
 import type { PepperScoreControls } from '../packages/pepperscore/src/lib/chrome';
 import { readerPitch, switchedSoundParts, switchedTimeline, switchedView, switchesFromSettings } from '../packages/pepperscore/src/lib/instrument-switch-state';
 import { baseTimelineFor, playbackEventsFrom } from '../packages/pepperscore/src/lib/playback/timeline';
+import { readerStorage } from '../packages/pepperscore/src/lib/storage';
+import { SCORE_STORE } from '../packages/pepperscore/src/lib/score-db';
 
 type Toolkit = InstanceType<typeof VerovioToolkit>;
 let toolkit: Promise<Toolkit> | undefined;
@@ -217,7 +219,7 @@ async function readReader(host: HTMLElement, props: MountProps = {}) {
   /** Drawn pitches inside elements with the class (a chord's notes count for the chord). */
   const classed = (name: string) => [...host.querySelectorAll(`.score-system svg .${name}`)].flatMap(element => (element.matches('g.note') ? [element] : [...element.querySelectorAll('g.note')])
     .map(note => `${note.closest('g.staff')?.getAttribute('data-n')}:${(note.getAttribute('data-pname') || '').toUpperCase()}${note.getAttribute('data-oct')}`));
-  return { notes, clefs, transposed: classed('ps-transposed'), selection: classed('ps-selection'), outOfRange: classed('ps-out-of-range'), host: props.highlights?.map(item => classed(item.className)) ?? [],
+  return { notes, clefs, transposed: classed('ps-transposed'), selection: classed('ps-octave-selection'), outOfRange: classed('ps-out-of-range'), host: props.highlights?.map(item => classed(item.className)) ?? [],
     outOfRangeColor: (() => { const element = host.querySelector('.score-system svg .ps-out-of-range'); return element ? getComputedStyle(element).fill : null; })() };
 }
 
@@ -253,6 +255,23 @@ export async function mountLive(xml: string, props: LiveProps = {}) {
       onError: error => { clearTimeout(timer); reject(error); },
       onRender: () => { clearTimeout(timer); win.__psDraws = (win.__psDraws ?? 0) + 1; resolve(); } }));
   });
+}
+/**
+ * The octave moves saved under a persist namespace: pending writes are flushed, then every record's parts' switches
+ * are read straight from IndexedDB (`{ partId: octaves }` of each part with any).
+ */
+export async function savedOctaves(ns: string): Promise<Record<string, Record<string, number>>> {
+  await readerStorage(ns).scoreDb.flush();
+  const db = await new Promise<IDBDatabase>((resolve, reject) => { const request = indexedDB.open(ns); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+  try {
+    if (!db.objectStoreNames.contains(SCORE_STORE)) return {};
+    const records = await new Promise<unknown[]>((resolve, reject) => { const request = db.transaction(SCORE_STORE).objectStore(SCORE_STORE).getAll(); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
+    const out: Record<string, Record<string, number>> = {};
+    for (const record of records as { parts?: Record<string, { switch?: { octaves?: Record<string, number> } }> }[]) {
+      for (const [id, part] of Object.entries(record.parts ?? {})) if (part.switch?.octaves) out[id] = part.switch.octaves;
+    }
+    return out;
+  } finally { db.close(); }
 }
 /** What the mounted full reader drew. */
 export const readLive = () => readReader(live!.host);

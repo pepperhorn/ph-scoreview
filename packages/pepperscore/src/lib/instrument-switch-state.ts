@@ -3,8 +3,9 @@
 // highlights read from a switched view. Pure; PepperScore.tsx holds the state.
 import { isLevel, isSwitchTarget, type PartState } from './file-state';
 import { INSTRUMENT_IDS, INSTRUMENTS, type InstrumentId, type Level, type SwitchInstrumentId } from './instrument-model';
-import { applyInstrumentView, phrasesOf, sourcePartOf, switchablePart, tieChainsOf, type InstrumentViewResult, type PartSound, type PartSwitch } from './instrument-view';
+import { applyInstrumentView, byStart, phrasesOf, pitched, sourcePartOf, switchablePart, tieChainsOf, type InstrumentViewResult, type PartSound, type PartSwitch } from './instrument-view';
 import type { BaseTimeline } from './playback/timeline';
+import type { Shift } from './range-fit-core';
 import { gmProgramForSoundfont, type Part, type Score } from './score';
 import { soundingMidi } from './transpose';
 
@@ -82,7 +83,7 @@ export function withSourceSwitch(score: Score, switches: Switches, sourcePart: s
 }
 
 /** Set the reader's octave moves (by `ScoreNote.id`) of one staff part. */
-export function withOctaves(switches: Switches, partId: string, octaves: Record<string, 12 | -12>, defaults: SwitchDefaults): Switches {
+export function withOctaves(switches: Switches, partId: string, octaves: Record<string, Shift>, defaults: SwitchDefaults): Switches {
   const entry = { ...(switches[partId] ?? { instrument: undefined, ...defaults, octaves: {} }), octaves: { ...octaves } };
   const out = { ...switches };
   if (plain(entry, defaults)) delete out[partId]; else out[partId] = entry;
@@ -99,7 +100,7 @@ export type OctaveSelection = { partId: string; anchor: string; ids: string[]; e
 function notePositions(part: Part): Map<string, [number, number]> {
   const positions = new Map<string, [number, number]>();
   part.measures.forEach((measure, index) => {
-    for (const note of [...measure.notes].sort((a, b) => a.start - b.start)) if (!note.rest && note.pitches.some(p => !p.unpitched)) positions.set(note.id, [index, note.start]);
+    for (const note of byStart(measure)) if (pitched(note)) positions.set(note.id, [index, note.start]);
   });
   return positions;
 }
@@ -138,10 +139,17 @@ export function selectOctavePhrase(score: Score, selection: OctaveSelection): Oc
   return { ...selection, ids: inScoreOrder(notePositions(part), [...selection.ids, ...phrases.flat()]), extendable: false };
 }
 
-/** 8va / 8vb on the selected notes: an opposite move cancels to none (as written or auto-fit), values stay ±12. */
-export function steppedOctaves(octaves: Record<string, 12 | -12>, ids: string[], step: 12 | -12): Record<string, 12 | -12> {
+/**
+ * 8va / 8vb on the selected notes, from where each is shown (`shifts`: auto-fit and the reader's moves): the new shift
+ * (kept within ±12) is stored as the note's override, 0 included (a note auto-fit moved goes back as written); a
+ * shift auto-fit alone gives (`planned`) needs no override and drops it.
+ */
+export function steppedOctaves(octaves: Record<string, Shift>, ids: string[], step: 12 | -12, shifts: Record<string, Shift> = {}, planned: Record<string, Shift> = {}): Record<string, Shift> {
   const out = { ...octaves };
-  for (const id of ids) { if (out[id] === -step) delete out[id]; else out[id] = step; }
+  for (const id of ids) {
+    const next = Math.max(-12, Math.min(12, (shifts[id] ?? 0) + step)) as Shift;
+    if (next === (planned[id] ?? 0)) delete out[id]; else out[id] = next;
+  }
   return out;
 }
 
@@ -228,7 +236,7 @@ export function readerPitch(score: Score, switches: Switches, preferred: 'writte
 
 /** The switched view of `scoreForView`'s result (the switch runs last); with no switches, that result itself. */
 export function switchedView(viewed: Score, switches: Switches, scorePitch: 'written' | 'concert'): InstrumentViewResult {
-  if (!Object.keys(switches).length) return { score: viewed, moved: [], outOfRange: [], staves: {}, hiddenTab: [] };
+  if (!Object.keys(switches).length) return { score: viewed, moved: [], outOfRange: [], shifts: {}, planned: {}, staves: {}, hiddenTab: [] };
   return applyInstrumentView(viewed, switches, scorePitch);
 }
 

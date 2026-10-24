@@ -3,6 +3,7 @@ import { STAVE_SCALE_FLOOR, STAVE_SCALE_MAX, type DeviceClass } from './stave-sc
 import { ANNOTATION_SIZE_PREF_KEYS, BARS_PER_LINE_MAX, BARS_PER_LINE_MIN, clampBpm, clampCapo, isAnnotationSize, MAX_BPM, MIN_BPM, STANDARD_TAB_TUNING, validTabTuning, validTabView, type AnnotationSize } from './prefs';
 import type { TabView } from './tab/tab-parts';
 import type { PartSound, PartSwitch } from './instrument-view';
+import type { Shift } from './range-fit-core';
 import { INSTRUMENTS, INSTRUMENT_IDS, LEVELS, type Level } from './instrument-model';
 
 export type FileSource = { name: string; size: number; sha256: string; format: string };
@@ -145,7 +146,7 @@ export function textSource(format: string, text: string, name: string): FileSour
 }
 
 /** A part's switch as saved in its record (`PartState.switch`); `sound` only with an `instrument`. */
-export type SavedSwitch = { instrument?: InstrumentId; level: Level; autoRange: boolean; octaves?: Record<string, 12 | -12>; sound?: PartSound };
+export type SavedSwitch = { instrument?: InstrumentId; level: Level; autoRange: boolean; octaves?: Record<string, Shift>; sound?: PartSound };
 export const isLevel = (value: unknown): value is Level => LEVELS.includes(value as Level);
 /** A switch target: any model instrument but the drum kit (unpitched). */
 export const isSwitchTarget = (value: unknown): value is InstrumentId => INSTRUMENT_IDS.includes(value as InstrumentId) && INSTRUMENTS[value as InstrumentId].clef !== 'percussion';
@@ -167,10 +168,10 @@ function validSwitch(value: unknown): SavedSwitch | undefined {
   if (!isRecord(value)) return undefined;
   const { instrument, level, autoRange, octaves, sound } = value;
   if ((instrument !== undefined && !isSwitchTarget(instrument)) || !isLevel(level) || typeof autoRange !== 'boolean') return undefined;
-  if (octaves !== undefined && (!isRecord(octaves) || Object.values(octaves).some(shift => shift !== 12 && shift !== -12))) return undefined;
+  if (octaves !== undefined && (!isRecord(octaves) || Object.values(octaves).some(shift => shift !== 0 && shift !== 12 && shift !== -12))) return undefined;
   // An unusable sound (or one without an instrument) only loses the sound: the instrument's main sound plays.
   const picked = instrument !== undefined ? validSound(sound) : undefined;
-  return { ...(instrument !== undefined ? { instrument } : {}), level, autoRange, ...(octaves && Object.keys(octaves).length ? { octaves: { ...(octaves as Record<string, 12 | -12>) } } : {}), ...(picked ? { sound: picked } : {}) };
+  return { ...(instrument !== undefined ? { instrument } : {}), level, autoRange, ...(octaves && Object.keys(octaves).length ? { octaves: { ...(octaves as Record<string, Shift>) } } : {}), ...(picked ? { sound: picked } : {}) };
 }
 const validZoom = (zoom: unknown): zoom is number => typeof zoom === 'number' && Number.isFinite(zoom) && zoom >= STAVE_SCALE_FLOOR && zoom <= STAVE_SCALE_MAX;
 /** Validate and normalise shared v1/v2 fields in place; false when the record is unusable. */

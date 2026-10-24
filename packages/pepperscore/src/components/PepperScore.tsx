@@ -32,6 +32,7 @@ import { fallbackSf2Url, planKey, planSound, type SoundPlan, type SoundRequest, 
 import { addDrumFallback, loadPlayers, type AudioPlayer } from '../lib/sound-players';
 import { ensureMusicFonts } from '../lib/asset-fonts';
 import type { ExternalClock } from '../lib/clock';
+import type { Shift } from '../lib/range-fit-core';
 import { measureSeekSeconds, noteSeekSeconds } from '../lib/playback/clock-time';
 import { nearestNote, noteInBox } from '../lib/hit-test';
 import { canShowTab, hiddenReaderParts, type TabView } from '../lib/tab/tab-parts';
@@ -451,14 +452,14 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   // TAB staves doubling a switched part are hidden while it is (rendering only, never saved).
   const hiddenTabKey = instrumentView.hiddenTab.join('\u0000');
   const renderHiddenIds = useMemo(() => instrumentView.hiddenTab.length ? [...hiddenIds, ...instrumentView.hiddenTab] : hiddenIds, [hiddenIds, hiddenTabKey]);
-  /** Switched parts play the target instrument's sound. */
   /** The octave tool is on (the host may hide it, and only a loaded score has notes to select). */
   const octaveOn = octaveTool && chrome.octaveTool && loaded;
   const selectionIds = octaveOn ? octaveSelection?.ids : undefined;
+  /** Switched parts play the target instrument's sound. */
   const playParts = useMemo(() => switchedSoundParts(visibleScore.parts, instrumentView, partSwitches), [visibleScore, instrumentView, partSwitches]);
   /** Moved and out-of-range notes of the switch, the octave tool's selection, then the host's highlights. */
   const allHighlights = useMemo((): PepperScoreHighlight[] | undefined => {
-    const own = [...switchHighlights(instrumentView), ...(selectionIds?.length ? [{ ids: selectionIds, className: 'ps-selection' }] : [])];
+    const own = [...switchHighlights(instrumentView), ...(selectionIds?.length ? [{ ids: selectionIds, className: 'ps-octave-selection' }] : [])];
     return own.length ? [...own, ...(highlights ?? [])] : highlights;
   }, [instrumentView, highlights, selectionIds]);
   // The key readout ("+2 · D") and the enharmonic key the flip offers, for the score as it is shown (header and drawer).
@@ -572,7 +573,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const setPartLevel = (sourcePart: string, level: Level) => changeSwitches(current => withSourceSwitch(score, current, sourcePart, { level }, hostSwitchDefaults()));
   const setPartAutoRange = (sourcePart: string, autoRange: boolean) => changeSwitches(current => withSourceSwitch(score, current, sourcePart, { autoRange }, hostSwitchDefaults()));
   /** The reader's octave moves (by ScoreNote id) of one staff part. */
-  const setOctaves = (partId: string, octaves: Record<string, 12 | -12>) => changeSwitches(current => withOctaves(current, partId, octaves, hostSwitchDefaults()));
+  const setOctaves = (partId: string, octaves: Record<string, Shift>) => changeSwitches(current => withOctaves(current, partId, octaves, hostSwitchDefaults()));
   /** Turn the octave tool on or off; it starts with nothing selected. Focus goes to its toolbar, then back to the reader. */
   const setOctaveToolOn = (on: boolean) => {
     setOctaveSelection(null);
@@ -580,8 +581,8 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     if (on) { setDrawer(false); setSwitchMenu(false); requestAnimationFrame(() => rootRef.current?.querySelector<HTMLElement>('.octave-toolbar')?.focus({ preventScroll: true })); }
     else rootRef.current?.focus({ preventScroll: true });
   };
-  /** 8va / 8vb on the selection (an opposite move cancels). */
-  const stepSelection = (step: 12 | -12) => { if (octaveSelection) setOctaves(octaveSelection.partId, steppedOctaves(partSwitches[octaveSelection.partId]?.octaves ?? {}, octaveSelection.ids, step)); };
+  /** 8va / 8vb on the selection, from where its notes are shown (auto-fit and earlier moves). */
+  const stepSelection = (step: 12 | -12) => { if (octaveSelection) setOctaves(octaveSelection.partId, steppedOctaves(partSwitches[octaveSelection.partId]?.octaves ?? {}, octaveSelection.ids, step, instrumentView.shifts, instrumentView.planned)); };
   /** Reset: the selection's staff, else every staff's octave moves. */
   const resetOctaves = () => changeSwitches(current => (octaveSelection ? [octaveSelection.partId] : Object.keys(current)).reduce((out, partId) => withOctaves(out, partId, {}, hostSwitchDefaults()), current));
   /**
@@ -1247,9 +1248,16 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     }
     if (event.key === 'Escape' && pickerPartId) { setPickerPartId(null); return; }
     if (event.key === 'Escape' && mixer) { setMixer(false); return; }
+    if (event.key === 'Escape' && drawer) {
+      if (rootRef.current?.querySelector('.bottom-drawer')?.contains(document.activeElement)) rootRef.current.focus({ preventScroll: true });
+      setDrawer(false); return;
+    }
     if (event.key === 'Escape' && octaveOn && !openDialog) { setOctaveToolOn(false); return; }
     if (pickerPartId || mixer || openDialog) return;
-    if (['INPUT', 'TEXTAREA', 'SELECT'].includes((event.target as HTMLElement).tagName)) return;
+    const target = event.target as HTMLElement;
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+    // Space presses a focused button; keys inside the octave toolbar or a menu are theirs.
+    if ((event.key === ' ' && target.closest('button, a, [role="button"], [role="switch"]')) || target.closest('.octave-toolbar, .instrument-menu')) return;
     if (['PageDown', 'ArrowRight', 'ArrowDown', ' '].includes(event.key)) { event.preventDefault(); turn(1); }
     if (['PageUp', 'ArrowLeft', 'ArrowUp'].includes(event.key)) { event.preventDefault(); turn(-1); }
   };
@@ -1781,7 +1789,11 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     <button type="button" className={`octave-tool-toggle ${octaveOn ? 'is-selected' : ''}`} aria-pressed={octaveOn} title="Select notes to move them by an octave" onClick={() => setOctaveToolOn(!octaveOn)}>Octave tool</button>
     {placement === 'drawer' && <span className="octave-tool-hint">Move notes or a passage up or down an octave.</span>}
   </div> : null;
-  const octaveSelectionInfo = octaveOn && octaveSelection ? { count: octaveSelection.ids.length, partName: score.parts.find(part => part.id === octaveSelection.partId)?.name ?? '' } : null;
+  const octaveSelectionInfo = octaveOn && octaveSelection ? { count: octaveSelection.ids.length, partName: score.parts.find(part => part.id === octaveSelection.partId)?.name ?? '',
+    outOfRange: octaveSelection.ids.filter(id => instrumentView.outOfRange.includes(id)).length } : null;
+  /** Minimal chrome without the instrument switcher: the octave tool's entry is its own compact button (corner, or the phone toolbar). */
+  const embedOctave = preset === 'minimal' && chrome.octaveTool && loaded && !embedSwitchShown
+    ? <button type="button" className={`octave-tool-toggle octave-tool-toggle-compact ${octaveOn ? 'is-selected' : ''}`} aria-pressed={octaveOn} title="Octave tool: select notes to move them by an octave" onClick={() => setOctaveToolOn(!octaveOn)}>Octave</button> : null;
   const octaveCanReset = octaveSelection ? Object.keys(partSwitches[octaveSelection.partId]?.octaves ?? {}).length > 0 : Object.values(partSwitches).some(entry => Object.keys(entry.octaves).length > 0);
   const embedSwitchMenu = embedSwitchShown && switchMenu ? <div ref={switchMenuRef} popover="manual" onBlur={closeSwitchOnFocusOut} id={switchMenuId} tabIndex={-1} className="instrument-menu" role="dialog" aria-label="Choose your instrument">
     {switchSources.length > 1 && <div className="instrument-menu-parts" role="group" aria-label="Part">
@@ -1794,8 +1806,8 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     {octaveToggle('menu')}
   </div> : null;
   /** On phones and tablets the switcher and the play button move to a bottom toolbar, within thumb reach. */
-  const inToolbar = phoneToolbar && Boolean(embedSwitch);
-  const cornerSwitch = inToolbar ? null : embedSwitch;
+  const inToolbar = phoneToolbar && Boolean(embedSwitch || embedOctave);
+  const cornerSwitch = inToolbar ? null : embedSwitch ?? embedOctave;
   const cornerPlay = inToolbar ? null : compactPlay;
   return <div ref={rootRef} className={`pepperscore ${className ?? ''}`.trim()} data-ps-height={heightMode} data-ps-clock={clock ? '' : undefined} data-ps-clickable={onElementClick || octaveOn ? '' : undefined} data-ps-octave-tool={octaveOn ? '' : undefined} style={heightMode === 'fixed' ? { height } : undefined}
     tabIndex={0} role="region" aria-label={ariaLabel || (loaded && score.title ? `Score: ${score.title}` : 'Score reader')} onKeyDown={onRootKeyDown}>
@@ -1891,7 +1903,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
       </div>
       {chrome.zoom && <div className="page-controls"><button aria-label="Previous view" onClick={() => turn(-1)}><ChevronLeft size={18}/></button><span>{prefs.mode === 'portrait' ? 'SCROLL TO READ' : 'SWIPE TO READ'}</span><button aria-label="Next view" onClick={() => turn(1)}><ChevronRight size={18}/></button></div>}
     </section>
-    {inToolbar && <div className="ps-embed-toolbar" role="toolbar" aria-label="Score controls">{embedSwitch}{compactPlay}</div>}
+    {inToolbar && <div className="ps-embed-toolbar" role="toolbar" aria-label="Score controls">{embedSwitch ?? embedOctave}{compactPlay}</div>}
     {octaveOn && <div className={`octave-tool-dock ${inToolbar ? 'is-above-toolbar' : ''}`}>
       <OctaveTool selection={octaveSelectionInfo} canReset={octaveCanReset} onUp={() => stepSelection(12)} onDown={() => stepSelection(-12)}
         onPhrase={() => setOctaveSelection(current => current && selectOctavePhrase(score, current))} onReset={resetOctaves} onDone={() => setOctaveToolOn(false)}/>
