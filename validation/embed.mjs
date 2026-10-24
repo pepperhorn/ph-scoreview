@@ -829,6 +829,41 @@ try {
     assert.deepEqual(errors, []);
     await context.close();
   }
+  // 11b. Keys: a host wrapper (link / role=button card) around the reader does not swallow Space; a vanished switcher does not leave an open menu eating keys.
+  {
+    const { context } = await hostContext();
+    for (const wrap of ['a', 'button']) {
+      const page = await context.newPage();
+      await page.goto(`${server.url}/embed-switch?wrap=${wrap}`);
+      const root = '.pepperscore.embed-switch-wrapped';
+      await rendered(page, root);
+      await page.locator(`${root} .score-viewport`).click({ position: { x: 300, y: 40 } });
+      assert.equal(await page.evaluate(root => document.activeElement === document.querySelector(root), root), true, 'the reader root has focus');
+      await page.keyboard.press(' ');
+      await page.waitForFunction(root => document.querySelector(`${root} .score-viewport`).scrollTop > 0, root, { timeout: 5000 });
+      await page.close();
+    }
+    const page = await context.newPage();
+    await page.goto(`${server.url}/embed-switch?toggle`);
+    const root = '.pepperscore.embed-switch-toggle';
+    await rendered(page, root);
+    await page.locator(`${root} .instrument-switch`).click();
+    await page.locator(`${root} .instrument-menu`).waitFor();
+    // A programmatic click: no pointer or focus event, so only the prop change can close the menu.
+    const flip = () => page.evaluate(() => document.querySelector('.host-toggle-switcher').click());
+    await flip();
+    await page.locator(`${root} .instrument-switch`).waitFor({ state: 'detached' });
+    await flip();
+    await page.locator(`${root} .instrument-switch`).waitFor();
+    assert.equal(await page.locator(`${root} .instrument-menu`).count(), 0, 'the menu does not reopen when the switcher returns');
+    await flip();
+    await page.locator(`${root} .instrument-switch`).waitFor({ state: 'detached' });
+    await page.locator(`${root} .score-viewport`).click({ position: { x: 300, y: 40 } });
+    await page.keyboard.press('PageDown');
+    await page.waitForFunction(root => document.querySelector(`${root} .score-viewport`).scrollTop > 0, root, { timeout: 5000 });
+    await page.close();
+    await context.close();
+  }
   // 12. On a phone the switcher and the play button sit in the bottom toolbar; the menu opens above it, on screen.
   {
     const { context } = await hostContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });

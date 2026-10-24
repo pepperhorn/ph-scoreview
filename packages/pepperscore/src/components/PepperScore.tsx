@@ -570,7 +570,13 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   }, []);
   stopRef.current = stop;
   // A host clock owns the playhead: a transpose keeps it at the clock's time (it does not rebuild the timeline, so nothing would repaint it).
-  const changePitch = (patch: Partial<Prefs>) => { if (!clockRef.current) stop(true); update(patch); };
+  const changePitch = (patch: Partial<Prefs>) => {
+    if (!clockRef.current) stop(true);
+    update(patch);
+    // A transpose, key flip or pitch view changes the auto-fit plan too, so drop the "as written" pins it no longer overrides.
+    const pitch = { scorePitch: patch.scorePitch ?? prefs.scorePitch, semitones: patch.semitones ?? prefs.semitones, keyFlip: patch.keyFlip ?? prefs.keyFlip };
+    changeSwitches(current => withoutStalePins(score, current, pitch, hostSwitchDefaults()));
+  };
   const transposeBy = (delta: number) => changePitch({ semitones: clampSemitones(prefs.semitones + delta) });
   /** Change the instrument switches (stops playback like a pitch change; nothing happens when they are unchanged). */
   const changeSwitches = (change: (current: Record<string, PartSwitch>) => Record<string, PartSwitch>) => {
@@ -1256,7 +1262,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   revealTargetRef.current = revealTarget;
   // Keys act on the focused reader only: the handler sits on the root, so another instance (or the host page) never turns this one.
   const onRootKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (switchMenu) {
+    if (switchMenu && embedSwitchShown) {
       if (event.key === 'Escape') { setSwitchMenu(false); switchButtonRef.current?.focus({ preventScroll: true }); }
       return;
     }
@@ -1271,7 +1277,9 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     const target = event.target as HTMLElement;
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
     // Space presses a focused button; keys inside the octave toolbar or a menu are theirs.
-    if ((event.key === ' ' && target.closest('button, a, [role="button"], [role="switch"]')) || target.closest('.octave-toolbar, .instrument-menu')) return;
+    // Only a match inside the reader counts: a host <a>, [role=button] card or same-named class around it must not swallow Space.
+    const inReader = (selector: string) => { const hit = target.closest(selector); return Boolean(hit && hit !== rootRef.current && rootRef.current?.contains(hit)); };
+    if ((event.key === ' ' && inReader('button, a, [role="button"], [role="switch"]')) || inReader('.octave-toolbar, .instrument-menu')) return;
     if (['PageDown', 'ArrowRight', 'ArrowDown', ' '].includes(event.key)) { event.preventDefault(); turn(1); }
     if (['PageUp', 'ArrowLeft', 'ArrowUp'].includes(event.key)) { event.preventDefault(); turn(-1); }
   };
@@ -1789,6 +1797,8 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const switchSources = readerParts.filter((part, index) => switchablePart(part) && readerParts.findIndex(other => sourcePartOf(other) === sourcePartOf(part)) === index);
   const switchSource = switchSources.find(part => sourcePartOf(part) === switchSourceId) ?? switchSources[0];
   const embedSwitchShown = preset === 'minimal' && chrome.instrumentSwitch && loaded && Boolean(switchSource);
+  // The menu only renders with its switcher: when the switcher goes away (new score, instrumentSwitch off) the open state goes too, so keys are not left dead.
+  useEffect(() => { if (!embedSwitchShown) setSwitchMenu(false); }, [embedSwitchShown]);
   /** Focus leaving both the menu and its button closes the menu (focus has already moved on, so nothing is restored). */
   const closeSwitchOnFocusOut = (event: React.FocusEvent) => {
     const next = event.relatedTarget as Node | null;

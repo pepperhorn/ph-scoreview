@@ -461,6 +461,23 @@ try {
   await toolbar.locator('.octave-done').click();
   await toolbar.waitFor({ state: 'detached' });
   assert.ok(await page.evaluate(() => document.activeElement?.classList.contains('pepperscore')), 'Done returns focus to the reader');
+  // A transpose changes the auto-fit plan too, so it drops the "as written" pin the plan no longer overrides: +2 puts the
+  // low phrase in the alto's range (no auto-raise left to pin against), and back at 0 the auto-raise applies again.
+  await live(pianoXml, { settings: { instrument: 'alto-saxophone' } });
+  await openOctaveTool();
+  await staffNote('2', 0).click({ force: true });
+  await selected(['2:A4']);
+  const pinnedUi = await redraw(() => toolbar.locator('.octave-down').click());
+  assert.deepEqual(staffPitches(pinnedUi, '2'), ['A3'], 'The 8vb pin shows the phrase as written');
+  await toolbar.locator('.octave-done').click();
+  await toolbar.waitFor({ state: 'detached' });
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  const semitone = direction => page.locator(`.pitch-panel button[aria-label="Transpose ${direction} a semitone"]`);
+  await redraw(() => semitone('up').click());
+  await redraw(() => semitone('up').click());
+  await redraw(() => semitone('down').click());
+  const unpinnedUi = await redraw(() => semitone('down').click());
+  assert.deepEqual([staffPitches(unpinnedUi, '2'), unpinnedUi.transposed.filter(id => id.startsWith('2:'))], [['A4'], ['2:A4']], 'Transposing away and back: the stale pin is gone and the low phrase is auto-raised again');
   // Saved: an octave move on an unswitched part is restored on reload.
   const persist = `octave-tool-${Date.now()}`;
   await live(pianoXml, { persist });
