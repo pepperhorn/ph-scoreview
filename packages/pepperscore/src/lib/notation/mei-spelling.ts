@@ -20,7 +20,7 @@
  * String-level like mei-view.ts (the worker has no DOMParser); the input is Verovio's own `getMEI` output.
  */
 import type { InstrumentClef } from '../instrument-model';
-import { spellChordSymbol, type KeyMode, type SpellingKey, type SpellingProfile } from '../spelling';
+import { keyFromFifths, spellChordSymbol, type KeyMode, type SpellingKey, type SpellingProfile } from '../spelling';
 import { attributeOf, scan } from './mei-view';
 import { accidentalDisplay, fifthsOf, intervalFifths, moveChordSymbol, parseInterval, transposeSpelled, respellLine, sigOf, viewKey, type LineNote, type SpelledPitch, type StaffSpelling } from './respell';
 
@@ -385,10 +385,20 @@ export function respellMei(mei: string, spec: SpellingSpec, measureOffset = 0): 
     const from = byId.get(tiedFrom.get(item.id) || '');
     if (from && spelled.has(from) && midiOf(spelled.get(from)!) === midiOf(spelled.get(item)!)) spelled.set(item, spelled.get(from)!);
   }
+  // Courtesy accidentals of switched and octave-moved staves: a written accidental the source did not need (in its
+  // own key and measure) stays shown after the move, as one marked cautionary does.
+  const courtesy = new Set<NoteRecord>();
+  const sourceKey = (n: string, local: number) => ({ ...keyFromFifths(0), scale: LETTERS.split('').map(step => ({ step, alter: fifthsAlter(step, sourceFifths(n, local)) })) });
+  for (const group of groups.values()) {
+    const n = group[0].staff;
+    if (!clefOf(n) && !octaveMoves(n)) continue;
+    const needed = accidentalDisplay(group.map(item => ({ pitch: { step: item.pname as SpelledPitch['step'], octave: item.oct, alter: sourceAlter.get(item) ?? 0 }, onset: item.onset, key: sourceKey(item.staff, item.measure), tieEnd: item.tieEnd })));
+    group.forEach((item, index) => { if (item.written !== null && !item.tieEnd && !needed[index]) courtesy.add(item); });
+  }
   // Accidental display per staff-measure.
   const shown = new Map<NoteRecord, boolean>();
   for (const group of groups.values()) {
-    const flags = accidentalDisplay(group.map(item => ({ pitch: spelled.get(item)!, onset: item.onset, key: shownKey(item.staff, item.measure), tieEnd: item.tieEnd, cautionary: item.cautionary })));
+    const flags = accidentalDisplay(group.map(item => ({ pitch: spelled.get(item)!, onset: item.onset, key: shownKey(item.staff, item.measure), tieEnd: item.tieEnd, cautionary: item.cautionary || courtesy.has(item) })));
     group.forEach((item, index) => shown.set(item, flags[index]));
   }
 

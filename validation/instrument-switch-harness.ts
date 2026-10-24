@@ -63,14 +63,19 @@ function readMei(text: string, measureOffset = 0) {
     }
   });
   const clefs: DrawnClef[] = [];
+  /** Opening key signature (fifths) per staff. */
+  const keys: Record<string, number | null> = {};
   const firstScoreDef = doc.getElementsByTagName('scoreDef')[0];
   for (const def of firstScoreDef ? [...firstScoreDef.getElementsByTagName('staffDef')] : []) {
     const child = [...def.children].find(item => item.localName === 'clef');
     clefs.push({ staff: def.getAttribute('n') || '', shape: child?.getAttribute('shape') ?? def.getAttribute('clef.shape'), line: child?.getAttribute('line') ?? def.getAttribute('clef.line'),
       dis: child?.getAttribute('dis') ?? def.getAttribute('clef.dis'), disPlace: child?.getAttribute('dis.place') ?? def.getAttribute('clef.dis.place') });
+    const sig = [...def.children].find(item => item.localName === 'keySig')?.getAttribute('sig') ?? def.getAttribute('keysig') ?? def.getAttribute('key.sig');
+    const match = /^(\d+)([sf]?)$/.exec(sig || '');
+    keys[def.getAttribute('n') || ''] = match ? Number(match[1]) * (match[2] === 'f' ? -1 : 1) : null;
   }
   const inlineClefs = measures.flatMap(measure => [...measure.getElementsByTagName('clef')].map(clef => clef.closest('staff')?.getAttribute('n') || ''));
-  return { notes, clefs, inlineClefs };
+  return { notes, clefs, keys, inlineClefs };
 }
 
 export type SwitchCase = { switches: Record<number, PartSwitch>; view?: ScorePitchView; semitones?: number; slices?: number };
@@ -136,9 +141,15 @@ export async function renderSwitch(xml: string, test: SwitchCase) {
   document.body.appendChild(container);
   try {
     await renderScore(container, result.score, 'portrait', false, false, false, 2, false, false, 0, 1, 0, { hiddenPartIds: result.hiddenTab });
-    const notes = [...container.querySelectorAll('g.note')].map(note => ({ id: note.id, pname: (note.getAttribute('data-pname') || '').toUpperCase(), oct: Number(note.getAttribute('data-oct')) }));
+    // The first system's key signature per staff: signed count of sharps (U+E262) or flats (U+E260) drawn.
+    const keys: Record<string, number> = {};
+    for (const staff of container.querySelector('svg')?.querySelectorAll('g.staff[data-n]') ?? []) {
+      const accids = [...staff.querySelectorAll('g.keySig use')].map(use => use.getAttribute('xlink:href') || use.getAttribute('href') || '');
+      keys[staff.getAttribute('data-n')!] = accids.filter(href => href.includes('E262')).length - accids.filter(href => href.includes('E260')).length;
+    }
+    const notes = [...container.querySelectorAll('g.note')].map(note => ({ id: note.id, staff: note.closest('g.staff')?.getAttribute('data-n') || '', pname: (note.getAttribute('data-pname') || '').toUpperCase(), oct: Number(note.getAttribute('data-oct')) }));
     const systems = container.querySelectorAll('svg').length;
-    return { ...scoreFacts(result), chunked: info.chunked, systems, notes };
+    return { ...scoreFacts(result), chunked: info.chunked, systems, notes, keys };
   } finally { container.remove(); }
 }
 
@@ -147,4 +158,13 @@ export async function respellClef(xml: string, staff: string, clef: StaffSpec['c
   const { baseline } = await prepare(xml);
   const spec: SpellingSpec = { interval: '', semitones: 0, concert: false, flip: false, staves: { [staff]: { profile: 'neutral', moved: true, clef } } };
   return readMei(respellMei(baseline, spec));
+}
+
+/** The spelling pass alone on a file's baseline with octave moves (MEI note ids, found by staff and order) on one staff. */
+export async function respellOctaves(xml: string, staff: string, moves: Record<number, 12 | -12>) {
+  const { baseline } = await prepare(xml);
+  const ids = readMei(baseline).notes.filter(note => note.staff === staff).map(note => note.id);
+  const octaves = Object.fromEntries(Object.entries(moves).map(([index, value]) => [ids[Number(index)], value]));
+  const spec: SpellingSpec = { interval: '', semitones: 0, concert: false, flip: false, staves: { [staff]: { profile: 'neutral', moved: false, octaves } } };
+  return { before: readMei(baseline), after: readMei(respellMei(baseline, spec)) };
 }

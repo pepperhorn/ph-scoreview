@@ -3,9 +3,9 @@
 // so playback, note names and the timeline read what the MEI pass engraves from the same result (`staves`).
 import { INSTRUMENTS as MODEL, pitchMidi, transposePitchSpelled, writtenKeyFifths, writtenPitch, type InstrumentClef, type InstrumentId, type Level, type SpelledPitch, type Transposition as ModelTransposition } from './instrument-model';
 import { applyOverrides, joinRuns, planShifts, tieChainOf, type FitEvent, type Shift } from './range-fit-core';
-import { gmProgramForNumber, type Measure, type Part, type Pitch, type Score, type ScoreNote } from './score';
+import { gmProgramForNumber, type KeyMode, type Measure, type Part, type Pitch, type Score, type ScoreNote } from './score';
 import { keyFromFifths, spellChordSymbol } from './spelling';
-import { foldFifths, intervalFifths, moveChordSymbol, type Interval } from './notation/respell';
+import { foldFifths, intervalFifths, moveChordSymbol, respellLine, type Interval, type LineNote } from './notation/respell';
 import { soundingMidi } from './transpose';
 
 /** The part all staves of one source part share: the MusicXML <score-part id>, or the part's own id for ABC/MIDI. */
@@ -18,6 +18,12 @@ export type PartSwitch = { instrument?: InstrumentId; level: Level; autoRange: b
  * (the source's written pitch, after the global interval) to the pitch shown; `octaves` keyed by MEI note id.
  */
 export type StaffSwitch = { shift: [number, number]; clef?: InstrumentClef; octaves: Record<string, 12 | -12> };
+/**
+ * What the MEI pass needs of one staff of a switched view (carried on `Score.instrumentView`): its `StaffSwitch` and,
+ * for a switched part, its keys [measure index, fifths, mode] before the global transposition (the source's written
+ * keys moved by `shift`), as `SpellingSpec` staves take them.
+ */
+export type EngravedSwitch = StaffSwitch & { keys?: [number, number, KeyMode][] };
 export type InstrumentViewResult = {
   score: Score;
   /** `ScoreNote.id`s moved by an octave (auto-fit or the reader's). */
@@ -71,6 +77,36 @@ export function phrasesOf(part: Part): string[][] {
     for (const voice of [...current.keys()]) close(voice);
   }
   return joinRuns(runs, tiesOf(part));
+}
+
+/**
+ * Respell a switched part's pitches in place as the MEI pass does: each voice one line across measures, in each
+ * measure's (shown) key, a tie's end taking its start's spelling.
+ */
+function respellLines(measures: Measure[]): void {
+  const lines = new Map<string, { pitch: Pitch; tieStart: boolean; input: LineNote }[]>();
+  for (const measure of measures) {
+    const key = keyFromFifths(foldFifths(measure.key ?? 0), measure.keyMode ?? 'major');
+    for (const note of byStart(measure)) {
+      if (!pitched(note)) continue;
+      const voice = note.voice || '1';
+      const line = lines.get(voice) ?? lines.set(voice, []).get(voice)!;
+      for (const p of note.pitches) {
+        if (p.unpitched) continue;
+        const source = { step: p.step as SpelledPitch['step'], octave: p.octave, alter: p.alter };
+        const midi = pitchMidi(source);
+        let tiedFrom: number | undefined;
+        if (p.tieStop || (note.pitches.length === 1 && note.tieStop)) for (let back = line.length - 1; back >= 0 && back >= line.length - 8; back--) {
+          if (line[back].input.midi === midi && line[back].tieStart) { tiedFrom = back; break; }
+        }
+        line.push({ pitch: p, tieStart: !!(p.tieStart || (note.pitches.length === 1 && note.tieStart)), input: { midi, source, key, chord: note.pitches.length > 1, tiedFrom } });
+      }
+    }
+  }
+  for (const line of lines.values()) respellLine(line.map(entry => entry.input)).forEach((result, index) => {
+    const { pitch } = line[index];
+    pitch.step = result.step; pitch.octave = result.octave; pitch.alter = result.alter;
+  });
 }
 
 /** The reader's transposition (sounding minus written, MusicXML's sign) of a model transposition (written minus sounding). */
@@ -160,13 +196,17 @@ export function applyInstrumentView(score: Score, switches: Record<string, PartS
             const midi = judged(measure, p) + shift + shown.semitones;
             const interval = { diatonic: source.diatonic + shown.diatonic + (shift / 12) * 7, semitones: source.chromatic + shown.semitones + shift };
             const carried = transposePitchSpelled({ step: p.step as SpelledPitch['step'], octave: p.octave, alter: p.alter }, interval, fifths).pitch;
-            const spelled = pitchMidi(carried) === midi ? carried : writtenPitch(judged(measure, p) + shift, shown, fifths);
+            const spelled = pitchMidi(carried) === midi && Math.abs(carried.alter) < 2 ? carried : writtenPitch(judged(measure, p) + shift, shown, fifths);
             return { ...p, ...spelled, midi, accidental: undefined, cautionary: undefined };
           }),
           chordSymbol: note.chordSymbol ? spellChordSymbol(moveChordSymbol(note.chordSymbol, symbolMove), keyFromFifths(foldFifths(fifths), mode)) : undefined,
         };
       }) };
     });
+    // Where the MEI pass respells the staff (it moves, or the view is transposed or flipped), the Score takes the same
+    // key-relative line spelling (notation/respell.ts), so note names match the engraved noteheads.
+    const [steps, semis] = staves[part.id].shift;
+    if (steps || semis || score.pitchView?.interval || score.pitchView?.semitones || score.pitchView?.flip) respellLines(measures);
     return { ...part, instrument: target.id, gmProgram: target.gmProgram, gmSoundfont: gmProgramForNumber(target.gmProgram)?.soundfont, clef: target.clef,
       pitchBasis: 'written' as const, transposition: written ? partTransposition(target.transposition) : undefined,
       key: measures[0]?.key ?? part.key, keyMode: measures[0]?.keyMode ?? part.keyMode, measures };
@@ -174,6 +214,23 @@ export function applyInstrumentView(score: Score, switches: Record<string, PartS
   // A TAB staff doubling a switched or octave-moved part (every such part has a `staves` entry) no longer matches its frets.
   const hiddenTab = score.parts.filter(part => part.tabOf && staves[part.tabOf]).map(part => part.id);
   // The renderer reads the staves from the Score (transpose.ts `spellingSpecFor`), so the engraving follows this view.
-  const instrumentView = Object.keys(staves).length ? { staves, base: score } : undefined;
+  // A switched staff's keys come from the source as written (the view's source, else this Score: `scoreForView` drops
+  // `instrumentView` whenever it moves pitches, so a Score carrying one is never a view's source here).
+  const asWritten = score.pitchView?.source ?? score;
+  const engraved: Record<string, EngravedSwitch> = {};
+  for (const [id, entry] of Object.entries(staves)) {
+    const source = asWritten.parts.find(part => part.id === id);
+    if (!entry.clef || !source) { engraved[id] = entry; continue; }
+    const keys: [number, number, KeyMode][] = [];
+    const move = intervalFifths({ diatonic: entry.shift[0], chromatic: entry.shift[1] });
+    source.measures.forEach((measure, index) => {
+      const fifths = (measure.key ?? source.key ?? asWritten.key) + move;
+      const mode = measure.keyMode ?? source.keyMode ?? asWritten.keyMode ?? 'major';
+      const last = keys.at(-1);
+      if (!last || last[1] !== fifths || last[2] !== mode) keys.push([index, fifths, mode]);
+    });
+    engraved[id] = { ...entry, ...(keys.length ? { keys } : {}) };
+  }
+  const instrumentView = Object.keys(engraved).length ? { staves: engraved } : undefined;
   return { score: { ...score, parts, instrumentView }, moved, outOfRange, staves, hiddenTab };
 }

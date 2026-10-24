@@ -41,10 +41,10 @@ export type Score = { title: string; subtitle?: string; composer?: string; credi
   /** Set on a transposed or flipped view of a score (transpose.ts `scoreForView`). */
   pitchView?: import('./transpose').PitchView;
   /**
-   * Set on an instrument-switched view (instrument-view.ts `applyInstrumentView`): the MEI pass's switched staves by
-   * part id, and the Score the switch was applied to (for the parts' keys as written before the switch).
+   * Set on an instrument-switched view (instrument-view.ts `applyInstrumentView`): what the MEI pass needs of its
+   * switched and octave-moved staves, by part id. Dropped by `scoreForView` whenever it moves pitches.
    */
-  instrumentView?: { staves: Record<string, import('./instrument-view').StaffSwitch>; base: Score };
+  instrumentView?: { staves: Record<string, import('./instrument-view').EngravedSwitch> };
   document?: SourceDocument };
 export type InstrumentId = ModelInstrumentId;
 export const GM_FAMILIES = ['Keyboard', 'Guitar', 'Voice', 'Percussion', 'Drums', 'Woodwinds', 'Brass', 'Strings', 'FX / Other'] as const;

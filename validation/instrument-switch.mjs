@@ -75,6 +75,7 @@ try {
   assert.deepEqual(drawnOf(pianoAlto, '2'), ['A4'], 'Left hand: the out-of-range phrase is moved up an octave');
   const lowId = pianoAlto.notes.find(note => note.staff === '2').id;
   assert.ok(pianoAlto.moved.includes(pianoAlto.pitches[lowId].note), 'The moved phrase is listed in moved (ps-transposed highlights, Task 6)');
+  assert.deepEqual([asWritten.keys['1'], pianoAlto.keys['1'], pianoAlto.keys['2']], [0, 3, 3], 'Piano in C as alto sax: both staves in A major (3 sharps)');
   agrees(pianoAlto, 'Piano as alto sax');
   console.log('Instrument switch: piano as alto sax engraves both staves in treble a sixth up, the low phrase an octave up passed');
 
@@ -108,11 +109,55 @@ try {
   const clarinet = await engrave(clarinetXml, { switches: { 0: alto } });
   assert.deepEqual(drawnOf(clarinet, '1'), ['A5', 'B5'], 'Clarinet as alto sax: alto written pitch of the sounding pitch');
   assert.equal(clarinet.parts[0].key, 3, 'Clarinet as alto sax: A major');
+  assert.equal(clarinet.keys['1'], 3, 'Clarinet as alto sax: engraved in A major');
   agrees(clarinet, 'Clarinet as alto sax');
   const clarinetConcert = await engrave(clarinetXml, { switches: { 0: alto }, view: 'concert' });
   assert.deepEqual(drawnOf(clarinetConcert, '1'), ['C5', 'D5'], 'Clarinet as alto sax, concert view: sounding pitch (shift not added twice)');
+  assert.equal(clarinetConcert.keys['1'], 0, 'Clarinet as alto sax, concert view: engraved in C');
   agrees(clarinetConcert, 'Clarinet as alto sax, concert');
   console.log('Instrument switch: a transposing source engraves from its sounding pitch in both views passed');
+
+  // Accidentals after an octave move (as written, one note moved): F#5 F5 F#5 with F#5 moved down shows F#4 F5 F#5
+  // (the natural is no longer needed), a chord keeps its other notes, and a courtesy natural elsewhere stays.
+  const bar = notes => `<measure number="${bar.n = (bar.n ?? 0) + 1}">${bar.n === 1 ? '<attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>' : ''}${notes}</measure>`;
+  const n = (step, octave, { alter, accidental, chord = false } = {}) => `<note>${chord ? '<chord/>' : ''}<pitch><step>${step}</step>${alter ? `<alter>${alter}</alter>` : ''}<octave>${octave}</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type>${accidental ? `<accidental>${accidental}</accidental>` : ''}</note>`;
+  const single = (name, measures) => `<?xml version="1.0" encoding="UTF-8"?><score-partwise version="3.1"><part-list><score-part id="P1"><part-name>${name}</part-name></score-part></part-list><part id="P1">${measures.join('')}</part></score-partwise>`;
+  bar.n = 0;
+  const accidentalsXml = single('Flute', [
+    bar(n('F', 5, { alter: 1, accidental: 'sharp' }) + n('F', 5, { accidental: 'natural' }) + n('F', 5, { alter: 1, accidental: 'sharp' }) + n('C', 5) + n('E', 5, { chord: true })),
+    bar(n('F', 5, { accidental: 'natural' }) + n('G', 5) + n('G', 5) + n('G', 5)),
+  ]);
+  const accPlain = await engrave(accidentalsXml, { switches: {} });
+  const accidentals = result => result.notes.map(note => `${note.pname}${note.oct}${note.written ? `(${note.written})` : ''}`);
+  assert.deepEqual(accidentals(accPlain), ['F5(s)', 'F5(n)', 'F5(s)', 'C5', 'E5', 'F5(n)', 'G5', 'G5', 'G5'], 'As written: accidentals and the courtesy natural');
+  const firstSharp = accPlain.pitches[accPlain.notes[0].id].note;
+  const accMoved = await engrave(accidentalsXml, { switches: { 0: { level: 'intermediate', autoRange: true, octaves: { [firstSharp]: -12 } } } });
+  assert.deepEqual(accidentals(accMoved), ['F4(s)', 'F5', 'F5(s)', 'C5', 'E5', 'F5(n)', 'G5', 'G5', 'G5'], 'Octave move: accidentals re-evaluated, the courtesy natural kept');
+  agrees(accMoved, 'Accidentals after an octave move');
+  const chordMove = await page.evaluate(async xml => (await import('/validation/instrument-switch-harness.ts')).respellOctaves(xml, '1', { 4: 12 }), accidentalsXml);
+  assert.deepEqual(chordMove.after.notes.slice(3, 5).map(name), ['C5', 'E6'], 'A chord with one note moved: only that note moves');
+  console.log('Instrument switch: octave moves re-evaluate accidentals, keep courtesy accidentals, move single chord notes passed');
+
+  // Chromatic passing notes on a switched staff (flute line in C as alto sax): the engraving matches the Score.
+  bar.n = 0;
+  const chromaticXml = single('Flute', [
+    bar(n('C', 5) + n('C', 5, { alter: 1, accidental: 'sharp' }) + n('D', 5) + n('A', 4, { alter: 1, accidental: 'sharp' })),
+    bar(n('D', 5) + n('D', 5, { alter: -1, accidental: 'flat' }) + n('C', 5) + n('B', 4, { alter: -1, accidental: 'flat' })),
+  ]);
+  const chromatic = await engrave(chromaticXml, { switches: { 0: alto } });
+  agrees(chromatic, 'Chromatic line as alto sax');
+  assert.deepEqual(chromatic.notes.map(name).slice(0, 3), ['A5', 'A#5', 'B5'], 'Chromatic line as alto sax: a rising passing note is sharpened');
+  assert.ok(chromatic.notes.every(note => Math.abs(note.alter ?? 0) < 2), 'No double accidentals');
+  console.log(`Instrument switch: chromatic passing notes on a switched staff agree with the Score (${chromatic.notes.map(name).join(' ')}) passed`);
+
+  // A concert-pitch score (MusicXML <concert-score/>, piano + violin in F) with the piano as alto sax in the written
+  // view: the reader's own render (renderScore must not view the switched Score again) shows alto's written pitch and key.
+  const concertXml = `<?xml version="1.0" encoding="UTF-8"?><score-partwise version="4.0"><defaults><concert-score/></defaults><part-list><score-part id="PPiano"><part-name>Piano</part-name></score-part><score-part id="PVn"><part-name>Violin</part-name></score-part></part-list><part id="PPiano"><measure number="1"><attributes><divisions>1</divisions><key><fifths>-1</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes><note><pitch><step>F</step><octave>4</octave></pitch><duration>2</duration><type>half</type><staff>1</staff></note><note><pitch><step>A</step><octave>4</octave></pitch><duration>2</duration><type>half</type><staff>1</staff></note><backup><duration>4</duration></backup><note><pitch><step>F</step><octave>3</octave></pitch><duration>4</duration><type>whole</type><staff>2</staff></note></measure></part><part id="PVn"><measure number="1"><attributes><divisions>1</divisions><key><fifths>-1</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes><note><pitch><step>C</step><octave>5</octave></pitch><duration>4</duration><type>whole</type></note></measure></part></score-partwise>`;
+  const concertScore = await page.evaluate(async ([xml, test]) => (await import('/validation/instrument-switch-harness.ts')).renderSwitch(xml, test), [concertXml, { switches: { 0: alto, 1: alto } }]);
+  const drawnIn = staff => concertScore.notes.filter(note => note.staff === staff).map(note => `${note.pname}${note.oct}`);
+  assert.deepEqual([drawnIn('1'), drawnIn('2'), drawnIn('3')], [['D5', 'F5'], ['D4'], ['C5']], 'Concert-pitch score, piano as alto sax: alto written pitch (F4 A4 -> D5 F#5, F3 -> D4), violin as is');
+  assert.deepEqual(concertScore.keys, { 1: 2, 2: 2, 3: -1 }, 'Concert-pitch score, piano as alto sax: D major on the alto staves, F on the violin');
+  console.log('Instrument switch: a concert-pitch score renders the switched piano at alto written pitch and key passed');
 
   // MEI clef mapping (the pass alone): every target clef, including treble 8vb.
   const clefs = {};

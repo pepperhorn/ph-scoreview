@@ -33,6 +33,14 @@ const sounding = (p: Part) => p.measures.flatMap(m => m.notes.filter(n => !n.res
 const CLARINET = { instrument: 'clarinet' as const, gmProgram: 72, transposition: { semitones: -2, diatonic: -1 } };
 
 describe('instrument view', () => {
+  it('carries the switched staves (with source keys) on the Score, and a later view drops them', () => {
+    const input = score(part('P1', 'a:C5 b:E5', { key: -1, measures: measures('P1', 'a:C5 b:E5').map(m => ({ ...m, key: -1 })) }));
+    const result = applyInstrumentView(input, { P1: sw('alto-saxophone') }, 'written');
+    // F major moved by the alto's written interval (a major sixth up) = D major.
+    expect(result.score.instrumentView?.staves.P1).toMatchObject({ shift: [5, 9], clef: 'treble', keys: [[0, 2, 'major']] });
+    expect(scoreForView(result.score, 'written', 2).instrumentView).toBeUndefined();
+    expect(applyInstrumentView(input, {}, 'written').score.instrumentView).toBeUndefined();
+  });
   it('sourcePartOf falls back to part.id when sourcePartId is undefined', () => {
     expect(sourcePartOf(part('P1', 'a:C4'))).toBe('P1');
     expect(sourcePartOf(part('P1-2', 'a:C4', { sourcePartId: 'P1' }))).toBe('P1');

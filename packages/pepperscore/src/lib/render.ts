@@ -336,8 +336,11 @@ export async function renderScore(
   barsPerLine: 'auto' | number, showChordSymbols: boolean, inferChordSymbols: boolean,
   availableHeight = 0, zoom: number | 'fit' = 1, firstSystemGutter = 0, options: RenderOptions = {},
 ): Promise<RenderResult> {
-  // A caller passing the source Score with pitch options gets its view here (Reader passes `scoreForView`'s result).
-  if (!score.pitchView) score = scoreForView(score, score.parts.some(part => part.pitchBasis === 'concert') ? 'concert' : options.scorePitch ?? 'written', options.transpose ?? options.semitones ?? 0, !!options.flip);
+  // A caller passing the source Score with pitch options gets its view here (Reader passes `scoreForView`'s result,
+  // optionally switched by `applyInstrumentView`).
+  // An instrument-switched Score (instrument-view.ts) is already a view: switched parts are rewritten as their target,
+  // and moving them again (a concert-basis score picks the concert view) would double the move.
+  if (!score.pitchView && !score.instrumentView) score = scoreForView(score, score.parts.some(part => part.pitchBasis === 'concert') ? 'concert' : options.scorePitch ?? 'written', options.transpose ?? options.semitones ?? 0, !!options.flip);
   const generation = options.generation ?? (latestGeneration.get(container) || 0) + 1;
   latestGeneration.set(container, generation);
   const isCurrent = () => latestGeneration.get(container) === generation;
