@@ -68,6 +68,10 @@ function takeSimulatedOom(channel: number): boolean {
 /** `channel`: the reader a probe or render belongs to (imports are shared by every reader showing the score). */
 type Pending = { kind: VerovioRequest['kind']; channel?: number; resolve: (value: any) => void; reject: (reason: Error) => void };
 let worker: Worker | undefined;
+/** The Verovio files the running worker was configured with. */
+let workerFiles: VerovioFiles | undefined;
+/** Whether the running worker has been sent a request (until then it only warms up and can be replaced freely). */
+let workerUsed = false;
 let nextId = 0;
 const pending = new Map<number, Pending>();
 
@@ -88,13 +92,43 @@ export function verovioFilesAt(base: string, page: string = (typeof document !==
 export function setVerovioBaseUrl(base: string | undefined): void {
   if (!base?.trim()) return;
   try { hostVerovio = verovioFilesAt(base.trim()); }
-  catch { console.error(`pepperscore: verovioBaseUrl "${base}" is not a valid URL; the shipped Verovio is used.`); }
+  catch { console.error(`pepperscore: verovioBaseUrl "${base}" is not a valid URL; the shipped Verovio is used.`); return; }
+  // A worker that only warmed up (no request yet) with other files is replaced: nothing waits on it.
+  if (worker && !workerUsed && workerFiles && (workerFiles.module !== hostVerovio.module || workerFiles.toolkit !== hostVerovio.toolkit)) {
+    worker.terminate();
+    worker = undefined;
+    workerFiles = undefined;
+  }
+}
+
+/**
+ * Start the shared Verovio worker now and have it fetch, compile and instantiate Verovio, so the first engraving does
+ * not wait for that after the score's import. Readers call it on mount when they have a score to show; the worker
+ * still goes when the last reader channel closes. Uses the current `setVerovioBaseUrl` (set it first).
+ */
+export function warmVerovio(): void {
+  if (typeof Worker === 'undefined') return;
+  try { getWorker(); } catch { /* the first request reports the failure */ }
+}
+
+/**
+ * Start loading Verovio before any reader mounts (for example from a page script, before React hydrates), so the
+ * first score engraves sooner. `base` is the same directory as PepperScoreProps.verovioBaseUrl (pass the same value);
+ * omitted, the copy shipped with pepperscore loads. Safe to call more than once and on the server (it does nothing).
+ */
+export function preloadVerovio(base?: string): void {
+  if (typeof window === 'undefined') return;
+  setVerovioBaseUrl(base);
+  warmVerovio();
 }
 
 function getWorker(): Worker {
   if (worker) return worker;
   worker = new Worker(new URL('./verovio.worker.ts', import.meta.url), { type: 'module' });
-  worker.postMessage({ kind: 'configure', files: hostVerovio ?? bundledVerovioFiles() } satisfies VerovioConfigure);
+  workerFiles = hostVerovio ?? bundledVerovioFiles();
+  workerUsed = false;
+  // The worker starts importing and instantiating Verovio as soon as it is configured (verovio.worker.ts).
+  worker.postMessage({ kind: 'configure', files: workerFiles } satisfies VerovioConfigure);
   worker.onmessage = ({ data }: MessageEvent<VerovioReply>) => {
     const item = pending.get(data.id);
     if (!item) return;
@@ -130,6 +164,7 @@ function getWorker(): Worker {
 function stopWorker(reason: Error, outOfMemory?: number): void {
   worker?.terminate();
   worker = undefined;
+  workerFiles = undefined;
   heap = 0;
   baselines.clear();
   for (const item of pending.values()) {
@@ -143,7 +178,9 @@ function request<T>(body: Body, transfer: Transferable[] = []): Promise<T> {
   const id = ++nextId;
   return new Promise<T>((resolve, reject) => {
     pending.set(id, { kind: body.kind, channel: 'channel' in body ? body.channel : undefined, resolve, reject });
-    getWorker().postMessage({ ...body, id }, transfer);
+    const target = getWorker();
+    workerUsed = true;
+    target.postMessage({ ...body, id }, transfer);
   });
 }
 

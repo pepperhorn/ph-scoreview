@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `preloadVerovio(base?: string)` (main entry): start the Verovio worker and its download, compile and instantiation before any reader mounts (for example before React hydrates). `base` is the same directory as `verovioBaseUrl`. See README, "Verovio".
+
+### Changed
+
+- Faster first engraving: a reader with a score (or full chrome's sample) starts the Verovio worker on mount, and the worker begins importing and instantiating Verovio as soon as it is configured, in parallel with the score's import instead of after it. The worker still stops when the last reader unmounts. `verovioBaseUrl` is applied before the warm-up; a worker that has only warmed up (no request yet) is replaced if the base URL then changes.
+- The notation font (Bravura, or Petaluma with Petaluma Script) starts downloading on mount, and a draw waits up to 1.5 s for it so the SMuFL text it measures uses the font's metrics. The music fonts keep `font-display: block` (their glyphs are Private Use Area code points; a fallback would show boxes).
+
 ## 0.4.0 - 2026-10-24
 
 0.3.0 was never published, so 0.4.0 also contains everything listed under 0.3.0 below (guitar TAB, text sizes, the shared audio engine and the host hooks).

@@ -15,7 +15,7 @@ import { readerStorage, type PersistNamespace } from '../lib/storage';
 import { scoreForView, spokenKey, transposeReadout } from '../lib/transpose';
 import type { SpellingKey } from '../lib/spelling';
 import { baseTimelineFor, deriveTimeline, playbackDuration, playbackEventsFrom, playbackMidis, playbackPositionAt, type BaseTimeline } from '../lib/playback/timeline';
-import { closeVerovioChannel, isOutOfMemory, isRestarted, isSuperseded, openVerovioChannel, prepareVerovio, reduceChunkSize, setVerovioBaseUrl } from '../lib/verovio-runtime';
+import { closeVerovioChannel, isOutOfMemory, isRestarted, isSuperseded, openVerovioChannel, prepareVerovio, reduceChunkSize, setVerovioBaseUrl, warmVerovio } from '../lib/verovio-runtime';
 import { thirdPartyNoticesUrl } from '../runtime-files';
 import { claimPlayback, getSharedAudio, releasePlayback, resumeAudio } from '../lib/audio-engine';
 import { isLargeFile, isLargeScore, largeScoreMessage, staffMeasures } from '../lib/large-file';
@@ -30,7 +30,7 @@ import OctaveTool from './OctaveTool';
 import { loadPackInfo, resolveAssetBase, warnAssetBase, type SoundPackName } from '../lib/assets';
 import { fallbackSf2Url, planKey, planSound, type SoundPlan, type SoundRequest, type SoundSource } from '../lib/sounds';
 import { addDrumFallback, loadPlayers, type AudioPlayer } from '../lib/sound-players';
-import { ensureMusicFonts } from '../lib/asset-fonts';
+import { ensureMusicFonts, musicFontsReady, preloadMusicFont } from '../lib/asset-fonts';
 import type { ExternalClock } from '../lib/clock';
 import type { Shift } from '../lib/range-fit-core';
 import { measureSeekSeconds, noteSeekSeconds } from '../lib/playback/clock-time';
@@ -43,6 +43,8 @@ import { applyHostSwitchChange, hostInstrumentKey, pitchHint, readerPartsInfo, r
 /** Short key name for readouts: 'Gb', 'C#m'. */
 const keyName = (key: SpellingKey) => `${key.tonic}${key.mode === 'minor' ? 'm' : ''}`;
 const clampSemitones = (semitones: number) => Math.max(-12, Math.min(12, semitones));
+/** The longest a draw waits for the notation font (the first paint only; afterwards it is loaded). */
+const FONT_WAIT_MS = 1500;
 const sampleScore = () => withEngravingDocument(exampleScore());
 const textFonts = { Sans: 'Poppins, Arial, sans-serif', Serif: 'Georgia, serif', Mono: 'ui-monospace, monospace' } as const;
 const sampleAbc = `X:1\nT:A little room to play\nM:4/4\nL:1/4\nQ:1/4=96\nK:C\nC E G c | B A G E | C E G c | d2 c2 | G E D C | E G A G | F E D B, | C4 |`;
@@ -428,13 +430,20 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const readyRevisionRef = useRef(-1);
   /** The score revision last drawn: a new source draws at once, only setting changes wait for the redraw fade. */
   const drawnRevisionRef = useRef(-1);
-  // Before the channel effect, so the worker (started by this reader's first engraving) already loads the host's Verovio.
+  // Before the channel and warm-up effects, so the worker (started on mount, see below) loads the host's Verovio.
   useEffect(() => setVerovioBaseUrl(verovioBaseUrl), [verovioBaseUrl]);
   /** The third-party notices URL, set after mount: on an SSR host the server would resolve it to a file: URL. */
   const [noticesUrl, setNoticesUrl] = useState<string>();
   useEffect(() => setNoticesUrl(thirdPartyNoticesUrl()), []);
   useEffect(() => { const channel = openVerovioChannel(); channelRef.current = channel; return () => { cancelImports(channel); closeVerovioChannel(channel); }; }, []);
+  // A reader that will engrave (a supplied score, or full chrome's sample) starts Verovio now, in parallel with the
+  // score's import, instead of after it. After the channel effect (so the worker belongs to an open channel and goes
+  // when the last one closes) and with the host's Verovio applied first (the worker loads its files once).
+  const engraves = Boolean(musicXml || file || scoreUrl || abc) || preset === 'full';
+  useEffect(() => { if (engraves) { setVerovioBaseUrl(verovioBaseUrl); warmVerovio(); } }, [engraves]);
   useEffect(() => ensureMusicFonts(assetBase, failed => warnAssetBase(assetBase, failed)), [assetBase]);
+  // The notation font downloads from mount, in parallel with the import and Verovio, rather than on first paint.
+  useEffect(() => preloadMusicFont(prefs.notationFont), [prefs.notationFont, assetBase]);
   const hiddenSet = useMemo(() => new Set(hiddenIds), [hiddenIds]);
   /** Parts the reader lists, plays and controls: a TAB staff that doubles a notation part shows with it (tab/tab-parts.ts). */
   const readerParts = useMemo(() => score.parts.filter(part => !part.tabOf), [score]);
@@ -1032,6 +1041,10 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
         const availableHeight = natural ? 4000 : Math.max(120, (viewportRef.current?.clientHeight || 600) - metaHeight - 70);
         // Without a user zoom the default ('fit': four bars in Vertical) is re-resolved for the viewport, so rotation re-fits.
         const requested = prefs.zoom ?? 'fit';
+        // The SVG's SMuFL text (dynamics, tempo glyphs) is measured right after it is drawn: let the notation font
+        // (loading since mount) arrive first, briefly, so those boxes use its metrics rather than a fallback's.
+        await musicFontsReady(prefs.notationFont, FONT_WAIT_MS);
+        if (disposed) return;
         const result = await renderScore(canvas, displayScore, prefs.mode, prefs.names, prefs.counts, prefs.subdivisions, prefs.barsPerLine, prefs.chordSymbols, prefs.inferChordSymbols, availableHeight, requested, 0, { gutterFor: (stavePx, staffPitchPx) => metricsFor(stavePx, staffPitchPx).gutter, fitCap: ENDLESS_STAVE_SCALE[deviceClass()], fitFloor: minimumDefaultStaveScale(deviceClass()), font: prefs.notationFont, textFont: prefs.annotationFont, hiddenPartIds: renderHiddenIds, generation, focusMeasure: anchor?.index, channel: channelRef.current, annotationScale: { names: ANNOTATION_SCALE[prefs.namesSize], chordSymbols: ANNOTATION_SCALE[prefs.chordSymbolsSize], counts: ANNOTATION_SCALE[prefs.countsSize], subdivisions: ANNOTATION_SCALE[prefs.subdivisionsSize] }, tab: { view: prefs.tabView, tuning: prefs.tabTuning, capo: prefs.capo } });
         if (disposed || generation !== renderRunRef.current) { result.dispose(); return; }
         renderRef.current = result;

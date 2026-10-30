@@ -420,7 +420,13 @@ async function step(): Promise<void> {
 
 self.onmessage = (event: MessageEvent<VerovioRequest | VerovioConfigure>) => {
   const request = event.data;
-  if (request.kind === 'configure') { files = request.files; return; }
+  if (request.kind === 'configure') {
+    files = request.files;
+    // Warm up at once: fetch, compile and instantiate Verovio while the main thread still imports the score. A
+    // failure is forgotten here (moduleReady resets) and reported by the first request, which tries again.
+    moduleReady().catch(() => {});
+    return;
+  }
   if (request.kind === 'probe' || request.kind === 'render') latestTickets.set(request.channel, Math.max(latestTickets.get(request.channel) ?? 0, request.ticket));
   queue.push(request);
   if (!running) { running = true; setTimeout(() => void step(), 0); }

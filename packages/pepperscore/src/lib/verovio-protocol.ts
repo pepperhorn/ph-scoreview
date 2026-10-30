@@ -29,7 +29,7 @@ export type VerovioRequest = { id: number } & (
  */
 export type VerovioFiles = { module: string; toolkit: string };
 
-/** Sent once by the runtime right after it starts a worker, before any request. */
+/** Sent once by the runtime right after it starts a worker, before any request; the worker then starts loading Verovio. */
 export type VerovioConfigure = { kind: 'configure'; files: VerovioFiles };
 
 export type VerovioReply = {
