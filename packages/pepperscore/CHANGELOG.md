@@ -1,22 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 - 2026-10-30
 
 ### Added
 
 - `preloadVerovio(base?: string)` (main entry): start the Verovio worker and its download, compile and instantiation before any reader mounts (for example before React hydrates). `base` is the same directory as `verovioBaseUrl`. See README, "Verovio".
-
-### Changed
-
-- Faster first engraving: a reader with a score (or full chrome's sample) starts the Verovio worker on mount, and the worker begins importing and instantiating Verovio as soon as it is configured, in parallel with the score's import instead of after it. The worker still stops when the last reader unmounts. `verovioBaseUrl` is applied before the warm-up; a worker that has only warmed up (no request yet) is replaced if the base URL then changes.
-- The notation font (Bravura, or Petaluma with Petaluma Script) starts downloading on mount, and a draw waits up to 1.5 s for it so the SMuFL text it measures uses the font's metrics. The music fonts keep `font-display: block` (their glyphs are Private Use Area code points; a fallback would show boxes).
-
-## 0.4.0 - 2026-10-24
-
-0.3.0 was never published, so 0.4.0 also contains everything listed under 0.3.0 below (guitar TAB, text sizes, the shared audio engine and the host hooks).
-
-### Added
-
 - Instrument switch (docs/specs/instrument-switch.md). `settings.instrument`, `settings.instruments` (per part, keyed by 1-based source part number or `onReady` part id), `settings.rangeLevel` (`'beginner' | 'intermediate' | 'advanced'`, default `'intermediate'`) and `settings.autoRange` (default `true`). A switched part changes sound, clef and written transposition (B♭ and E♭ instruments read at written pitch, also in a concert-pitch score) and each phrase is fitted into the instrument's range. A grand staff switches together. A piano part switched to guitar gets generated TAB, and a TAB staff doubling a switched part is hidden or regenerated.
 - Highlights `ps-transposed` (moved by fitting or the octave tool), `ps-out-of-range` (`--ps-out-of-range`) and `ps-octave-selection`.
 - `controls.instrumentSwitch` and `controls.octaveTool`: both on in `full`, off in `minimal` and `none` unless set. In `minimal` and `none`, `settings.instrument` / `settings.instruments` alone switch the part but show no switcher. The octave tool selects a note (with its tie chain), a passage or a phrase and moves it 8va/8vb relative to the shown pitch; a 0 override pins a note as written; Reset clears.
@@ -28,6 +16,8 @@
 
 ### Changed
 
+- Faster first engraving: a reader with a score (or full chrome's sample) starts the Verovio worker on mount, and the worker begins importing and instantiating Verovio as soon as it is configured, in parallel with the score's import instead of after it. The worker still stops when the last reader unmounts. `verovioBaseUrl` is applied before the warm-up; a worker that has only warmed up (no request yet) is replaced if the base URL then changes.
+- The notation font (Bravura, or Petaluma with Petaluma Script) starts downloading on mount, and a draw waits up to 1.5 s for it so the SMuFL text it measures uses the font's metrics. The music fonts keep `font-display: block` (their glyphs are Private Use Area code points; a fallback would show boxes).
 - Space on a focused button inside the reader now presses that button instead of turning the page (affects all embeds).
 
 ### Compatibility
