@@ -14,3 +14,5 @@ dist/
 /packages/pepperscore-sounds-core/soundfonts/
 /packages/pepperscore-sounds-core/pack.json
 /.packs/
+.worktrees/
+.claude/worktrees/
