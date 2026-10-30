@@ -12,6 +12,7 @@ export type { ExternalClock, ClockEvent } from './lib/clock';
 export type { SoundSource } from './lib/sounds';
 export type { SoundPackName } from './lib/assets';
 export { SOUNDS_VERSION, defaultAssetBaseUrl } from './lib/assets';
+export { preloadVerovio } from './lib/verovio-runtime';
 /** @deprecated Use PepperScore. Kept for one release. */
 export const Reader = PepperScore;
 /** @deprecated Use PepperScoreProps. Kept for one release. */
