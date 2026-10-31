@@ -9,8 +9,8 @@ Next ID: 0003
 
 | K | Title | Status | Owner (provider/model) | Branch | PR | Worktree | T3 task/thread | Spec | Plan | Latest handoff | Updated |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| 0001 | Composable player skins | specced | lead | | | | | specs/0001-composable-player-skins.md | | | 2026-10-31 |
-| 0002 | PDF export | specced | lead | | | | | specs/0002-pdf-export.md | | | 2026-10-31 |
+| 0001 | Composable player skins | dispatched (t1) | codex/gpt-6.1-sol | orch/0001-t1-skin-tokens | | | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-01-0001-t1-skin-module-and-tokens--lead-to-codex.md | 2026-11-01 |
+| 0002 | PDF export | planned | lead | | | | | specs/0002-pdf-export.md | plans/0002-pdf-export.md | | 2026-10-31 |
 
 ## Done / closed
 
@@ -23,3 +23,6 @@ Next ID: 0003
 2026-10-31 0002 new→proposed — spec drafted
 2026-10-31 0001 proposed→specced — spec approved
 2026-10-31 0002 proposed→specced — spec approved
+2026-10-31 0001 specced→planned — plan written
+2026-10-31 0002 specced→planned — plan written
+2026-11-01 0001-t1 planned→dispatched — skin module and tokens
