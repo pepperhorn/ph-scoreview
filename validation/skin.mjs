@@ -238,7 +238,7 @@ async function assertDevelopmentWarning(browser) {
   const host = await createServer({
     configFile: false, root, logLevel: 'error',
     server: { host: '0.0.0.0', port: 5211, strictPort: true },
-    optimizeDeps: { include: ['react', 'react-dom/client', 'pepperscore'] },
+    optimizeDeps: { include: ['react', 'react-dom/client', 'pepperscore'], force: true },
     plugins: [{ name: 'skin-warning-consumer', configureServer(server) {
       server.middlewares.use(async (request, response, next) => {
         if (request.url?.split('?')[0] !== '/skin-warning-host.html') return next();
