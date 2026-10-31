@@ -10,7 +10,7 @@
 - **Review addressed:** [5725393241](https://github.com/pepperhorn/ph-scoreview/pull/59#pullrequestreview-5725393241), reviewed head `462eb0eaa74fe30b910d65bff4e805e009f976bf`
 - **Base commit:** 3396bbf (dispatch), pinned task base 320bd6f9913854ddf88d06cf3b863ba168c5096c
 - **Port:** 5211, bound to 0.0.0.0 only while the development-consumer validation runs; always closed in finally. Other browser checks use the built-dist test server.
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 Deliver T1's plain-data skin API and live theme overrides without changing default appearance or engraving behaviour. Address all seven review findings. Later tasks implement bar composition, drawer additions, pitch colouring, and release documentation.
@@ -61,10 +61,26 @@ Lead to acknowledge through the ledger on main.
 
 ---
 ## Return
-- **Outcome:** review fixes implemented; full verification in progress
+- **Outcome:** done; all seven review findings addressed
 - **Commits:** original reviewed head `462eb0e`; fixes `13eaf29`; forced fresh development-consumer dependency build `922b726c28787d701785d833b466317235f28b3b`; selected segment wash/ambient-shadow refinement `b36e937`. The return-document update is committed separately after verification.
 - **What changed:** all seven findings addressed within T1 ownership and the explicitly authorised playback-mark scope.
-- **Verification output:** pending final full-suite tail. Focused build/CSS/skin checks passed, including five unit tests and real development/production consumers. The one-off default comparison to 320bd6f passed for both stylesheets.
+- **Verification output:** a fresh full command chain passed (exit 0) on implementation head `b36e9374ad75aa604965d251e3981c6d2bb87312` after the final selected-state refinement. Only this handoff changes afterward. This includes `check`, `build`, `test:manifest`, `test:css`, `test:skin`, `test:reader` and every other `test:validation` suite. Check: 0 errors/warnings/hints. Skin: 5 unit tests; library: 76 tests; editor: 273 tests. Ownership audit from the merge base and `git diff --check` passed. Main's later lead-owned ledger update is outside this branch's changes.
+
+```text
+Skin: JS exports, typed fixture, static colour guard, desktop/mobile/all-chrome/icon and modern-colour audit, consumer dev/prod diagnostics, live host variables and no re-engrave passed
+packages/pepperscore/src/styles.css: one-off default fallback comparison to 320bd6f passed
+packages/pepperscore/src/components/open-score-dialog.css: one-off default fallback comparison to 320bd6f passed
+```
+
+Full-suite tail:
+```text
+Instrument switch: reader settings switch both piano staves (clef, written pitch, ps-transposed / ps-out-of-range, host highlights), no double transposition, concert-basis rule passed
+Instrument switch: playback plays alto sax program 66 at the fitted sounding pitch; unswitched transposing parts unchanged in both views passed
+Instrument switch: full reader picker (Instrument and Sound sections, trumpet, harp sound, level and fit, as written, hidden by the host, drum kit) passed
+Instrument switch: saved switch vs host settings (same host: the reader's flute; changed host: alto sax) passed
+Instrument switch: octave tool (select, Shift/second-click passage, phrase, 8va/8vb, out of range, auto-fit kept as written, reset, Escape, focus, saved, hidden, embed menu and compact entry) passed
+Instrument switch: chunked reader render moves tied notes across chunk boundaries; caches keyed by the spec passed
+```
 - **Out-of-scope issues found:** none requiring changes.
 - **Follow-ups:** other-family re-review and lead merge, then T2. T5 owns final documentation; no release/version bump performed. CI/review status is not polled.
 - **For GBrain (lead to promote):** preserve consumer-time environment checks in distributed libraries; test the built package in both host modes. Use invalid derived custom properties to retain exact per-use colour fallbacks while applying alpha to a shared override. Pair static colour-literal coverage with real desktop/mobile/state checks, including icon-only controls and modern CSS colour serialisations.
