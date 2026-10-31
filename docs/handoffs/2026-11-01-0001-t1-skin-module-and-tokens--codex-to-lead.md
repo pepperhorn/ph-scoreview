@@ -6,48 +6,54 @@
 - **Dispatch:** [lead-to-codex](2026-11-01-0001-t1-skin-module-and-tokens--lead-to-codex.md)
 - **Branch:** orch/0001-t1-skin-tokens
 - **Worktree:** /home/shaun/.t3/worktrees/ph-vexflow-view/t3-66013276
-- **PR:** https://github.com/pepperhorn/ph-scoreview/pull/59 (draft; CI/reviews not polled)
+- **PR:** https://github.com/pepperhorn/ph-scoreview/pull/59 (draft; no watching or polling)
+- **Review addressed:** [5725393241](https://github.com/pepperhorn/ph-scoreview/pull/59#pullrequestreview-5725393241), reviewed head `462eb0eaa74fe30b910d65bff4e805e009f976bf`
 - **Base commit:** 3396bbf (dispatch), pinned task base 320bd6f9913854ddf88d06cf3b863ba168c5096c
-- **Port:** 5211 (no dev server used; validation uses the built-dist test server)
-- **Status:** closed
+- **Port:** 5211, bound to 0.0.0.0 only while the development-consumer validation runs; always closed in finally. Other browser checks use the built-dist test server.
+- **Status:** open
 
 ## Goal
-Provide the plain-data public skin API and live theme overrides while preserving default appearance and engraving behaviour. This delivers T1; later tasks implement bar composition, drawer additions, pitch colouring, and release documentation.
+Deliver T1's plain-data skin API and live theme overrides without changing default appearance or engraving behaviour. Address all seven review findings. Later tasks implement bar composition, drawer additions, pitch colouring, and release documentation.
 
 ## Context you need
-The spec and plan above are authoritative. GBrain consulted: `default:projects/scoreflow-music-reader` (historical project context; no theming-specific requirement was found). Implementer has made no GBrain writes; the lead owns promotion.
+The linked spec and plan govern the task. The lead explicitly decided in the 2026-11-01 review-fix brief that `playback` also recolours `.reader-note.is-playing`: these are interface marks, with today's colours retained as fallbacks. Ownership otherwise remains T1's list. GBrain consulted: `default:projects/scoreflow-music-reader` (historical project context). Implementer has made no GBrain writes; the lead owns promotion.
 
 ## Scope
-- **In:** all T1 skin interfaces, public exports, theme-only prop/root styles, colour audit, typed fixture and JS/browser/unit validation.
-- **Out:** bar rendering, toggles, drawer changes, pitch colouring, package version/release and README/changelog work.
+- **In:** T1 skin interfaces/public exports, theme-only prop/root styles, colour audit, typed fixture, JS/browser/unit validation, and playback interface marks in `styles.css` per the lead decision.
+- **Out:** bar rendering, new toggles, drawer changes, pitch colouring, package version/release, README/changelog work.
 - **Files owned:** `packages/pepperscore/src/lib/skin.ts`, `packages/pepperscore/src/lib/skin.test.ts`, `packages/pepperscore/src/styles.css`, `packages/pepperscore/src/components/open-score-dialog.css`, `packages/pepperscore/src/index.ts`, `packages/pepperscore/src/components/PepperScore.tsx` (prop/root style integration only), `apps/reader/src/embed/SkinTest.tsx`, `apps/reader/src/pages/embed-skin.astro`, `validation/skin.mjs`, root `package.json` (skin script and validation registration), and this task's two handoff files.
 - **Do not touch:** other files, particularly `render.ts`, `chrome.ts`, and the ledger. Those remain unchanged.
 
-## Acceptance criteria
-- AC1: original stylesheet bytes are reproduced by stripping only new token wrappers and the explicit native-control rules; native defaults are independently compared in Chromium. Existing default reader/embedding suites cover behaviour.
-- AC5: sentinel overrides audited over non-SVG UI elements and applicable pseudo-elements, header, drawer, open-score dialog, mixer and instrument picker. Invisible border/outline paint is excluded; transparent colours remain transparent.
-- AC6: host variable changes update computed colours with identical score SVG nodes and unchanged render count. Live skin replacement, removal and equivalent inline objects also avoid re-engraving. All three chrome presets receive the theme.
-- AC8d: reader tsc fixture contains expected errors for mistyped token/bar names; plain JS imports the built package exports. Four skin unit tests cover merge semantics, stable keys, data-only future fields, exact CRF palette and invalid-colour diagnostics.
+## Acceptance criteria and review fixes
+1. **Consumer-development warnings (high):** `process.env.NODE_ENV` is retained through the library build and replaced by the consumer build. A local type declaration avoids adding Node types to the browser component. Validation asserts the diagnostic exists in `dist/index.js`, is absent from the production host JS, is silent in the real production host, and actually warns for an invalid host variable in a real Vite development consumer importing the built package. Dependency optimisation is forced fresh, so cached library code cannot mask a regression. This replaces the library-time `import.meta.env.DEV` gate.
+2. **Accent roles (medium):** interactive hover/focus backgrounds use `accentWash`; selected washes use the new `accentWashStrong`; selected borders/rings and focused staff text use `accent`. Every original literal fallback remains intact. Browser checks prove the blue host reaches hover, selected backgrounds and selected edges while neutral panels stay white. Static assertions prevent routing these states through neutral/shadow roles again.
+3. **Whole-interface guard (medium):** a PostCSS scan checks both stylesheets for colour literals outside `var(--ps-*,…)`, including named and modern functional colours. The explicit engraved-colour allow-list contains only `.note-label`, `.count-label`, and `.chord-symbol`. `transparent`, `currentColor` and CSS-wide keywords are semantic exceptions. Browser colour candidates are normalised through canvas/relative RGB, covering `color(srgb …)` and alpha-bearing mixes. Icon-only button colours are checked. All three chrome presets, desktop, 390px with More open, hover, keyboard focus, drawer, open dialog, mixer and instrument picker are audited. Negative tests prove bare modern/named/hex literals and icon-only modern-colour leaks fail. Static coverage catches unreached disabled/error/loading/popover states.
+4. **Reusable validation (low):** the stylesheet SHA-256 pins were removed from persistent validation. A one-off comparison against `320bd6f` succeeded by stripping theme wrappers and removing only the added native/derived-variable rules. Future legitimate layout rules are therefore allowed, while new hard-coded interface colours still fail the static guard.
+5. **Alpha and role separation (low):** shadows retain their per-use alpha even under an opaque `shadow` token, using private derived variables and `color-mix`. When a base token is absent, its derived variables are invalid and each use falls back to its original full colour literal. Playback line/background/halo/glow use `playback`, not neutral surfaces or general shadows; focus halos derive from `focusRing`. Tests distinguish shadow alpha bytes 22 (selected ambient shadow), 36 and 64, and playback halo/glow alpha bytes 153 and 128.
+6. **Playing notes (low, lead scope decision):** `.reader-note.is-playing` fill, stroke and drop-shadow all use `playback`, with the original amber literals as fallbacks. Tests use a rendered reader note and verify original colours, themed colours and glow. The existing `--ps-cursor` override still wins over the playback fallback on cursor marks. Engraved annotation fills remain unchanged.
+7. **Complete palette guarantee (low):** `mergeSkins` validates the accumulated palette before returning it. Incomplete results throw `TypeError`; partial overrides work over a complete palette, and a complete palette can be introduced on an empty base. The unsafe `as PitchPalette` cast is gone. Five unit tests cover this contract, merge copies/replacement, stable keys, exact CRF values, theme-only styles and invalid-colour diagnostics.
+
+AC6 remains covered by SVG identity and unchanged render counts across host variable changes, skin replacement/removal and equivalent inline objects. AC8d is covered by the reader's tsc fixture with expected errors for bad token/bar names plus JS imports of the built package root. No skin was added to engraving dependencies.
 
 ## Verify with
 ```bash
 npm run check && npm run build && npm run test:css && npm run test:skin && npm run test:reader
 npm run check && npm run build && npm run test:manifest && npm run test:validation
 ```
+The full validation chain includes the CSS, skin and reader checks.
 
 ## Known gotchas / decisions made
-- The 18 public tokens are listed in `THEME_TOKENS`. Tokens are roles; each use retains its own exact literal fallback, so different pre-existing shades can share an override without changing default colours.
-- CSS variables are inline on the player root; CSS resolves host `var()` references. `skinKey` sorts maps and preserves array order; memoisation does not depend on object identity.
-- Existing note-name/count/chord annotation fills remain literal: they are engraved SVG content, outside the interface-colour audit. Existing score-mark names are preserved. Playback is the fallback under `--ps-cursor`, so existing host cursor overrides continue to win.
-- Native form control colours were previously supplied by the browser. Their new variables use `revert` fallbacks, and the validation removes these rules to compare default computed colours independently.
-- The final parity comparison caught a redundant checkbox accent override: `revert` restores the browser origin, not an earlier author declaration. That override was removed; the existing checkbox accent already uses a token.
-- `mergeSkins` copies maps/arrays, merges maps key by key, and replaces a supplied bar (including an empty bar). Palette patches are supported over an existing complete palette; callers constructing a palette must still supply all 12 entries.
-- Invalid colour values cannot be repaired by `var()` fallbacks. In development, an effect checks resolved root variables (including host references) and warns. Production emits no theme diagnostics. Later host-variable changes still apply without React work; diagnostics run when the skin changes, not on every arbitrary host CSS edit.
-- `pitchColours` and `bar` are public data only in T1. `skinStyle` deliberately emits only theme variables.
-- The browser audit disables transitions to measure settled colours, and closes the drawer with Escape before opening header dialogs.
+- `THEME_TOKENS` now has 19 public roles, including `accentWashStrong`. T5 must document the final list. The `--ps-*-aXX` alpha variables are internal derived values, not additional public tokens.
+- Theme variables live on the player root. CSS resolves host references without React work. `skinKey` sorts maps and preserves bar order; equal inline data does not trigger engraving.
+- Library-time `import.meta.env.DEV` erases diagnostics before a consuming dev build can use them. T2's unknown-bar warning should use the tested consumer-time environment approach.
+- Private alpha variables deliberately omit a base-token fallback. Otherwise mixing a translucent fallback would multiply its original alpha a second time.
+- Browser-owned form/control focus colours use `revert` with low specificity where needed. Existing author-level focus rules retain priority. The keyboard audit exposed the native icon-button focus outline; the new low-specificity rule themes it while preserving default outline colour/style/width in the independent native-rule removal comparison.
+- `revert` bypasses earlier author declarations; do not apply it to an already-authored checkbox accent (that redundant override was removed in the original implementation).
+- `bar` and `pitchColours` remain data only in T1. `skinStyle` emits theme variables only.
+- The browser audit disables transitions to measure settled colours and closes the drawer with Escape before header dialogs. SVG music is excluded from the interface audit; playing-note/cursor marks have dedicated assertions.
 
 ## Open questions
-None.
+None. The playing-note scope question was resolved by the lead's explicit instruction above.
 
 ---
 ## Receiver ack
@@ -55,45 +61,10 @@ Lead to acknowledge through the ledger on main.
 
 ---
 ## Return
-- **Outcome:** done
-- **Commits:** receiver ack `2285978`; implementation `b1cc309794870a0468c43854960d46238b4c5999`; checkbox fallback correction `b194161`; this return document is committed separately.
-- **What changed:** new pure skin module/public API, live root theme overrides, colour-token CSS audit, typed host fixture, and integrated regression validation.
-- **Verification output:** both requested command chains passed (exit 0). The full suite ran first; the focused check/build/CSS/skin/reader checks were rerun after the checkbox fallback correction. A final build/CSS/skin run passed after restoring the original SVG annotation fills (no default-value changes). The broad suite was not repeated after these CSS-only corrections.
-
-Full-suite tail:
-```text
-Instrument switch: reader settings switch both piano staves (clef, written pitch, ps-transposed / ps-out-of-range, host highlights), no double transposition, concert-basis rule passed
-Instrument switch: playback plays alto sax program 66 at the fitted sounding pitch; unswitched transposing parts unchanged in both views passed
-Instrument switch: full reader picker (Instrument and Sound sections, trumpet, harp sound, level and fit, as written, hidden by the host, drum kit) passed
-Instrument switch: saved switch vs host settings (same host: the reader's flute; changed host: alto sax) passed
-Instrument switch: octave tool (select, Shift/second-click passage, phrase, 8va/8vb, out of range, auto-fit kept as written, reset, Escape, focus, saved, hidden, embed menu and compact entry) passed
-Instrument switch: chunked reader render moves tied notes across chunk boundaries; caches keyed by the spec passed
-```
-
-Final reader rerun tail:
-```text
-chromium: TimGM6mb fallback shares one soundfont download passed
-chromium: ID-less MusicXML with a multi-measure rest intro passed
-chromium: open dialog passed
-chromium: score link passed
-chromium: stave focus passed
-chromium: options drawer layout and annotation sizes passed
-chromium: endless with scrollbars passed
-```
-
-Final build/CSS/skin tail:
-```text
- ✓ src/lib/skin.test.ts (4 tests) 18ms
-
- Test Files  1 passed (1)
-      Tests  4 passed (4)
-   Start at  09:51:57
-   Duration  746ms (transform 65ms, setup 0ms, collect 48ms, tests 18ms, environment 0ms, prepare 149ms)
-
-Skin: JS exports, typed fixture, literal CSS fallbacks, sentinel UI/drawer/dialog/mixer colours, live host variables and no re-engrave passed
-```
-
-`npm run check`: 0 errors, 0 warnings, 0 hints. `npm run test:manifest`: 128 local packs, 16 icons, playable voices, generated core and versions passed. `git diff --check` passed. Ownership audit of `git diff --stat main...HEAD` plus this return document contains only the declared T1 files and task handoffs.
+- **Outcome:** review fixes implemented; full verification in progress
+- **Commits:** original reviewed head `462eb0e`; fixes `13eaf29`; forced fresh development-consumer dependency build `922b726c28787d701785d833b466317235f28b3b`; selected segment wash/ambient-shadow refinement `b36e937`. The return-document update is committed separately after verification.
+- **What changed:** all seven findings addressed within T1 ownership and the explicitly authorised playback-mark scope.
+- **Verification output:** pending final full-suite tail. Focused build/CSS/skin checks passed, including five unit tests and real development/production consumers. The one-off default comparison to 320bd6f passed for both stylesheets.
 - **Out-of-scope issues found:** none requiring changes.
-- **Follow-ups:** proceed to T2 after other-family review and lead merge; T5 owns user documentation. No release/version bump performed.
-- **For GBrain (lead to promote):** retain literal fallbacks for colour parity; native controls need `revert` fallbacks, not invented platform colours. Use `revert` only for properties that were browser defaults; it bypasses earlier author declarations. Audit settled computed colours and prove host variable changes preserve SVG identity/render count.
+- **Follow-ups:** other-family re-review and lead merge, then T2. T5 owns final documentation; no release/version bump performed. CI/review status is not polled.
+- **For GBrain (lead to promote):** preserve consumer-time environment checks in distributed libraries; test the built package in both host modes. Use invalid derived custom properties to retain exact per-use colour fallbacks while applying alpha to a shared override. Pair static colour-literal coverage with real desktop/mobile/state checks, including icon-only controls and modern CSS colour serialisations.
