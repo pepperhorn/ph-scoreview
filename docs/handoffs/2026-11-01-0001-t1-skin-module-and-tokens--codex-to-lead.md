@@ -6,7 +6,7 @@
 - **Dispatch:** [lead-to-codex](2026-11-01-0001-t1-skin-module-and-tokens--lead-to-codex.md)
 - **Branch:** orch/0001-t1-skin-tokens
 - **Worktree:** /home/shaun/.t3/worktrees/ph-vexflow-view/t3-66013276
-- **PR:** pending creation after this handoff is committed
+- **PR:** https://github.com/pepperhorn/ph-scoreview/pull/59 (draft; CI/reviews not polled)
 - **Base commit:** 3396bbf (dispatch), pinned task base 320bd6f9913854ddf88d06cf3b863ba168c5096c
 - **Port:** 5211 (no dev server used; validation uses the built-dist test server)
 - **Status:** closed
