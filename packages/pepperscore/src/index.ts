@@ -17,3 +17,6 @@ export { preloadVerovio } from './lib/verovio-runtime';
 export const Reader = PepperScore;
 /** @deprecated Use PepperScoreProps. Kept for one release. */
 export type ReaderProps = PepperScoreProps;
+
+export { THEME_TOKENS, BAR_ITEM_IDS, CRF_PITCH_COLOURS, mergeSkins, tokenVariable, skinStyle, skinKey } from './lib/skin';
+export type { PepperScoreSkin, ThemeToken, BarItemId, PitchPalette, PitchClass } from './lib/skin';
