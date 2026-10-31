@@ -46,5 +46,7 @@ None.
 ---
 ## Receiver ack
 
+Acknowledged 2026-11-01 by Codex. I will implement the exact T1 public skin interfaces, theme-only prop/root styles, complete colour-token audit, and executable API/browser validation within the T1 owned files. Existing fallback colours and engraving dependencies will remain unchanged. Bar and pitch fields are data only in T1. No open questions. GBrain consulted: `default:projects/scoreflow-music-reader`; repository spec and plan govern current implementation.
+
 ---
 ## Return (implementer → lead; fill in when done, or in a separate …-to-lead.md)
