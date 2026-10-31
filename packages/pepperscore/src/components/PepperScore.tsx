@@ -41,6 +41,9 @@ import { sourcePartOf, switchablePart, withPickedSound, type PartSwitch } from '
 import { EMBED_INSTRUMENTS, type InstrumentId, type RangeLevel } from '../lib/instrument-model';
 import { applyHostSwitchChange, hostInstrumentKey, pitchHint, readerPartsInfo, readerPitch, restoredScorePitch, selectOctaveNote, selectOctavePhrase, steppedOctaves, SWITCH_TARGETS, switchDefaults, switchedSoundParts, switchedTimeline, switchedView, switchesOnLoad, switchHighlights, withOctaves, withoutStalePins, withSound, withSourceSwitch, partLabel, type InstrumentSettings, type OctaveSelection } from '../lib/instrument-switch-state';
 
+// Replaced by the consuming bundler, rather than by our library-mode build.
+declare const process: { env: { NODE_ENV?: string } };
+
 /** Short key name for readouts: 'Gb', 'C#m'. */
 const keyName = (key: SpellingKey) => `${key.tonic}${key.mode === 'minor' ? 'm' : ''}`;
 const clampSemitones = (semitones: number) => Math.max(-12, Math.min(12, semitones));
@@ -275,7 +278,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const themeKey = skinKey(skin);
   const themeStyle = useMemo(() => skinStyle(skin), [themeKey]);
   useEffect(() => {
-    if (import.meta.env.DEV && rootRef.current) warnInvalidTheme(rootRef.current, skin);
+    if (process.env.NODE_ENV !== 'production' && rootRef.current) warnInvalidTheme(rootRef.current, skin);
   }, [themeKey]);
   const chrome = useMemo(() => resolveChrome(preset, controls), [preset, controls?.mixer, controls?.openFile, controls?.drawer, controls?.transport, controls?.viewToggle, controls?.zoom, controls?.tabToggle, controls?.instrumentSwitch, controls?.octaveTool]);
   /** A host clock always shows the playhead (ivories uses chrome="none" with a clock). */

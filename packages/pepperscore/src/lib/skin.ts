@@ -1,5 +1,5 @@
 /** Public role names. Each CSS use keeps its original colour as its fallback. */
-export const THEME_TOKENS = ['accent', 'accentHover', 'accentWash', 'backdrop', 'border', 'borderMuted', 'danger', 'focusRing', 'onAccent', 'playback', 'shadow', 'surface', 'surfaceRaised', 'text', 'textFaint', 'textMuted', 'textSecondary', 'warning'] as const;
+export const THEME_TOKENS = ['accent', 'accentHover', 'accentWash', 'accentWashStrong', 'backdrop', 'border', 'borderMuted', 'danger', 'focusRing', 'onAccent', 'playback', 'shadow', 'surface', 'surfaceRaised', 'text', 'textFaint', 'textMuted', 'textSecondary', 'warning'] as const;
 export type ThemeToken = typeof THEME_TOKENS[number];
 export const BAR_ITEM_IDS = ['play', 'stop', 'tempo', 'transpose', 'keyFlip', 'bars', 'viewToggle', 'tab', 'zoom', 'mixer', 'openFile', 'instrumentSwitch', 'octaveTool', 'options', 'noteNames', 'counts', 'chordSymbols', 'pitchColours', 'pdf'] as const;
 export type BarItemId = typeof BAR_ITEM_IDS[number];
@@ -18,12 +18,21 @@ export type PepperScoreSkin = {
 type SkinOverride = Omit<PepperScoreSkin, 'pitchColours'> & { pitchColours?: Partial<PitchPalette> };
 export function mergeSkins(base: PepperScoreSkin, ...overrides: SkinOverride[]): PepperScoreSkin {
   const result: PepperScoreSkin = {};
+  let palette: Partial<PitchPalette> | undefined;
   for (const skin of [base, ...overrides]) {
     if (skin.theme) result.theme = { ...result.theme, ...skin.theme };
-    if (skin.pitchColours) result.pitchColours = { ...result.pitchColours, ...skin.pitchColours } as PitchPalette;
+    if (skin.pitchColours) palette = { ...palette, ...skin.pitchColours };
     if (skin.bar) result.bar = [...skin.bar];
   }
+  if (palette) {
+    if (!completePalette(palette)) throw new TypeError('mergeSkins requires a complete 12-pitch palette; partial overrides need a complete base.');
+    result.pitchColours = palette;
+  }
   return result;
+}
+function completePalette(palette: Partial<PitchPalette>): palette is PitchPalette {
+  const pitches: PitchClass[] = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  return pitches.every(pitch => typeof palette[pitch] === 'string');
 }
 export function tokenVariable(token: ThemeToken): string {
   return `--ps-${token.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)}`;

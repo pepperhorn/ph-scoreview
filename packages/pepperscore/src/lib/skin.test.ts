@@ -14,6 +14,11 @@ describe('plain-data skins', () => {
     expect(mergeSkins({})).toEqual({});
     expect(mergeSkins(base, {})).toEqual(base);
   });
+  it('never returns a partial palette typed as complete', () => {
+    expect(() => mergeSkins({}, { pitchColours: { C: 'pink' } })).toThrow(/complete.*palette/);
+    expect(mergeSkins({}, { pitchColours: CRF_PITCH_COLOURS }).pitchColours).toEqual(CRF_PITCH_COLOURS);
+    expect(() => mergeSkins({ pitchColours: { C: 'pink' } } as PepperScoreSkin)).toThrow(/complete.*palette/);
+  });
   it('has stable keys for reordered maps, but respects bar order', () => {
     expect(skinKey({ theme: { accent: 'red', surface: 'white' } })).toBe(skinKey({ theme: { surface: 'white', accent: 'red' } }));
     expect(skinKey({ bar: ['play', 'stop'] })).not.toBe(skinKey({ bar: ['stop', 'play'] }));
