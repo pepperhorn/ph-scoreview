@@ -28,3 +28,4 @@ Next ID: 0003
 2026-11-01 0001-t1 planned→dispatched — skin module and tokens
 2026-11-01 0001-t1 dispatched→in-review — PR #59, head 462eb0e
 2026-11-01 0001-t1 in-review→changes-requested — review r1 on 462eb0e; playback token also covers playing notes (lead decision)
+2026-11-01 0001-t1 changes-requested — review r2 on 61ef6b2 raised a host crash and focus outlines; fix round 2 sent
