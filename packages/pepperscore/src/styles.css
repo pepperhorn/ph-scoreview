@@ -443,4 +443,3 @@
 /* Native control colours: revert keeps the browser's own defaults when no token is set. */
 .pepperscore input[type=range]{color:var(--ps-text-muted,revert);background-color:var(--ps-surface,revert)}
 .pepperscore button,.pepperscore input[type=checkbox]{color:var(--ps-text,revert)}
-.pepperscore input[type=checkbox]{accent-color:var(--ps-accent,revert)}

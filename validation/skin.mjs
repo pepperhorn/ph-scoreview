@@ -14,7 +14,6 @@ assert.equal(skinKey(), skinKey({}));
 const nativeRules = `/* Native control colours: revert keeps the browser's own defaults when no token is set. */
 .pepperscore input[type=range]{color:var(--ps-text-muted,revert);background-color:var(--ps-surface,revert)}
 .pepperscore button,.pepperscore input[type=checkbox]{color:var(--ps-text,revert)}
-.pepperscore input[type=checkbox]{accent-color:var(--ps-accent,revert)}
 `;
 const variables = THEME_TOKENS.map(t => t.replace(/[A-Z]/g, c => '-' + c.toLowerCase())).join('|');
 const wrappers = new RegExp(`var\\(--ps-(?:${variables}),((?:rgba?\\([^)]*\\)|[^()])+?)\\)`, 'g');
@@ -102,7 +101,7 @@ try {
     return { removed, differences: controls.flatMap((el, i) => JSON.stringify(before[i]) === JSON.stringify(after[i]) ? [] : [[el.outerHTML.slice(0, 100), before[i], after[i]]]) };
   });
   assert.deepEqual(nativeProof.differences, [], 'native-control token rules preserve default computed colours exactly');
-  assert.equal(nativeProof.removed, 3);
+  assert.equal(nativeProof.removed, 2);
   // Reload restores the native rules before testing further theme changes.
   await page.reload();
   await page.waitForFunction(() => window.__skin?.renders > 0);
