@@ -44,6 +44,7 @@ const stylesheetCandidates = ['packages/pepperscore/src/styles.css', 'packages/p
 for (const file of ['packages/pepperscore/src/styles.css', 'packages/pepperscore/src/components/open-score-dialog.css']) {
   postcss.parse(readFileSync(`${root}/${file}`, 'utf8')).walkRules(rule => rule.walkDecls(decl => {
     if (/:hover|:focus-visible/.test(rule.selector) && /^background/.test(decl.prop)) assert.ok(!decl.value.includes('--ps-surface-raised'), `${rule.selector}: interactive wash is an accent role`);
+    if (/is-selected/.test(rule.selector) && /^background/.test(decl.prop)) assert.ok(!/--ps-surface(?:-raised)?[,)]/.test(decl.value), `${rule.selector}: selected backgrounds use an accent role`);
     if (/is-selected/.test(rule.selector) && /^(?:border|box-shadow)/.test(decl.prop)) assert.ok(!/--ps-(?:border|shadow)[,)]/.test(decl.value), `${rule.selector}: selected edges use an accent role`);
     if (rule.selector === '.pepperscore .staff-focus.is-focused' && decl.prop === 'color') assert.match(decl.value, /--ps-accent,/);
     if (rule.selector.includes('.playback-line') && /^(?:background|box-shadow)$/.test(decl.prop)) assert.ok(!/--ps-(?:shadow|surface|warning)/.test(decl.value), 'playback owns its line and glow');
@@ -75,6 +76,7 @@ try {
   assert.equal(await accent(), 'rgb(35, 90, 188)');
   await page.locator('.skin-reader .header-open-file').hover();
   assert.equal(await page.locator('.skin-reader .header-open-file').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(224, 236, 255)', 'the blue host reaches hover washes');
+  assert.equal(await page.locator('.skin-reader .mode-toggle button.is-selected').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(187, 212, 255)', 'selected segments use the host wash');
   await page.locator('.skin-reader .instrument-control').first().click();
   const selected = page.locator('.instrument-picker-grid button.is-selected,.instrument-chooser-option.is-selected').first();
   await selected.waitFor();
@@ -96,7 +98,7 @@ try {
     const dialog = document.createElement('div'); dialog.className = 'open-dialog'; root.append(dialog);
     const original = { note: getComputedStyle(note).fill, filter: getComputedStyle(note).filter, line: getComputedStyle(line).backgroundColor };
     root.style.setProperty('--ps-playback', '#2060a0'); root.style.setProperty('--ps-shadow', '#d02040');
-    const themed = { note: getComputedStyle(note).fill, stroke: getComputedStyle(note).stroke, filter: colours(getComputedStyle(note).filter), line: getComputedStyle(line).backgroundColor, glow: colours(getComputedStyle(line).boxShadow), button: colours(getComputedStyle(root.querySelector('.play-button')).boxShadow), dialog: colours(getComputedStyle(dialog).boxShadow) };
+    const themed = { note: getComputedStyle(note).fill, stroke: getComputedStyle(note).stroke, filter: colours(getComputedStyle(note).filter), line: getComputedStyle(line).backgroundColor, glow: colours(getComputedStyle(line).boxShadow), button: colours(getComputedStyle(root.querySelector('.play-button')).boxShadow), dialog: colours(getComputedStyle(dialog).boxShadow), segment: colours(getComputedStyle(root.querySelector('.mode-toggle button.is-selected')).boxShadow) };
     note.classList.remove('is-playing');
     note.classList.add('ps-cursor'); root.style.setProperty('--ps-cursor', '#ff0066');
     const cursor = getComputedStyle(note).fill;
@@ -114,6 +116,7 @@ try {
   assert.deepEqual(playback.themed.glow, [[32, 96, 160, 153], [32, 96, 160, 128]], 'playback glow keeps both original alpha levels');
   assert.deepEqual(playback.themed.button, [[208, 32, 64, 36]]);
   assert.deepEqual(playback.themed.dialog, [[208, 32, 64, 64]], 'shadow alpha levels stay distinct under an opaque token');
+  assert.deepEqual(playback.themed.segment, [[208, 32, 64, 22]], 'selected ambient shadows keep their alpha and shadow role');
   assert.equal(playback.cursor, 'rgb(255, 0, 102)', 'legacy cursor overrides still win');
   await page.evaluate(() => { window.__originalSvg = document.querySelector('.skin-reader .score-system svg'); window.__renderCount = window.__skin.renders; document.querySelector('.skin-host').style.setProperty('--accent-ink', '#bc235a'); });
   assert.equal(await accent(), 'rgb(188, 35, 90)');
