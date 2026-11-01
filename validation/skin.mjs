@@ -94,6 +94,7 @@ function assertProcessGuards() {
           let guarded = false;
           for (let child = node, ancestor = parent; ancestor; child = ancestor, ancestor = ancestor.parent) {
             if (ts.isBinaryExpression(ancestor) && ancestor.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken && ancestor.right === child && hasGuard(ancestor.left)) guarded = true;
+            if (ts.isTryStatement(ancestor) && ancestor.tryBlock === child && ancestor.catchClause) guarded = true;
           }
           if (!guarded) unguarded.push(`${file}:${source.getLineAndCharacterOfPosition(node.getStart()).line + 1}`);
         }
@@ -102,7 +103,7 @@ function assertProcessGuards() {
     }
     visit(source);
   }
-  assert.deepEqual(unguarded, [], 'every free package process read is protected by typeof process on its short-circuit path');
+  assert.deepEqual(unguarded, [], 'every free package process read is protected by a short-circuit guard or try/catch');
 }
 assertProcessGuards();
 const packageCode = readFileSync(`${root}/packages/pepperscore/dist/index.js`, 'utf8');
@@ -112,6 +113,8 @@ assert.ok(!hostCode.includes('Invalid theme colour'), 'a production host elimina
 const server = await serveDist({ mounts: { '/native-dist/': `${root}/packages/pepperscore/dist` } });
 const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
 try {
+  // Run the plain dev host before the dependency-only build initialises Vite build-mode state.
+  await assertDevelopmentWarning(browser);
   await assertNativeHost(browser, server);
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   const errors = [];
@@ -346,7 +349,6 @@ try {
   await page.keyboard.press('Escape');
   await page.setViewportSize({ width: 1280, height: 900 });
   assert.deepEqual(warnings, [], 'production host never emits theme warnings');
-  await assertDevelopmentWarning(browser);
   assert.deepEqual(errors, []);
   console.log('Skin: JS exports, typed fixture, static colour guard, desktop/mobile/all-chrome/icon and modern-colour audit, consumer dev/prod diagnostics, live host variables and no re-engrave passed');
 } finally { await browser.close(); await server.close(); }
@@ -354,14 +356,13 @@ try {
 async function assertDevelopmentWarning(browser) {
   const host = await createServer({
     configFile: false, root, logLevel: 'error', mode: 'development',
-    define: { 'process.env.NODE_ENV': JSON.stringify('development') },
     server: { host: '0.0.0.0', port: 5211, strictPort: true },
-    optimizeDeps: { include: ['react', 'react-dom/client', 'pepperscore'], force: true, rolldownOptions: { transform: { define: { 'process.env.NODE_ENV': JSON.stringify('development') } } } },
+    optimizeDeps: { include: ['react', 'react-dom/client', 'pepperscore'], force: true },
     plugins: [{ name: 'skin-warning-consumer', configureServer(server) {
       server.middlewares.use(async (request, response, next) => {
         if (request.url?.split('?')[0] !== '/skin-warning-host.html') return next();
         try {
-          const html = await server.transformIndexHtml('/skin-warning-host.html', `<!doctype html><html><head><title>Built package development consumer</title></head><body style="--bad-brand:not-a-colour"><div id="root"></div><script>globalThis.process = { env: { NODE_ENV: "development" } };</script><script type="module">
+          const html = await server.transformIndexHtml('/skin-warning-host.html', `<!doctype html><html><head><title>Built package development consumer</title></head><body style="--bad-brand:not-a-colour"><div id="root"></div><script type="module">
             import React from 'react'; import { createRoot } from 'react-dom/client'; import { PepperScore } from 'pepperscore';
             createRoot(document.getElementById('root')).render(React.createElement(PepperScore, { chrome: 'none', persist: false, skin: { theme: { accent: 'var(--bad-brand)' } } }));
           </script></body></html>`);
@@ -375,6 +376,7 @@ async function assertDevelopmentWarning(browser) {
     const page = await browser.newPage();
     const diagnostic = page.waitForEvent('console', { predicate: event => event.type() === 'warning' && event.text().includes('Invalid theme colour for accent'), timeout: 30000 });
     await page.goto('http://127.0.0.1:5211/skin-warning-host.html');
+    assert.equal(await page.evaluate(() => typeof process), 'undefined', 'plain development host has no process shim');
     assert.match((await diagnostic).text(), /var\(--bad-brand\)/, 'the real built package warns in a development host');
     await page.close();
   } finally { await host.close(); }

@@ -278,7 +278,11 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const themeKey = skinKey(skin);
   const themeStyle = useMemo(() => skinStyle(skin), [themeKey]);
   useEffect(() => {
-    if (typeof process !== 'undefined' && process.env.NODE_ENV !== 'production' && rootRef.current) warnInvalidTheme(rootRef.current, skin);
+    try {
+      if (process.env.NODE_ENV !== 'production' && rootRef.current) warnInvalidTheme(rootRef.current, skin);
+    } catch {
+      // No process global: not a known development host, so skip the diagnostic.
+    }
   }, [themeKey]);
   const chrome = useMemo(() => resolveChrome(preset, controls), [preset, controls?.mixer, controls?.openFile, controls?.drawer, controls?.transport, controls?.viewToggle, controls?.zoom, controls?.tabToggle, controls?.instrumentSwitch, controls?.octaveTool]);
   /** A host clock always shows the playhead (ivories uses chrome="none" with a clock). */
