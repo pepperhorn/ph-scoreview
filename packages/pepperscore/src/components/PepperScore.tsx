@@ -1,3 +1,4 @@
+import { skinKey, skinStyle, warnInvalidTheme, type PepperScoreSkin } from '../lib/skin';
 import { useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { ChevronDown, ChevronLeft, ChevronRight, Ellipsis, Eye, EyeOff, FileMusic, Focus, FolderOpen, History, Hourglass, Minus, Pause, Play, Plus, RotateCcw, SlidersHorizontal, Square, Settings2, Trash2, Type, VolumeX, X } from 'lucide-react';
@@ -39,6 +40,9 @@ import { canShowTab, hiddenReaderParts, type TabView } from '../lib/tab/tab-part
 import { sourcePartOf, switchablePart, withPickedSound, type PartSwitch } from '../lib/instrument-view';
 import { EMBED_INSTRUMENTS, type InstrumentId, type RangeLevel } from '../lib/instrument-model';
 import { applyHostSwitchChange, hostInstrumentKey, pitchHint, readerPartsInfo, readerPitch, restoredScorePitch, selectOctaveNote, selectOctavePhrase, steppedOctaves, SWITCH_TARGETS, switchDefaults, switchedSoundParts, switchedTimeline, switchedView, switchesOnLoad, switchHighlights, withOctaves, withoutStalePins, withSound, withSourceSwitch, partLabel, type InstrumentSettings, type OctaveSelection } from '../lib/instrument-switch-state';
+
+// Replaced by the consuming bundler, rather than by our library-mode build.
+declare const process: { env: { NODE_ENV?: string } };
 
 /** Short key name for readouts: 'Gb', 'C#m'. */
 const keyName = (key: SpellingKey) => `${key.tonic}${key.mode === 'minor' ? 'm' : ''}`;
@@ -154,6 +158,8 @@ export type PepperScoreProps = {
   chrome?: ChromePreset;
   /** Per-control overrides of the chrome preset (lib/chrome.ts). */
   controls?: PepperScoreControls;
+  /** Plain-data skin; theme overrides apply live without re-engraving. */
+  skin?: PepperScoreSkin;
   /** Initial reading view; changing it re-applies it. */
   view?: 'vertical' | 'endless';
   /** `"fill"` fills the parent's height; any CSS length fixes it; omitted, full chrome fills its parent (480px floor) and the others size to their score. */
@@ -268,7 +274,16 @@ function PartName({ label }: { label: { name: string; switched?: string } }) {
   </span>;
 }
 
-export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: preset = 'full', controls, view, height, className, ariaLabel, settings, persist, assetBaseUrl, verovioBaseUrl, soundPack = 'core', soundSources, onReady, onPlay, onStop, onError, clock, audio: withAudio = true, onSeek, onTimeUpdate, onElementClick, onRender, highlights, autoFocus, paintTransition = 'reveal', ref }: PepperScoreProps) {
+export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: preset = 'full', controls, skin, view, height, className, ariaLabel, settings, persist, assetBaseUrl, verovioBaseUrl, soundPack = 'core', soundSources, onReady, onPlay, onStop, onError, clock, audio: withAudio = true, onSeek, onTimeUpdate, onElementClick, onRender, highlights, autoFocus, paintTransition = 'reveal', ref }: PepperScoreProps) {
+  const themeKey = skinKey(skin);
+  const themeStyle = useMemo(() => skinStyle(skin), [themeKey]);
+  useEffect(() => {
+    try {
+      if (process.env.NODE_ENV !== 'production' && rootRef.current) warnInvalidTheme(rootRef.current, skin);
+    } catch {
+      // No process global: not a known development host, so skip the diagnostic.
+    }
+  }, [themeKey]);
   const chrome = useMemo(() => resolveChrome(preset, controls), [preset, controls?.mixer, controls?.openFile, controls?.drawer, controls?.transport, controls?.viewToggle, controls?.zoom, controls?.tabToggle, controls?.instrumentSwitch, controls?.octaveTool]);
   /** A host clock always shows the playhead (ivories uses chrome="none" with a clock). */
   const playhead = chrome.playhead || Boolean(clock);
@@ -1849,7 +1864,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const inToolbar = phoneToolbar && Boolean(embedSwitch || embedOctave);
   const cornerSwitch = inToolbar ? null : embedSwitch ?? embedOctave;
   const cornerPlay = inToolbar ? null : compactPlay;
-  return <div ref={rootRef} className={`pepperscore ${className ?? ''}`.trim()} data-ps-height={heightMode} data-ps-clock={clock ? '' : undefined} data-ps-clickable={onElementClick || octaveOn ? '' : undefined} data-ps-octave-tool={octaveOn ? '' : undefined} style={heightMode === 'fixed' ? { height } : undefined}
+  return <div ref={rootRef} className={`pepperscore ${className ?? ''}`.trim()} data-ps-height={heightMode} data-ps-clock={clock ? '' : undefined} data-ps-clickable={onElementClick || octaveOn ? '' : undefined} data-ps-octave-tool={octaveOn ? '' : undefined} style={{ ...themeStyle, ...(heightMode === 'fixed' ? { height } : {}) }}
     tabIndex={0} role="region" aria-label={ariaLabel || (loaded && score.title ? `Score: ${score.title}` : 'Score reader')} onKeyDown={onRootKeyDown}>
   <main className={`app-shell ${chrome.drawer ? '' : 'no-drawer'}`}>
     {chrome.header && <header className="topbar" aria-label="Playback transport">
