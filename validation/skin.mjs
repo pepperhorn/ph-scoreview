@@ -71,6 +71,7 @@ for (const file of ['packages/pepperscore/src/styles.css', 'packages/pepperscore
       if (decl.prop === 'background') assert.match(decl.value, /--ps-accent-wash,/);
       if (decl.prop === 'border-color') assert.match(decl.value, /--ps-accent,/);
     }
+    if (rule.selector === '.pepperscore .open-dialog-drop-overlay' && decl.prop === 'background') assert.match(decl.value, /--ps-accent-wash,/);
     if (rule.selector === '.pepperscore .octave-toolbar-button.is-primary' && decl.prop === 'border') assert.match(decl.value, /--ps-accent,/);
     if (rule.selector.includes('.playback-line') && /^(?:background|box-shadow)$/.test(decl.prop)) assert.ok(!/--ps-(?:shadow|surface|warning)/.test(decl.value), 'playback owns its line and glow');
   }));
@@ -146,6 +147,7 @@ try {
   await page.locator('.open-dialog-dropzone').dispatchEvent('dragover', { dataTransfer: drag });
   await page.locator('.open-dialog-dropzone.is-drag-over').waitFor();
   assert.equal(await page.locator('.open-dialog-dropzone').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(224, 236, 255)', 'drag state uses the host wash');
+  assert.equal(await page.locator('.open-dialog-drop-overlay').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(224, 236, 255)', 'the visible drag overlay uses the host wash');
   assert.equal(await page.locator('.open-dialog-dropzone').evaluate(el => getComputedStyle(el).borderColor), 'rgb(35, 90, 188)', 'drag state uses the host accent');
   await drag.dispose();
   await page.getByRole('button', { name: 'Close open score dialog' }).click();
