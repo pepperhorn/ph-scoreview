@@ -11,7 +11,7 @@ Next ID: 0004
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 0001 | Composable player skins | ready (t1) | codex/gpt-6.1-sol | orch/0001-t1-skin-tokens | https://github.com/pepperhorn/ph-scoreview/pull/59 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-66013276 | task/thread `0001-t1-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-01-0001-t1-skin-module-and-tokens--lead-to-codex.md | 2026-11-01 |
 | 0002 | PDF export | planned | lead | | | | | specs/0002-pdf-export.md | plans/0002-pdf-export.md | | 2026-10-31 |
-| 0003 | Teaching layer (part 1: goal picker and setup tour) | specced | lead | | | | | specs/0003-teaching-layer.md | | | 2026-11-02 |
+| 0003 | Teaching layer (part 1: goal picker and setup tour) | planned | lead | | | | | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | | 2026-11-02 |
 
 ## Done / closed
 
@@ -33,3 +33,4 @@ Next ID: 0004
 2026-11-01 0001-t1 changes-requested — review r3 on a0e55f2 raised the dev warning; user approved one more fix and a narrow fourth review
 2026-11-01 0001-t1 changes-requested→ready — review r4 approved head 99c012a
 2026-11-02 0003 new→specced — spec approved; tour and script go in a private repo, first home is BeCreative
+2026-11-02 0003 specced→planned — plan written; T4 to T6 blocked on editor distribution, private repo and BeCreative licence
