@@ -6,7 +6,7 @@
 - **Dispatch:** [lead → codex](2026-11-10-0006-abc-directive-scoping--lead-to-codex.md)
 - **Branch:** orch/0006-abc-directive-scoping
 - **Worktree:** /home/shaun/.t3/worktrees/ph-vexflow-view/t3-228ee709
-- **PR:** pending creation after verification
+- **PR:** https://github.com/pepperhorn/ph-scoreview/pull/62 (draft)
 - **Base commit:** 6f31964 (includes dispatch docs; descends from pinned 2b4d032)
 - **Implementation commit:** 15ebd62
 - **Port:** none; no manual preview server
