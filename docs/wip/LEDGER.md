@@ -14,7 +14,7 @@ Next ID: 0010
 | 0001 | Composable player skins | in-review (t2; t1 merged #59) | review 0001-t2-review-r1 | codex/gpt-6.1-sol | orch/0001-t2-skin-bar | https://github.com/pepperhorn/ph-scoreview/pull/66 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-206c13e7 | task `0001-t2-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0001-t2-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-10-0001-t2-skin-bar--codex-to-lead.md (@3cbc7ef) | 2026-11-10 |
 | 0002 | PDF export | planned | child 0001-t2 (T1 depends on 0001 T2) | lead |  |  |  |  | specs/0002-pdf-export.md | plans/0002-pdf-export.md |  | 2026-11-10 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | in-review (t1) | review 0003-t1-review-r1 | codex/gpt-6.1-sol | orch/0003-t1-score-details | https://github.com/pepperhorn/ph-scoreview/pull/68 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-b3887053 | task `0003-t1-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0003-t1-impl-r1` | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-10-0003-t1-score-details--codex-to-lead.md (@324dafc) | 2026-11-10 |
-| 0008 | [quick] ABC: a V: line before X: keeps its clef (S5) | in-review | review 0008-review-r1 | codex/gpt-6.1-sol | orch/0008-abc-voice-before-x | https://github.com/pepperhorn/ph-scoreview/pull/67 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-056df41c | task `0008-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0008-impl-r1` |  |  | handoffs/2026-11-10-0008-abc-voice-before-x--codex-to-lead.md (@c70334e) | 2026-11-10 |
+| 0008 | [quick] ABC: a V: line before X: keeps its clef (S5) | changes-requested | child 0008-impl-r1-fix1 | codex/gpt-6.1-sol | orch/0008-abc-voice-before-x | https://github.com/pepperhorn/ph-scoreview/pull/67 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-056df41c | task `0008-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0008-impl-r1` |  |  | handoffs/2026-11-10-0008-abc-voice-before-x--codex-to-lead.md (@c70334e) | 2026-11-10 |
 
 ## Done / closed
 
@@ -47,6 +47,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-10 0008 in-review→changes-requested — r1 on c70334e: replayed V: lines precede %%score so grouping is lost; lead: insert after %%score/%%staves, before first tune-header V:
 2026-11-10 0007 ready→closed — CI green on 4ab1300 (webkit rerun passed), merged PR #64 (c19e361); ABC guide now names the README as the published reference
 2026-11-10 0009 ready→closed — CI green on 62135b7, merged PR #65 (4629f1a)
 2026-11-10 0003-t1 dispatched→in-review — PR #68 @324dafc (298+/19-; 277 editor tests); review r1
