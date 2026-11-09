@@ -12,7 +12,7 @@ Next ID: 0011
 | K | Title | Status | Waiting on | Owner (provider/model) | Branch | PR | Worktree | T3 task/thread | Spec | Plan | Latest handoff | Updated |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 0001 | Composable player skins | dispatched (t3; t1 #59, t2 #66 merged) | child 0001-t3-impl-r1 | codex/gpt-6.1-sol | orch/0001-t3-drawer-controls |  |  | task `0001-t3-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0001-t3-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-10-0001-t3-drawer-controls--lead-to-codex.md | 2026-11-10 |
-| 0002 | PDF export | dispatched (t1) | child 0002-t1-impl-r1 | codex/gpt-6.1-sol | orch/0002-t1-pdf-page-model |  |  | task `0002-t1-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0002-t1-impl-r1` | specs/0002-pdf-export.md | plans/0002-pdf-export.md | handoffs/2026-11-10-0002-t1-pdf-page-model--lead-to-codex.md | 2026-11-10 |
+| 0002 | PDF export | in-review (t1) | review 0002-t1-review-r1 | codex/gpt-6.1-sol | orch/0002-t1-pdf-page-model | https://github.com/pepperhorn/ph-scoreview/pull/71 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-e3689cb4 | task `0002-t1-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0002-t1-impl-r1` | specs/0002-pdf-export.md | plans/0002-pdf-export.md | handoffs/2026-11-10-0002-t1-pdf-page-model--codex-to-lead.md (@1d72271) | 2026-11-10 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | dispatched (t2; t1 merged #68) | child 0003-t2-impl-r1-fix1 | codex/gpt-6.1-sol | orch/0003-t2-parts | https://github.com/pepperhorn/ph-scoreview/pull/69 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-561b6b7c | task `0003-t2-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0003-t2-impl-r1` | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-10-0003-t2-parts--lead-to-codex.md | 2026-11-10 |
 | 0010 | [quick] README ABC section: sync with 0008 (V: before X: now honoured; default-voice note) | ready | ci | codex/gpt-6.1-sol | orch/0010-readme-abc-sync | https://github.com/pepperhorn/ph-scoreview/pull/70 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-98350ce6 | task `0010-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0010-impl-r1` |  |  | handoffs/2026-11-10-0010-readme-abc-sync--codex-to-lead.md (@86d42fa) | 2026-11-10 |
 
@@ -48,12 +48,14 @@ Next ID: 0011
 | S11 | fix | Details field keeps showing untidied text when the tidied value equals the saved one (e.g. `jazz,jazz`) | `packages/pepperscore-editor/src/ui/DetailsPanel.tsx` | XS | low | PR #68 review | new |
 | S12 | risk | Editor browser validation is load-sensitive: redraw <800 ms (`validation/editor.mjs:518`) and null click target in custom layout (`:354`) fail under parallel worktrees | PR #68 and #65 local runs | S | medium: false failures slow every task | PR #68 review | new |
 | S13 | risk | `validation/skin.mjs` binds a hard-coded port 5211, so parallel worktrees collide | 0003-t1 return handoff | XS | medium: parallel tasks | 0003-t1 return | accepted → 0001-t3 (skin.mjs port) |
+| S14 | risk | Browser validation harnesses bind fixed ports (e.g. `validation/transpose.mjs:137` → 43991) and silently attach to another worktree's server; parser-diff also fetch-flakes | 0002-t1 return handoff | S | high while tasks run in parallel | 0002-t1 return | new |
 | S1 | fix | Emit a mid-bar `<keySig>` only in layer 1; Verovio draws one per layer | `packages/pepperscore/src/lib/notation/document.ts:249` (probe: 2 layers → 3 keySig groups) | S | low today (ABC overlays are separate parts); matters for MIDI/multi-layer | PR #60 review r2 | done (0005, PR #63) |
 
 Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-10 0002-t1 dispatched→in-review — PR #71 @1d72271; spike says breaks work (breaks:'line' + per-system check, A4 [4,1,4,4]); whole-document shrink fallback; review r1; S14 logged
 2026-11-10 0010 in-review→ready — r1 approve on 86d42fa; auto-merge on green (docs, 7 lines)
 2026-11-10 0010 dispatched→in-review — PR #70 @86d42fa (7 README lines, within auto-merge limit); review r1
 2026-11-10 0008 in-review→closed — r2 approve on a84e9f9, CI green, merged PR #67 (8c19b8f), 74 ABC tests on main; guide updated. 0010 dispatched to sync package README
