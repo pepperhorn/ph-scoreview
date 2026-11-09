@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { breakLines } from './fit';
 import { buildViewMei } from '../notation/mei-view';
-import { PAPER_SIZES } from './paper';
+import { PAPER_SIZES, pageGeometry } from './paper';
 
 describe('PDF line fitting', () => {
   it('shortens only the dense bar line, leaving following sparse lines at four', () => {
@@ -29,4 +29,21 @@ it('replaces periodic page breaks with explicit system breaks before wrappers', 
   expect(buildViewMei(mei,{...view,breakBefore:[0,1,3]})).toBe(mei.replace('<ending','<sb/><ending').replace('<measure xml:id="d"/>','<sb/><measure xml:id="d"/>'));
   expect(buildViewMei(mei,{...view,breakBefore:[]})).toBe(mei);
   expect(buildViewMei(mei,{...view,breakBefore:[11]},Infinity,10)).toBe(mei.replace('<ending','<sb/><ending'));
+});
+
+it('larger capacities and A3 never increase the greedy line count over generated scores', () => {
+  let seed = 0x58342705;
+  const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 2 ** 32; };
+  for (let trial = 0; trial < 3000; trial++) {
+    const widths = Array.from({length: Math.floor(random()*100)}, () => Math.floor(random()*4000));
+    const maxBars = 1 + Math.floor(random()*12);
+    const small = 1 + random()*3000, large = small + random()*3000;
+    expect(breakLines(widths,large,maxBars).length).toBeLessThanOrEqual(breakLines(widths,small,maxBars).length);
+    // Sweep all three shrink regimes, with additional generated heights.
+    const height = trial < 1500 ? trial*10 : random()*100000;
+    const a4 = pageGeometry('a4',height,120), a3 = pageGeometry('a3',height,120);
+    expect(a3.capacity).toBeGreaterThanOrEqual(a4.capacity);
+    expect(breakLines(widths,a3.capacity,maxBars).length).toBeLessThanOrEqual(breakLines(widths,a4.capacity,maxBars).length);
+    expect(a4.capacity).toBe(a4.pageWidth - 2*a4.margin - 120);
+  }
 });

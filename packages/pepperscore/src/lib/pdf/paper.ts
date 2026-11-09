@@ -10,3 +10,13 @@ export type PaperId = keyof typeof PAPER_SIZES;
 export const STAVE_MM = 6.5;
 export const MM_PER_UNIT = STAVE_MM / 72;
 export const MARGIN_MM = 12;
+
+/** The exact integer geometry sent to Verovio, including the tall-system fallback. */
+export function pageGeometry(paper: PaperId, naturalHeight: number, overhead = 0) {
+  const size = PAPER_SIZES[paper];
+  const scale = Math.min(1, (size.height - 2 * MARGIN_MM) / (Math.max(1, naturalHeight) * MM_PER_UNIT));
+  const mm = MM_PER_UNIT * scale;
+  const pageWidth = Math.round(size.width / mm), pageHeight = Math.round(size.height / mm);
+  const margin = Math.round(MARGIN_MM / mm);
+  return { pageWidth, pageHeight, margin, scale, capacity: pageWidth - 2 * margin - overhead };
+}

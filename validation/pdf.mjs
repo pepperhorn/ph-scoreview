@@ -48,17 +48,68 @@ try {
     const empty = await run(fixture([]));
     const pickup = await run(fixture([128,4,4,4,4]));
     const hidden = await run(fixture([4,4],2),'a4',4,{breakEvery:0,hiddenStaves:['2'],chordSymbols:false});
+    // Reviewer r1 regressions. Independently lay out the returned plan without justification:
+    // checking the final, justified SVG cannot reveal Verovio's silent spacing compression.
+    const { buildViewMei } = await import('/packages/pepperscore/src/lib/notation/mei-view.ts');
+    const { pageGeometry } = await import('/packages/pepperscore/src/lib/pdf/paper.ts');
+    const [wasm, api] = await Promise.all([import(files.module),import(files.toolkit)]);
+    const module = await wasm.default(); api.enableLogToBuffer(1,module);
+    const toolkit = new api.VerovioToolkit(module);
+    const head = '<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.0"><meiHead><fileDesc><titleStmt><title>t</title></titleStmt><pubStmt/></fileDesc></meiHead><music><body><mdiv><score>';
+    const P = ['c','d','e','f','g','a','b'];
+    const notes = (n, dur, acc) => Array.from({ length: n }, (_, j) => `<note pname="${P[(j*3)%7]}" oct="${4 + (j%2)}" dur="${dur}"${acc ? ` accid="${['s','f','n','ss'][j%4]}"` : ''}/>`).join('');
+    const mrestTop = `${head}<scoreDef meter.count="4" meter.unit="4"><staffGrp><staffDef n="1" lines="5" clef.shape="G" clef.line="2"/><staffDef n="2" lines="5" clef.shape="F" clef.line="4"/></staffGrp></scoreDef><section>${Array.from({length:24},(_,i)=>`<measure n="${i+1}"><staff n="1"><layer n="1"><mRest/></layer></staff><staff n="2"><layer n="1">${notes(16,16,true)}</layer></staff></measure>`).join('')}</section></score></mdiv></body></music></mei>`;
+    const keyChanges = `${head}<scoreDef meter.count="4" meter.unit="4" key.sig="7s"><staffGrp><staffDef n="1" lines="5" clef.shape="G" clef.line="2"/></staffGrp></scoreDef><section>${Array.from({length:24},(_,i)=>`${i>0&&i%2===0?`<scoreDef key.sig="${i%4?'7f':'7s'}"/>`:''}<measure n="${i+1}"><staff n="1"><layer n="1">${notes(8,8)}</layer></staff></measure>`).join('')}</section></score></mdiv></body></music></mei>`;
+    const regressions = [];
+    try {
+      for (const [name,source] of [['mrestTop',mrestTop],['alternatingKeys',keyChanges]]) {
+        for (const paper of ['a4','a3']) for (const maxBars of [4,12]) {
+          const rendered = await run(source,paper,maxBars);
+          const geometry = pageGeometry(paper,1);
+          toolkit.resetOptions(); toolkit.setOptions({breaks:'none',header:'none',footer:'none',xmlIdChecksum:true,font:'Bravura',fontFallback:'Bravura',smuflTextFont:'none'});
+          toolkit.loadData(source);
+          const baseline = toolkit.getMEI();
+          toolkit.resetOptions(); toolkit.setOptions({font:'Bravura',fontFallback:'Bravura',smuflTextFont:'none',breaks:'encoded',noJustification:true,svgViewBox:true,svgBoundingBoxes:true,scale:100,
+            pageWidth:geometry.pageWidth,pageHeight:geometry.pageHeight,pageMarginLeft:geometry.margin,pageMarginRight:geometry.margin,
+            pageMarginTop:geometry.margin,pageMarginBottom:geometry.margin,adjustPageHeight:false,adjustPageWidth:false,header:'none',footer:'none'});
+          toolkit.loadData(buildViewMei(baseline,{breakEvery:0,breakBefore:rendered.lines.map(line=>line.start),hiddenStaves:[],chordSymbols:true}));
+          const fills = [];
+          for (let i=1;i<=toolkit.getPageCount();i++) {
+            const svgDoc = new DOMParser().parseFromString(toolkit.renderToSVG(i),'image/svg+xml');
+            for (const system of svgDoc.querySelectorAll('g.system:not(.bounding-box)')) {
+              // Staff barlines and glyph boxes across ALL staves, in Verovio's 1/10-unit coordinates.
+              let right = 0;
+              for (const path of system.querySelectorAll('g.staff > path')) {
+                const match = /^M([\d.-]+) ([\d.-]+) L([\d.-]+) ([\d.-]+)$/.exec(path.getAttribute('d') || '');
+                if (match && match[2]===match[4]) right = Math.max(right,Number(match[3]));
+              }
+              for (const rect of system.querySelectorAll('g.staff > g.staff.bounding-box > rect')) right = Math.max(right,Number(rect.getAttribute('x'))+Number(rect.getAttribute('width')));
+              fills.push(right/10/geometry.capacity);
+            }
+          }
+          regressions.push({name,paper,maxBars,fills,counts:rendered.lines.map(line=>line.count)});
+        }
+      }
+    } finally { toolkit.destroy(); }
     const controller = new AbortController();
     const cancelled = engravePages({data},{paper:'a4',maxBars:4,files},controller.signal).then(()=>false,error=>error.name==='AbortError');
     controller.abort();
     const already = new AbortController(); already.abort();
     const preCancelled = await engravePages({data},{paper:'a4',maxBars:4,files},already.signal).then(()=>false,error=>error.name==='AbortError');
-    return { a4:{lines:a4.lines,pages:parse(a4),shrunk:a4.shrunk},a3:{lines:a3.lines,pages:parse(a3)},
+    return { regressions, a4:{lines:a4.lines,pages:parse(a4),shrunk:a4.shrunk},a3:{lines:a3.lines,pages:parse(a3)},
       many:{pages:parse(many),lines:many.lines},tall:{shrunk:tall.shrunk,pages:parse(tall)},
       single:single.pages.length,empty:empty.pages.length,pickup:{pages:parse(pickup),count:pickup.pages.length},
       hidden:hidden.pages.reduce((sum,svg)=>sum+new DOMParser().parseFromString(svg,'image/svg+xml').querySelectorAll('g.staff').length,0) === 2,cancelled:await cancelled,preCancelled };
   });
   console.log(JSON.stringify(result));
+  for (const test of result.regressions) {
+    assert.ok(test.fills.length===test.counts.length && test.fills.every(fill=>fill<=1.001), `${test.name} ${test.paper}/${test.maxBars}: every natural line fits (${test.fills})`);
+  }
+  for (const name of ['mrestTop','alternatingKeys']) for (const maxBars of [4,12]) {
+    const a4 = result.regressions.find(test=>test.name===name && test.paper==='a4' && test.maxBars===maxBars);
+    const a3 = result.regressions.find(test=>test.name===name && test.paper==='a3' && test.maxBars===maxBars);
+    assert.ok(a3.counts.length<=a4.counts.length,`${name}/${maxBars}: A3 never adds lines`);
+  }
   assert.deepEqual(result.a4.lines.map(line=>line.count),[4,1,4,4], 'dense bar shortens only its own A4 line');
   assert.ok(result.a3.lines.length <= result.a4.lines.length,'A3 never needs more lines');
   assert.equal(result.a4.shrunk,false);

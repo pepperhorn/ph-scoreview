@@ -5,7 +5,7 @@ import { attributeOf, buildViewMei, scan, scanBaseline } from '../notation/mei-v
 import { spellBaseline } from '../notation/mei-spelling';
 import { injectTab } from '../notation/mei-tab';
 import { breakLines } from './fit';
-import { MARGIN_MM, MM_PER_UNIT, PAPER_SIZES } from './paper';
+import { MM_PER_UNIT, PAPER_SIZES, pageGeometry } from './paper';
 import type { PageInput, PageOptions, PagesResult } from './engrave';
 
 type Toolkit = InstanceType<typeof VerovioToolkit>;
@@ -15,15 +15,50 @@ function dimensions(svg: string): [number, number] {
   if (!match) throw new Error('PDF spike: missing SVG page dimensions.');
   return [Number(match[1]), Number(match[2])];
 }
-function naturalBar(svg: string): { width: number; prefix: number; height: number } {
-  const [width, height] = dimensions(svg);
-  // The first event's bounding box follows the clef/key/meter prefix. Taking its left edge leaves
-  // all spacing after that edge in the bar width (including in-bar key/clef changes and lyrics).
-  const layer = svg.indexOf('class="layer"');
-  const rect = layer < 0 ? null : /<rect\b[^>]*\bx="([\d.-]+)"/.exec(svg.slice(layer));
-  const prefix = rect ? Math.max(0, Number(rect[1]) / 10) : 0;
-  if (!(width > prefix && height > 0)) throw new Error(`PDF spike: unreliable natural bar measurement (${width}, ${prefix}, ${height}).`);
-  return { width: width - prefix, prefix, height };
+/** Complete measure extents in one coordinate system, across every staff and layer.
+ * Staff paths establish barline-to-barline width; glyph boxes add any overhang. Signature
+ * changes stay inside their contextual measure, rather than becoming discarded prefixes.
+ */
+function measureSvg(svg: string) {
+  const bars: { left: number; right: number }[] = [];
+  const systems: { left: number; right: number }[] = [];
+  const groups: string[][] = [];
+  let bar = -1, system = -1, signatureWidth = 0;
+  scan(svg, ({ closing, name, attributes, selfClosing }) => {
+    if (name === 'g') {
+      if (closing) { groups.pop(); return; }
+      const classes = (attributeOf(attributes, 'class') || '').split(' ');
+      // Bounding-box groups repeat the owning element's class.
+      if (!classes.includes('bounding-box')) {
+        if (classes.includes('system')) { system = systems.length; systems.push({left:Infinity,right:-Infinity}); bar = -1; }
+        if (classes.includes('measure')) { bar = bars.length; bars.push({left:Infinity,right:-Infinity}); }
+      }
+      if (!selfClosing) groups.push(classes);
+      return;
+    }
+    if (closing || bar < 0) return;
+    const include = (left: number, right: number) => {
+      bars[bar].left = Math.min(bars[bar].left,left/10);
+      bars[bar].right = Math.max(bars[bar].right,right/10);
+      if (system >= 0) {
+        systems[system].left = Math.min(systems[system].left,left/10);
+        systems[system].right = Math.max(systems[system].right,right/10);
+      }
+    };
+    if (name === 'rect') {
+      const x = Number(attributeOf(attributes,'x')), width = Number(attributeOf(attributes,'width'));
+      if (Number.isFinite(x) && width > 0) {
+        // Staff boxes use the bar's coordinate system and include all of that staff's glyphs.
+        // Nested text boxes (e.g. measure numbers) can have local transforms; do not mix them in.
+        if (groups.at(-1)?.includes('staff') && groups.at(-1)?.includes('bounding-box')) include(x,x+width);
+        if (groups.at(-1)?.some(c => ['clef','keySig','meterSig'].includes(c))) signatureWidth = Math.max(signatureWidth,width/10);
+      }
+    } else if (name === 'path' && groups.at(-1)?.includes('staff')) {
+      const path = /^M([\d.-]+) ([\d.-]+) L([\d.-]+) ([\d.-]+)$/.exec(attributeOf(attributes,'d') || '');
+      if (path && path[2] === path[4]) include(Number(path[1]),Number(path[3]));
+    }
+  });
+  return { bars, systems, signatureWidth };
 }
 
 self.onmessage = async ({ data }: MessageEvent<{ input: PageInput; opts: PageOptions; files: VerovioFiles }>) => {
@@ -58,32 +93,56 @@ self.onmessage = async ({ data }: MessageEvent<{ input: PageInput; opts: PageOpt
       self.postMessage({ value: { pages: [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}"></svg>`], lines: [], shrunk: false } satisfies PagesResult });
       return;
     }
-    // A one-bar-per-page, unjustified pass: width is natural, never stretched to the paper.
-    load(buildViewMei(mei, { ...view, breakBefore: undefined, breakEvery: 1 }), {
-      ...common, breaks: 'encoded', pageWidth: 100000, pageHeight: 60000,
+    // Measure once in context: no system breaks, no justification, all visible staves.
+    load(buildViewMei(mei, { ...view, breakBefore: [], breakEvery: 0 }), {
+      ...common, breaks: 'none', pageWidth: 100000, pageHeight: 60000,
       pageMarginLeft: 0, pageMarginRight: 0, pageMarginTop: 0, pageMarginBottom: 0,
       noJustification: true, adjustPageWidth: true, adjustPageHeight: true, svgBoundingBoxes: true,
     });
-    const measured = Array.from({ length: tk.getPageCount() }, (_, i) => naturalBar(tk!.renderToSVG(i + 1)));
-    if (count && measured.length !== count) throw new Error('PDF spike: one natural page per bar was not honoured.');
-    // Verovio cannot change scale per system. For an over-height system shrink the whole document,
-    // keeping physical margins fixed. Normal documents always retain the fixed stave size.
-    const naturalHeight = Math.max(1, ...measured.map(bar => bar.height));
-    const scale = Math.min(1, (paper.height - 2 * MARGIN_MM) / (naturalHeight * MM_PER_UNIT));
-    const mm = MM_PER_UNIT * scale;
-    const overhead = Math.max(120, ...measured.map(bar => bar.prefix));
-    const capacity = (paper.width - 2 * MARGIN_MM) / mm - overhead;
-    const widths = measured.slice(0, count).map(bar => bar.width);
-    const starts = breakLines(widths, capacity, opts.maxBars);
-    const lines = starts.map((start, i) => ({ start, count: (starts[i + 1] ?? count) - start,
-      width: overhead + widths.slice(start, starts[i + 1] ?? count).reduce((a,b) => a+b, 0) }));
-    load(buildViewMei(mei, { ...view, breakBefore: starts }), {
-      // 'line' honours encoded sb while choosing page breaks by the real page height.
-      ...common, breaks: 'line', pageWidth: Math.round(paper.width / mm), pageHeight: Math.round(paper.height / mm),
-      pageMarginLeft: Math.round(MARGIN_MM / mm), pageMarginRight: Math.round(MARGIN_MM / mm),
-      pageMarginTop: Math.round(MARGIN_MM / mm), pageMarginBottom: Math.round(MARGIN_MM / mm),
+    const naturalSvg = tk.renderToSVG(1);
+    const measured = measureSvg(naturalSvg);
+    if (measured.bars.length !== count) throw new Error('PDF spike: contextual measure count differs.');
+    const naturalHeight = dimensions(naturalSvg)[1];
+    // Keep the full first measure (including its prefix); additionally reserve room per line
+    // for a repeated clef/key/meter. Mid-line changes remain in the complete bar widths.
+    let overhead = 120 + measured.signatureWidth;
+    let geometry = pageGeometry(opts.paper, naturalHeight, overhead);
+    const widths = measured.bars.map(bar => Math.max(1, bar.right - bar.left));
+    if (widths.some(width => !Number.isFinite(width))) throw new Error('PDF spike: missing contextual bar extents.');
+    const pageOptions = {
+      ...common, breaks: 'line', pageWidth: geometry.pageWidth, pageHeight: geometry.pageHeight,
+      pageMarginLeft: geometry.margin, pageMarginRight: geometry.margin,
+      pageMarginTop: geometry.margin, pageMarginBottom: geometry.margin,
       adjustPageWidth: false, adjustPageHeight: false,
-    });
+    };
+    let lines: PagesResult['lines'] = [], plannedMei = '';
+    // Encoded mode is essential here: line mode still width-fits systems even with
+    // noJustification, so its extents depend on the requested page width.
+    // A new system can repeat a clef/key or add a cautionary signature at the preceding line's
+    // end. Observe that extra width in unstretched planned systems and increase the shared
+    // per-line reserve before re-planning. Bar measurements always come from the one context pass.
+    for (let attempt = 0; ; attempt++) {
+      const starts = breakLines(widths, geometry.capacity, opts.maxBars);
+      lines = starts.map((start,i)=>({start,count:(starts[i+1] ?? count)-start,width:0}));
+      plannedMei = buildViewMei(mei, { ...view, breakBefore: starts });
+      load(plannedMei, { ...pageOptions, breaks: 'encoded', noJustification: true, svgBoundingBoxes: true });
+      const naturalLines = Array.from({length:tk.getPageCount()},(_,i)=>measureSvg(tk!.renderToSVG(i+1)).systems).flat();
+      if (naturalLines.length !== lines.length) throw new Error('PDF spike: natural system count differs.');
+      let needed = overhead, overflow = false;
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        line.width = naturalLines[i].right - Math.min(0,naturalLines[i].left);
+        const content = widths.slice(line.start,line.start+line.count).reduce((a,b)=>a+b,0);
+        needed = Math.max(needed,line.width-content+2);
+        // A genuinely oversize bar has its own line, per breakLines' contract.
+        if (line.count > 1 && line.width > geometry.pageWidth-2*geometry.margin+2) overflow = true;
+      }
+      if (!overflow) break;
+      if (attempt >= count || needed <= overhead) throw new Error('PDF spike: could not fit natural system widths.');
+      overhead = needed;
+      geometry = pageGeometry(opts.paper,naturalHeight,overhead);
+    }
+    load(plannedMei, pageOptions);
     const pages = Array.from({ length: Math.max(1, tk.getPageCount()) }, (_, i) => tk!.renderToSVG(i + 1));
     // Check actual membership, not just the number of systems: breaks must survive pagination.
     const actual: number[] = [];
@@ -99,7 +158,7 @@ self.onmessage = async ({ data }: MessageEvent<{ input: PageInput; opts: PageOpt
     if (count && (actual.length !== lines.length || actual.some((n,i) => n !== lines[i].count))) {
       throw new Error(`PDF spike: encoded system breaks were not honoured (${actual.join(',')}).`);
     }
-    self.postMessage({ value: { pages, lines, shrunk: scale < 1 } satisfies PagesResult });
+    self.postMessage({ value: { pages, lines, shrunk: geometry.scale < 1 } satisfies PagesResult });
   } catch (error) {
     self.postMessage({ error: error instanceof Error ? error.message : String(error) });
   } finally { tk?.destroy(); }
