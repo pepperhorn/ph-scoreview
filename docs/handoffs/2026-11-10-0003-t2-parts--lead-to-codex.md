@@ -44,3 +44,13 @@ None. Escalate per AGENTS.md §7.
 ## Receiver ack
 
 Acknowledged: implement T2 only in the assigned editor files: undoable add/change/remove commands, empty-part guards, staff-cap-aware Parts controls in both shells, and README. Write and run the checklist tests red before implementation, then run the required sequential verification. No packages/pepperscore, validation, ledger, or T3 edits. No open questions. GBrain consulted: projects/scoreflow-music-reader and projects/scoreflow-music-reader/gotchas-abc-import; repo plan is authoritative.
+
+---
+## Lead answers (2026-11-10, after blocked return at 39d27a9)
+- **Ownership widened:** you also own `packages/pepperscore-editor/src/ui/PepperScoreEditor.tsx` and `packages/pepperscore-editor/src/ui/controls.tsx`, **only** to pass the licence `maxStaves` (already computed in `PepperScoreEditor.tsx` ~line 79 and passed to `EditorSession`) through to `PartsPanel` in both shells, and to wire the Parts button/menu item. No other changes in those files. No side channels (globals, module state).
+- If `EditorSession` lives in another file that also needs a one-line prop pass-through, you may touch it for that only; list it in the return handoff.
+- 0003 T3 later owns `PepperScoreEditor.tsx`; nothing else is editing it now.
+- Continue the original handoff from the TDD checklist.
+
+
+Receiver ack (continued): accepted the narrow ownership extension to controls.tsx and PepperScoreEditor.tsx for maxStaves propagation. Resume original T2, with no other scope changes.
