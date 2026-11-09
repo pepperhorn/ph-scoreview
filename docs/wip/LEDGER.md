@@ -14,7 +14,7 @@ Next ID: 0010
 | 0001 | Composable player skins | dispatched (t3; t1 #59, t2 #66 merged) | child 0001-t3-impl-r1 | codex/gpt-6.1-sol | orch/0001-t3-drawer-controls |  |  | task `0001-t3-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0001-t3-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-10-0001-t3-drawer-controls--lead-to-codex.md | 2026-11-10 |
 | 0002 | PDF export | dispatched (t1) | child 0002-t1-impl-r1 | codex/gpt-6.1-sol | orch/0002-t1-pdf-page-model |  |  | task `0002-t1-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0002-t1-impl-r1` | specs/0002-pdf-export.md | plans/0002-pdf-export.md | handoffs/2026-11-10-0002-t1-pdf-page-model--lead-to-codex.md | 2026-11-10 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | dispatched (t2; t1 merged #68) | child 0003-t2-impl-r1 | codex/gpt-6.1-sol | orch/0003-t2-parts | https://github.com/pepperhorn/ph-scoreview/pull/69 |  | task `0003-t2-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0003-t2-impl-r1` | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-10-0003-t2-parts--lead-to-codex.md | 2026-11-10 |
-| 0008 | [quick] ABC: a V: line before X: keeps its clef (S5) | changes-requested | child 0008-impl-r1-fix1 | codex/gpt-6.1-sol | orch/0008-abc-voice-before-x | https://github.com/pepperhorn/ph-scoreview/pull/67 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-056df41c | task `0008-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0008-impl-r1` |  |  | handoffs/2026-11-10-0008-abc-voice-before-x--codex-to-lead.md (@c70334e) | 2026-11-10 |
+| 0008 | [quick] ABC: a V: line before X: keeps its clef (S5) | in-review | review 0008-review-r2 | codex/gpt-6.1-sol | orch/0008-abc-voice-before-x | https://github.com/pepperhorn/ph-scoreview/pull/67 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-056df41c | task `0008-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0008-impl-r1` |  |  | handoffs/2026-11-10-0008-abc-voice-before-x--codex-to-lead.md (@a84e9f9) | 2026-11-10 |
 
 ## Done / closed
 
@@ -53,6 +53,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-10 0008 changes-requested→in-review — fix pushed a84e9f9 (74 ABC tests); review r2
 2026-11-10 0001-t2 in-review→merged — r1 approve on 3cbc7ef, CI green, merged PR #66 (13d48eb) per human. 0001-t3 dispatched with r1 follow-ups (phone: play in bottom toolbar per spec; no empty bar; ephemeral skin.mjs port). 0002-t1 dispatched (unblocked by 0001 T2)
 2026-11-10 0003-t1 ready→merged — human approved; merged PR #68 (b8fb939), 277 editor tests pass on main. 0003-t2 planned→dispatched. Human: merge 0001-t2 (#66) on approve + green
 2026-11-10 0003-t1 in-review→ready — r1 approve on 324dafc; over auto-merge limit, asked human; S11, S12 logged (T3 to add a Score details browser scenario)
