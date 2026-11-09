@@ -174,14 +174,17 @@ function layerXml(segments: Segment[], beats: number, percussion = false, keyCha
   };
   let keyIndex = 0;
   const rests = (length: number) => durationPieces(length).map(piece => `<rest dur="${piece.dur}"${piece.dots ? ` dots="${piece.dots}"` : ''}/>`);
-  for (const segment of segments.sort((a, b) => a.start - b.start || a.note.id.localeCompare(b.note.id))) {
-    while (keyIndex < keyChanges.length && keyChanges[keyIndex].start <= segment.start + 1e-6) {
+  const emitKeysThrough = (onset: number) => {
+    while (keyIndex < keyChanges.length && keyChanges[keyIndex].start <= onset + 1e-6) {
       const change = keyChanges[keyIndex++];
       closeTuplet(); closeBeam();
       if (change.start > cursor) tokens.push(...rests(change.start - cursor));
       cursor = Math.max(cursor, change.start);
       if (!percussion) tokens.push(`<keySig sig="${change.key ? `${Math.abs(change.key)}${change.key > 0 ? 's' : 'f'}` : '0'}" mode="${change.keyMode || 'major'}"/>`);
     }
+  };
+  for (const segment of segments.sort((a, b) => a.start - b.start || a.note.id.localeCompare(b.note.id))) {
+    emitKeysThrough(segment.start);
     const gap = Math.max(0, segment.start - cursor);
     if (gap > 1e-6) { closeTuplet(); tokens.push(...rests(gap)); }
     const tuplet = segment.note.tuplet;
@@ -199,6 +202,8 @@ function layerXml(segments: Segment[], beats: number, percussion = false, keyCha
     if (segment.note.beamEnd) closeBeam();
     cursor = Math.max(cursor, segment.start + segment.duration);
   }
+  // Emit staff-wide signatures even during the owning layer's trailing silence.
+  emitKeysThrough(beats);
   closeTuplet();
   while (open.length) closeTop();
   if (beats - cursor > 1e-6) tokens.push(...rests(beats - cursor));
@@ -254,7 +259,11 @@ export function scoreToMei(score: Score): string {
         if (layer < 0) layer = ends.length;
         (layers[layer] ||= []).push(segment); ends[layer] = segment.start + segment.duration;
       }
-      return `<staff n="${staffIndex + 1}">${(layers.length ? layers : [[]]).map((layer, index) => `<layer n="${index + 1}">${layerXml(layer, beats, part.clef === 'percussion' || measure?.clef === 'percussion', measure?.keyChanges)}</layer>`).join('')}</staff>`;
+      // Prefer layer 1; a held note across the change needs the signature in another
+      // layer so its onset is retained without splitting the held note.
+      const layerKeys = (measure?.keyChanges || []).map(change => ({ change, owner: Math.max(0, layers.findIndex(layer =>
+        !layer.some(segment => segment.start < change.start - 1e-6 && segment.start + segment.duration > change.start + 1e-6))) }));
+      return `<staff n="${staffIndex + 1}">${(layers.length ? layers : [[]]).map((layer, index) => `<layer n="${index + 1}">${layerXml(layer, beats, part.clef === 'percussion' || measure?.clef === 'percussion', layerKeys.filter(key => key.owner === index).map(key => key.change))}</layer>`).join('')}</staff>`;
     }).join('');
     const changes = score.parts.flatMap((part, index) => {
       const measure = part.measures[measureIndex];
