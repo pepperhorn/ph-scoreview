@@ -1,0 +1,7 @@
+X:11
+T:Case G Inline accidentals and bar reset
+M:4/4
+L:1/4
+V:1 clef=treble name="Piano"
+K:C
+^F G ^F F | _B B =B c |]

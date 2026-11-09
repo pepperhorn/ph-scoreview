@@ -1,0 +1,11 @@
+X:10
+T:Case A2 Piano Grand Staff variant
+M:4/4
+L:1/8
+Q:1/4=88
+%%score {RH | LH}
+V:RH clef=treble name="Piano" snm="Pno."
+V:LH clef=bass name="Piano LH"
+K:C
+[V:RH] "C7""^Swing"c2 e>g [EG]2 z2 | "F7"f2- f a c'2 [Ac]2 | "G7"g>f ed B2 z2 | "C7"c8 |]
+[V:LH] C,2 G,,2 [C,G,]4 | F,,2 C,2 F,4 | G,,2 D,2 G,4 | [C,G,]8 |]

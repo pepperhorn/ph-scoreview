@@ -169,7 +169,7 @@ export function respellMei(mei: string, spec: SpellingSpec, measureOffset = 0): 
   const measureStarts: number[] = [];
   const notes: NoteRecord[] = [];
   const harms: HarmRecord[] = [];
-  const layerKeySigs: (Range & { staff: string; measure: number; key: Key | null })[] = [];
+  const layerKeySigs: (Range & { staff: string; measure: number; onset: number; key: Key | null })[] = [];
   const percussion = new Set(Object.entries(spec.staves).filter(([, staff]) => staff.percussion).map(([n]) => n));
   const staffSpec = (n: string): StaffSpec => spec.staves[n] ?? { profile: 'neutral' as SpellingProfile, moved: spec.semitones !== 0 };
   const viewShift = (n: string) => { const value = staffSpec(n).shift; return value && (value[0] || value[1]) ? { diatonic: value[0], chromatic: value[1] } : undefined; };
@@ -261,7 +261,7 @@ export function respellMei(mei: string, spec: SpellingSpec, measureOffset = 0): 
       if (scoreDef) {
         scoreDef.keyRanges.push(range);
         if (key) scoreDef.keys.set(staffDef ? staffDef.n : '*', key);
-      } else if (staff) layerKeySigs.push(Object.assign(range, { staff, measure, key }));
+      } else if (staff) layerKeySigs.push(Object.assign(range, { staff, measure, onset: time, key }));
       return;
     }
     if (scoreDef) { scoreDef.content = true; return; }
@@ -335,34 +335,49 @@ export function respellMei(mei: string, spec: SpellingSpec, measureOffset = 0): 
         const key = record.keys.get(n) ?? record.keys.get('*');
         if (key) changes.set(Math.min(record.measure, keys.length - 1), { fifths: key.fifths - shift, mode: key.mode });
       }
-      for (const sig of layerKeySigs) if (sig.staff === n && sig.key) changes.set(Math.min(sig.measure + 1, keys.length - 1), { fifths: sig.key.fifths - shift, mode: sig.key.mode });
+      for (const sig of layerKeySigs) if (sig.staff === n && sig.key && (sig.onset === 0 || sig.measure + 1 < keys.length)) changes.set(Math.min(sig.measure + 1, keys.length - 1), { fifths: sig.key.fifths - shift, mode: sig.key.mode });
       for (let local = 0; local < keys.length; local++) { current = changes.get(local) ?? current; keys[local] = current; }
     }
     timeline.set(n, keys);
   }
+  // Mid-bar signatures stay at their encoded onset. The MEI already includes the global interval,
+  // whereas a staff's own switch/concert shift is applied by this pass.
+  const midBarKeys = new Map<string, typeof layerKeySigs>();
+  for (const sig of layerKeySigs) if (sig.onset > 0 && sig.key) {
+    const key = `${sig.staff}|${sig.measure}`;
+    (midBarKeys.get(key) ?? midBarKeys.set(key, []).get(key)!).push(sig);
+  }
+  const midBarKey = (n: string, local: number, onset: number) => midBarKeys.get(`${n}|${local}`)?.findLast(sig => sig.onset <= onset + 1e-6);
+
+  const keyAt = (n: string, local: number, onset = 0): Key => {
+    const midBar = midBarKey(n, local, onset)?.key;
+    const own = viewShift(n);
+    return midBar ? { fifths: midBar.fifths - shift + (own ? intervalFifths(own) : 0), mode: midBar.mode }
+      : timeline.get(n)?.[Math.max(0, Math.min(local, measureCount - 1))] ?? { fifths: 0, mode: 'major' };
+  };
   const shownCache = new Map<string, SpellingKey>();
-  const shownKey = (n: string, local: number): SpellingKey => {
-    const key = timeline.get(n)?.[Math.max(0, Math.min(local, measureCount - 1))] ?? { fifths: 0, mode: 'major' as KeyMode };
+  const shownKey = (n: string, local: number, onset = 0): SpellingKey => {
+    const key = keyAt(n, local, onset);
     const cacheKey = `${n}|${key.fifths}|${key.mode}`;
     let shown = shownCache.get(cacheKey);
     if (!shown) { shown = viewKey(key.fifths, spec.semitones, key.mode, staffSpec(n), spec.flip); shownCache.set(cacheKey, shown); }
     return shown;
   };
   // The MEI's key: the view key moved by the interval, less the staff's own sounding shift (its notes are written).
-  const sourceFifths = (n: string, local: number) => {
+  const sourceFifths = (n: string, local: number, onset = 0) => {
     const own = viewShift(n);
-    return (timeline.get(n)?.[Math.max(0, Math.min(local, measureCount - 1))]?.fifths ?? 0) + shift - (own ? intervalFifths(own) : 0);
+    return keyAt(n, local, onset).fifths + shift - (own ? intervalFifths(own) : 0);
   };
 
   // Source alterations (written > gestural > earlier accidental in the measure > key signature), per staff-measure.
   const groups = new Map<string, NoteRecord[]>();
-  for (const item of notes) { const key = `${item.staff}|${item.measure}`; (groups.get(key) ?? groups.set(key, []).get(key)!).push(item); }
+  for (const item of notes) { const key = `${item.staff}|${item.measure}|${midBarKey(item.staff, item.measure, item.onset)?.start ?? 0}`; (groups.get(key) ?? groups.set(key, []).get(key)!).push(item); }
   const sourceAlter = new Map<NoteRecord, number>();
   for (const group of groups.values()) {
     const state = new Map<string, number>();
     for (const item of [...group].sort((a, b) => a.onset - b.onset)) {
       const line = `${item.pname}${item.oct}`;
-      sourceAlter.set(item, item.written ?? item.gestural ?? state.get(line) ?? fifthsAlter(item.pname, sourceFifths(item.staff, item.measure)));
+      sourceAlter.set(item, item.written ?? item.gestural ?? state.get(line) ?? fifthsAlter(item.pname, sourceFifths(item.staff, item.measure, item.onset)));
       if (item.written !== null) state.set(line, item.written);
     }
   }
@@ -381,7 +396,7 @@ export function respellMei(mei: string, spec: SpellingSpec, measureOffset = 0): 
       // An octave move after the staff's shift: same spelling, an octave higher or lower.
       const source = { ...shifted, octave: shifted.octave + octaveOf(item.staff, item.id) };
       const from = tiedFrom.get(item.id);
-      return { midi: midiOf(source), source, key: shownKey(item.staff, item.measure), chord: item.chord, tiedFrom: from !== undefined ? indexById.get(from) : undefined };
+      return { midi: midiOf(source), source, key: shownKey(item.staff, item.measure, item.onset), chord: item.chord, tiedFrom: from !== undefined ? indexById.get(from) : undefined };
     });
     // A staff that is not respelled (octave moves only) keeps its spellings.
     if (!respelled(line[0].staff)) { input.forEach((note, index) => spelled.set(line[index], note.source)); continue; }
@@ -396,17 +411,17 @@ export function respellMei(mei: string, spec: SpellingSpec, measureOffset = 0): 
   // Courtesy accidentals of switched and octave-moved staves: a written accidental the source did not need (in its
   // own key and measure) stays shown after the move, as one marked cautionary does.
   const courtesy = new Set<NoteRecord>();
-  const sourceKey = (n: string, local: number) => ({ ...keyFromFifths(0), scale: LETTERS.split('').map(step => ({ step, alter: fifthsAlter(step, sourceFifths(n, local)) })) });
+  const sourceKey = (n: string, local: number, onset: number) => ({ ...keyFromFifths(0), scale: LETTERS.split('').map(step => ({ step, alter: fifthsAlter(step, sourceFifths(n, local, onset)) })) });
   for (const group of groups.values()) {
     const n = group[0].staff;
     if (!clefOf(n) && !octaveMoves(n)) continue;
-    const needed = accidentalDisplay(group.map(item => ({ pitch: { step: item.pname as SpelledPitch['step'], octave: item.oct, alter: sourceAlter.get(item) ?? 0 }, onset: item.onset, key: sourceKey(item.staff, item.measure), tieEnd: item.tieEnd })));
+    const needed = accidentalDisplay(group.map(item => ({ pitch: { step: item.pname as SpelledPitch['step'], octave: item.oct, alter: sourceAlter.get(item) ?? 0 }, onset: item.onset, key: sourceKey(item.staff, item.measure, item.onset), tieEnd: item.tieEnd })));
     group.forEach((item, index) => { if (item.written !== null && !item.tieEnd && !needed[index]) courtesy.add(item); });
   }
   // Accidental display per staff-measure.
   const shown = new Map<NoteRecord, boolean>();
   for (const group of groups.values()) {
-    const flags = accidentalDisplay(group.map(item => ({ pitch: spelled.get(item)!, onset: item.onset, key: shownKey(item.staff, item.measure), tieEnd: item.tieEnd, cautionary: item.cautionary || courtesy.has(item) })));
+    const flags = accidentalDisplay(group.map(item => ({ pitch: spelled.get(item)!, onset: item.onset, key: shownKey(item.staff, item.measure, item.onset), tieEnd: item.tieEnd, cautionary: item.cautionary || courtesy.has(item) })));
     group.forEach((item, index) => shown.set(item, flags[index]));
   }
 
@@ -439,9 +454,13 @@ export function respellMei(mei: string, spec: SpellingSpec, measureOffset = 0): 
     const next = spellChordSymbol(own ? moveChordSymbol(body, [own]) : body, shownKey(record.staff, Math.max(0, record.measure)));
     if (next !== body) edits.push({ start: record.textStart, end: record.textEnd, text: lead + next + trail });
   }
-  // Keys: every encoded key signature is removed (a definition holding nothing else goes entirely) and each pitched
-  // staff's keys are written where they start or change. Percussion staves get none.
-  for (const sig of layerKeySigs) edits.push({ start: sig.start, end: sig.end, text: '' });
+  // Boundary keys are rebuilt as before. Mid-bar signatures are respelled in place; percussion gets none.
+  for (const sig of layerKeySigs) {
+    let text = sig.onset > 0 && sig.key && !percussion.has(sig.staff) ? keySigTag(shownKey(sig.staff, sig.measure, sig.onset)) : '';
+    const id = attributeOf(mei.slice(sig.start, sig.end), 'xml:id');
+    if (text && id) text = setAttribute(text, 'xml:id', id);
+    edits.push({ start: sig.start, end: sig.end, text });
+  }
   for (const record of scoreDefs) {
     if (!record.initial && !record.content) { edits.push({ start: record.start, end: record.end, text: '' }); continue; }
     edits.push(...record.tagEdits);
@@ -469,7 +488,7 @@ export function respellMei(mei: string, spec: SpellingSpec, measureOffset = 0): 
   }
   for (let local = 1; local < measureCount; local++) {
     const changed = pitched.filter(n => {
-      const before = shownKey(n, local - 1); const after = shownKey(n, local);
+      const before = shownKey(n, local - 1, Infinity); const after = shownKey(n, local);
       return before.fifths !== after.fifths || before.mode !== after.mode;
     });
     if (!changed.length) continue;

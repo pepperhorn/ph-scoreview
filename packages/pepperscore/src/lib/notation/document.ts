@@ -1,4 +1,4 @@
-import type { Part, Score, ScoreNote } from '../score';
+import type { Measure, Part, Score, ScoreNote } from '../score';
 import { countElements, inventoryFromCounts, type FeatureInventory, type SourceDiagnostic } from './musicxml-source';
 import { XmlError } from './xml-stream';
 import { drumNotation, staffLoc } from './drum-map';
@@ -153,7 +153,7 @@ function meiEvent(note: ScoreNote, continuation: number, dur: string, dots?: num
   if (note.pitches.length === 1) return meiPitch(note, 0, continuation, dur, dots, pieceIndex, percussion).replace('/>', `>${lyric}</note>`);
   return `<chord xml:id="${escape(xmlId(note.id) + (continuation ? `_c${continuation}` : '') + (pieceIndex ? `_s${pieceIndex}` : ''))}" dur="${dur}"${dots ? ` dots="${dots}"` : ''}>${note.pitches.map((_, index) => meiPitch(note, index, continuation, dur, dots, pieceIndex, percussion)).join('')}${lyric}</chord>`;
 }
-function layerXml(segments: Segment[], beats: number, percussion = false): string {
+function layerXml(segments: Segment[], beats: number, percussion = false, keyChanges: NonNullable<Measure['keyChanges']> = []): string {
   let cursor = 0;
   const tokens: string[] = [];
   // Open beam/tuplet wrappers, innermost last. MEI needs proper nesting, so a beam that
@@ -172,8 +172,16 @@ function layerXml(segments: Segment[], beats: number, percussion = false): strin
     if (!open.includes('beam')) return;
     if (open.at(-1) === 'beam') closeTop(); else beamEndPending = true;
   };
+  let keyIndex = 0;
   const rests = (length: number) => durationPieces(length).map(piece => `<rest dur="${piece.dur}"${piece.dots ? ` dots="${piece.dots}"` : ''}/>`);
   for (const segment of segments.sort((a, b) => a.start - b.start || a.note.id.localeCompare(b.note.id))) {
+    while (keyIndex < keyChanges.length && keyChanges[keyIndex].start <= segment.start + 1e-6) {
+      const change = keyChanges[keyIndex++];
+      closeTuplet(); closeBeam();
+      if (change.start > cursor) tokens.push(...rests(change.start - cursor));
+      cursor = Math.max(cursor, change.start);
+      if (!percussion) tokens.push(`<keySig sig="${change.key ? `${Math.abs(change.key)}${change.key > 0 ? 's' : 'f'}` : '0'}" mode="${change.keyMode || 'major'}"/>`);
+    }
     const gap = Math.max(0, segment.start - cursor);
     if (gap > 1e-6) { closeTuplet(); tokens.push(...rests(gap)); }
     const tuplet = segment.note.tuplet;
@@ -197,12 +205,20 @@ function layerXml(segments: Segment[], beats: number, percussion = false): strin
   return tokens.join('');
 }
 
+const meiClef = (clef: string) => {
+  const base = clef.replace(/[+-]8$/, '');
+  const shape = base === 'bass' ? 'F' : base === 'alto' || base === 'tenor' ? 'C' : base === 'percussion' ? 'perc' : 'G';
+  const line = base === 'bass' || base === 'tenor' ? 4 : base === 'alto' || base === 'percussion' ? 3 : 2;
+  return `clef.shape="${shape}" clef.line="${line}"${/[+-]8$/.test(clef) ? ` clef.dis="8" clef.dis.place="${clef.endsWith('-8') ? 'below' : 'above'}"` : ''}`;
+};
+const meiKey = (key: number, mode?: string) => `key.sig="${key ? `${Math.abs(key)}${key > 0 ? 's' : 'f'}` : '0'}" key.mode="${mode || 'major'}"`;
+
 /** A semantic MEI adapter for the reduced ABC/MIDI/demo model. Never use this for MusicXML or MEI originals. */
 export function scoreToMei(score: Score): string {
   const count = Math.max(0, ...score.parts.map(part => part.measures.length));
   const meter = `meter.count="${score.beats}" meter.unit="${score.beatType}"`;
   const key = (score.key ? ` key.sig="${Math.abs(score.key)}${score.key > 0 ? 's' : 'f'}"` : ' key.sig="0"') + (score.keyMode === 'minor' ? ' key.mode="minor"' : '');
-  const staffDefs = score.parts.map((part, index) => `<staffDef xml:id="${escape(staffDefXmlId(part.id))}" n="${index + 1}" lines="5" label="${escape(part.name)}" clef.shape="${part.clef === 'bass' ? 'F' : part.clef === 'alto' ? 'C' : part.clef === 'percussion' ? 'perc' : 'G'}" clef.line="${part.clef === 'bass' ? 4 : part.clef === 'alto' || part.clef === 'percussion' ? 3 : 2}"/>`).join('');
+  const staffDefs = score.parts.map((part, index) => `<staffDef xml:id="${escape(staffDefXmlId(part.id))}" n="${index + 1}" lines="5" label="${escape(part.name)}" ${meiClef(part.clef)} ${meiKey(part.key ?? score.key, part.keyMode ?? score.keyMode)}/>`).join('');
   const navigation = Array.from({ length: count }, (_, index) => score.parts[0]?.measures[index]?.navigation);
   const jumpTarget = navigation.some(nav => nav?.toCoda) ? ' al Coda' : navigation.some(nav => nav?.fine) ? ' al Fine' : '';
   const measures = Array.from({ length: count }, (_, measureIndex) => {
@@ -230,8 +246,19 @@ export function scoreToMei(score: Score): string {
         if (layer < 0) layer = ends.length;
         (layers[layer] ||= []).push(segment); ends[layer] = segment.start + segment.duration;
       }
-      return `<staff n="${staffIndex + 1}">${(layers.length ? layers : [[]]).map((layer, index) => `<layer n="${index + 1}">${layerXml(layer, beats, part.clef === 'percussion')}</layer>`).join('')}</staff>`;
+      return `<staff n="${staffIndex + 1}">${(layers.length ? layers : [[]]).map((layer, index) => `<layer n="${index + 1}">${layerXml(layer, beats, part.clef === 'percussion' || measure?.clef === 'percussion', measure?.keyChanges)}</layer>`).join('')}</staff>`;
     }).join('');
+    const changes = score.parts.flatMap((part, index) => {
+      const measure = part.measures[measureIndex];
+      if (!measure) return [];
+      const previous = part.measures[measureIndex - 1];
+      const previousKey = previous?.keyChanges?.at(-1);
+      const keyChanged = measure.key !== undefined && (measure.key !== (previousKey?.key ?? previous?.key ?? part.key ?? score.key) || measure.keyMode !== (previousKey?.keyMode ?? previous?.keyMode ?? part.keyMode ?? score.keyMode ?? 'major'));
+      const clefChanged = part.clef !== 'percussion' && measure.clef !== undefined && measure.clef !== (previous?.clef ?? part.clef);
+      return keyChanged || clefChanged ? [`<staffDef n="${index + 1}" ${keyChanged ? meiKey(measure.key!, measure.keyMode) : ''} ${clefChanged ? meiClef(measure.clef!) : ''}/>`] : [];
+    }).join('');
+    const definitions = changes ? `<scoreDef><staffGrp>${changes}</staffGrp></scoreDef>` : '';
+    const directions = score.parts.flatMap((part, index) => part.measures[measureIndex]?.directions?.filter(dir => dir.text).map(dir => `<dir staff="${index + 1}" tstamp="${1 + dir.start * score.beatType / 4}" place="${dir.placement || 'above'}">${escape(dir.text!)}</dir>`) || []).join('');
     const harmonies = score.parts.flatMap((part, index) => part.measures[measureIndex]?.notes.filter(note => note.chordSymbol).map(note => `<harm staff="${index + 1}" tstamp="${1 + note.start}" >${escape(note.chordSymbol || '')}</harm>`) || []).join('');
     // A SMuFL quarter-note glyph (metNoteQuarterUp) followed by the beats per minute.
     const tempo = measureIndex === 0 ? `<tempo tstamp="1" staff="1" midi.bpm="${score.tempo}" mm="${score.tempo}" mm.unit="4"><rend glyph.auth="smufl">&#xE1D5;</rend> = ${score.tempo}</tempo>` : '';
@@ -249,9 +276,9 @@ export function scoreToMei(score: Score): string {
     ].join('');
     // Repeat barlines: a repeat end followed by a repeat start is one rptboth barline.
     const startsRepeat = nav.repeatStart && !navigation[measureIndex - 1]?.repeatEnd;
-    const right = nav.repeatEnd ? (navigation[measureIndex + 1]?.repeatStart ? 'rptboth' : 'rptend') : '';
+    const right = nav.repeatEnd ? (navigation[measureIndex + 1]?.repeatStart ? 'rptboth' : 'rptend') : reference?.rightBarline || '';
     const bars = `${startsRepeat ? ' left="rptstart"' : ''}${right ? ` right="${right}"` : ''}`;
-    return `<measure n="${measureIndex + 1}"${bars}>${staves}${harmonies}${tempo}${marks}</measure>`;
+    return `${definitions}<measure n="${measureIndex + 1}"${bars}>${staves}${harmonies}${directions}${tempo}${marks}</measure>`;
   });
   // Consecutive measures of one volta bracket are wrapped in an MEI <ending>.
   let sectionXml = '';

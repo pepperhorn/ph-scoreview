@@ -179,16 +179,23 @@ export async function parseAbc(text: string): Promise<Score> {
   if (!tune?.lines?.length) throw new Error('No readable ABC tune was found.');
   const meter = tune.getMeterFraction?.() || { num: 4, den: 4 };
   const beats = Number(meter.num) || 4, beatType = Number(meter.den) || 4;
-  const keyAccidentals = tune.getKeySignature?.()?.accidentals || [];
-  const key = keyAccidentals.length * (keyAccidentals[0]?.acc === 'flat' ? -1 : 1);
+  // abcjs includes cancellation naturals in key changes; only sharps/flats count.
+  const keyNumber = (signature: any) => (signature?.accidentals || []).reduce((n: number, a: any) => n + (a.acc === 'sharp' ? 1 : a.acc === 'flat' ? -1 : 0), 0);
+  const keyMode = (signature: any): KeyMode => /^m(?:in)?$/i.test(signature?.mode || '') ? 'minor' : 'major';
+  const abcClef = (clef: any): string => clef?.type === 'perc' ? 'percussion' : clef?.type === 'alto' && clef.clefPos === 8 ? 'tenor' : clef?.type || 'treble';
+  const clefTransposition = (clef: string): Transposition => {
+    const octaves = clef.endsWith('-8') ? -1 : clef.endsWith('+8') ? 1 : 0;
+    return { semitones: octaves * 12, diatonic: octaves * 7 };
+  };
+  const key = keyNumber(tune.getKeySignature?.());
   const firstStaff = tune.lines.find((line: any) => line.staff?.length)?.staff || [];
   const parts: Part[] = [];
   const map = new Map<string, Part>();
   for (const [staffIndex, staff] of firstStaff.entries()) for (const [voiceIndex] of (staff as any).voices.entries()) {
     const name = staff.title?.[voiceIndex] || staff.title?.[0] || (voiceIndex ? `Voice ${voiceIndex + 1}` : 'Melody');
     const percussion = staff.clef?.type === 'perc';
-    const clef = percussion ? 'percussion' : /bass|cello|trombone/i.test(name) ? 'bass' : staff.voices.length === 1 && staff.clef?.type === 'bass' ? 'bass' : 'treble';
-    const part: Part = { id: `abc-${staffIndex}-${voiceIndex}`, name, clef, instrument: percussion ? 'drum-kit' : instrumentForName(name), measures: [] };
+    const clef = abcClef(staff.clef);
+    const part: Part = { id: `abc-${staffIndex}-${voiceIndex}`, name, clef, pitchBasis: 'written', transposition: clefTransposition(clef), key: keyNumber(staff.key), keyMode: keyMode(staff.key), instrument: percussion ? 'drum-kit' : instrumentForName(name), measures: [] };
     parts.push(part); map.set(`${staffIndex}-${voiceIndex}`, part);
   }
   // Navigation is read from the first voice: abcjs puts repeat/ending marks on bars
@@ -208,6 +215,8 @@ export async function parseAbc(text: string): Promise<Score> {
     if (word === 'segno' || word === 'coda') start[word] = true;
     else if (end) end[word] = true;
   };
+  const accidentalsByPart = new Map<Part, Map<string, number>>();
+  const tiesByPart = new Map<Part, Map<string, number>>();
   for (const line of tune.lines) for (const [staffIndex, staff] of (line.staff || []).entries()) for (const [voiceIndex, voice] of (staff.voices || []).entries()) {
     const part = map.get(`${staffIndex}-${voiceIndex}`);
     if (!part) continue;
@@ -215,11 +224,28 @@ export async function parseAbc(text: string): Promise<Score> {
     let current = part.measures.at(-1);
     if (!current || (current as any).closed) { current = empty(part.measures.length, beats * 4 / beatType); part.measures.push(current); }
     let cursor = current.notes.reduce((max, n) => Math.max(max, n.start + n.duration), 0);
-    const accidentalMap = new Map<string, number>();
+    const accidentalMap = accidentalsByPart.get(part) || new Map<string, number>();
+    accidentalsByPart.set(part, accidentalMap);
+    const openTies = tiesByPart.get(part) || new Map<string, number>();
+    tiesByPart.set(part, openTies);
+    let activeKey = staff.key || tune.getKeySignature?.();
+    let activeClef = abcClef(staff.clef);
     // abcjs marks only the first note of a tuplet with its multiplier.
     let triplet: { multiplier: number; remaining: number; actual: number; first: boolean } | undefined;
     for (const item of voice) {
+      if (item.el_type === 'key') {
+        activeKey = item; accidentalMap.clear();
+        if (cursor > 0) (current.keyChanges ||= []).push({ start: cursor, key: keyNumber(item), keyMode: keyMode(item) });
+        continue;
+      }
+      if (item.el_type === 'clef') { activeClef = abcClef(item); continue; }
       if (item.el_type === 'bar') {
+        // A key after the last note belongs to the next bar, as it did before mid-bar support.
+        if (current.keyChanges) current.keyChanges = current.keyChanges.filter(change => change.start < cursor);
+        if (current.notes.length) {
+          if (item.type === 'bar_thin_thick') current.rightBarline = 'end';
+          if (item.type === 'bar_thin_thin') current.rightBarline = 'dbl';
+        }
         if (leading) {
           const end = lastFilled && nav(lastFilled);
           if (end && ['bar_right_repeat', 'bar_dbl_repeat'].includes(item.type)) end.repeatEnd = true;
@@ -235,6 +261,7 @@ export async function parseAbc(text: string): Promise<Score> {
         cursor = 0; accidentalMap.clear(); continue;
       }
       if (item.el_type !== 'note') continue;
+      if (!current.notes.length) { current.key = keyNumber(activeKey); current.keyMode = keyMode(activeKey); current.clef = activeClef; current.transposition = clefTransposition(activeClef); }
       if (item.startTriplet && Number(item.tripletMultiplier) > 0) triplet = { multiplier: Number(item.tripletMultiplier), remaining: Number(item.tripletR || item.startTriplet) || 3, actual: Number(item.startTriplet) || 3, first: true };
       const tupletInfo = triplet ? { actual: triplet.actual, normal: Math.max(1, Math.round(triplet.actual * triplet.multiplier)), number: '1', start: triplet.first, stop: Boolean(item.endTriplet) || triplet.remaining <= 1 } : undefined;
       const duration = Number(item.duration || .25) * 4 * (triplet?.multiplier ?? 1);
@@ -243,15 +270,21 @@ export async function parseAbc(text: string): Promise<Score> {
         const degree = Number(p.pitch || 0);
         const steps = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
         const step = steps[((degree % 7) + 7) % 7];
-        const octave = 4 + Math.floor(degree / 7);
+        // abcjs pitch coordinates keep the source/sounding octave even under an octave clef.
+        const sourceOctave = 4 + Math.floor(degree / 7);
+        const octave = sourceOctave - clefTransposition(activeClef).semitones / 12;
+        const line = `${step}${sourceOctave}`;
+        const tiedAlter = p.endTie ? openTies.get(line) : undefined;
         const explicit = ({ sharp: 1, flat: -1, natural: 0, dblsharp: 2, dblflat: -2 } as Record<string, number>)[p.accidental];
-        if (explicit !== undefined) accidentalMap.set(`${step}${octave}`, explicit);
-        const fromKey = keyAccidentals.find((a: any) => a.note.toUpperCase() === step);
-        const alter = accidentalMap.get(`${step}${octave}`) ?? (fromKey?.acc === 'sharp' ? 1 : fromKey?.acc === 'flat' ? -1 : 0);
+        if (explicit !== undefined && tiedAlter === undefined) accidentalMap.set(line, explicit);
+        const fromKey = (activeKey?.accidentals || []).find((a: any) => a.note.toUpperCase() === step);
+        const alter = tiedAlter ?? accidentalMap.get(line) ?? (fromKey?.acc === 'sharp' ? 1 : fromKey?.acc === 'flat' ? -1 : 0);
+        if (p.endTie) openTies.delete(line);
+        if (p.startTie) openTies.set(line, alter);
         // Percussion (clef=perc) is written by staff position: it keeps its written pitch for playback and is engraved
         // unpitched at that position.
         const position = part.clef === 'percussion' ? { unpitched: true, displayStep: step, displayOctave: octave } : {};
-        return { ...pitch(step, octave, alter), ...position, tieStart: Boolean(p.startTie), tieStop: Boolean(p.endTie) };
+        return { ...pitch(step, octave, alter), ...position, ...(explicit !== undefined && tiedAlter === undefined ? { accidental: p.accidental } : {}), tieStart: Boolean(p.startTie), tieStop: Boolean(p.endTie) };
       });
       if (leading) {
         if (!current.notes.length) {
@@ -264,7 +297,11 @@ export async function parseAbc(text: string): Promise<Score> {
         lastFilled = current;
       }
       // Navigation text ("^D.C. al Fine") is a jump instruction, never a chord symbol.
-      const chordSymbol = item.chord?.find((chord: { name?: string; position?: string }) => chord.position !== 'below' && !navigationWord(chord.name || ''))?.name;
+      const chordSymbol = item.chord?.find((chord: { name?: string; position?: string }) => chord.position === 'default' && !navigationWord(chord.name || ''))?.name;
+      for (const annotation of item.chord || []) {
+        if (annotation.position === 'default' || navigationWord(annotation.name || '')) continue;
+        (current.directions ||= []).push({ start: cursor, text: annotation.name, placement: annotation.position === 'below' ? 'below' : 'above' });
+      }
       const lyric = item.lyric?.map((syllable: { syllable?: string; divider?: string }) => `${syllable.syllable || ''}${syllable.divider === '-' ? '-' : ''}`).filter(Boolean).join(' ');
       current.notes.push({ id: `abc-${staffIndex}-${voiceIndex}-${current.index}-${current.notes.length}`, start: cursor, duration, pitches, chordSymbol, lyric, beamStart: Boolean(item.startBeam), beamEnd: Boolean(item.endBeam), rest: !pitches.length, dotted: Boolean(item.dots), tuplet: tupletInfo, tieStart: pitches.some((p: { tieStart?: boolean }) => p.tieStart) || undefined, tieStop: pitches.some((p: { tieStop?: boolean }) => p.tieStop) || undefined });
       cursor += duration;
