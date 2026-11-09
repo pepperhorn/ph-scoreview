@@ -7,7 +7,7 @@
 - **PR:** <url once opened>
 - **Base commit:** 7eb7fd0
 - **Port (if running a server):** 5231
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 The editor's score meta gains `description`, `project`, `tags` (and model-only `goal`), editable in a new Details popover, saved in `.pepperscore` files and undoable. Plan task T1 (spec gap 2).
