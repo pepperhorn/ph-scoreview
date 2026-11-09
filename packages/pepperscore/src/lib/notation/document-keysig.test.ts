@@ -3,7 +3,7 @@ import createVerovioModule from 'verovio/wasm';
 import { VerovioToolkit } from 'verovio/esm';
 import { parseAbc } from '../import';
 import { generatedPitchId, scoreToMei } from './document';
-import { respellMei } from './mei-spelling';
+import { respellMei, spellBaseline } from './mei-spelling';
 import { spellingSpecFor } from '../transpose';
 import { buildPerformanceTimeline } from '../playback/timeline';
 
@@ -45,6 +45,73 @@ describe('staff-wide mid-bar key signatures', () => {
       const normalized = toolkit.getMEI();
       expect(normalized.match(/<keySig\b[^>]*sig="1s"/g)).toHaveLength(1);
       const spelled = respellMei(normalized, spellingSpecFor(score, new Map([[part.id, '1']])));
+      expect(toolkit.loadData(spelled)).toBeTruthy();
+      expect(toolkit.renderToSVG(1).match(/class="keySig"/g)).toHaveLength(2);
+      toolkit.renderToMIDI();
+      for (const measure of part.measures) for (const note of measure.notes) {
+        expect(toolkit.getMIDIValuesForElement(generatedPitchId(note, 0)).pitch).toBe(note.pitches[0].midi);
+      }
+    } finally { toolkit.destroy(); }
+  });
+
+  it.each([
+    { interval: 'M2', semitones: 2, sig: '3s', pname: 'g', oct: '4' },
+    { interval: '-m3', semitones: -3, sig: '4s', pname: 'd', oct: '4' },
+  ])('retains one signature and every layer’s pitches transposed by $interval', async ({ interval, semitones, sig, pname, oct }) => {
+    const score = await fixture(2);
+    const part = score.parts[0];
+    const toolkit = await createToolkit();
+    try {
+      expect(toolkit.loadData(scoreToMei(score))).toBeTruthy();
+      const spelled = await spellBaseline(toolkit.getMEI(), {
+        ...spellingSpecFor(score, new Map([[part.id, '1']])), interval, semitones,
+      }, (mei, options) => {
+        toolkit.setOptions(options);
+        expect(toolkit.loadData(mei)).toBeTruthy();
+        return toolkit.getMEI();
+      });
+      toolkit.setOptions({ transpose: '', transposeToSoundingPitch: false });
+      expect(toolkit.loadData(spelled)).toBeTruthy();
+      expect(toolkit.renderToSVG(1).match(/class="keySig"/g)).toHaveLength(2);
+      const normalized = toolkit.getMEI();
+      expect(normalized.match(new RegExp(`<keySig\\b[^>]*sig="${sig}"`, 'g'))).toHaveLength(1);
+      // Both the owning layer and the other layer keep implied sharp / explicit natural spelling.
+      for (const note of part.measures[0].notes.filter(n => n.start >= 2)) {
+        const element = normalized.match(new RegExp(`<note\\b[^>]*xml:id="${generatedPitchId(note, 0)}"[^>]*>[\\s\\S]*?</note>`))![0];
+        expect(element).toContain(`pname="${pname}"`);
+        expect(element).toContain(`oct="${oct}"`);
+        expect(element).toContain(note.start === 2 ? 'accid.ges="s"' : 'accid="n"');
+      }
+      toolkit.renderToMIDI();
+      for (const measure of part.measures) for (const note of measure.notes) {
+        expect(toolkit.getMIDIValuesForElement(generatedPitchId(note, 0)).pitch).toBe(note.pitches[0].midi + semitones);
+      }
+    } finally { toolkit.destroy(); }
+  });
+
+  it('falls back to layer 1 when every layer sustains across the key change', async () => {
+    const score = await fixture(2);
+    const part = score.parts[0];
+    const measure = part.measures[0];
+    measure.notes = measure.notes.filter(n => n.start === 0 || n.start === 3);
+    for (const note of measure.notes.filter(n => n.start === 0)) note.duration = 3;
+    const mei = scoreToMei(score);
+    const layers = [...mei.matchAll(/<layer n="(\d+)">([\s\S]*?)<\/layer>/g)];
+    expect(mei.match(/<keySig\b/g)).toHaveLength(1);
+    expect(layers[0][2]).toContain('<keySig sig="1s"');
+    expect(layers[1][2]).not.toContain('<keySig');
+    // Intentional main behaviour: with no free layer at beat 2, layer 1 owns the
+    // signature and draws it late, after its dotted-half note ends at beat 3.
+    const held = measure.notes.find(n => n.voice === '1' && n.start === 0)!;
+    const after = measure.notes.find(n => n.voice === '1' && n.start === 3)!;
+    expect(layers[0][2]).toContain('dur="2" dots="1"');
+    expect(layers[0][2].indexOf(generatedPitchId(held, 0))).toBeLessThan(layers[0][2].indexOf('<keySig'));
+    expect(layers[0][2].indexOf('<keySig')).toBeLessThan(layers[0][2].indexOf(generatedPitchId(after, 0)));
+    const toolkit = await createToolkit();
+    try {
+      expect(toolkit.loadData(mei)).toBeTruthy();
+      expect(toolkit.renderToSVG(1).match(/class="keySig"/g)).toHaveLength(2);
+      const spelled = respellMei(toolkit.getMEI(), spellingSpecFor(score, new Map([[part.id, '1']])));
       expect(toolkit.loadData(spelled)).toBeTruthy();
       expect(toolkit.renderToSVG(1).match(/class="keySig"/g)).toHaveLength(2);
       toolkit.renderToMIDI();

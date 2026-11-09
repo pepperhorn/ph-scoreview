@@ -27,3 +27,7 @@ npm run check && npm run build && npm run test:manifest && npm run test:validati
 
 ---
 ## Receiver ack
+
+I will add rendered-Verovio regression coverage for M2 and -m3 transposition across all layers, and for every layer sustaining across a mid-bar key change (one signature, owned by layer 1 and drawn late). I own only document-keysig.test.ts and my 0009 handoffs. I will stop and report if either case fails without editing document.ts, run all required verification, and open a draft PR. No open questions.
+
+Context checked: GBrain `default:projects/scoreflow-music-reader/gotchas-abc-import` (staff-wide key signatures, root npm install, sequential build/validation); PR #63 review.
