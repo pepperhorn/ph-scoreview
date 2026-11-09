@@ -42,3 +42,5 @@ None. Escalate per AGENTS.md §7.
 
 ---
 ## Receiver ack
+
+Acknowledged: implement T2 only in the assigned editor files: undoable add/change/remove commands, empty-part guards, staff-cap-aware Parts controls in both shells, and README. Write and run the checklist tests red before implementation, then run the required sequential verification. No packages/pepperscore, validation, ledger, or T3 edits. No open questions. GBrain consulted: projects/scoreflow-music-reader and projects/scoreflow-music-reader/gotchas-abc-import; repo plan is authoritative.
