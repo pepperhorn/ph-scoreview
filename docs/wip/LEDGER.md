@@ -56,6 +56,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-10 0003-t2 in-review — PR #69 conflicts with main only in its dispatch handoff (lead answers vs ack); implementer merging main (docs-only merge commit, review r2 continues on 434e5e9 code)
 2026-11-10 0002-t1 changes-requested→in-review — measurement fix pushed 70b782c; review r2
 2026-11-10 0003-t2 changes-requested→in-review — fixes pushed 434e5e9; review r2
 2026-11-10 0001-t3 in-review→changes-requested — r1 on 2a185b5: drawer tab covers Play in phone bottom toolbar (blocking); wrapped toolbar overlaps; lead: an all-unavailable bar = no bar (minimal keeps compact play)
