@@ -461,3 +461,17 @@
 .ps-editor .ps-shell-phone .ps-status-check { flex: none; }
 .ps-editor .ps-shell-phone .ps-status-moved { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .ps-editor .ps-prow-staves .ps-stave-hint { flex: none; min-width: 0; width: 96px; padding: 0 2px; font-size: 10px; line-height: 1.2; }
+
+/* Score-wide details use the same form in the desktop popover and phone toolbar. */
+.ps-editor .ps-details-panel { display: flex; flex-direction: column; gap: 10px; width: 100%; min-width: 0; font-family: var(--ps-sans); }
+.ps-editor .ps-details-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ps-editor .ps-details-label { font-size: 11px; font-weight: 500; color: var(--ps-ink-3); }
+.ps-editor .ps-details-input { width: 100%; min-width: 0; font-family: var(--ps-sans); }
+.ps-editor textarea.ps-details-input { height: auto; padding: 7px; resize: vertical; }
+.ps-editor .ps-popover-details .ps-popover-title { font-family: var(--ps-sans); font-size: 17px; }
+.ps-editor .ps-pstrip.ps-popover-details { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: start; max-height: 50dvh; overflow-y: auto; }
+.ps-editor .ps-pstrip.ps-popover-details .ps-pstrip-label { grid-column: 2; grid-row: 1; max-width: none; align-self: center; font: 500 13px var(--ps-sans); }
+.ps-editor .ps-pstrip.ps-popover-details .ps-pstrip-fields { grid-column: 1 / -1; grid-row: 2; width: 100%; min-width: 0; padding: 0 4px 8px; }
+.ps-editor .ps-pstrip.ps-popover-details .ps-pstrip-apply { grid-column: 3; grid-row: 1; }
+.ps-editor .ps-pstrip.ps-popover-details .ps-details-input { width: 100%; }
+.ps-editor .ps-pstrip.ps-popover-details textarea.ps-details-input { height: auto; }

@@ -8,6 +8,7 @@ import { Icon, Kbd } from './icons';
 import { FIFTHS, keyName } from './key-names';
 import { describeKey, KEYMAP, type PopoverName } from './keymap';
 import { placePopover, type Rect } from './placement';
+import { DetailsPanel } from './DetailsPanel';
 import { TempoFields } from './TempoFields';
 import { relativeRect } from './useCanvasGeometry';
 import { useEditorStore } from './useEditorStore';
@@ -37,7 +38,7 @@ export const ENDINGS: { value: string; label: string; numbers: number[] | null }
 ];
 const TIME_UNITS = [1, 2, 4, 8, 16] as const;
 export const POPOVER_TITLES: Record<PopoverName, string> = {
-  key: 'Key signature', time: 'Time signature', clef: 'Clef', dynamic: 'Dynamic', jump: 'Jump', ending: 'Ending', tempo: 'Tempo',
+  key: 'Key signature', time: 'Time signature', clef: 'Clef', dynamic: 'Dynamic', jump: 'Jump', ending: 'Ending', tempo: 'Tempo', details: 'Score details',
 };
 
 type Props = { name: PopoverName; store: EditorStore; onClose(): void };
@@ -63,13 +64,17 @@ export function Popover({ name, store, onClose, anchor, viewport, stage }: Props
       const target = event.target as Element | null;
       // The popover's own opener toggles it in its click handler; closing here first would reopen it.
       if (target?.closest?.(`[data-ps-popover-for="${name}"]`)) return;
-      if (root.current && !root.current.contains(target)) onClose();
+      if (root.current && !root.current.contains(target)) {
+        // Commit a details draft before the capture-phase outside handler unmounts its field.
+        if (name === 'details' && root.current.contains(window.document.activeElement)) (window.document.activeElement as HTMLElement).blur();
+        onClose();
+      }
     };
     window.document.addEventListener('pointerdown', outside, true);
     return () => window.document.removeEventListener('pointerdown', outside, true);
   }, [onClose, name]);
   useEffect(() => {
-    root.current?.querySelector<HTMLElement>('select, input')?.focus({ preventScroll: true });
+    root.current?.querySelector<HTMLElement>('select, input, textarea')?.focus({ preventScroll: true });
   }, [name]);
   // Placed after every render, from its measured size; the arrow points at the anchor's centre.
   useLayoutEffect(() => {
@@ -112,7 +117,7 @@ export function Popover({ name, store, onClose, anchor, viewport, stage }: Props
     >
       <span ref={arrow} className="ps-popover-arrow" aria-hidden="true" />
       <header className="ps-popover-head">
-        <div className="ps-popover-titles"><span className="ps-eyebrow">{name === 'dynamic' ? 'At the cursor' : `From bar ${index + 1}`}</span><h3 className="ps-popover-title">{POPOVER_TITLES[name]}</h3></div>
+        <div className="ps-popover-titles"><span className="ps-eyebrow">{name === 'details' ? 'About the piece' : name === 'dynamic' ? 'At the cursor' : `From bar ${index + 1}`}</span><h3 className="ps-popover-title">{POPOVER_TITLES[name]}</h3></div>
         <button type="button" className="ps-btn ps-icon-btn ps-popover-close" aria-label="Close" onClick={onClose}><Icon name="close" size={14} /></button>
       </header>
       <div className="ps-popover-body"><PopoverBody name={name} store={store} onClose={onClose} /></div>
@@ -140,6 +145,8 @@ export function PopoverBody({ name, store, onClose }: Props) {
   const g = document.global.measures[index];
 
   switch (name) {
+    case 'details':
+      return <DetailsPanel store={store} />;
     case 'key': {
       const key = effectiveKey(document, index);
       const mode = key.mode ?? 'major';

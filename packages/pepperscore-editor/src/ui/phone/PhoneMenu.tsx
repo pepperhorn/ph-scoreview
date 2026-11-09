@@ -13,7 +13,7 @@ export type PhoneMenuProps = {
 
 /** The phone header's overflow menu: Save, Export, Open and New, and the licence state. Focuses its first item; closes on a choice, Escape or a tap outside. */
 export function PhoneMenu({ licence, onSave, onExport, onOpen, onNew, onClose }: PhoneMenuProps & { onClose(): void }) {
-  const { editable, refocus } = useUi();
+  const { editable, refocus, togglePopover } = useUi();
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const outside = (event: PointerEvent) => {
@@ -58,6 +58,7 @@ export function PhoneMenu({ licence, onSave, onExport, onOpen, onNew, onClose }:
         <Icon name="open" size={16} />Open…
         <input className="ps-open-input" type="file" accept={OPEN_ACCEPT} hidden disabled={!editable} onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; onClose(); if (file) onOpen(file); }} />
       </label>
+      <button type="button" role="menuitem" className="ps-btn ps-pmenu-item ps-btn-details" data-ps-popover-for="details" disabled={!editable} onClick={choose(() => togglePopover('details'))}>Score details</button>
       <button type="button" role="menuitem" className="ps-btn ps-pmenu-item ps-btn-new" disabled={!editable} onClick={choose(onNew)}><Icon name="plus" size={16} />New score</button>
       <span className={`ps-licence ps-pmenu-licence ${licence.editable ? '' : 'is-viewer'}`.trim()}>
         <span className="ps-licence-dot" />

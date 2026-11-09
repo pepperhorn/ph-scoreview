@@ -1,7 +1,7 @@
 import { emptyPartMeasure } from '../../model/create';
 import { newId } from '../../model/ids';
 import { effectiveKey, effectiveTime, measureIndex } from '../../model/query';
-import type { Clef, GlobalMeasure, Jump, Key, Time } from '../../model/schema';
+import type { Clef, Document, GlobalMeasure, Jump, Key, Time } from '../../model/schema';
 import { clampCursor } from '../cursor-clamp';
 import { pruneDanglingReferences, pruneSelection } from '../prune';
 import { refillMeasure } from '../refill';
@@ -212,17 +212,22 @@ export const setSelection: Command<{ ids: string[] }> = {
   },
 };
 
-/** Sets the score's title and/or composer; a blank value removes it. Keys left out are unchanged. */
-export const setMeta: Command<{ title?: string; composer?: string }> = {
+/** Sets score metadata; blank strings or an empty normalized tag list remove a key. Omitted keys are unchanged. */
+export const setMeta: Command<Document['meta']> = {
   label: 'Edit score info',
   run: (draft, args) => {
     const meta = draft.document.meta;
-    for (const key of ['title', 'composer'] as const) {
+    for (const key of ['title', 'composer', 'description', 'project', 'goal'] as const) {
       const value = args[key];
       if (value === undefined) continue;
       const trimmed = value.trim();
       if (!trimmed) delete meta[key];
       else if (meta[key] !== trimmed) meta[key] = trimmed;
+    }
+    if (args.tags !== undefined) {
+      const tags = [...new Set(args.tags.map((tag) => tag.trim()).filter(Boolean))];
+      if (!tags.length) delete meta.tags;
+      else if (!meta.tags || tags.length !== meta.tags.length || tags.some((tag, i) => tag !== meta.tags![i])) meta.tags = tags;
     }
   },
 };

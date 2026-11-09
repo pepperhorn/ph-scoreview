@@ -22,7 +22,7 @@ export function emptyPartMeasure(part: Part, _time: Time): PartMeasure {
 }
 
 export function createDocument(args: {
-  meta?: { title?: string; composer?: string };
+  meta?: Document['meta'];
   parts: NewPart[];
   measures: number;
   time?: Time;

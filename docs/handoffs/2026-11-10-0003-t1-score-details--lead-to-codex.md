@@ -39,3 +39,5 @@ None. Escalate per AGENTS.md §7.
 
 ---
 ## Receiver ack
+
+Acknowledged by Codex, 2026-11-10. I will implement plan T1 only: optional description, project, tags and model-only goal; normalized undoable setMeta; backward-compatible file persistence; Details controls in both shells. I will write and run failing command/file tests first, preserve MusicXML/golden fixtures, edit only the declared owned files and my task handoffs, run all required verification sequentially, and return a draft PR. No open questions. GBrain context checked: default:projects/scoreflow-music-reader.

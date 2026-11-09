@@ -300,3 +300,38 @@ describe('setMeta', () => {
     expect(store.getState().history.past).toHaveLength(1);
   });
 });
+
+
+describe('score details metadata', () => {
+  it('sets and trims description, project and model-only goal, preserves omitted fields and undoes/redoes', () => {
+    const store = createEditorStore(fourBars());
+    const before = store.getState().document;
+    store.dispatch(setMeta, { description: '  A study  ', project: '  Album  ', goal: ' transcribe ' });
+    expect(store.getState().document.meta).toEqual({ description: 'A study', project: 'Album', goal: 'transcribe' });
+    expect(store.getState().invariantErrors).toEqual([]);
+    store.undo();
+    expect(store.getState().document).toEqual(before);
+    store.redo();
+    store.dispatch(setMeta, { description: ' \n ', project: '', goal: ' ' });
+    expect(store.getState().document.meta).toEqual({});
+    store.undo();
+    store.dispatch(setMeta, { title: 'Song' });
+    expect(store.getState().document.meta).toEqual({ title: 'Song', description: 'A study', project: 'Album', goal: 'transcribe' });
+  });
+
+  it('trims tags, drops blank tags, deduplicates in order, clears empty lists and undoes', () => {
+    const store = createEditorStore(fourBars());
+    store.dispatch(setMeta, { tags: [' jazz ', '', 'jazz', ' study', '  ', 'Jazz'] });
+    expect(store.getState().document.meta).toEqual({ tags: ['jazz', 'study', 'Jazz'] });
+    const past = store.getState().history.past.length;
+    store.dispatch(setMeta, { tags: ['jazz', ' study ', 'Jazz', 'jazz'] });
+    expect(store.getState().history.past).toHaveLength(past);
+    store.dispatch(setMeta, { tags: [] });
+    expect(store.getState().document.meta).not.toHaveProperty('tags');
+    store.undo();
+    expect(store.getState().document.meta.tags).toEqual(['jazz', 'study', 'Jazz']);
+    store.dispatch(setMeta, { tags: [' ', ''] });
+    expect(store.getState().document.meta).not.toHaveProperty('tags');
+    expect(store.getState().invariantErrors).toEqual([]);
+  });
+});

@@ -51,6 +51,19 @@ or last saved; undoing back to the save is clean) and `confirmDiscard()` (true w
 unsaved changes?')`). Open asks the same before replacing a dirty score, and a `beforeunload` guard warns before leaving
 the page with unsaved changes. Hosts that replace the score themselves (a New button) should call `confirmDiscard()` first.
 
+## Score details
+
+Details in the desktop top bar, or Score details in the phone header menu, opens fields for description,
+project (a label) and comma-separated tags. Leaving a field commits one undoable edit. Blank values clear it;
+tags are trimmed, empty entries dropped and exact duplicates removed in order (case is preserved).
+These controls require an editing licence and use Poppins in both shells.
+
+`document.meta` supports optional `title`, `composer`, `description`, `project`, `tags: string[]` and `goal`.
+`setMeta` accepts any subset, preserves omitted fields and trims string values. `goal` is stored for hosts and
+has no editor UI. All fields persist in both the document and wrapper metadata of `.pepperscore` files;
+older version 1 files with only title and composer still open. Description, project, tags and goal do not
+export to MusicXML.
+
 ## Layouts
 
 A layout is a view of the score; edits to pitches, rhythms and barlines are global and show in every layout. The
@@ -102,7 +115,7 @@ transposing parts; a per-part written key is not compiled yet.
 Above 760px wide (measured on the editor, not the window) the editor has the desktop shell:
 
 - **Top bar**: brand, title and composer (double-click to edit; Enter or blur commits, Escape cancels), Key, Time and
-  Tempo chips that open popovers, undo and redo, Play, Save, Export, Open and a licence badge.
+  Tempo chips that open popovers, a Details button, undo and redo, Play, Save, Export, Open and a licence badge.
 - **Rail**: keycaps (56 x 52) for the value (whole to 32nd, dot), modify (rest, tie, slur), pitch (sharp, flat,
   natural, chord toggle) and group (tuplet, beam) tools, with legends taken from `KEYMAP`.
 - **Canvas header**: Entry / Edit pill, "Part · bar N of M", the layout selector and Page / Endless.
@@ -119,7 +132,7 @@ Above 760px wide (measured on the editor, not the window) the editor has the des
 At 760px wide or less (or with `forcePhone`) the editor switches to the phone shell:
 
 - **Two-row header** (78px) for occasional controls: the brand, title, composer, Undo, Redo, Play and an overflow menu
-  (Save, Export, Open, New score) on row 1, and "bar N of M", the layout chip and the Key / Time / Tempo chips on row 2.
+  (Save, Export, Open, New score, Score details) on row 1, and "bar N of M", the layout chip and the Key / Time / Tempo chips on row 2.
   After 4 seconds without input it collapses to a 28px strip (position, key chip); a touch, wheel or pointer down on
   the canvas, a header tap or a document change brings it back; scrolling caused by playback or by the collapse itself
   does not. The body padding follows the header height, so nothing jumps.
