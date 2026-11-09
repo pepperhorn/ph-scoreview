@@ -11,7 +11,7 @@ Next ID: 0010
 
 | K | Title | Status | Waiting on | Owner (provider/model) | Branch | PR | Worktree | T3 task/thread | Spec | Plan | Latest handoff | Updated |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 0001 | Composable player skins | dispatched (t2; t1 merged #59) | child 0001-t2-impl-r1 | codex/gpt-6.1-sol | orch/0001-t2-skin-bar |  |  | task `0001-t2-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0001-t2-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-10-0001-t2-skin-bar--lead-to-codex.md | 2026-11-10 |
+| 0001 | Composable player skins | in-review (t2; t1 merged #59) | review 0001-t2-review-r1 | codex/gpt-6.1-sol | orch/0001-t2-skin-bar | https://github.com/pepperhorn/ph-scoreview/pull/66 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-206c13e7 | task `0001-t2-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0001-t2-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-10-0001-t2-skin-bar--codex-to-lead.md (@3cbc7ef) | 2026-11-10 |
 | 0002 | PDF export | planned | child 0001-t2 (T1 depends on 0001 T2) | lead |  |  |  |  | specs/0002-pdf-export.md | plans/0002-pdf-export.md |  | 2026-11-10 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | dispatched (t1) | child 0003-t1-impl-r1 | codex/gpt-6.1-sol | orch/0003-t1-score-details |  |  | task `0003-t1-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0003-t1-impl-r1` | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-10-0003-t1-score-details--lead-to-codex.md | 2026-11-10 |
 | 0007 | [quick] Package README carries the ABC authoring rules (S4, S6) | ready | ci | codex/gpt-6.1-sol | orch/0007-readme-abc-authoring | https://github.com/pepperhorn/ph-scoreview/pull/64 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-d0aeb650 | task `0007-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0007-impl-r1` |  |  | handoffs/2026-11-10-0007-readme-abc-authoring--codex-to-lead.md (@4ab1300) | 2026-11-10 |
@@ -45,6 +45,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-10 0001-t2 dispatched→in-review — PR #66 @3cbc7ef (338+/64-); T2 checks pass, reader/editor timing failures under parallel load; reviewer to compare against main
 2026-11-10 0009 dispatched→in-review — PR #65 @62135b7 (tests only, 7 pass); local full validation had timing/browser failures likely from parallel-worktree load; CI decides
 2026-11-10 0007 changes-requested→ready — 4ab1300 applies exactly r1's three README wording fixes (lead checked the 6-line diff; no further review round for a docs-only delta the reviewer specified); watching CI
 2026-11-10 0007 in-review→changes-requested — r1 approve on 3c99f49 with 3 README wording fixes; lead asked for them before merge; guide file-header sentence corrected; S8 logged
