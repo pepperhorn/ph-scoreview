@@ -7,7 +7,7 @@
 - **PR:** <url once opened>
 - **Base commit:** 7eb7fd0
 - **Port (if running a server):** n/a
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 Add two regression cases to `document-keysig.test.ts` (from PR #63 review, `gh pr view 63 --comments`): (1) a transposed score (e.g. up a whole tone and down a minor third) still draws exactly one mid-bar key signature per staff with correct pitches in every layer; (2) every layer holds a note across the key change, so the signature falls back to layer 1 and is drawn late (as on main), documented in a test comment. Tests only; if a case fails, stop and report rather than changing `document.ts`.

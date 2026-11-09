@@ -16,12 +16,12 @@ Next ID: 0010
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | in-review (t1) | review 0003-t1-review-r1 | codex/gpt-6.1-sol | orch/0003-t1-score-details | https://github.com/pepperhorn/ph-scoreview/pull/68 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-b3887053 | task `0003-t1-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0003-t1-impl-r1` | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-10-0003-t1-score-details--codex-to-lead.md (@324dafc) | 2026-11-10 |
 | 0007 | [quick] Package README carries the ABC authoring rules (S4, S6) | ready | ci | codex/gpt-6.1-sol | orch/0007-readme-abc-authoring | https://github.com/pepperhorn/ph-scoreview/pull/64 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-d0aeb650 | task `0007-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0007-impl-r1` |  |  | handoffs/2026-11-10-0007-readme-abc-authoring--codex-to-lead.md (@4ab1300) | 2026-11-10 |
 | 0008 | [quick] ABC: a V: line before X: keeps its clef (S5) | in-review | review 0008-review-r1 | codex/gpt-6.1-sol | orch/0008-abc-voice-before-x | https://github.com/pepperhorn/ph-scoreview/pull/67 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-056df41c | task `0008-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0008-impl-r1` |  |  | handoffs/2026-11-10-0008-abc-voice-before-x--codex-to-lead.md (@c70334e) | 2026-11-10 |
-| 0009 | [quick] More mid-bar key signature tests (S7) | ready | ci | codex/gpt-6.1-sol | orch/0009-keysig-tests | https://github.com/pepperhorn/ph-scoreview/pull/65 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-acb160fd | task `0009-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0009-impl-r1` |  |  | handoffs/2026-11-10-0009-keysig-tests--codex-to-lead.md (@62135b7) | 2026-11-10 |
 
 ## Done / closed
 
 | K | Title | PR | Merged | Notes |
 |---|---|---|---|---|
+| 0009 | [quick] More mid-bar key signature tests (S7) | https://github.com/pepperhorn/ph-scoreview/pull/65 | 2026-11-10 | 4629f1a; tests only |
 | 0005 | [quick] Mid-bar key signature drawn once per staff (S1) | https://github.com/pepperhorn/ph-scoreview/pull/63 | 2026-11-10 | c48dc0e; no ABC guide change |
 | 0006 | [quick] ABC directive scoping: body-only voices, header K: before X: (S2, S3) | https://github.com/pepperhorn/ph-scoreview/pull/62 | 2026-11-10 | f766e13; ABC guide updated |
 | 0004 | ABC import parity with MusicXML | https://github.com/pepperhorn/ph-scoreview/pull/60 , https://github.com/pepperhorn/ph-scoreview/pull/61 | 2026-11-10 | t1 8037061, t2 18ee573; `score=` not supported (documented) |
@@ -37,7 +37,7 @@ Next ID: 0010
 | S4 | fix | README link to `docs/guides/abc-authoring.md` is dead on npm (private repo, no `repository` in package.json); publish the guide content in the package README or a public URL | `packages/pepperscore/README.md` ABC section; `packages/pepperscore/package.json` | S | medium before npm release | PR #62 review | accepted → 0007 |
 | S5 | fix | A `V:` line before `X:` has its clef ignored (pre-existing) | `packages/pepperscore/src/lib/import.ts` header scan | S | low | PR #62 review | accepted → 0008 |
 | S6 | docs | README sentence on body directives before the first selector is unclear for body-only voices | `packages/pepperscore/README.md` ABC headers | XS | low | PR #62 review | accepted → 0007 |
-| S7 | test | Add a transposed case and a held-across-change case (keySig falls back to layer 1, drawn late) to the mid-bar keySig test | `packages/pepperscore/src/lib/notation/document-keysig.test.ts` | XS | low | PR #63 review | accepted → 0009 |
+| S7 | test | Add a transposed case and a held-across-change case (keySig falls back to layer 1, drawn late) to the mid-bar keySig test | `packages/pepperscore/src/lib/notation/document-keysig.test.ts` | XS | low | PR #63 review | done (0009, PR #65) |
 | S8 | fix | Apply ABC 2.1 file-header defaults (`M:`, `L:`, `Q:`, `C:` before `X:`), currently dropped | PR #64 review r1 (`packages/pepperscore/README.md:526`); `packages/pepperscore/src/lib/import.ts` header scan | S | low (authors can put them after X:) | PR #64 review | new |
 | S9 | test | Assert which layer carries the fallback mid-bar keySig in the older held-note test (it passes even if the fallback always goes to layer 1) | `packages/pepperscore/src/lib/notation/document-keysig.test.ts` (PR #63 test) | XS | low | PR #65 review | new |
 | S10 | risk | Reader (webkit) CI flake: "1280px: a user stave scale is restored instead of the default" failed on README-only PR #64, passed on its twin run | CI run 42699660294 job 129440692432; `validation/reader.mjs` | S | medium: flaky CI blocks merges | PR #64 CI | new |
@@ -47,6 +47,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-10 0009 ready→closed — CI green on 62135b7, merged PR #65 (4629f1a)
 2026-11-10 0003-t1 dispatched→in-review — PR #68 @324dafc (298+/19-; 277 editor tests); review r1
 2026-11-10 0008 dispatched→in-review — PR #67 @c70334e (71 ABC tests); replays pre-X: V: after X: and restores source coordinates; review r1
 2026-11-10 0009 in-review→ready — r1 approve on 62135b7 (mutation-checked); waiting on CI. 0007: webkit reader failed once on README-only head (stave-scale restore), rerun started; S9, S10 logged
