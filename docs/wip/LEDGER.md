@@ -5,7 +5,7 @@
 > Waiting on: `child <taskId>` · `review <taskId>` · `ci` · `human: <why>` · `lead: <next action>`. Set it on every status change. A row needs the lead when it starts with `lead`, or when it's empty and Status is dispatched, in-review, changes-requested, ready, or merged. The lead's Stop hook won't let the lead end its turn while any row needs it.
 > Type: normal items have a spec and plan. Quick items have the title prefix `[quick]` (no spec or plan, a short handoff). PRs adopted by `orch-sweep` have the prefix `[pr]`.
 
-Next ID: 0005
+Next ID: 0007
 
 ## Active
 
@@ -14,6 +14,8 @@ Next ID: 0005
 | 0001 | Composable player skins | merged (t1) | human: confirm dispatch of T2 | codex/gpt-6.1-sol | orch/0001-t1-skin-tokens | https://github.com/pepperhorn/ph-scoreview/pull/59 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-66013276 | task/thread `0001-t1-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-01-0001-t1-skin-module-and-tokens--lead-to-codex.md | 2026-11-01 |
 | 0002 | PDF export | planned | human: confirm dispatch | lead | | | | | specs/0002-pdf-export.md | plans/0002-pdf-export.md | | 2026-10-31 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned | human: confirm dispatch T1–T3 (T4–T6 blocked) | lead | | | | | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | | 2026-11-02 |
+| 0005 | [quick] Mid-bar key signature drawn once per staff (S1) | dispatched | lead: delegate | codex/gpt-6.1-sol | orch/0005-mid-bar-keysig-once | | | | | | handoffs/2026-11-10-0005-mid-bar-keysig-once--lead-to-codex.md | 2026-11-10 |
+| 0006 | [quick] ABC directive scoping: body-only voices, header K: before X: (S2, S3) | dispatched | lead: delegate | codex/gpt-6.1-sol | orch/0006-abc-directive-scoping | | | | | | handoffs/2026-11-10-0006-abc-directive-scoping--lead-to-codex.md | 2026-11-10 |
 
 ## Done / closed
 
@@ -27,14 +29,15 @@ Next ID: 0005
 
 | S | Kind | Suggestion | Evidence | Effort (S/M/L) | Value | Source | Status |
 |---|---|---|---|---|---|---|---|
-| S2 | fix | Body `%%MIDI` is dropped when voices are declared only in the body (contradicts README rule) | `packages/pepperscore/src/lib/import.ts:197`, `packages/pepperscore/README.md:517` | S | medium: common ABC style | PR #61 review r3 | new |
-| S3 | fix | A `K:` in the file header before the first `X:` makes every `V:` count as body music | `packages/pepperscore/src/lib/import.ts:193` | S | low: unusual input | PR #61 review r3 | new |
-| S1 | fix | Emit a mid-bar `<keySig>` only in layer 1; Verovio draws one per layer | `packages/pepperscore/src/lib/notation/document.ts:249` (probe: 2 layers → 3 keySig groups) | S | low today (ABC overlays are separate parts); matters for MIDI/multi-layer | PR #60 review r2 | new |
+| S2 | fix | Body `%%MIDI` is dropped when voices are declared only in the body (contradicts README rule) | `packages/pepperscore/src/lib/import.ts:197`, `packages/pepperscore/README.md:517` | S | medium: common ABC style | PR #61 review r3 | accepted → 0006 |
+| S3 | fix | A `K:` in the file header before the first `X:` makes every `V:` count as body music | `packages/pepperscore/src/lib/import.ts:193` | S | low: unusual input | PR #61 review r3 | accepted → 0006 |
+| S1 | fix | Emit a mid-bar `<keySig>` only in layer 1; Verovio draws one per layer | `packages/pepperscore/src/lib/notation/document.ts:249` (probe: 2 layers → 3 keySig groups) | S | low today (ABC overlays are separate parts); matters for MIDI/multi-layer | PR #60 review r2 | accepted → 0005 |
 
 Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-10 0005, 0006 new→dispatched — human accepted S1–S3 as quick items; ABC authoring guide started at docs/guides/abc-authoring.md (human request)
 2026-11-10 0004 merged→closed — t2 r3 approve on e0dfb55, CI green, merged PR #61 (18ee573); 60 ABC tests pass on main; handoffs closed; r3 follow-ups logged as S2, S3
 2026-11-10 0004-t2 changes-requested→in-review — fix round 2 pushed e0dfb55 (60 ABC tests); review r3
 2026-11-10 0004-t2 in-review→changes-requested — r2 on 600d1ea: r1 items fixed; new regression: later tune's %%MIDI leaks into first tune; fix round 2 (last before escalation) also takes r2 non-blocking items

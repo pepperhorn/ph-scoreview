@@ -128,3 +128,7 @@ The repo docs are the **source of truth** for this project. GBrain is the **memo
 - **Never** write secrets, tokens, `.env` values, or customer data to GBrain.
 - If GBrain isn't available in your session, say so in your handoff (`GBrain: unavailable`) and carry on.
 <!-- ph-orch:end -->
+
+## Project notes (outside the managed block)
+
+- **ABC authoring guide** (`docs/guides/abc-authoring.md`) is a living ledger for apps that send ABC. Any PR that changes ABC import behaviour must say so in its return handoff ("For the ABC guide"), and the lead updates the guide's Rules and Change log when merging.
