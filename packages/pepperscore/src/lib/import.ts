@@ -190,13 +190,34 @@ export async function parseAbc(text: string): Promise<Score> {
   const key = keyNumber(tune.getKeySignature?.());
   // Source offsets survive abcjs's removal of empty staves. Selectors identify the
   // host voice; an ordinal distinguishes its generated overlay voices.
-  const selectors = [...text.matchAll(/(?:^V:|\[V:)\s*([^\s\]]+)([^\]\n]*)/gm)].map(m => ({ start: m.index!, id: m[1], transpose: /\btranspose\s*=\s*([+-]?\d+)/.exec(m[2])?.[1] }));
+  // Mask non-music text without changing offsets used by abcjs startChar.
+  const source = text.replace(/[^\r\n]+/g, line => {
+    if (/^\s*(?:w:|W:|%(?!%MIDI\b))/.test(line)) return ' '.repeat(line.length);
+    let quoted = false;
+    for (let i = 0; i < line.length; i++) {
+      if (line[i] === '"' && line[i - 1] !== '\\') quoted = !quoted;
+      if (line[i] === '%' && !quoted && !(i < 2 && line.startsWith('%%MIDI'))) return line.slice(0, i) + ' '.repeat(line.length - i);
+    }
+    return line;
+  });
+  const selectors = [...source.matchAll(/(?:^V:|\[V:)\s*([^\s\]]+)([^\]\n]*)/gm)].map(m => ({ start: m.index!, id: m[1], transpose: /\btranspose\s*=\s*([+-]?\d+)/.exec(m[2])?.[1] }));
   const defaultVoice = selectors[0]?.id || '1';
-  const hostAt = (voice: any[]) => {
-    const start = voice.find(item => item.el_type === 'note' && item.startChar >= 0)?.startChar;
-    return selectors.filter(s => s.start <= start).at(-1)?.id || defaultVoice;
+  const selectedAt = (start: number) => selectors.filter(s => s.start <= start).at(-1)?.id;
+  const hostAt = (voice: any[]) => selectedAt(voice.find(item => item.el_type === 'note' && item.startChar >= 0)?.startChar) || defaultVoice;
+  type MidiCommand = 'program' | 'channel' | 'transpose';
+  // abcjs folds header MIDI directives score-wide. Attribute the source lines
+  // instead: before any V is a default; after V belongs only to that voice.
+  const midiEvents = [...source.matchAll(/^%%MIDI\s+(program|channel|transpose)\s+([+-]?\d+)(?:[ \t]+([+-]?\d+))?/gm)].map(m => ({
+    start: m.index!, host: selectedAt(m.index!), command: m[1] as MidiCommand, value: Number(m[3] ?? m[2]),
+  }));
+  const midiFor = (host: string, start = Infinity): Partial<Record<MidiCommand, number>> => {
+    const defaults: Partial<Record<MidiCommand, number>> = {}, own: Partial<Record<MidiCommand, number>> = {};
+    for (const event of midiEvents) if (event.start <= start) {
+      if (!event.host) defaults[event.command] = event.value;
+      else if (event.host === host) own[event.command] = event.value;
+    }
+    return { ...defaults, ...own };
   };
-  const midi = tune.formatting?.midi || {};
   const interval = (semitones: number): Transposition => {
     const n = Math.abs(semitones);
     // Nearest conventional interval: P1, m2, M2, m3, M3, P4, A4, P5, m6, M6, m7, M7.
@@ -208,7 +229,7 @@ export async function parseAbc(text: string): Promise<Score> {
     return { semitones: octave.semitones + instrument.semitones, diatonic: octave.diatonic! + instrument.diatonic! };
   };
   const parts: Part[] = [];
-  type AbcVoice = { part: Part; host: string; overlay: number; idPrefix: string; transpose?: number; midiTranspose: number };
+  type AbcVoice = { part: Part; host: string; overlay: number; idPrefix: string; transpose?: number; explicitSound: boolean };
   const identities = new Map<string, AbcVoice>();
   const voices = new Map<any[], AbcVoice>();
   const braceParts: Part[][] = [];
@@ -225,19 +246,21 @@ export async function parseAbc(text: string): Promise<Score> {
         let entry = identities.get(identity);
         if (!entry) {
           const name = staff.title?.[voiceIndex] || staff.title?.[0] || (voiceIndex ? `Voice ${voiceIndex + 1}` : 'Melody');
-          const percussion = staff.clef?.type === 'perc' || midi.channel?.[0] === 10;
+          const midi = midiFor(host);
+          const percussion = staff.clef?.type === 'perc' || midi.channel === 10 || (midi.program === undefined && instrumentForName(name) === 'drum-kit');
           const clef = percussion ? 'percussion' : abcClef(staff.clef);
-          const program = midi.program?.at(-1);
-          const validProgram = Number.isInteger(program) && program >= 0 && program <= 127;
+          const program = midi.program;
+          const validProgram = program !== undefined && Number.isInteger(program) && program >= 0 && program <= 127;
           // Keep the first encountered source coordinates for stable generated note ids.
           const idPrefix = `abc-${staffIndex}-${voiceIndex}`;
-          const id = parts.some(p => p.id === idPrefix) ? `${idPrefix}-${parts.length}` : idPrefix;
+          const id = parts.some(p => p.id === idPrefix) ? `${idPrefix}-v${parts.length}` : idPrefix;
           const declared = selectors.filter(s => s.id === host && s.transpose !== undefined).at(-1)?.transpose;
           // A shared staff clef may contain another voice's transpose.
           const transpose = declared !== undefined ? Number(declared) : undefined;
-          const midiTranspose = midi.transpose?.[0] || 0;
+          const firstNote = voice.find((item: any) => item.el_type === 'note');
+          const midiTranspose = midiFor(host, firstNote.startChar).transpose || 0;
           const part: Part = { id, name, clef, pitchBasis: 'written', transposition: composed(clef, transpose ?? midiTranspose), key: keyNumber(staff.key), keyMode: keyMode(staff.key), instrument: percussion ? 'drum-kit' : validProgram ? instrumentForProgram(program) : instrumentForName(name), ...(validProgram && !percussion ? { gmProgram: program + 1, gmSoundfont: gmProgramForNumber(program + 1)?.soundfont } : {}), measures: [] };
-          entry = { part, host, overlay, idPrefix: id, transpose, midiTranspose };
+          entry = { part, host, overlay, idPrefix: id, transpose, explicitSound: midiEvents.some(event => event.host === host && ((event.command === 'program' && validProgram) || (event.command === 'channel' && midi.channel === 10))) };
           identities.set(identity, entry); parts.push(part);
         }
         voices.set(voice, entry);
@@ -248,8 +271,15 @@ export async function parseAbc(text: string): Promise<Score> {
   }
   // Group once, even when abcjs repeats brace metadata on subsequent lines.
   for (const group of braceParts) if (group.length > 1 && group.every(p => !p.sourcePartId)) {
-    const pid = group[0].id, name = group.find(p => p.name !== 'Melody' && !/^Voice \d+$/.test(p.name))?.name || 'Piano';
-    group.forEach((part, i) => { part.sourcePartId = pid; part.id = `${pid}-${i + 1}`; part.name = name; });
+    const pid = group[0].id, named = group.find(p => p.name !== 'Melody' && !/^Voice \d+$/.test(p.name));
+    const name = named?.name || 'Piano';
+    const sound = group.find(p => [...identities.values()].some(entry => entry.part === p && entry.explicitSound))
+      || group.find(p => p.gmProgram !== undefined || p.instrument === 'drum-kit') || named || group[0];
+    group.forEach((part, i) => {
+      part.sourcePartId = pid; part.id = `${pid}-${i + 1}`; part.name = name;
+      part.instrument = sound.instrument; part.gmProgram = sound.gmProgram; part.gmSoundfont = sound.gmSoundfont;
+      if (sound.clef === 'percussion') part.clef = 'percussion';
+    });
   }
   // Overlay keys belong to their host's musical time, not the overlay's source offset.
   const hostKeys = new Map<string, { time: number; key: any }[]>();
@@ -306,7 +336,7 @@ export async function parseAbc(text: string): Promise<Score> {
     const openTies = tiesByPart.get(part) || new Map<string, number>();
     tiesByPart.set(part, openTies);
     let activeKey = staff.key || tune.getKeySignature?.();
-    let activeClef = abcClef(staff.clef);
+    let activeClef = part.clef === 'percussion' ? 'percussion' : abcClef(staff.clef);
     // abcjs marks only the first note of a tuplet with its multiplier.
     let triplet: { multiplier: number; remaining: number; actual: number; first: boolean } | undefined;
     for (const item of voice) {
@@ -315,21 +345,13 @@ export async function parseAbc(text: string): Promise<Score> {
         activeKey = event.key; accidentalMap.clear();
         if (cursor > 0 && event.time >= absolute - 1e-6) (current.keyChanges ||= []).push({ start: cursor, key: keyNumber(activeKey), keyMode: keyMode(activeKey) });
       }
-      if (item.el_type === 'midi') {
-        if (item.cmd === 'transpose') entry.midiTranspose = Number(item.params[0]) || 0;
-        if (item.cmd === 'program') {
-          const program = Number(item.params.at(-1));
-          if (Number.isInteger(program) && program >= 0 && program <= 127 && part.instrument !== 'drum-kit') { part.gmProgram = program + 1; part.gmSoundfont = gmProgramForNumber(program + 1)?.soundfont; part.instrument = instrumentForProgram(program); }
-        }
-        if (item.cmd === 'channel' && Number(item.params[0]) === 10) { part.instrument = 'drum-kit'; part.clef = 'percussion'; part.gmProgram = undefined; part.gmSoundfont = undefined; }
-        continue;
-      }
+      if (item.el_type === 'midi') continue; // Source-attributed settings were resolved above.
       if (item.el_type === 'key') {
         activeKey = item; accidentalMap.clear();
         if (cursor > 0) (current.keyChanges ||= []).push({ start: cursor, key: keyNumber(item), keyMode: keyMode(item) });
         continue;
       }
-      if (item.el_type === 'clef') { activeClef = abcClef(item); continue; }
+      if (item.el_type === 'clef') { activeClef = part.clef === 'percussion' ? 'percussion' : abcClef(item); continue; }
       if (item.el_type === 'bar') {
         // A key after the last note belongs to the next bar, as it did before mid-bar support.
         if (current.keyChanges) current.keyChanges = current.keyChanges.filter(change => change.start < cursor);
@@ -352,7 +374,7 @@ export async function parseAbc(text: string): Promise<Score> {
         cursor = 0; accidentalMap.clear(); continue;
       }
       if (item.el_type !== 'note') continue;
-      if (!current.notes.length) { current.key = keyNumber(activeKey); current.keyMode = keyMode(activeKey); current.clef = activeClef; current.transposition = composed(activeClef, entry.transpose ?? entry.midiTranspose); }
+      if (!current.notes.length) { current.key = keyNumber(activeKey); current.keyMode = keyMode(activeKey); current.clef = activeClef; current.transposition = composed(activeClef, entry.transpose ?? midiFor(entry.host, item.startChar).transpose ?? 0); }
       if (item.startTriplet && Number(item.tripletMultiplier) > 0) triplet = { multiplier: Number(item.tripletMultiplier), remaining: Number(item.tripletR || item.startTriplet) || 3, actual: Number(item.startTriplet) || 3, first: true };
       const tupletInfo = triplet ? { actual: triplet.actual, normal: Math.max(1, Math.round(triplet.actual * triplet.multiplier)), number: '1', start: triplet.first, stop: Boolean(item.endTriplet) || triplet.remaining <= 1 } : undefined;
       const duration = Number(item.duration || .25) * 4 * (triplet?.multiplier ?? 1);

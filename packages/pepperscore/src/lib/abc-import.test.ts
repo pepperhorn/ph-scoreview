@@ -323,7 +323,7 @@ describe('ABC parts and instruments', () => {
 
   it('keeps compressed staves attached to their source voices', async () => {
     const score = await abc('[V:A] C4 |\n[V:B] E4 |\n[V:B] F4 |\n[V:A] D4 |', 'V:A name="Same"\nV:B name="Same"\nK:C');
-    expect(score.parts.map(p => p.measures.map(m => m.notes[0].pitches[0].midi))).toEqual([[60, 62], [64, 65]]);
+    expect(score.parts.map(p => p.measures.filter(m => m.notes.length).map(m => m.notes[0].pitches[0].midi))).toEqual([[60, 62], [64, 65]]);
     expect(new Set(score.parts.flatMap(p => p.measures.flatMap(m => m.notes.map(n => n.id)))).size).toBe(4);
   });
 
@@ -404,5 +404,84 @@ describe('ABC parts and instruments', () => {
     const mei = scoreToMei(score);
     expect(mei).toContain('<dir staff="1" tstamp="2"');
     expect(mei).toContain('<harm staff="1" tstamp="2"');
+  });
+});
+
+
+describe('ABC review MIDI attribution and grouping', () => {
+  it('keeps header and body MIDI scoped to a flute and drum voice', async () => {
+    const score = await load('multivoice-midi');
+    const [flute, drums] = score.parts;
+    expect(flute).toMatchObject({ instrument: 'flute', gmProgram: 74, clef: 'treble', transposition: { semitones: -2, diatonic: -1 } });
+    expect(flute.measures[0].notes[0].pitches[0].unpitched).toBeUndefined();
+    expect(drums).toMatchObject({ instrument: 'drum-kit', clef: 'percussion', transposition: { semitones: 0 } });
+    expect(drums.measures[0].notes.every(n => n.pitches.every(p => p.unpitched))).toBe(true);
+    expect(scoreToMei(score)).toContain('clef.shape="perc"');
+    expect(scoreToMei(score)).toContain('pname="c"');
+  });
+
+  it('inherits tune-wide defaults separately for each property and lets body directives override', async () => {
+    const score = await abc('[V:A] C4 |\n[V:B] C4 |\n[V:A]\n%%MIDI transpose -5\nD4 |]', '%%MIDI program 73\n%%MIDI transpose -2\nV:A\n%%MIDI program 65\nV:B\nK:C');
+    expect(score.parts.map(p => p.gmProgram)).toEqual([66, 74]);
+    expect(score.parts[0].measures.map(m => m.transposition?.semitones)).toEqual([-2, -5]);
+    expect(score.parts[1].measures[0].transposition?.semitones).toBe(-2);
+    const local = await abc('[V:A] C4 |\n[V:B] C4 |]', 'V:A name="Flute"\n%%MIDI transpose -2\nV:B name="Cello" clef=bass\nK:C');
+    expect(local.parts.map(p => p.transposition?.semitones)).toEqual([-2, 0]);
+    expect(soundingMidi(local.parts[1], local.parts[1].measures[0], local.parts[1].measures[0].notes[0].pitches[0], 0)).toBe(60);
+    const programs = await abc('[V:A] C4 |\n[V:B] C4 |]', 'V:A name="Alto Sax"\n%%MIDI program 65\nV:B name="Bass"\n%%MIDI program 32\nK:C');
+    expect(programs.parts.map(p => p.gmProgram)).toEqual([66, 33]);
+  });
+
+  it('lets body program and channel override only the selected voice defaults', async () => {
+    const score = await abc('[V:A]\n%%MIDI channel 1\n%%MIDI program 65\nC4 |\n[V:B] C4 |]', '%%MIDI channel 10\n%%MIDI program 73\nV:A name="Solo"\nV:B name="Beat"\nK:C');
+    expect(score.parts[0]).toMatchObject({ instrument: 'alto-saxophone', gmProgram: 66, clef: 'treble' });
+    expect(score.parts[0].measures[0].notes[0].pitches[0].unpitched).toBeUndefined();
+    expect(score.parts[1]).toMatchObject({ instrument: 'drum-kit', clef: 'percussion' });
+    expect(score.parts[1].gmProgram).toBeUndefined();
+  });
+
+  it('imports body channel 10 with percussion clefs and staff positions before parsing notes', async () => {
+    const score = await abc('[V:F] C4 |\n[V:D]\n%%MIDI channel 10\nC D E F |]', 'V:F name="Flute"\nV:D name="Beat"\nK:C');
+    const part = score.parts[1];
+    expect(part).toMatchObject({ clef: 'percussion', instrument: 'drum-kit' });
+    expect(part.measures[0].clef).toBe('percussion');
+    expect(part.measures[0].notes[0].pitches[0]).toMatchObject({ unpitched: true, displayStep: 'C', displayOctave: 4 });
+    const staff = scoreToMei(score).match(/<staff n="2">([\s\S]*?)<\/staff>/)?.[1];
+    expect(staff).toContain('loc="');
+    expect(staff).not.toContain('pname=');
+    expect(score.parts[0].clef).toBe('treble');
+  });
+
+  it('preserves single-voice header-only MIDI imports', async () => {
+    for (const voice of ['', 'V:solo name="Solo"\n']) {
+      const score = await abc('A4 |]', `${voice}%%MIDI program 65\n%%MIDI transpose -9\nK:A`);
+      const part = score.parts[0], m = part.measures[0];
+      expect(part).toMatchObject({ gmProgram: 66, gmSoundfont: 'alto_sax', instrument: 'alto-saxophone' });
+      expect(soundingMidi(part, m, m.notes[0].pitches[0], 0)).toBe(60);
+    }
+  });
+
+  it('keeps late voice ids distinct from grand-staff ids', async () => {
+    const score = await abc('[V:R] C4 |\n[V:L] C,4 |\n[V:Z] |\n[V:Z] G4 |]', '%%score {R | L} Z\nV:R name="Piano"\nV:L clef=bass\nV:Z name="Flute"\nK:C');
+    expect(score.parts).toHaveLength(3);
+    expect(new Set(score.parts.map(p => p.id)).size).toBe(3);
+    expect(new Set(score.parts.flatMap(p => p.measures.flatMap(m => m.notes.map(n => n.id)))).size).toBe(3);
+    const compressed = await abc('[V:R] C4 |\n[V:L] C,4 |\n[V:Z] |\n[V:Z] G4 |]', 'V:R name="Piano"\nV:L clef=bass\nV:Z name="Flute"\nK:C');
+    expect(new Set(compressed.parts.map(p => p.id)).size).toBe(3);
+    expect(compressed.parts[2].id).toMatch(/-v\d+$/);
+  });
+
+  it('shares a named or explicitly programmed sound across braced staves', async () => {
+    const organ = await abc('[V:R] C4 |\n[V:L] C,4 |]', '%%score {R | L}\nV:R name="Clarinet"\nV:L clef=bass\nK:C');
+    expect(organ.parts.map(p => p.instrument)).toEqual(['clarinet', 'clarinet']);
+    const programmed = await abc('[V:R] C4 |\n[V:L] C,4 |]', '%%score {R | L}\nV:R name="Piano"\n%%MIDI channel 1\nV:L clef=bass\n%%MIDI program 19\nK:C');
+    expect(programmed.parts.map(p => p.gmProgram)).toEqual([20, 20]);
+    expect(programmed.parts.map(p => p.gmSoundfont)).toEqual(['church_organ', 'church_organ']);
+    expect(new Set(programmed.parts.map(p => p.instrument)).size).toBe(1);
+  });
+
+  it('ignores selectors in comments and lyric fields while retaining source offsets', async () => {
+    const score = await abc('[V:A] C4 | % [V:B]\n% [V:B]\nw: [V:B]\nD4 |\n[V:B] E4 |]', 'V:A name="Flute"\nV:B name="Cello"\nK:C');
+    expect(score.parts.map(p => p.measures.filter(m => m.notes.length).map(m => m.notes[0].pitches[0].midi))).toEqual([[60, 62], [64]]);
   });
 });
