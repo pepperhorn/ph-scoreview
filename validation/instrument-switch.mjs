@@ -2,14 +2,13 @@
 // Part.sourcePartId, the last note of a slurred phrase carries slurStop, and loading a file twice yields identical
 // ScoreNote ids and MEI xml:ids (so a saved octave move can key on ScoreNote.id).
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { startVite } from './lib/ports.mjs';
 import { readFileSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright-core';
 
 const fixture = name => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8');
-const port = 43992;
-const server = spawn('node', ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { cwd: new URL('..', import.meta.url), stdio: 'ignore' });
+const { port, server } = await startVite();
 let browser;
 try {
   let baseUrl;

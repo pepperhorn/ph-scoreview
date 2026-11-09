@@ -3,6 +3,7 @@
 // system and releases the first when scrolled to the end, and highlights playback in a system drawn on demand.
 // Runs against the built dist (npm run build). BROWSER=chromium|firefox|webkit (memory is checked on Chromium).
 import assert from 'node:assert/strict';
+import { budgetScale as validationBudgetScale, assertTiming } from './lib/budgets.mjs';
 import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -20,9 +21,9 @@ if (!launcher) throw new Error(`BROWSER must be chromium, firefox or webkit (got
 if (!existsSync(resolve(dist, 'index.html'))) throw new Error('apps/reader/dist/index.html is missing: run `npm run build` before validation/large-score.mjs');
 /**
  * Budgets: first paint measured at 6.9-9.9 s locally (desktop Chromium, 12-core WSL2), x 1.5. Shared CI runners are
- * slower, so CI doubles it; LARGE_SCORE_BUDGET_SCALE overrides.
+ * slower, so retain the existing 2x CI allowance. VALIDATION_BUDGET_SCALE scales all timing gates.
  */
-const budgetScale = Number(process.env.LARGE_SCORE_BUDGET_SCALE || (process.env.CI ? 2 : 1));
+const budgetScale = validationBudgetScale * (process.env.CI ? 2 : 1);
 const FIRST_PAINT_MS = 15000 * budgetScale;
 const MAX_DRAWN_SYSTEMS = 8;
 const MAX_HEAP_MB = 400;
@@ -103,9 +104,9 @@ try {
   console.log(`${engine}: ${(xml.length / 1e6).toFixed(1)} MB, ${MEASURES} measures x 30 parts: first paint ${firstPaint} ms, ${initial.systems} systems, drawn ${JSON.stringify(initial.drawn)}, heap ${initial.heapMB} MB`);
   if (importTasks) {
     console.log(`${engine}: import shown after ${Math.round(imported.shown - imported.start)} ms; main-thread long tasks during import: ${JSON.stringify(importTasks.map(task => task.duration))}`);
-    assert.ok(importTasks.every(task => task.duration <= IMPORT_LONG_TASK_MS), `No main-thread task over ${IMPORT_LONG_TASK_MS} ms while the score imports (${JSON.stringify(importTasks)})`);
+    assertTiming(importTasks.every(task => task.duration <= IMPORT_LONG_TASK_MS), `No main-thread task over ${IMPORT_LONG_TASK_MS} ms while the score imports (${JSON.stringify(importTasks)})`);
   }
-  assert.ok(firstPaint <= FIRST_PAINT_MS, `First system paints within ${FIRST_PAINT_MS} ms (took ${firstPaint} ms)`);
+  assertTiming(firstPaint <= FIRST_PAINT_MS, `First system paints within ${FIRST_PAINT_MS} ms (took ${firstPaint} ms)`);
   assert.equal(initial.systems, MEASURES, 'One placeholder or system block per line (one bar per line)');
   assert.ok(initial.drawn.includes(0), 'The first system is drawn');
   assert.ok(initial.drawn.length <= MAX_DRAWN_SYSTEMS, `Only systems near the viewport are drawn (${initial.drawn.length})`);
@@ -165,7 +166,7 @@ try {
   const lag = reached ? Math.round(timing.target - timing.first - target * TARGET_BAR_MS) : null;
   console.log(`${engine}: playback highlight in the next, undrawn system ${reached ? `${lag} ms after its bar began` : 'never came'}`);
   assert.ok(reached, `The playhead highlights a system drawn on demand (the first highlight came ${timing.first === undefined ? 'never' : 'but not in the target system: it was drawn after its bar had passed'})`);
-  assert.ok(lag <= HIGHLIGHT_LAG_MS, `A system drawn on demand highlights within ${HIGHLIGHT_LAG_MS} ms of its bar starting (took ${lag} ms)`);
+  assertTiming(lag <= HIGHLIGHT_LAG_MS, `A system drawn on demand highlights within ${HIGHLIGHT_LAG_MS} ms of its bar starting (took ${lag} ms)`);
   const highlighted = await page.evaluate(index => ({ line: !!document.querySelector(`.score-staves > .score-system[data-system="${index}"] .playback-line`), playing: document.querySelectorAll('.reader-note.is-playing').length }), target);
   assert.ok(highlighted.playing > 0, 'A note is highlighted in a system drawn on demand');
   await page.getByRole('button', { name: 'Pause playback', exact: true }).click();

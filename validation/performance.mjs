@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { startVite } from './lib/ports.mjs';
 import { chromium } from 'playwright-core';
 import toneMidi from '@tonejs/midi';
 
@@ -12,8 +12,7 @@ midiTrack.addNote({ midi: 62, ticks: midiFile.header.ppq * 3, durationTicks: mid
 midiTrack.addNote({ midi: 64, ticks: midiFile.header.ppq * 5, durationTicks: midiFile.header.ppq * 3 });
 const midiBytes = Array.from(midiFile.toArray());
 
-const port = 43981;
-const server = spawn('node', ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { stdio: 'ignore' });
+const { port, server } = await startVite();
 let browser;
 try {
   for (let attempt = 0; attempt < 60; attempt++) {

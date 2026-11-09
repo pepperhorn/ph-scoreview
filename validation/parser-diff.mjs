@@ -8,7 +8,7 @@
 // Inputs: validation/fixtures, synthetic orchestral scores (including the ~5 MB one validation/large-score.mjs opens),
 // the edge cases below, and any extra directories in PARSER_DIFF_DIRS (colon-separated; *.musicxml / *.xml).
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { startVite } from './lib/ports.mjs';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -17,8 +17,7 @@ import { strToU8, zipSync } from 'fflate';
 import { orchestral } from './synthetic.mjs';
 
 const root = new URL('..', import.meta.url);
-const port = 43984;
-const server = spawn('node', ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { cwd: root, stdio: 'ignore' });
+const { port, server } = await startVite();
 
 const head = (parts = '<score-part id="P1"><part-name>Piano</part-name></score-part>', extra = '') => `<?xml version="1.0" encoding="UTF-8"?>\n<score-partwise version="4.0">${extra}<part-list>${parts}</part-list>`;
 const one = (measures, extra = '') => `${head(undefined, extra)}<part id="P1">${measures}</part></score-partwise>`;

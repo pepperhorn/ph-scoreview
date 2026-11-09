@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { startVite } from './lib/ports.mjs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright-core';
 import { strToU8, zipSync } from 'fflate';
@@ -10,16 +10,14 @@ import toneMidi from '@tonejs/midi';
 // A private Vite server (like validation/performance.mjs): Astro 7 keeps one
 // background dev server per project, which survives this script and can serve
 // outdated optimized dependencies to later runs.
-const port = 43982;
-const server = spawn('node', ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { cwd: new URL('..', import.meta.url), stdio: 'ignore' });
+const { port, server } = await startVite();
 const pagePath = '/validation/performance.html';
 let browser;
 try {
   let baseUrl;
   for (let attempt = 0; attempt < 50; attempt++) {
-    for (const candidate of [process.env.DOCUMENT_URL, `http://127.0.0.1:${port}`].filter(Boolean)) {
-      try { const response = await fetch(`${candidate}${pagePath}`); if (response.ok) { baseUrl = candidate; break; } } catch { /* startup */ }
-    }
+    const candidate = `http://127.0.0.1:${port}`;
+    try { const response = await fetch(`${candidate}${pagePath}`); if (response.ok) baseUrl = candidate; } catch { /* startup */ }
     if (baseUrl) break;
     await delay(200);
   }

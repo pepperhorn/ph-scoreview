@@ -6,8 +6,9 @@
 // the rail at most once, Escape closes a popover before the inspector drawer, the view follows the cursor (40 notes in
 // Endless at 1400x900 keep it in view; an in-view arrow move, a click, a move during a momentum scroll and a move during playback do not scroll; Undo scrolls back to it), and the change-to-redraw latency the editor
 // logs stays under PS_EDITOR_RENDER_MS (default 400; a warning above it, a failure above twice it). Runs against the
-// build (npm run build first). BROWSER=chromium|firefox|webkit.
+// build (npm run build first). BROWSER=chromium|firefox|webkit. VALIDATION_BUDGET_SCALE scales timing gates (default 1).
 import assert from 'node:assert/strict';
+import { budgetScale, assertTiming } from './lib/budgets.mjs';
 import { chromium, firefox, webkit } from 'playwright-core';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -27,11 +28,11 @@ const pitchCount = xml => (xml.match(/<pitch>/g) ?? []).length;
 const barCount = xml => (xml.match(/<measure\b/g) ?? []).length;
 /** What window.confirm answers from now on (the editor asks before discarding unsaved changes). */
 const answerConfirm = (page, answer) => page.evaluate(answer => { window.__confirms = []; window.confirm = message => { window.__confirms.push(message); return answer; }; }, answer);
-const RENDER_MS = Number(process.env.PS_EDITOR_RENDER_MS) || 400;
+const RENDER_MS = (Number(process.env.PS_EDITOR_RENDER_MS) || 400) * budgetScale;
 /** Clicks the centre of a notehead (the note group's own centre can fall on empty SVG). */
 async function clickNote(page, index) {
-  const box = await page.locator(`${NOTES} .notehead`).nth(index).boundingBox();
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  // Layout changes replace the SVG asynchronously; locator.click waits for a visible, stable target.
+  await page.locator(`${NOTES} .notehead`).nth(index).click();
 }
 
 try {
@@ -515,7 +516,7 @@ try {
   // (CI) get a warning above PS_EDITOR_RENDER_MS and fail only above twice it.
   const slow = renderTimes.filter(ms => ms >= RENDER_MS);
   if (slow.length) console.warn(`Editor: ${slow.length} change-to-redraw time(s) at or over ${RENDER_MS} ms: ${slow.join(', ')}`);
-  assert.ok(renderTimes.every(ms => ms < 2 * RENDER_MS), `every change-to-redraw time is under ${2 * RENDER_MS} ms (got ${renderTimes.join(', ')})`);
+  assertTiming(renderTimes.every(ms => ms < 2 * RENDER_MS), `every change-to-redraw time is under ${2 * RENDER_MS} ms (got ${renderTimes.join(', ')})`);
   assert.deepEqual(errors, [], 'no page or console errors');
   console.log(`Editor: shell (keycaps, layout selector, popover placement, add/remove bar, title edit and cancel, medium-width inspector drawer), Layout tab (swap to Alto Sax beginner, moved-note highlights and status, Review, Make a copy and undo, piano-only custom layout and its clicks), entry, undo, accidentals and chord entry, click cursor, follow the cursor (Endless entry, arrow, click, Undo), key and time popovers, export, save and reopen, unsaved-work guard, staff cap (open and initial) and read-only pass (the phone shell: validation/editor-phone.mjs) (render ms: ${renderTimes.join(', ')})`);
 } finally {
