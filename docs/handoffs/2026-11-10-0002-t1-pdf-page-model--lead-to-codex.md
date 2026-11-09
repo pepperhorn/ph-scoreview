@@ -42,3 +42,5 @@ None. Escalate per AGENTS.md §7.
 
 ---
 ## Receiver ack
+
+I will implement T1 only: paper dimensions, greedy per-line fitting, optional MEI system breaks preserving existing reader output, and an isolated abortable PDF engraving worker. I will prove A4/A3 fitting with a real Verovio fixture, record fixed stave size and any shrink fallback, and stop/report if measurement or encoded breaks are unreliable. Only the declared files and my task handoffs will change. No open questions. GBrain consulted: projects/scoreflow-music-reader and projects/scoreflow-music-reader/gotchas-abc-import; repository spec/plan govern this task.
