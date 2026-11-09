@@ -31,8 +31,15 @@ const answerConfirm = (page, answer) => page.evaluate(answer => { window.__confi
 const RENDER_MS = (Number(process.env.PS_EDITOR_RENDER_MS) || 400) * budgetScale;
 /** Clicks the centre of a notehead (the note group's own centre can fall on empty SVG). */
 async function clickNote(page, index) {
-  // Layout changes replace the SVG asynchronously; locator.click waits for a visible, stable target.
-  await page.locator(`${NOTES} .notehead`).nth(index).click();
+  // Layout changes can temporarily remove/hide the SVG. Read the target atomically once it has geometry.
+  // Keep the coordinate click: overlapping stave paths can intercept a locator's actionability check.
+  const target = await page.waitForFunction(([selector, index]) => {
+    const box = document.querySelectorAll(selector)[index]?.getBoundingClientRect();
+    return box?.width > 0 && box.height > 0 ? { x: box.left + box.width / 2, y: box.top + box.height / 2 } : false;
+  }, [`${NOTES} .notehead`, index], { timeout: 30000 });
+  const { x, y } = await target.jsonValue();
+  await target.dispose();
+  await page.mouse.click(x, y);
 }
 
 try {
