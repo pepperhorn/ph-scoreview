@@ -46,3 +46,5 @@ None. Escalate per AGENTS.md §7.
 
 ---
 ## Receiver ack
+
+Acknowledged: I will add the six omitted, available controls to a Playback and view drawer panel, preserving no-skin rendering and single-mounted refs. I will also fix phone playback placement, suppress empty composed headers, and use an ephemeral skin-validation port. Only the declared owned files and my task handoffs will change. No open questions. GBrain consulted: projects/scoreflow-music-reader (historical context); the linked spec and plan govern implementation.
