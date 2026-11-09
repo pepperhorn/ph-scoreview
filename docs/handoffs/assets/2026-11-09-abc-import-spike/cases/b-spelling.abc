@@ -1,0 +1,10 @@
+X:2
+T:Case B Spelling F# and Gb
+M:4/4
+L:1/8
+Q:1/4=96
+V:1 clef=treble name="Piano"
+K:F#
+F2 G2 A2 B2 | c2 d2 e2 f2 | e2 d c B4 |
+K:Gb
+G2 A2 B2 c2 | d2 e2 f2 g2 | c4 B4 |]

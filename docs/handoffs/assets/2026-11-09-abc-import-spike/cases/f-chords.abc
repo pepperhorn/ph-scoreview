@@ -1,0 +1,8 @@
+X:8
+T:Case F Chord symbols
+M:4/4
+L:1/4
+Q:1/4=90
+V:1 clef=treble name="Piano"
+K:C
+"Cmaj7"E G "Dm7"F A | "Bm7b5"D F "Bdim7"F A | "Caug"E ^G "Gsus4"C D | "C6"E A "C/E"E2 |]
