@@ -9,7 +9,7 @@
 - **PR:** https://github.com/pepperhorn/ph-scoreview/pull/61
 - **Base commit:** 8037061 (T1 merge; dispatch checkout includes lead docs)
 - **Port:** 5242 (no manual preview server used)
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 Complete T2's ABC grand-staff grouping and instrument/sound headers, retaining written display, sounding pitch, note identity and the T1 engraving behavior.

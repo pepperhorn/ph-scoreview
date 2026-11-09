@@ -14,12 +14,12 @@ Next ID: 0005
 | 0001 | Composable player skins | merged (t1) | human: confirm dispatch of T2 | codex/gpt-6.1-sol | orch/0001-t1-skin-tokens | https://github.com/pepperhorn/ph-scoreview/pull/59 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-66013276 | task/thread `0001-t1-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-01-0001-t1-skin-module-and-tokens--lead-to-codex.md | 2026-11-01 |
 | 0002 | PDF export | planned | human: confirm dispatch | lead | | | | | specs/0002-pdf-export.md | plans/0002-pdf-export.md | | 2026-10-31 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned | human: confirm dispatch T1–T3 (T4–T6 blocked) | lead | | | | | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | | 2026-11-02 |
-| 0004 | ABC import parity with MusicXML | in-review (t2; t1 merged #60) | review 0004-t2-review-r3 | codex/gpt-6.1-sol | orch/0004-t2-abc-parts | https://github.com/pepperhorn/ph-scoreview/pull/61 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-4f2d2f71 | task `0004-t2-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A0e06bfc5-8825-491b-a63c-b7e720534d3b%3Adelegate-task%3A0004-t2-impl-r1` | plans/0004-abc-import-parity.md | handoffs/2026-11-09-0004-t1-abc-engraving-fidelity--lead-to-codex.md | handoffs/2026-11-09-0004-t2-abc-parts-and-instruments--codex-to-lead.md (@e0dfb55)
 
 ## Done / closed
 
 | K | Title | PR | Merged | Notes |
 |---|---|---|---|---|
+| 0004 | ABC import parity with MusicXML | https://github.com/pepperhorn/ph-scoreview/pull/60 , https://github.com/pepperhorn/ph-scoreview/pull/61 | 2026-11-10 | t1 8037061, t2 18ee573; `score=` not supported (documented) |
 
 ## Suggestions
 
@@ -27,12 +27,15 @@ Next ID: 0005
 
 | S | Kind | Suggestion | Evidence | Effort (S/M/L) | Value | Source | Status |
 |---|---|---|---|---|---|---|---|
+| S2 | fix | Body `%%MIDI` is dropped when voices are declared only in the body (contradicts README rule) | `packages/pepperscore/src/lib/import.ts:197`, `packages/pepperscore/README.md:517` | S | medium: common ABC style | PR #61 review r3 | new |
+| S3 | fix | A `K:` in the file header before the first `X:` makes every `V:` count as body music | `packages/pepperscore/src/lib/import.ts:193` | S | low: unusual input | PR #61 review r3 | new |
 | S1 | fix | Emit a mid-bar `<keySig>` only in layer 1; Verovio draws one per layer | `packages/pepperscore/src/lib/notation/document.ts:249` (probe: 2 layers → 3 keySig groups) | S | low today (ABC overlays are separate parts); matters for MIDI/multi-layer | PR #60 review r2 | new |
 
 Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-10 0004 merged→closed — t2 r3 approve on e0dfb55, CI green, merged PR #61 (18ee573); 60 ABC tests pass on main; handoffs closed; r3 follow-ups logged as S2, S3
 2026-11-10 0004-t2 changes-requested→in-review — fix round 2 pushed e0dfb55 (60 ABC tests); review r3
 2026-11-10 0004-t2 in-review→changes-requested — r2 on 600d1ea: r1 items fixed; new regression: later tune's %%MIDI leaks into first tune; fix round 2 (last before escalation) also takes r2 non-blocking items
 2026-11-09 0004-t2 changes-requested→in-review — fix round pushed 600d1ea; review r2

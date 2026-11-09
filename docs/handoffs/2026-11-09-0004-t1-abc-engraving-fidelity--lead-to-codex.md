@@ -7,7 +7,7 @@
 - **PR:** <url once opened>
 - **Base commit:** 49c3e9b
 - **Port (if running a server):** 5241
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 ABC sources draw every accidental the notation implies, follow mid-tune key changes, keep annotations separate from chord symbols, draw final/double barlines, and keep octave and C clefs, matching the MusicXML path. Findings 1, 2, 4, 5, 7 of the issue report.

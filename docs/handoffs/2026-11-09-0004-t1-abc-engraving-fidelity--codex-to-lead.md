@@ -9,7 +9,7 @@
 - **PR:** https://github.com/pepperhorn/ph-scoreview/pull/60
 - **Base commit:** 49c3e9b (dispatch docs at 415e1f4)
 - **Port:** 5241 (no manual preview server used)
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 Complete T1's ABC accidental, key-change, annotation/harmony, final/double-barline and clef fidelity requirements while retaining note identity and working ABC notation features.

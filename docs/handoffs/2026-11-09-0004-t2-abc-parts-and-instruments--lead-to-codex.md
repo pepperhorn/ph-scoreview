@@ -7,7 +7,7 @@
 - **PR:** <url once opened>
 - **Base commit:** 8037061 (T1 merged as PR #60)
 - **Port (if running a server):** 5242
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 Braced ABC voices become one grand-staff part, ABC can state a transposing instrument and its MIDI sound, and the README documents the honoured headers. Findings 3, 6, 8 of the issue report, plus two review follow-ups from T1 that T2 builds on.

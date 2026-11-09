@@ -6,7 +6,7 @@
 - **Spec / plan:** none yet. This document is the problem statement.
 - **Branch / worktree / PR:** none
 - **Base commit:** `54df48c` (main)
-- **Status:** acked
+- **Status:** closed
 
 ## Goal
 
