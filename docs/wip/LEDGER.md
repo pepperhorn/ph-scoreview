@@ -13,7 +13,7 @@ Next ID: 0010
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 0001 | Composable player skins | in-review (t2; t1 merged #59) | review 0001-t2-review-r1 | codex/gpt-6.1-sol | orch/0001-t2-skin-bar | https://github.com/pepperhorn/ph-scoreview/pull/66 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-206c13e7 | task `0001-t2-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0001-t2-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-10-0001-t2-skin-bar--codex-to-lead.md (@3cbc7ef) | 2026-11-10 |
 | 0002 | PDF export | planned | child 0001-t2 (T1 depends on 0001 T2) | lead |  |  |  |  | specs/0002-pdf-export.md | plans/0002-pdf-export.md |  | 2026-11-10 |
-| 0003 | Teaching layer (part 1: goal picker and setup tour) | in-review (t1) | review 0003-t1-review-r1 | codex/gpt-6.1-sol | orch/0003-t1-score-details | https://github.com/pepperhorn/ph-scoreview/pull/68 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-b3887053 | task `0003-t1-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0003-t1-impl-r1` | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-10-0003-t1-score-details--codex-to-lead.md (@324dafc) | 2026-11-10 |
+| 0003 | Teaching layer (part 1: goal picker and setup tour) | ready (t1) | human: approve merge of PR #68 (317 lines > 50) | codex/gpt-6.1-sol | orch/0003-t1-score-details | https://github.com/pepperhorn/ph-scoreview/pull/68 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-b3887053 | task `0003-t1-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0003-t1-impl-r1` | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-10-0003-t1-score-details--codex-to-lead.md (@324dafc) | 2026-11-10 |
 | 0008 | [quick] ABC: a V: line before X: keeps its clef (S5) | changes-requested | child 0008-impl-r1-fix1 | codex/gpt-6.1-sol | orch/0008-abc-voice-before-x | https://github.com/pepperhorn/ph-scoreview/pull/67 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-056df41c | task `0008-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0008-impl-r1` |  |  | handoffs/2026-11-10-0008-abc-voice-before-x--codex-to-lead.md (@c70334e) | 2026-11-10 |
 
 ## Done / closed
@@ -41,12 +41,15 @@ Next ID: 0010
 | S8 | fix | Apply ABC 2.1 file-header defaults (`M:`, `L:`, `Q:`, `C:` before `X:`), currently dropped | PR #64 review r1 (`packages/pepperscore/README.md:526`); `packages/pepperscore/src/lib/import.ts` header scan | S | low (authors can put them after X:) | PR #64 review | new |
 | S9 | test | Assert which layer carries the fallback mid-bar keySig in the older held-note test (it passes even if the fallback always goes to layer 1) | `packages/pepperscore/src/lib/notation/document-keysig.test.ts` (PR #63 test) | XS | low | PR #65 review | new |
 | S10 | risk | Reader (webkit) CI flake: "1280px: a user stave scale is restored instead of the default" failed on README-only PR #64, passed on its twin run | CI run 42699660294 job 129440692432; `validation/reader.mjs` | S | medium: flaky CI blocks merges | PR #64 CI | new |
+| S11 | fix | Details field keeps showing untidied text when the tidied value equals the saved one (e.g. `jazz,jazz`) | `packages/pepperscore-editor/src/ui/DetailsPanel.tsx` | XS | low | PR #68 review | new |
+| S12 | risk | Editor browser validation is load-sensitive: redraw <800 ms (`validation/editor.mjs:518`) and null click target in custom layout (`:354`) fail under parallel worktrees | PR #68 and #65 local runs | S | medium: false failures slow every task | PR #68 review | new |
 | S1 | fix | Emit a mid-bar `<keySig>` only in layer 1; Verovio draws one per layer | `packages/pepperscore/src/lib/notation/document.ts:249` (probe: 2 layers → 3 keySig groups) | S | low today (ABC overlays are separate parts); matters for MIDI/multi-layer | PR #60 review r2 | done (0005, PR #63) |
 
 Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-10 0003-t1 in-review→ready — r1 approve on 324dafc; over auto-merge limit, asked human; S11, S12 logged (T3 to add a Score details browser scenario)
 2026-11-10 0008 in-review→changes-requested — r1 on c70334e: replayed V: lines precede %%score so grouping is lost; lead: insert after %%score/%%staves, before first tune-header V:
 2026-11-10 0007 ready→closed — CI green on 4ab1300 (webkit rerun passed), merged PR #64 (c19e361); ABC guide now names the README as the published reference
 2026-11-10 0009 ready→closed — CI green on 62135b7, merged PR #65 (4629f1a)
