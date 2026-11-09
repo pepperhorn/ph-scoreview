@@ -1,6 +1,6 @@
 # ABC authoring guide for apps that send ABC to PepperScore
 
-> **Audience:** apps that generate ABC for `<PepperScore abc={…}>` (first: scale-to-song). **Owner:** the lead, on `main`. This is a living ledger: every change to the ABC import path updates the "Rules" and adds a line to the "Change log" at the bottom. Package-level reference: `packages/pepperscore/README.md`, section "ABC headers". Background: [spec 0004](../specs/0004-abc-import-parity.md).
+> **Audience:** apps that generate ABC for `<PepperScore abc={…}>` (first: scale-to-song). **Owner:** the lead, on `main`. This is a living ledger: every change to the ABC import path updates the "Rules" and adds a line to the "Change log" at the bottom. **Published reference for npm users:** the package README's ABC section (`packages/pepperscore/README.md`), which carries the same checklist, rules and templates. Keep both in step: rule changes land in the README via a PR; this guide records them in the Change log. Background: [spec 0004](../specs/0004-abc-import-parity.md).
 
 ## Quick checklist
 
@@ -111,6 +111,7 @@ G, A, B, C | D4 |]
 
 ## Change log
 <!-- Newest first: YYYY-MM-DD — ledger item / PR — what changed for ABC authors -->
+- 2026-11-10 — 0007 / PR #64 — the npm package README now carries the full ABC authoring rules and templates (no behaviour change).
 - 2026-11-10 — guide correction (found by 0007) — `%%score` must precede the `V:` lines it groups (the earlier piano template didn't group); octave-clef notes are written at sounding pitch (guitar template now `G, A, B, C`); tenor sax is -14. No code change.
 - 2026-11-10 — 0006 / PR #62 — `%%MIDI` works with voices declared only in the body; a file-level `K:` before `X:` no longer breaks tune-header `V:` lines.
 - 2026-11-10 — 0004-t2 / PR #61 — `%%score {…}` grand staff; `V: transpose=`, `%%MIDI transpose|program|channel` per voice; drums by channel 10 or name; only the first tune is read.
