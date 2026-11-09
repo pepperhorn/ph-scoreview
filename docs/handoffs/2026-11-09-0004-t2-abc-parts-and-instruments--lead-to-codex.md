@@ -55,7 +55,7 @@ None. Escalate per AGENTS.md §7.
 
 ---
 ## Receiver ack
-<!-- Implementer fills this in FIRST and commits it on its branch. -->
+Codex acknowledges T2: implement braced ABC source-part grouping, written-to-sounding V:/MIDI transposition composed with octave clefs, MIDI sound/channel metadata, stable voice mapping and overlay key sharing, the harmony beat fix, fixtures/tests and ABC README documentation. I will change only the declared owned files, preserve generated note identities and existing import paths, run the required verification, and return a committed handoff with a draft PR. No open questions. GBrain consulted: projects/scoreflow-music-reader; preserve abcjs beam/bar-fit behavior.
 
 ---
 ## Return (in a separate …--<impl>-to-lead.md)
