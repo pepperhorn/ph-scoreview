@@ -91,7 +91,7 @@ try {
     const repeatMei = scoreToMei(repeats), jumpMei = scoreToMei(jumps), bothMei = scoreToMei(both);
     const meiNav = parseMei('<?xml version="1.0"?><mei xmlns="http://www.music-encoding.org/ns/mei"><music><body><mdiv><score><scoreDef meter.count="4" meter.unit="4"><staffGrp><staffDef n="1"/></staffGrp></scoreDef><section><measure n="7a" left="rptstart"><staff n="1"><layer><note pname="c" oct="4" dur="1"/></layer></staff><repeatMark func="segno" tstamp="1" staff="1"/></measure><ending n="1-2"><measure n="8" right="rptend"><staff n="1"><layer><note pname="d" oct="4" dur="1"/></layer></staff></measure></ending></section></score></mdiv></body></music></mei>');
     return {
-      abcRepeatMei: [/<measure n="1" left="rptstart">/.test(repeatMei), /<ending n="1" label="1\."><measure n="2" right="rptend">/.test(repeatMei), /<ending n="2" label="2\."><measure n="3">/.test(repeatMei)],
+      abcRepeatMei: [/<measure n="1" left="rptstart">/.test(repeatMei), /<ending n="1" label="1\."><measure n="2" right="rptend">/.test(repeatMei), /<ending n="2" label="2\."><measure n="3" right="end">/.test(repeatMei)],
       abcJumpMei: ['<repeatMark func="segno"', '<repeatMark func="coda"', '>To Coda</dir>', '>Fine</dir>', '>D.S. al Coda</dir>'].map(text => jumpMei.includes(text)),
       abcBothMei: /<measure n="1" left="rptstart" right="rptboth">.*<measure n="2" right="rptend">/.test(bothMei) && !/<measure n="2" left=/.test(bothMei),
       abcChordText: jumps.parts[0].measures.map(m => m.notes[0].chordSymbol ?? '').join('|'),
