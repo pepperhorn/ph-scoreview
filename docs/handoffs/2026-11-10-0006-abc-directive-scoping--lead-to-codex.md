@@ -31,3 +31,7 @@ Run long commands in the foreground; don't overlap build with reader tests.
 
 ---
 ## Receiver ack
+
+I will fix only the ABC source scan so body-only voice selectors receive their own MIDI directives, pre-selector body directives belong to the first voice (or implicit default), and file-header K: before X: cannot end the tune header. I will add scoped regressions, retain first-tune isolation, add the README authoring-guide link, run the prescribed verification sequentially, and commit a return handoff and draft PR. No open questions; notation/document.ts and the ledger are outside my scope.
+
+GBrain consulted: projects/scoreflow-music-reader/gotchas-abc-import (source offsets, first-tune isolation, abcjs folded MIDI) and projects/scoreflow-music-reader. Base 2b4d032 is an ancestor of the clean starting HEAD.

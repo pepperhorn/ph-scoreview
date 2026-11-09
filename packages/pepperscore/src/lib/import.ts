@@ -190,11 +190,13 @@ export async function parseAbc(text: string): Promise<Score> {
     return line;
   });
   const selectors = [...source.matchAll(/(?:^V:|\[V:)\s*([^\s\]]+)([^\]\n]*)/gm)].map(m => ({ start: m.index!, id: m[1], transpose: /\btranspose\s*=\s*([+-]?\d+)/.exec(m[2])?.[1] }));
-  const bodyHeader = /^K:[^\r\n]*(?:\r?\n|$)/m.exec(source);
-  const bodyStart = bodyHeader ? bodyHeader.index + bodyHeader[0].length : source.length;
+  // File-header K: lines before X: cannot terminate the tune's header.
+  const tuneStart = /^X:/m.exec(source)?.index ?? 0;
+  const bodyHeader = /^K:[^\r\n]*(?:\r?\n|$)/m.exec(source.slice(tuneStart));
+  const bodyStart = bodyHeader ? tuneStart + bodyHeader.index + bodyHeader[0].length : source.length;
   const headerSelectors = selectors.filter(selector => selector.start < bodyStart);
   const bodySelectors = selectors.filter(selector => selector.start >= bodyStart);
-  const defaultVoice = headerSelectors[0]?.id || '1';
+  let defaultVoice = headerSelectors[0]?.id || '1';
   const selectedAt = (start: number) => (start >= bodyStart ? bodySelectors : headerSelectors).filter(selector => selector.start <= start).at(-1)?.id
     ?? (start >= bodyStart ? defaultVoice : undefined);
   const firstEvent = (voice: any[]) => voice.find(item => item.el_type === 'note' && item.startChar >= 0)
@@ -210,6 +212,15 @@ export async function parseAbc(text: string): Promise<Score> {
   if (!tune?.lines?.length) throw new Error('No readable ABC tune was found.');
   if (selection) for (const line of tune.lines) for (const staff of line.staff || []) for (const voice of staff.voices) for (const item of voice) {
     for (const field of ['startChar', 'endChar']) if (item[field] >= bodyStart + selection.length) item[field] -= selection.length;
+  }
+  // Body-only declarations still have a first voice. Keep the implicit voice
+  // only when actual music (including a bar-only voice) precedes all selectors.
+  if (!headerSelectors.length && bodySelectors.length) {
+    const implicitMusic = tune.lines.some((line: any) => (line.staff || []).some((staff: any) => staff.voices.some((voice: any[]) => {
+      const event = firstEvent(voice);
+      return event && event.startChar < bodySelectors[0].start;
+    })));
+    if (!implicitMusic) defaultVoice = bodySelectors[0].id;
   }
   type MidiCommand = 'program' | 'channel' | 'transpose';
   // abcjs folds header MIDI directives score-wide. Attribute the source lines
