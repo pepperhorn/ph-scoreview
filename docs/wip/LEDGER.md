@@ -16,7 +16,7 @@ Next ID: 0010
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | dispatched (t1) | child 0003-t1-impl-r1 | codex/gpt-6.1-sol | orch/0003-t1-score-details |  |  | task `0003-t1-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0003-t1-impl-r1` | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-10-0003-t1-score-details--lead-to-codex.md | 2026-11-10 |
 | 0007 | [quick] Package README carries the ABC authoring rules (S4, S6) | ready | ci | codex/gpt-6.1-sol | orch/0007-readme-abc-authoring | https://github.com/pepperhorn/ph-scoreview/pull/64 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-d0aeb650 | task `0007-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0007-impl-r1` |  |  | handoffs/2026-11-10-0007-readme-abc-authoring--codex-to-lead.md (@4ab1300) | 2026-11-10 |
 | 0008 | [quick] ABC: a V: line before X: keeps its clef (S5) | dispatched | child 0008-impl-r1 | codex/gpt-6.1-sol | orch/0008-abc-voice-before-x |  |  | task `0008-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0008-impl-r1` |  |  | handoffs/2026-11-10-0008-abc-voice-before-x--lead-to-codex.md | 2026-11-10 |
-| 0009 | [quick] More mid-bar key signature tests (S7) | in-review | review 0009-review-r1 | codex/gpt-6.1-sol | orch/0009-keysig-tests | https://github.com/pepperhorn/ph-scoreview/pull/65 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-acb160fd | task `0009-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0009-impl-r1` |  |  | handoffs/2026-11-10-0009-keysig-tests--codex-to-lead.md (@62135b7) | 2026-11-10 |
+| 0009 | [quick] More mid-bar key signature tests (S7) | ready | ci | codex/gpt-6.1-sol | orch/0009-keysig-tests | https://github.com/pepperhorn/ph-scoreview/pull/65 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-acb160fd | task `0009-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0009-impl-r1` |  |  | handoffs/2026-11-10-0009-keysig-tests--codex-to-lead.md (@62135b7) | 2026-11-10 |
 
 ## Done / closed
 
@@ -39,12 +39,15 @@ Next ID: 0010
 | S6 | docs | README sentence on body directives before the first selector is unclear for body-only voices | `packages/pepperscore/README.md` ABC headers | XS | low | PR #62 review | accepted → 0007 |
 | S7 | test | Add a transposed case and a held-across-change case (keySig falls back to layer 1, drawn late) to the mid-bar keySig test | `packages/pepperscore/src/lib/notation/document-keysig.test.ts` | XS | low | PR #63 review | accepted → 0009 |
 | S8 | fix | Apply ABC 2.1 file-header defaults (`M:`, `L:`, `Q:`, `C:` before `X:`), currently dropped | PR #64 review r1 (`packages/pepperscore/README.md:526`); `packages/pepperscore/src/lib/import.ts` header scan | S | low (authors can put them after X:) | PR #64 review | new |
+| S9 | test | Assert which layer carries the fallback mid-bar keySig in the older held-note test (it passes even if the fallback always goes to layer 1) | `packages/pepperscore/src/lib/notation/document-keysig.test.ts` (PR #63 test) | XS | low | PR #65 review | new |
+| S10 | risk | Reader (webkit) CI flake: "1280px: a user stave scale is restored instead of the default" failed on README-only PR #64, passed on its twin run | CI run 42699660294 job 129440692432; `validation/reader.mjs` | S | medium: flaky CI blocks merges | PR #64 CI | new |
 | S1 | fix | Emit a mid-bar `<keySig>` only in layer 1; Verovio draws one per layer | `packages/pepperscore/src/lib/notation/document.ts:249` (probe: 2 layers → 3 keySig groups) | S | low today (ABC overlays are separate parts); matters for MIDI/multi-layer | PR #60 review r2 | done (0005, PR #63) |
 
 Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-10 0009 in-review→ready — r1 approve on 62135b7 (mutation-checked); waiting on CI. 0007: webkit reader failed once on README-only head (stave-scale restore), rerun started; S9, S10 logged
 2026-11-10 0001-t2 dispatched→in-review — PR #66 @3cbc7ef (338+/64-); T2 checks pass, reader/editor timing failures under parallel load; reviewer to compare against main
 2026-11-10 0009 dispatched→in-review — PR #65 @62135b7 (tests only, 7 pass); local full validation had timing/browser failures likely from parallel-worktree load; CI decides
 2026-11-10 0007 changes-requested→ready — 4ab1300 applies exactly r1's three README wording fixes (lead checked the 6-line diff; no further review round for a docs-only delta the reviewer specified); watching CI
