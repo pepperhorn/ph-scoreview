@@ -207,11 +207,30 @@ export async function parseAbc(text: string): Promise<Score> {
   const selectDefault = new Set(headerSelectors.map(selector => selector.id)).size > 1
     && source.slice(bodyStart, bodySelectors[0]?.start ?? source.length).trim().length > 0;
   const selection = selectDefault ? `[V:${defaultVoice}]\n` : '';
-  const parseText = firstTuneText.slice(0, bodyStart) + selection + firstTuneText.slice(bodyStart);
+  // TuneBook keeps only %% directives before X:, dropping file-header V: lines.
+  // Replay after the tune's layout directives, before its first V: (or K:).
+  // abcjs must see %%score/%%staves before any voices to retain staff grouping.
+  // Record insertions to restore original source offsets.
+  const firstTuneDeclaration = /^(?:V:|K:)/m.exec(source.slice(tuneStart, bodyStart));
+  const replayStart = firstTuneDeclaration ? tuneStart + firstTuneDeclaration.index : bodyStart;
+  const fileVoices = [...source.slice(0, tuneStart).matchAll(/^V:[^\r\n]*/gm)].map(m => m[0]);
+  const insertions = [
+    { start: replayStart, text: fileVoices.length ? fileVoices.join('\n') + '\n' : '' },
+    { start: bodyStart, text: selection },
+  ].filter(insertion => insertion.text);
+  let parseText = firstTuneText;
+  for (const insertion of [...insertions].reverse()) parseText = parseText.slice(0, insertion.start) + insertion.text + parseText.slice(insertion.start);
   const tune = (abcjs as any).parseOnly(parseText)[0];
   if (!tune?.lines?.length) throw new Error('No readable ABC tune was found.');
-  if (selection) for (const line of tune.lines) for (const staff of line.staff || []) for (const voice of staff.voices) for (const item of voice) {
-    for (const field of ['startChar', 'endChar']) if (item[field] >= bodyStart + selection.length) item[field] -= selection.length;
+  if (insertions.length) for (const line of tune.lines) for (const staff of line.staff || []) for (const voice of staff.voices) for (const item of voice) {
+    for (const field of ['startChar', 'endChar']) {
+      let added = 0;
+      const parsedOffset = item[field];
+      for (const insertion of insertions) {
+        if (parsedOffset >= insertion.start + added + insertion.text.length) item[field] -= insertion.text.length;
+        added += insertion.text.length;
+      }
+    }
   }
   // Body-only declarations still have a first voice. Keep the implicit voice
   // only when actual music (including a bar-only voice) precedes all selectors.
@@ -284,7 +303,12 @@ export async function parseAbc(text: string): Promise<Score> {
         const identity = `${host}:${overlay}`;
         let entry = identities.get(identity);
         if (!entry) {
-          const name = staff.title?.[voiceIndex] || staff.title?.[0] || (voiceIndex ? `Voice ${voiceIndex + 1}` : 'Melody');
+          // Repeated declarations do not reliably replace abcjs titles. A tune-header name must override the replayed file-header name.
+          const declaredName = fileVoices.length ? headerSelectors.filter(s => s.id === host).map(s => {
+            const declaration = source.slice(s.start).split('\n', 1)[0];
+            return /\b(?:name|nm)\s*=\s*(?:"([^"]*)"|([^\s]+))/.exec(declaration);
+          }).filter(Boolean).at(-1) : undefined;
+          const name = declaredName ? (declaredName[1] ?? declaredName[2]) : staff.title?.[voiceIndex] || staff.title?.[0] || (voiceIndex ? `Voice ${voiceIndex + 1}` : 'Melody');
           const midi = midiFor(host);
           const percussion = staff.clef?.type === 'perc' || midi.channel === 10 || (midi.program === undefined && instrumentForName(name) === 'drum-kit');
           const clef = percussion ? 'percussion' : abcClef(staff.clef);

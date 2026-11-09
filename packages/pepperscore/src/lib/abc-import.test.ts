@@ -652,3 +652,80 @@ describe('ABC body-only voice and file-header directive scoping', () => {
     expect(score.parts.map(p => p.transposition?.semitones)).toEqual([-9, 0]);
   });
 });
+
+describe('ABC file-header voice declarations', () => {
+  it.each(['bass', 'treble-8'])('preserves a pre-X: %s clef and its octave transposition', async clef => {
+    const header = `V:1 name="Solo" clef=${clef}\n`;
+    const tune = 'X:1\nM:4/4\nL:1/4\nK:C\nC4 |]';
+    const score = await parseAbc(header + tune);
+    const control = await parseAbc(tune.replace('X:1\n', `X:1\n${header}`));
+    expect(score.parts).toEqual(control.parts);
+    expect(score.parts[0]).toMatchObject({ name: 'Solo', clef, transposition: { semitones: clef === 'treble-8' ? -12 : 0 } });
+    expect(score.parts[0].measures[0].clef).toBe(clef);
+    expect(scoreToMei(score)).toBe(scoreToMei(control));
+    expect(soundingMidi(score.parts[0], score.parts[0].measures[0], score.parts[0].measures[0].notes[0].pitches[0], 0)).toBe(60);
+  });
+
+  it('lets tune-header properties override file-header properties for the same id', async () => {
+    const score = await parseAbc('V:1 name="Old" clef=bass transpose=-9\n%%MIDI program 42\nX:1\nM:4/4\nL:1/4\nV:1 name="Solo" clef=treble-8 transpose=0\n%%MIDI program 73\nK:C\nC4 |]');
+    expect(score.parts).toHaveLength(1);
+    expect(score.parts[0]).toMatchObject({ name: 'Solo', clef: 'treble-8', gmProgram: 74, transposition: { semitones: -12 } });
+  });
+
+  it('inherits unspecified file-header properties while keeping V: transpose ahead of MIDI', async () => {
+    const score = await parseAbc('V:1 name="Old" clef=bass transpose=-9\n%%MIDI program 65\n%%MIDI transpose -2\nX:1\nM:4/4\nL:1/4\nV:1 name="Solo"\nK:A\nA4 |]');
+    const part = score.parts[0], measure = part.measures[0];
+    expect(part).toMatchObject({ name: 'Solo', clef: 'bass', gmProgram: 66, transposition: { semitones: -9 } });
+    expect(measure.transposition?.semitones).toBe(-9);
+    expect(soundingMidi(part, measure, measure.notes[0].pitches[0], 0)).toBe(60);
+  });
+
+  it('retains voice identity and MIDI source attribution across first-tune boundaries', async () => {
+    const file = '%%MIDI program 73\n% offsets must survive\nV:A name="Solo" clef=alto transpose=-9\n%%MIDI program 65\nV:B name="Bass" clef=bass\n%%MIDI program 42\n';
+    const tune = 'X:1\nM:4/4\nL:1/4\nK:C\nA4 |]\n[V:B]\n%%MIDI transpose -2\nC,4 |]\n[V:A]\n%%MIDI channel 10\nD4 |]\n';
+    const later = '\nX:2\nV:A name="Wrong" clef=treble+8 transpose=12\n%%MIDI program 40\nK:A\nA4 |]';
+    const score = await parseAbc(file + tune);
+    const book = await parseAbc(file + tune + later);
+    expect(book.parts).toEqual(score.parts);
+    expect(score.parts).toHaveLength(2);
+    expect(score.parts[0]).toMatchObject({ name: 'Solo', clef: 'percussion', instrument: 'drum-kit' });
+    expect(score.parts[1]).toMatchObject({ name: 'Bass', clef: 'bass', gmProgram: 43, transposition: { semitones: -2 } });
+    expect(score.parts[1].measures[0].notes[0].pitches[0]).toMatchObject({ step: 'C', octave: 3 });
+    expect(score.parts[1].measures[0].transposition?.semitones).toBe(-2);
+  });
+});
+
+describe('ABC file-header voices respect tune-header layout', () => {
+  it.each(['%%score {RH | LH}', '%%staves {RH LH}'])('preserves a braced Piano and stable ids with %s', async layout => {
+    const file = 'V:RH clef=treble\nV:LH clef=bass\n';
+    const header = `X:1\nM:4/4\nL:1/4\n${layout}\n%%staffwidth 600\n`;
+    for (const override of ['', 'V:RH name="Piano"\n']) {
+      const tune = `${header}${override}K:C\n[V:RH] c4 |]\n[V:LH] C,4 |]`;
+      const score = await parseAbc(file + tune);
+      const control = await parseAbc(header + file + tune.slice(header.length));
+      const withoutFileVoices = await parseAbc(tune);
+      expect(score.parts).toEqual(control.parts);
+      expect(score.parts.map(part => ({ id: part.id, sourcePartId: part.sourcePartId, name: part.name, notes: part.measures.flatMap(m => m.notes.map(n => n.id)) }))).toEqual(
+        withoutFileVoices.parts.map(part => ({ id: part.id, sourcePartId: part.sourcePartId, name: part.name, notes: part.measures.flatMap(m => m.notes.map(n => n.id)) })),
+      );
+      expect(score.parts.map(p => ({ id: p.id, sourcePartId: p.sourcePartId, name: p.name, clef: p.clef }))).toEqual([
+        { id: 'abc-0-0-1', sourcePartId: 'abc-0-0', name: 'Piano', clef: 'treble' },
+        { id: 'abc-0-0-2', sourcePartId: 'abc-0-0', name: 'Piano', clef: 'bass' },
+      ]);
+      expect(scoreToMei(score)).toContain('symbol="brace"');
+      expect(scoreToMei(score)).toBe(scoreToMei(control));
+    }
+  });
+
+  it('keeps %%score (S A) voices on one staff and restores MIDI source coordinates', async () => {
+    const file = 'V:S clef=treble\n';
+    const header = 'X:1\nM:4/4\nL:1/4\n%%score (S A)\n%%staffwidth 600\n';
+    const body = 'V:S\nV:A\nK:C\n[V:S] C4 |]\n[V:A]\n%%MIDI transpose -2\nE4 |]';
+    const score = await parseAbc(file + header + body);
+    const control = await parseAbc(header + file + body);
+    expect(score.parts).toEqual(control.parts);
+    expect(score.parts.map(p => p.id)).toEqual(['abc-0-0', 'abc-0-1']);
+    expect(score.parts.map(p => p.measures[0].transposition?.semitones)).toEqual([0, -2]);
+    expect(scoreToMei(score)).toBe(scoreToMei(control));
+  });
+});
