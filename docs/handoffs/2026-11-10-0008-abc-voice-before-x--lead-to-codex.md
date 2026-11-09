@@ -7,7 +7,7 @@
 - **PR:** <url once opened>
 - **Base commit:** 7eb7fd0
 - **Port (if running a server):** n/a
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 A `V:` declaration in the file header before the first `X:` loses its `clef=` (pre-existing; found in PR #62 review, `gh pr view 62 --comments`). Make file-header `V:` declarations behave like tune-header ones for clef, name, transpose and `%%MIDI` attribution, within the first-tune scoping rules from PRs #61/#62 (see `docs/handoffs/2026-11-10-0006-abc-directive-scoping--codex-to-lead.md`). If abcjs itself drops the clef and it can't be recovered from source offsets safely, stop and report instead.
@@ -30,3 +30,7 @@ Run long commands in the foreground; never overlap `build` with reader tests.
 
 ---
 ## Receiver ack
+
+Acknowledged: recover file-header V: clef, name, transpose and MIDI attribution for the first tune, preserving tune-header overrides and existing source offsets. I will change only the owned ABC importer/test/fixture paths and my 0008 handoffs, run the specified checks sequentially, and return a draft PR. If abcjs drops clef data without safe source recovery, I will stop and report. No open questions.
+
+GBrain consulted: projects/scoreflow-music-reader and projects/scoreflow-music-reader/gotchas-abc-import (first-tune isolation, header MIDI folding, octave-clef transposition).

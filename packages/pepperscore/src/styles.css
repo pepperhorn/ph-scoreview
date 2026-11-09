@@ -446,3 +446,10 @@
 .pepperscore :where(button,input,select,textarea,a):focus-visible{outline-color:var(--ps-focus-ring,revert)}
 /* Derived alpha colours: an unset base token leaves each original fallback intact. */
 .pepperscore{--ps-shadow-a24:color-mix(in srgb,var(--ps-shadow) 14.117647%,transparent);--ps-shadow-a0a:color-mix(in srgb,var(--ps-shadow) 3.921569%,transparent);--ps-playback-a2b:color-mix(in srgb,var(--ps-playback) 16.862745%,transparent);--ps-shadow-a16:color-mix(in srgb,var(--ps-shadow) 8.627451%,transparent);--ps-shadow-a60:color-mix(in srgb,var(--ps-shadow) 37.647059%,transparent);--ps-shadow-a18:color-mix(in srgb,var(--ps-shadow) 9.411765%,transparent);--ps-playback-a99:color-mix(in srgb,var(--ps-playback) 60%,transparent);--ps-playback-a80:color-mix(in srgb,var(--ps-playback) 50.196078%,transparent);--ps-shadow-a40:color-mix(in srgb,var(--ps-shadow) 25.098039%,transparent);--ps-shadow-a2e:color-mix(in srgb,var(--ps-shadow) 18.039216%,transparent);--ps-shadow-a33:color-mix(in srgb,var(--ps-shadow) 20%,transparent);--ps-shadow-a22:color-mix(in srgb,var(--ps-shadow) 13.333333%,transparent);--ps-shadow-a26:color-mix(in srgb,var(--ps-shadow) 14.901961%,transparent);--ps-shadow-a10:color-mix(in srgb,var(--ps-shadow) 6.27451%,transparent);--ps-focus-ring-a2e:color-mix(in srgb,var(--ps-focus-ring) 18.039216%,transparent)}
+
+/* Composed bars share the existing More panel and theme roles. */
+.pepperscore .skin-topbar{height:auto;min-height:54px;padding-block:6px}
+.pepperscore .skin-bar{flex-wrap:wrap;min-width:0;max-width:100%;font-family:Poppins,Arial,sans-serif}
+.pepperscore .skin-annotation-toggle[aria-pressed="true"]{background:var(--ps-accent-wash-strong,#eaf3e9);color:var(--ps-accent,#345642);box-shadow:inset 0 0 0 1px var(--ps-accent,#345642)}
+.pepperscore .skin-bar .instrument-switch{position:static;transform:none;flex:none}
+@container pepperscore (max-width:760px){.pepperscore .skin-bar .header-secondary-panel>.header-control{flex-wrap:wrap}.pepperscore .skin-bar .header-secondary-panel{max-height:60cqh;overflow:auto}}

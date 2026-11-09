@@ -5,21 +5,26 @@
 > Waiting on: `child <taskId>` · `review <taskId>` · `ci` · `human: <why>` · `lead: <next action>`. Set it on every status change. A row needs the lead when it starts with `lead`, or when it's empty and Status is dispatched, in-review, changes-requested, ready, or merged. The lead's Stop hook won't let the lead end its turn while any row needs it.
 > Type: normal items have a spec and plan. Quick items have the title prefix `[quick]` (no spec or plan, a short handoff). PRs adopted by `orch-sweep` have the prefix `[pr]`.
 
-Next ID: 0010
+Next ID: 0012
 
 ## Active
 
 | K | Title | Status | Waiting on | Owner (provider/model) | Branch | PR | Worktree | T3 task/thread | Spec | Plan | Latest handoff | Updated |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 0001 | Composable player skins | in-review (t2; t1 merged #59) | review 0001-t2-review-r1 | codex/gpt-6.1-sol | orch/0001-t2-skin-bar | https://github.com/pepperhorn/ph-scoreview/pull/66 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-206c13e7 | task `0001-t2-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0001-t2-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-10-0001-t2-skin-bar--codex-to-lead.md (@3cbc7ef) | 2026-11-10 |
-| 0002 | PDF export | planned | child 0001-t2 (T1 depends on 0001 T2) | lead |  |  |  |  | specs/0002-pdf-export.md | plans/0002-pdf-export.md |  | 2026-11-10 |
-| 0003 | Teaching layer (part 1: goal picker and setup tour) | dispatched (t2; t1 merged #68) | lead: delegate | codex/gpt-6.1-sol | orch/0003-t2-parts |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-10-0003-t2-parts--lead-to-codex.md | 2026-11-10 |
-| 0008 | [quick] ABC: a V: line before X: keeps its clef (S5) | changes-requested | child 0008-impl-r1-fix1 | codex/gpt-6.1-sol | orch/0008-abc-voice-before-x | https://github.com/pepperhorn/ph-scoreview/pull/67 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-056df41c | task `0008-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0008-impl-r1` |  |  | handoffs/2026-11-10-0008-abc-voice-before-x--codex-to-lead.md (@c70334e) | 2026-11-10 |
+| 0001 | Composable player skins | changes-requested (t3; t1 #59, t2 #66 merged) | child 0001-t3-impl-r1-fix1 | codex/gpt-6.1-sol | orch/0001-t3-drawer-controls | https://github.com/pepperhorn/ph-scoreview/pull/72 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-1eaa3a60 | task `0001-t3-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0001-t3-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-10-0001-t3-drawer-controls--codex-to-lead.md (@2a185b5) | 2026-11-10 |
+| 0002 | PDF export | in-review (t1) | review 0002-t1-review-r2 | codex/gpt-6.1-sol | orch/0002-t1-pdf-page-model | https://github.com/pepperhorn/ph-scoreview/pull/71 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-e3689cb4 | task `0002-t1-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0002-t1-impl-r1` | specs/0002-pdf-export.md | plans/0002-pdf-export.md | handoffs/2026-11-10-0002-t1-pdf-page-model--codex-to-lead.md (@70b782c) | 2026-11-10 |
+| 0003 | Teaching layer (part 1: goal picker and setup tour) | in-review (t2; t1 merged #68) | review 0003-t2-review-r2 | codex/gpt-6.1-sol | orch/0003-t2-parts | https://github.com/pepperhorn/ph-scoreview/pull/69 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-561b6b7c | task `0003-t2-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0003-t2-impl-r1` | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-10-0003-t2-parts--codex-to-lead.md (@434e5e9) | 2026-11-10 |
+| 0011 | [quick] Validation harness reliability: ephemeral ports, load-aware timing gates (S12, S14) | dispatched | child 0011-impl-r1 | codex/gpt-6.1-sol | orch/0011-validation-harness |  |  | task `0011-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0011-impl-r1` |  |  | handoffs/2026-11-10-0011-validation-harness-reliability--lead-to-codex.md | 2026-11-10 |
 
 ## Done / closed
 
 | K | Title | PR | Merged | Notes |
 |---|---|---|---|---|
+| 0010 | [quick] README ABC section: sync with 0008 | https://github.com/pepperhorn/ph-scoreview/pull/70 | 2026-11-10 | merged; docs only |
+| 0008 | [quick] ABC: a V: line before X: keeps its clef (S5) | https://github.com/pepperhorn/ph-scoreview/pull/67 | 2026-11-10 | 8c19b8f; ABC guide updated; README sync → 0010 |
+| 0001-t2 | Composable main bar and toggles (task of 0001) | https://github.com/pepperhorn/ph-scoreview/pull/66 | 2026-11-10 | 13d48eb; 0001 continues with T3 |
+| 0001-t1 | Skin module and theme tokens (task of 0001) | https://github.com/pepperhorn/ph-scoreview/pull/59 | 2026-11-01 | 9afa2f2 |
+| 0003-t1 | Score details fields (task of 0003) | https://github.com/pepperhorn/ph-scoreview/pull/68 | 2026-11-10 | b8fb939; 0003 continues with T2 |
 | 0007 | [quick] Package README carries the ABC authoring rules (S4, S6) | https://github.com/pepperhorn/ph-scoreview/pull/64 | 2026-11-10 | c19e361; docs only; guide points at README |
 | 0009 | [quick] More mid-bar key signature tests (S7) | https://github.com/pepperhorn/ph-scoreview/pull/65 | 2026-11-10 | 4629f1a; tests only |
 | 0005 | [quick] Mid-bar key signature drawn once per staff (S1) | https://github.com/pepperhorn/ph-scoreview/pull/63 | 2026-11-10 | c48dc0e; no ABC guide change |
@@ -35,21 +40,39 @@ Next ID: 0010
 | S2 | fix | Body `%%MIDI` is dropped when voices are declared only in the body (contradicts README rule) | `packages/pepperscore/src/lib/import.ts:197`, `packages/pepperscore/README.md:517` | S | medium: common ABC style | PR #61 review r3 | done (0006, PR #62) |
 | S3 | fix | A `K:` in the file header before the first `X:` makes every `V:` count as body music | `packages/pepperscore/src/lib/import.ts:193` | S | low: unusual input | PR #61 review r3 | done (0006, PR #62) |
 | S4 | fix | README link to `docs/guides/abc-authoring.md` is dead on npm (private repo, no `repository` in package.json); publish the guide content in the package README or a public URL | `packages/pepperscore/README.md` ABC section; `packages/pepperscore/package.json` | S | medium before npm release | PR #62 review | done (0007, PR #64) |
-| S5 | fix | A `V:` line before `X:` has its clef ignored (pre-existing) | `packages/pepperscore/src/lib/import.ts` header scan | S | low | PR #62 review | accepted → 0008 |
+| S5 | fix | A `V:` line before `X:` has its clef ignored (pre-existing) | `packages/pepperscore/src/lib/import.ts` header scan | S | low | PR #62 review | done (0008, PR #67) |
 | S6 | docs | README sentence on body directives before the first selector is unclear for body-only voices | `packages/pepperscore/README.md` ABC headers | XS | low | PR #62 review | done (0007, PR #64) |
 | S7 | test | Add a transposed case and a held-across-change case (keySig falls back to layer 1, drawn late) to the mid-bar keySig test | `packages/pepperscore/src/lib/notation/document-keysig.test.ts` | XS | low | PR #63 review | done (0009, PR #65) |
 | S8 | fix | Apply ABC 2.1 file-header defaults (`M:`, `L:`, `Q:`, `C:` before `X:`), currently dropped | PR #64 review r1 (`packages/pepperscore/README.md:526`); `packages/pepperscore/src/lib/import.ts` header scan | S | low (authors can put them after X:) | PR #64 review | new |
 | S9 | test | Assert which layer carries the fallback mid-bar keySig in the older held-note test (it passes even if the fallback always goes to layer 1) | `packages/pepperscore/src/lib/notation/document-keysig.test.ts` (PR #63 test) | XS | low | PR #65 review | new |
 | S10 | risk | Reader (webkit) CI flake: "1280px: a user stave scale is restored instead of the default" failed on README-only PR #64, passed on its twin run | CI run 42699660294 job 129440692432; `validation/reader.mjs` | S | medium: flaky CI blocks merges | PR #64 CI | new |
 | S11 | fix | Details field keeps showing untidied text when the tidied value equals the saved one (e.g. `jazz,jazz`) | `packages/pepperscore-editor/src/ui/DetailsPanel.tsx` | XS | low | PR #68 review | new |
-| S12 | risk | Editor browser validation is load-sensitive: redraw <800 ms (`validation/editor.mjs:518`) and null click target in custom layout (`:354`) fail under parallel worktrees | PR #68 and #65 local runs | S | medium: false failures slow every task | PR #68 review | new |
-| S13 | risk | `validation/skin.mjs` binds a hard-coded port 5211, so parallel worktrees collide | 0003-t1 return handoff | XS | medium: parallel tasks | 0003-t1 return | new |
+| S12 | risk | Editor browser validation is load-sensitive: redraw <800 ms (`validation/editor.mjs:518`) and null click target in custom layout (`:354`) fail under parallel worktrees | PR #68 and #65 local runs | S | medium: false failures slow every task | PR #68 review | accepted → 0011 |
+| S13 | risk | `validation/skin.mjs` binds a hard-coded port 5211, so parallel worktrees collide | 0003-t1 return handoff | XS | medium: parallel tasks | 0003-t1 return | accepted → 0001-t3 (skin.mjs port) |
+| S14 | risk | Browser validation harnesses bind fixed ports (e.g. `validation/transpose.mjs:137` → 43991) and silently attach to another worktree's server; parser-diff also fetch-flakes | 0002-t1 return handoff | S | high while tasks run in parallel | 0002-t1 return | accepted → 0011 |
 | S1 | fix | Emit a mid-bar `<keySig>` only in layer 1; Verovio draws one per layer | `packages/pepperscore/src/lib/notation/document.ts:249` (probe: 2 layers → 3 keySig groups) | S | low today (ABC overlays are separate parts); matters for MIDI/multi-layer | PR #60 review r2 | done (0005, PR #63) |
 
 Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-10 0003-t2 in-review — PR #69 conflicts with main only in its dispatch handoff (lead answers vs ack); implementer merging main (docs-only merge commit, review r2 continues on 434e5e9 code)
+2026-11-10 0002-t1 changes-requested→in-review — measurement fix pushed 70b782c; review r2
+2026-11-10 0003-t2 changes-requested→in-review — fixes pushed 434e5e9; review r2
+2026-11-10 0001-t3 in-review→changes-requested — r1 on 2a185b5: drawer tab covers Play in phone bottom toolbar (blocking); wrapped toolbar overlaps; lead: an all-unavailable bar = no bar (minimal keeps compact play)
+2026-11-10 0010 ready→closed — CI green on 86d42fa, merged PR #70
+2026-11-10 0011 new→dispatched — human OK for harness reliability item; human: merge #69 and #72 on approve + green
+2026-11-10 0003-t2 in-review→changes-requested — r1 approve on 66352a9 with 3 minor UX findings (empty part layout left active, stale layout name, misleading stave-limit message); lead asked to fix before merge
+2026-11-10 0002-t1 in-review→changes-requested — r1 on 1d72271: plan stands (T2–T4 as written); bar widths under-measured (top-stave first note only; mid-line key/time lost) → lines up to 155% of width silently compressed; fix: in-context measurement + fit check; AC6 property test
+2026-11-10 0003-t2 dispatched→in-review — PR #69 @66352a9; all 28 validation scripts pass (with documented retries); review r1
+2026-11-10 0001-t3 dispatched→in-review — PR #72 @2a185b5 (224+/12-); suites pass individually; review r1
+2026-11-10 0002-t1 dispatched→in-review — PR #71 @1d72271; spike says breaks work (breaks:'line' + per-system check, A4 [4,1,4,4]); whole-document shrink fallback; review r1; S14 logged
+2026-11-10 0010 in-review→ready — r1 approve on 86d42fa; auto-merge on green (docs, 7 lines)
+2026-11-10 0010 dispatched→in-review — PR #70 @86d42fa (7 README lines, within auto-merge limit); review r1
+2026-11-10 0008 in-review→closed — r2 approve on a84e9f9, CI green, merged PR #67 (8c19b8f), 74 ABC tests on main; guide updated. 0010 dispatched to sync package README
+2026-11-10 0003-t2 dispatched→blocked→dispatched — implementer blocked on maxStaves plumbing outside ownership; lead granted PepperScoreEditor.tsx/controls.tsx for pass-through only (answers appended to dispatch handoff); resumed
+2026-11-10 0008 changes-requested→in-review — fix pushed a84e9f9 (74 ABC tests); review r2
+2026-11-10 0001-t2 in-review→merged — r1 approve on 3cbc7ef, CI green, merged PR #66 (13d48eb) per human. 0001-t3 dispatched with r1 follow-ups (phone: play in bottom toolbar per spec; no empty bar; ephemeral skin.mjs port). 0002-t1 dispatched (unblocked by 0001 T2)
 2026-11-10 0003-t1 ready→merged — human approved; merged PR #68 (b8fb939), 277 editor tests pass on main. 0003-t2 planned→dispatched. Human: merge 0001-t2 (#66) on approve + green
 2026-11-10 0003-t1 in-review→ready — r1 approve on 324dafc; over auto-merge limit, asked human; S11, S12 logged (T3 to add a Score details browser scenario)
 2026-11-10 0008 in-review→changes-requested — r1 on c70334e: replayed V: lines precede %%score so grouping is lost; lead: insert after %%score/%%staves, before first tune-header V:
