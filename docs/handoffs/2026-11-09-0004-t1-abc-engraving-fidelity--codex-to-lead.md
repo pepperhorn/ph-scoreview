@@ -6,7 +6,7 @@
 - **Dispatch:** [lead → codex](2026-11-09-0004-t1-abc-engraving-fidelity--lead-to-codex.md)
 - **Branch:** orch/0004-t1-abc-engraving
 - **Worktree:** /home/shaun/.t3/worktrees/ph-vexflow-view/t3-bb111b69
-- **PR:** pending creation after verification
+- **PR:** https://github.com/pepperhorn/ph-scoreview/pull/60
 - **Base commit:** 49c3e9b (dispatch docs at 415e1f4)
 - **Port:** 5241 (no manual preview server used)
 - **Status:** open
@@ -65,7 +65,7 @@ None for T1. T2 remains a separate sequential task after this PR is reviewed/mer
 
 ```text
 DOCUMENT DIAGNOSTIC PASS: only final-barline assertion adjusted in memory; repo file unchanged
-TAB-bake: all 824 checks passed
+tab-bake: all 824 checks passed
 Instrument switch: MEI clef mapping (treble, bass, alto, tenor, treble 8vb) passed
 Instrument switch: chunked reader render moves tied notes across chunk boundaries; caches keyed by the spec passed
 ```
