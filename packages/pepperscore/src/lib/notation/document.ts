@@ -218,7 +218,15 @@ export function scoreToMei(score: Score): string {
   const count = Math.max(0, ...score.parts.map(part => part.measures.length));
   const meter = `meter.count="${score.beats}" meter.unit="${score.beatType}"`;
   const key = (score.key ? ` key.sig="${Math.abs(score.key)}${score.key > 0 ? 's' : 'f'}"` : ' key.sig="0"') + (score.keyMode === 'minor' ? ' key.mode="minor"' : '');
-  const staffDefs = score.parts.map((part, index) => `<staffDef xml:id="${escape(staffDefXmlId(part.id))}" n="${index + 1}" lines="5" label="${escape(part.name)}" ${meiClef(part.clef)} ${meiKey(part.key ?? score.key, part.keyMode ?? score.keyMode)}/>`).join('');
+  const grouped = (part: Part) => part.sourcePartId && score.parts.filter(p => p.sourcePartId === part.sourcePartId).length > 1;
+  const staffDef = (part: Part, index: number) => `<staffDef xml:id="${escape(staffDefXmlId(part.id))}" n="${index + 1}" lines="5"${grouped(part) ? '' : ` label="${escape(part.name)}"`} ${meiClef(part.clef)} ${meiKey(part.key ?? score.key, part.keyMode ?? score.keyMode)}/>`;
+  const emitted = new Set<string>();
+  const staffDefs = score.parts.map((part, index) => {
+    if (!grouped(part)) return staffDef(part, index);
+    if (emitted.has(part.sourcePartId!)) return '';
+    emitted.add(part.sourcePartId!);
+    return `<staffGrp symbol="brace" label="${escape(part.name)}">${score.parts.flatMap((p, i) => p.sourcePartId === part.sourcePartId ? [staffDef(p, i)] : []).join('')}</staffGrp>`;
+  }).join('');
   const navigation = Array.from({ length: count }, (_, index) => score.parts[0]?.measures[index]?.navigation);
   const jumpTarget = navigation.some(nav => nav?.toCoda) ? ' al Coda' : navigation.some(nav => nav?.fine) ? ' al Fine' : '';
   const measures = Array.from({ length: count }, (_, measureIndex) => {
@@ -259,7 +267,7 @@ export function scoreToMei(score: Score): string {
     }).join('');
     const definitions = changes ? `<scoreDef><staffGrp>${changes}</staffGrp></scoreDef>` : '';
     const directions = score.parts.flatMap((part, index) => part.measures[measureIndex]?.directions?.filter(dir => dir.text).map(dir => `<dir staff="${index + 1}" tstamp="${1 + dir.start * score.beatType / 4}" place="${dir.placement || 'above'}">${escape(dir.text!)}</dir>`) || []).join('');
-    const harmonies = score.parts.flatMap((part, index) => part.measures[measureIndex]?.notes.filter(note => note.chordSymbol).map(note => `<harm staff="${index + 1}" tstamp="${1 + note.start}" >${escape(note.chordSymbol || '')}</harm>`) || []).join('');
+    const harmonies = score.parts.flatMap((part, index) => part.measures[measureIndex]?.notes.filter(note => note.chordSymbol).map(note => `<harm staff="${index + 1}" tstamp="${1 + note.start * score.beatType / 4}" >${escape(note.chordSymbol || '')}</harm>`) || []).join('');
     // A SMuFL quarter-note glyph (metNoteQuarterUp) followed by the beats per minute.
     const tempo = measureIndex === 0 ? `<tempo tstamp="1" staff="1" midi.bpm="${score.tempo}" mm="${score.tempo}" mm.unit="4"><rend glyph.auth="smufl">&#xE1D5;</rend> = ${score.tempo}</tempo>` : '';
     const nav = navigation[measureIndex] || {};

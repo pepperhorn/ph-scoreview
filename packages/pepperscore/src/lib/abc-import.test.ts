@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { parseAbc } from './import';
-import { generatedPitchId, scoreToMei } from './notation/document';
+import { parseAbc, parseMusicXml } from './import';
+import { generatedPitchId, scoreToMei, staffDefXmlId } from './notation/document';
 import { scoreForView, soundingMidi, spellingSpecFor } from './transpose';
 import { applyInstrumentView } from './instrument-view';
 import { respellMei } from './notation/mei-spelling';
 import type { InstrumentId, Part, Score } from './score';
+import { buildPerformanceTimeline } from './playback/timeline';
+import { scanBaseline, buildViewMei } from './notation/mei-view';
+import { planStaves } from './render';
+import { sourcePartOf } from './instrument-view';
 import createVerovioModule from 'verovio/wasm';
 import { VerovioToolkit } from 'verovio/esm';
 
@@ -225,7 +229,7 @@ describe('ABC engraving fidelity', () => {
     expect(mei.match(/loc="/g)).toHaveLength(2);
   });
 
-  it('loads and engraves every T1 fixture in Verovio', async () => {
+  it('loads and engraves every ABC fixture in Verovio', async () => {
     const toolkit = new VerovioToolkit(await createVerovioModule());
     try {
       toolkit.setOptions({ breaks: 'none', pageWidth: 3000, pageHeight: 3000 });
@@ -263,5 +267,142 @@ describe('ABC engraving fidelity', () => {
     expect(generatedPitchId(dyad, 1)).toBe('n_abc-0-0-0-3_p2');
     expect(mei).toContain('<chord xml:id="n_abc-0-0-0-3"');
     expect(mei).toContain('xml:id="n_abc-0-0-0-3_p2"');
+  });
+});
+
+
+describe('ABC parts and instruments', () => {
+  it.each(['a-piano-grand', 'a2-piano-fixed'])('groups %s while preserving staff and playback identity', async name => {
+    const score = await load(name);
+    const [rh, lh] = score.parts;
+    expect(score.parts).toHaveLength(2);
+    expect(sourcePartOf(rh)).toBe(sourcePartOf(lh));
+    expect(score.parts.map(p => p.id)).toEqual(['abc-0-0-1', 'abc-0-0-2']);
+    expect(score.parts.map(p => p.name)).toEqual(['Piano', 'Piano']);
+    const mei = scoreToMei(score);
+    expect(mei).toContain('<staffGrp symbol="brace" label="Piano">');
+    expect(mei.match(/label="Piano"/g)).toHaveLength(1);
+    expect(mei).not.toContain('Melody');
+    for (const part of score.parts) expect(mei).toContain(`xml:id="${staffDefXmlId(part.id)}"`);
+    const timeline = buildPerformanceTimeline(score, { bpm: score.tempo });
+    for (const part of score.parts) {
+      const note = part.measures[0].notes[0];
+      const event = timeline.events.find(e => e.noteId === note.id);
+      expect(event?.partId).toBe(part.id);
+      expect(mei).toContain(`xml:id="${generatedPitchId(note, 0)}"`);
+      expect(event?.visualNoteIds).toContain(note.id);
+    }
+    const toolkit = new VerovioToolkit(await createVerovioModule());
+    try {
+      expect(toolkit.loadData(mei)).toBeTruthy();
+      expect(toolkit.renderToSVG(1)).toContain('class="grpSym"');
+      const baseline = toolkit.getMEI();
+      const plan = planStaves(scanBaseline(baseline), score, new Set([lh.id]));
+      expect(plan.staffOf.get(rh.id)).toBe('1');
+      expect(plan.staffOf.get(lh.id)).toBe('2');
+      expect(plan.hiddenStaves).toEqual(['2']);
+      const hidden = buildViewMei(baseline, { breakEvery: 0, chordSymbols: true, hiddenStaves: plan.hiddenStaves, spelling: plan.spelling });
+      expect(hidden).not.toMatch(/<staff n="2"/);
+      expect(hidden).toContain(`xml:id="${generatedPitchId(rh.measures[0].notes[0], 0)}"`);
+      const switches = Object.fromEntries(score.parts.map(p => [p.id, { instrument: 'flute' as const, level: 'advanced' as const, autoRange: false, octaves: {} }]));
+      const switched = applyInstrumentView(score, switches, 'written').score;
+      expect(switched.parts.every(p => p.instrument === 'flute')).toBe(true);
+      for (const [i, part] of switched.parts.entries()) for (const [j, measure] of part.measures.entries()) {
+        expect(measure.notes.map(n => n.pitches.map(p => soundingMidi(part, measure, p, 0)))).toEqual(score.parts[i].measures[j].notes.map(n => n.pitches.map(p => p.midi)));
+      }
+    } finally { toolkit.destroy(); }
+  });
+
+  it('leaves unbraced and implicit voices separate', async () => {
+    for (const grouping of ['', '%%score A B\n']) {
+      const score = await abc('[V:A] C4 |\n[V:B] E4 |', `${grouping}V:A name="Top"\nV:B name="Bottom"\nK:C`);
+      expect(score.parts.map(p => p.sourcePartId)).toEqual([undefined, undefined]);
+      expect(scoreToMei(score)).not.toContain('symbol="brace"');
+    }
+  });
+
+  it('keeps compressed staves attached to their source voices', async () => {
+    const score = await abc('[V:A] C4 |\n[V:B] E4 |\n[V:B] F4 |\n[V:A] D4 |', 'V:A name="Same"\nV:B name="Same"\nK:C');
+    expect(score.parts.map(p => p.measures.map(m => m.notes[0].pitches[0].midi))).toEqual([[60, 62], [64, 65]]);
+    expect(new Set(score.parts.flatMap(p => p.measures.flatMap(m => m.notes.map(n => n.id)))).size).toBe(4);
+  });
+
+  it('does not leak a shared staff transpose into a different voice', async () => {
+    const score = await abc('[V:A] C4 |\n[V:B] E4 |', '%%score (A B)\nV:A transpose=-9\nV:B\n%%MIDI transpose -2\nK:C');
+    expect(score.parts.map(p => p.transposition?.semitones)).toEqual([-9, -2]);
+  });
+
+  it('shares host mid-bar keys with overlays and carries them across lines', async () => {
+    const score = await abc('C D [K:G] F F & F F F F |\nF4 & F4 |]');
+    expect(score.parts).toHaveLength(2);
+    expect(score.parts[1].measures[0].notes.map(n => n.pitches[0].midi)).toEqual([65, 65, 66, 66]);
+    expect(score.parts[1].measures[0].keyChanges).toEqual([{ start: 2, key: 1, keyMode: 'major' }]);
+    expect(score.parts[1].measures[1].notes[0].pitches[0].midi).toBe(66);
+    expect(scoreToMei(score).match(/<keySig sig="1s"/g)).toHaveLength(2);
+  });
+
+  it('matches the sax MusicXML sounding pitch while keeping written A major', async () => {
+    const source = await load('d2-sax-transpose'), part = source.parts[0];
+    const xml = import.meta.glob('./__fixtures__/abc/*.musicxml', { eager: true, query: '?raw', import: 'default' }) as Record<string, string>;
+    const reference = parseMusicXml(xml['./__fixtures__/abc/d-alto-sax.musicxml']).parts[0];
+    expect(part.transposition).toEqual({ semitones: -9, diatonic: -5 });
+    expect(part.key).toBe(3);
+    expect(part.measures[0].notes[0].pitches[0].midi).toBe(69);
+    expect(soundingMidi(part, part.measures[0], part.measures[0].notes[0].pitches[0], 0)).toBe(60);
+    expect(soundingMidi(reference, reference.measures[0], reference.measures[0].notes[0].pitches[0], 0)).toBe(60);
+    expect(part).toMatchObject({ gmProgram: 66, gmSoundfont: 'alto_sax', instrument: 'alto-saxophone' });
+    expect(scoreToMei(source)).toContain('key.sig="3s"');
+    const nameOnly = await load('d1-sax-name');
+    expect(nameOnly.parts[0].transposition?.semitones).toBe(0);
+    const scoreAttribute = await load('d3-sax-score');
+    expect(scoreAttribute.parts[0].measures[0].notes[0].pitches[0].midi).toBe(60);
+    expect(scoreAttribute.parts[0].transposition?.semitones).toBe(0);
+  });
+
+  it('honours MIDI headers and V precedence, including explicit zero', async () => {
+    const midi = await abc('A4 |]', '%%MIDI transpose -9\n%%MIDI program 0\nK:A');
+    expect(midi.parts[0]).toMatchObject({ transposition: { semitones: -9, diatonic: -5 }, gmProgram: 1, gmSoundfont: 'acoustic_grand_piano' });
+    for (const value of [0, -2]) {
+      const score = await abc('A4 |]', `V:1 transpose=${value}\n%%MIDI transpose -9\nK:A`);
+      expect(score.parts[0].transposition?.semitones).toBe(value);
+    }
+    const drums = await abc('C4 |]', '%%MIDI channel 10\n%%MIDI program 65\nK:C');
+    expect(drums.parts[0]).toMatchObject({ instrument: 'drum-kit', clef: 'percussion' });
+    expect(drums.parts[0].gmProgram).toBeUndefined();
+    expect(scoreToMei(drums)).toContain('loc="');
+    expect(scoreToMei(drums)).not.toContain('pname=');
+  });
+
+  it.each(['treble', 'treble-8', 'treble+8'])('composes %s with instrument intervals through switches and concert view', async clef => {
+    const source = await abc('A4 |]', `V:1 clef=${clef} transpose=-9\nK:A`);
+    const part = source.parts[0];
+    const octave = clef === 'treble-8' ? -12 : clef === 'treble+8' ? 12 : 0;
+    expect(part.transposition?.semitones).toBe(-9 + octave);
+    expect(part.measures[0].transposition).toEqual(part.transposition);
+    for (const view of ['written', 'concert'] as const) for (const target of ['flute', 'guitar', 'alto-saxophone'] as const) {
+      const switched = applyInstrumentView(scoreForView(source, view, 0), { [part.id]: { instrument: target, level: 'advanced', autoRange: false, octaves: {} } }, view).score;
+      const shown = switched.parts[0], measure = shown.measures[0], note = measure.notes[0];
+      expect(soundingMidi(shown, measure, note.pitches[0], 0)).toBe(60);
+      const mei = respellMei(scoreToMei(source), spellingSpecFor(switched, new Map([[part.id, '1']])));
+      const tag = mei.match(new RegExp(`<note[^>]*xml:id="${generatedPitchId(note, 0)}"[^>]*>`))?.[0];
+      expect(tag).toContain(`oct="${note.pitches[0].octave}"`);
+      expect(tag).toContain(`pname="${note.pitches[0].step.toLowerCase()}"`);
+    }
+  });
+
+  it('adds instrument transposition to every measure after a clef change', async () => {
+    const score = await abc('A4 | [K:A clef=treble-8] A4 | [K:A clef=treble+8] A4 |]', 'V:1 transpose=-9\nK:A');
+    const part = score.parts[0];
+    expect(part.measures.map(m => m.transposition)).toEqual([
+      { semitones: -9, diatonic: -5 }, { semitones: -21, diatonic: -12 }, { semitones: 3, diatonic: 2 },
+    ]);
+    expect(part.measures.map(m => soundingMidi(part, m, m.notes[0].pitches[0], 0))).toEqual([60, 60, 60]);
+  });
+
+  it('uses meter beats for both annotations and harmony in 6/8', async () => {
+    const score = await abc('C "^text""G7"D E F G A |]', 'M:6/8\nL:1/8\nK:C');
+    const mei = scoreToMei(score);
+    expect(mei).toContain('<dir staff="1" tstamp="2"');
+    expect(mei).toContain('<harm staff="1" tstamp="2"');
   });
 });
