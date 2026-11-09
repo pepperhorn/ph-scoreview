@@ -5,7 +5,7 @@
 - **Ledger:** 0010
 - **Branch:** orch/0010-readme-abc-sync · **Worktree:** created by T3
 - **Base commit:** 8c19b8f
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 PR #67 (0008) made `V:` lines before `X:` work as voice defaults, so the package README's ABC section is now wrong in four places (`packages/pepperscore/README.md` ~515, ~516, ~526, ~629). Bring them in line with the lead's guide, `docs/guides/abc-authoring.md` on main (checklist items 2 and 4, "Tune and header" rule, Known limits): `%%score`/`%%staves` before `V:`; `V:` before `X:` supplies clef/name/transposition defaults that a tune-header `V:` overrides per property; body music before any selector goes to the first declared voice, so select voices explicitly; remove the "`V:` before `X:` has its clef ignored" limit. Docs only; verify the wording against `packages/pepperscore/src/lib/import.ts` and `abc-import.test.ts`.
