@@ -30,3 +30,7 @@ Run long commands in the foreground; never overlap `build` with reader tests.
 
 ---
 ## Receiver ack
+
+Acknowledged: recover file-header V: clef, name, transpose and MIDI attribution for the first tune, preserving tune-header overrides and existing source offsets. I will change only the owned ABC importer/test/fixture paths and my 0008 handoffs, run the specified checks sequentially, and return a draft PR. If abcjs drops clef data without safe source recovery, I will stop and report. No open questions.
+
+GBrain consulted: projects/scoreflow-music-reader and projects/scoreflow-music-reader/gotchas-abc-import (first-tune isolation, header MIDI folding, octave-clef transposition).
