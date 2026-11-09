@@ -2,11 +2,11 @@
 
 - **Date:** 2026-11-09
 - **Type:** dispatch (an issue report for the lead to triage into the ledger)
-- **Ledger:** none yet (`adhoc`). The lead should assign an ID if it takes this on.
+- **Ledger:** 0004 (spec docs/specs/0004-abc-import-parity.md, plan docs/plans/0004-abc-import-parity.md)
 - **Spec / plan:** none yet. This document is the problem statement.
 - **Branch / worktree / PR:** none
 - **Base commit:** `54df48c` (main)
-- **Status:** open
+- **Status:** acked
 
 ## Goal
 
