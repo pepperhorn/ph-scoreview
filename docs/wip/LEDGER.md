@@ -20,6 +20,9 @@ Next ID: 0010
 
 | K | Title | PR | Merged | Notes |
 |---|---|---|---|---|
+| 0001-t2 | Composable main bar and toggles (task of 0001) | https://github.com/pepperhorn/ph-scoreview/pull/66 | 2026-11-10 | 13d48eb; 0001 continues with T3 |
+| 0001-t1 | Skin module and theme tokens (task of 0001) | https://github.com/pepperhorn/ph-scoreview/pull/59 | 2026-11-01 | 9afa2f2 |
+| 0003-t1 | Score details fields (task of 0003) | https://github.com/pepperhorn/ph-scoreview/pull/68 | 2026-11-10 | b8fb939; 0003 continues with T2 |
 | 0007 | [quick] Package README carries the ABC authoring rules (S4, S6) | https://github.com/pepperhorn/ph-scoreview/pull/64 | 2026-11-10 | c19e361; docs only; guide points at README |
 | 0009 | [quick] More mid-bar key signature tests (S7) | https://github.com/pepperhorn/ph-scoreview/pull/65 | 2026-11-10 | 4629f1a; tests only |
 | 0005 | [quick] Mid-bar key signature drawn once per staff (S1) | https://github.com/pepperhorn/ph-scoreview/pull/63 | 2026-11-10 | c48dc0e; no ABC guide change |
