@@ -74,3 +74,22 @@ describe('.pepperscore files', () => {
     expect(file.document.parts[0].measures[0].sequences[0].content.map((e) => e.id)).toEqual(['e1', 'e2', 'e3']);
   });
 });
+
+
+test('score details round-trip in both the wrapper and document metadata', () => {
+  const meta = { title: 'Study', composer: 'Me', description: 'A short study', project: 'Album', tags: ['jazz', 'practice'], goal: 'compose' };
+  const document = { ...helloDoc(), meta };
+  const file = readPepperScoreFile(writePepperScoreFile({ document }));
+  expect(file.document).toEqual(document);
+  expect(file.meta).toMatchObject(meta);
+});
+
+test('old version 1 files with only title and composer still parse without new keys', () => {
+  const document = { ...helloDoc(), meta: { title: 'Old song', composer: 'Me' } };
+  const file = readPepperScoreFile(JSON.stringify({ pepperscore: { version: 1 }, meta: { ...document.meta, created: '2026-01-01', modified: '2026-01-01' }, document }));
+  expect(file.document).toEqual(document);
+  for (const key of ['description', 'project', 'tags', 'goal']) {
+    expect(file.meta).not.toHaveProperty(key);
+    expect(file.document.meta).not.toHaveProperty(key);
+  }
+});

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { Cursor } from '../engine/types';
 import type { Dropped } from '../import/from-musicxml';
-import { DurationSchema, parseDocument, PitchSchema, type Document } from '../model/schema';
+import { DurationSchema, MetaSchema, parseDocument, PitchSchema, type Document } from '../model/schema';
 
 export const PEPPERSCORE_MIME = 'application/vnd.pepperscore+json';
 export const PEPPERSCORE_EXTENSION = '.pepperscore';
@@ -9,7 +9,7 @@ export const PEPPERSCORE_EXTENSION = '.pepperscore';
 /** The native file: a versioned wrapper around the editor document. */
 export type PepperScoreFile = {
   pepperscore: { version: 1 };
-  meta: { title?: string; composer?: string; created: string; modified: string };
+  meta: Document['meta'] & { created: string; modified: string };
   document: Document;
   /** The MusicXML the score was imported from, and what the import left out. */
   source?: { format: 'musicxml' | 'mxl'; sha256: string; filename?: string; dropped: Dropped[] };
@@ -34,7 +34,7 @@ const CursorSchema = z.object({
 /** The wrapper; `document` is checked separately by `parseDocument`. */
 export const PepperScoreFileSchema = z.object({
   pepperscore: z.object({ version: z.literal(1) }),
-  meta: z.object({ title: z.string().optional(), composer: z.string().optional(), created: z.string(), modified: z.string() }),
+  meta: MetaSchema.extend({ created: z.string(), modified: z.string() }),
   document: z.unknown(),
   source: z.object({
     format: z.enum(['musicxml', 'mxl']),
@@ -48,10 +48,19 @@ export const PepperScoreFileSchema = z.object({
 /** Serializes a document (and optional import source and editor state) as 2-space JSON; `created` defaults to now. */
 export function writePepperScoreFile(args: { document: Document; source?: PepperScoreFile['source']; editor?: PepperScoreFile['editor']; created?: string }): string {
   const modified = new Date().toISOString();
-  const { title, composer } = args.document.meta;
+  const { title, composer, description, project, tags, goal } = args.document.meta;
   const file: PepperScoreFile = {
     pepperscore: { version: 1 },
-    meta: { ...(title !== undefined ? { title } : {}), ...(composer !== undefined ? { composer } : {}), created: args.created ?? modified, modified },
+    meta: {
+      ...(title !== undefined ? { title } : {}),
+      ...(composer !== undefined ? { composer } : {}),
+      ...(description !== undefined ? { description } : {}),
+      ...(project !== undefined ? { project } : {}),
+      ...(tags !== undefined ? { tags } : {}),
+      ...(goal !== undefined ? { goal } : {}),
+      created: args.created ?? modified,
+      modified,
+    },
     document: args.document,
     ...(args.source ? { source: args.source } : {}),
     ...(args.editor ? { editor: args.editor } : {}),

@@ -76,7 +76,16 @@ export const LayoutSchema = z.object({
   style: StyleSheetSchema.partial().optional(),
   overrides: z.record(z.string(), z.object({ offset: OffsetSchema.optional(), hidden: z.boolean().optional(), text: z.string().optional(), cue: z.boolean().optional() })),
 });
-export const DocumentSchema = z.object({ global: z.object({ measures: z.array(GlobalMeasureSchema) }), parts: z.array(PartSchema), layouts: z.array(LayoutSchema).min(1), style: StyleSheetSchema, meta: z.object({ title: z.string().optional(), composer: z.string().optional() }) });
+export const MetaSchema = z.object({
+  title: z.string().optional(),
+  composer: z.string().optional(),
+  description: z.string().optional(),
+  project: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  goal: z.string().optional(),
+});
+
+export const DocumentSchema = z.object({ global: z.object({ measures: z.array(GlobalMeasureSchema) }), parts: z.array(PartSchema), layouts: z.array(LayoutSchema).min(1), style: StyleSheetSchema, meta: MetaSchema });
 
 export type Time = z.infer<typeof TimeSchema>;
 export type Key = z.infer<typeof KeySchema>;
