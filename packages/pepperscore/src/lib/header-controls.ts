@@ -9,7 +9,7 @@
  * header footprint never depends on client-only state. `tab` (the Notation / TAB / Both switch) is the exception: it shows only for a score with a
  * stave that can take TAB (any pitched part).
  */
-export type HeaderControlId = 'stop' | 'play' | 'openFile' | 'bpm' | 'transpose' | 'keyFlip' | 'mode' | 'tab' | 'bars' | 'staveScale' | 'mixer';
+export type HeaderControlId = 'stop' | 'play' | 'openFile' | 'bpm' | 'transpose' | 'keyFlip' | 'mode' | 'tab' | 'bars' | 'staveScale' | 'mixer' | 'noteNames' | 'counts' | 'chordSymbols' | 'options' | 'instrumentSwitch' | 'octaveTool' | 'pitchColours' | 'pdf';
 export type HeaderControlTier = 'primary' | 'secondary';
 export type HeaderControlConfig = { id: HeaderControlId; tier: HeaderControlTier };
 
@@ -34,7 +34,7 @@ export const MOBILE_HEADER_BREAKPOINT = 760;
 export { clampStaveScale, STAVE_SCALE_MAX, STAVE_SCALE_MIN, STAVE_SCALE_STEP } from './stave-scale';
 
 /** Which `controls` key shows each header control (see chrome.ts). */
-export const HEADER_CONTROL_GROUP: Record<HeaderControlId, 'transport' | 'viewToggle' | 'openFile' | 'zoom' | 'mixer' | 'tabToggle'> = {
+export const HEADER_CONTROL_GROUP: Partial<Record<HeaderControlId, 'transport' | 'viewToggle' | 'openFile' | 'zoom' | 'mixer' | 'tabToggle'>> = {
   stop: 'transport', play: 'transport', bpm: 'transport', transpose: 'transport', keyFlip: 'transport', bars: 'transport',
   mode: 'viewToggle', tab: 'tabToggle', openFile: 'openFile', staveScale: 'zoom', mixer: 'mixer',
 };

@@ -40,3 +40,5 @@ None. Escalate per AGENTS.md §7.
 
 ---
 ## Receiver ack
+
+I will implement T2 only: resolve and render ordered skin bars on full/minimal, preserve default chrome, connect annotation toggles to existing prefs, and enable the instrument switcher on both presets. I own only the listed files and task handoffs. I will run the specified verification, open a draft PR, and return evidence without merging or watching. No open questions. GBrain consulted: projects/scoreflow-music-reader.

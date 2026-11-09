@@ -1,4 +1,6 @@
-/** Chrome presets (docs/specs/pepperscore-embeddable-component.md, "Chrome presets") and per-control overrides. No runtime imports. */
+import { BAR_CONTROL_GROUP } from './bar-items.ts';
+import type { BarItemId } from './skin';
+/** Chrome presets (docs/specs/pepperscore-embeddable-component.md, "Chrome presets") and per-control overrides. Pure data resolution, also loaded directly by Node validation. */
 export type ChromePreset = 'full' | 'minimal' | 'none';
 export type PepperScoreControls = Partial<Record<'mixer' | 'openFile' | 'drawer' | 'transport' | 'viewToggle' | 'zoom' | 'tabToggle' | 'instrumentSwitch' | 'octaveTool', boolean>>;
 export type ResolvedChrome = {
@@ -26,14 +28,15 @@ export type ResolvedChrome = {
  * `tabToggle` the Notation / TAB / Both switch (header and drawer); `instrumentSwitch` the instrument switcher;
  * `octaveTool` the octave tool. Each defaults to on for `full`, off otherwise.
  */
-export function resolveChrome(preset: ChromePreset = 'full', controls: PepperScoreControls = {}): ResolvedChrome {
-  const on = (key: keyof PepperScoreControls) => controls[key] ?? preset === 'full';
+export function resolveChrome(preset: ChromePreset = 'full', controls: PepperScoreControls = {}, bar?: BarItemId[] | null): ResolvedChrome {
+  const composed = preset !== 'none' && bar != null;
+  const on = (key: keyof PepperScoreControls) => controls[key] ?? (preset === 'full' || (composed && bar.some(id => BAR_CONTROL_GROUP[id] === key)));
   const transport = on('transport'), viewToggle = on('viewToggle'), openFile = on('openFile'), mixer = on('mixer'), drawer = on('drawer'), zoom = on('zoom'), tabToggle = on('tabToggle');
   const instrumentSwitch = on('instrumentSwitch'), octaveTool = on('octaveTool');
   return {
-    header: transport || viewToggle || openFile || mixer || zoom || tabToggle,
+    header: composed ? bar.length > 0 : transport || viewToggle || openFile || mixer || zoom || tabToggle,
     transport, viewToggle, openFile, mixer, drawer, zoom, tabToggle, instrumentSwitch, octaveTool,
-    compactPlay: preset === 'minimal' && !transport,
+    compactPlay: preset === 'minimal' && !composed && !transport,
     playhead: preset !== 'none' || transport,
     partControls: mixer,
     audio: preset !== 'none' || transport,

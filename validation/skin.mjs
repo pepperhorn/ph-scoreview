@@ -1,5 +1,6 @@
 // Public JS imports, exact fallback preservation, and real host-variable/computed-colour checks.
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
 import postcss from 'postcss';
 import ts from 'typescript';
@@ -7,6 +8,7 @@ import { build, createServer } from 'vite';
 import { chromium } from 'playwright-core';
 import { root, serveDist } from './serve-dist.mjs';
 import { THEME_TOKENS, BAR_ITEM_IDS, CRF_PITCH_COLOURS, mergeSkins, skinStyle, skinKey, tokenVariable } from 'pepperscore';
+execFileSync(process.execPath, [`${root}/node_modules/vitest/vitest.mjs`, 'run', 'src/lib/bar-items.test.ts'], { cwd: `${root}/packages/pepperscore`, stdio: 'inherit' });
 assert.ok(THEME_TOKENS.includes('accent') && BAR_ITEM_IDS.includes('pdf'));
 assert.equal(mergeSkins({ pitchColours: CRF_PITCH_COLOURS }, { bar: ['play'] }).pitchColours.C, '#f86e6e');
 assert.deepEqual(skinStyle({ theme: { accent: 'var(--brand)' } }), { '--ps-accent': 'var(--brand)' });
@@ -109,6 +111,7 @@ assertProcessGuards();
 const packageCode = readFileSync(`${root}/packages/pepperscore/dist/index.js`, 'utf8');
 assert.ok(packageCode.includes('Invalid theme colour') && packageCode.includes('process.env.NODE_ENV'), 'the built package retains consumer-development diagnostics');
 const hostCode = readdirSync(`${root}/apps/reader/dist/_astro`).filter(file => file.endsWith('.js')).map(file => readFileSync(`${root}/apps/reader/dist/_astro/${file}`, 'utf8')).join('\n');
+assert.ok(!hostCode.includes('Unknown bar item'), 'production eliminates unknown-bar diagnostics');
 assert.ok(!hostCode.includes('Invalid theme colour'), 'a production host eliminates theme diagnostics');
 const server = await serveDist({ mounts: { '/native-dist/': `${root}/packages/pepperscore/dist` } });
 const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
@@ -351,12 +354,86 @@ try {
   assert.deepEqual(warnings, [], 'production host never emits theme warnings');
   assert.deepEqual(errors, []);
   console.log('Skin: JS exports, typed fixture, static colour guard, desktop/mobile/all-chrome/icon and modern-colour audit, consumer dev/prod diagnostics, live host variables and no re-engrave passed');
+  // T2: live bar composition shares all actions with the existing header/drawer.
+  await page.goto(`${server.url}/embed-skin?bar`);
+  await page.waitForFunction(() => window.__skin && document.querySelector('.skin-reader .score-system svg') && document.querySelector('.skin-minimal .instrument-switch'));
+  const expectedBar = ['play', 'tempo', 'instrumentSwitch', 'noteNames', 'counts', 'chordSymbols', 'options'];
+  for (const root of ['.skin-reader', '.skin-minimal']) {
+    assert.deepEqual(await page.locator(`${root} [data-bar-item]`).evaluateAll(nodes => nodes.map(el => el.dataset.barItem)), expectedBar);
+    assert.equal(await page.locator(`${root} .ps-compact-play`).count(), 0);
+    await page.locator(`${root} .instrument-switch`).click();
+    const menu = page.locator(`${root} .instrument-menu`);
+    await menu.waitFor({ state: 'visible' });
+    const rect = await menu.boundingBox();
+    assert.ok(rect.x >= 0 && rect.y >= 0 && rect.x + rect.width <= 1280 && rect.y + rect.height <= 900, 'switch menu stays on screen');
+    await menu.locator('.instrument-chooser-option').filter({ hasText: 'Flute' }).first().click();
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator(`${root} .instrument-switch`).getAttribute('aria-expanded'), 'false');
+  }
+  assert.equal(await page.locator('.skin-none [data-bar-item],.skin-none .topbar').count(), 0);
+  assert.ok(await page.locator('.skin-minimal').evaluate(root => {
+    const box = root.getBoundingClientRect(), header = root.querySelector('.topbar').getBoundingClientRect(), viewport = root.querySelector('.score-viewport').getBoundingClientRect();
+    return header.height > 0 && viewport.top >= header.bottom - 1 && viewport.bottom <= box.bottom + 1;
+  }), 'natural-height minimal includes its skin header and score');
+
+  for (const [name, pref, label, mark] of [['Note names', 'names', 'Note names', '.note-label'], ['Counts', 'counts', 'Beat counts', '.count-label'], ['Chord symbols', 'chordSymbols', 'Chord symbols', '.chord-symbol']]) {
+    const toggle = page.locator('.skin-reader .skin-bar').getByRole('button', { name, exact: true });
+    await toggle.click();
+    assert.equal(await toggle.getAttribute('aria-pressed'), 'true');
+    await page.locator(`.skin-reader ${mark}`).first().waitFor();
+    await page.locator('.skin-reader .skin-options').click();
+    const drawerToggle = page.locator('.skin-reader .bottom-drawer').getByRole('switch', { name: label, exact: true });
+    assert.equal(await drawerToggle.getAttribute('aria-checked'), 'true');
+    await drawerToggle.click();
+    assert.equal(await toggle.getAttribute('aria-pressed'), 'false');
+    await drawerToggle.click();
+    await page.locator('.skin-reader .bottom-drawer').getByRole('button', { name: 'Close options', exact: true }).click();
+  }
+  for (const [name, label] of [['Note names', 'Note names'], ['Counts', 'Beat counts'], ['Chord symbols', 'Chord symbols']]) {
+    const toggle = page.locator('.skin-minimal .skin-bar').getByRole('button', { name, exact: true });
+    await toggle.click();
+    assert.equal(await toggle.getAttribute('aria-pressed'), 'true');
+    await page.locator('.skin-minimal .skin-options').click();
+    const drawerToggle = page.locator('.skin-minimal .bottom-drawer').getByRole('switch', { name: label, exact: true });
+    assert.equal(await drawerToggle.getAttribute('aria-checked'), 'true');
+    await drawerToggle.click();
+    assert.equal(await toggle.getAttribute('aria-pressed'), 'false');
+    await page.locator('.skin-minimal .bottom-drawer').getByRole('button', { name: 'Close options', exact: true }).click();
+  }
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector('.skin-reader .skin-chord-symbols')?.getAttribute('aria-pressed') === 'true');
+  for (const selector of ['.skin-note-names', '.skin-counts', '.skin-chord-symbols']) assert.equal(await page.locator('.skin-reader ' + selector).getAttribute('aria-pressed'), 'true', 'prefs survive reload');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator('.skin-reader .header-more-toggle').click();
+  await page.locator('.skin-reader .skin-options').waitFor({ state: 'visible' });
+  assert.ok(await page.locator('.skin-reader').evaluate(el => el.scrollWidth <= el.clientWidth), '390px bar does not clip');
+  await page.locator('.skin-reader .skin-options').click();
+  await page.locator('.skin-reader .bottom-drawer.is-open').waitFor();
+  await page.locator('.skin-reader .bottom-drawer').getByRole('button', { name: 'Close options', exact: true }).click();
+  await page.evaluate(() => window.__skin.setSkin({ bar: ['counts', 'future-control', 'play', 'counts'] }));
+  await page.waitForFunction(() => document.querySelectorAll('.skin-reader [data-bar-item]').length === 2);
+  assert.deepEqual(await page.locator('.skin-reader [data-bar-item]').evaluateAll(nodes => nodes.map(el => el.dataset.barItem)), ['counts', 'play']);
+  await page.evaluate(() => window.__skin.setSkin({ bar: ['play', 'tempo', 'noteNames', 'counts', 'instrumentSwitch'] }));
+  await page.locator('.skin-reader .header-more-toggle').click();
+  await page.locator('.skin-reader .instrument-switch').click();
+  await page.locator('.skin-reader .instrument-menu .instrument-chooser-option-flute').click();
+  assert.equal(await page.locator('.skin-reader .header-more').getAttribute('data-open'), 'true', 'instrument popover interaction keeps its More anchor visible');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => { window.__skin.setSkin({ bar: ['play', 'options', 'instrumentSwitch', 'counts'] }); window.__skin.setControls({ transport: false, drawer: false, instrumentSwitch: false }); });
+  await page.waitForFunction(() => document.querySelectorAll('.skin-reader [data-bar-item]').length === 1);
+  for (const root of ['.skin-reader', '.skin-minimal']) {
+    assert.deepEqual(await page.locator(`${root} [data-bar-item]`).evaluateAll(nodes => nodes.map(el => el.dataset.barItem)), ['counts'], 'explicit false wins');
+    assert.equal(await page.locator(`${root} .bottom-drawer`).count(), 0);
+  }
+  assert.deepEqual(errors, []);
+  console.log('Skin bar: ordered full/minimal bars, instrument selection, drawer sync, derived chords, persisted toggles, 390px More and unknown/duplicate ids passed');
 } finally { await browser.close(); await server.close(); }
 
 async function assertDevelopmentWarning(browser) {
   const host = await createServer({
     configFile: false, root, logLevel: 'error', mode: 'development',
-    server: { host: '0.0.0.0', port: 5211, strictPort: true },
+    server: { host: '0.0.0.0', port: 5212, strictPort: true },
     optimizeDeps: { include: ['react', 'react-dom/client', 'pepperscore'], force: true },
     plugins: [{ name: 'skin-warning-consumer', configureServer(server) {
       server.middlewares.use(async (request, response, next) => {
@@ -364,7 +441,7 @@ async function assertDevelopmentWarning(browser) {
         try {
           const html = await server.transformIndexHtml('/skin-warning-host.html', `<!doctype html><html><head><title>Built package development consumer</title></head><body style="--bad-brand:not-a-colour"><div id="root"></div><script type="module">
             import React from 'react'; import { createRoot } from 'react-dom/client'; import { PepperScore } from 'pepperscore';
-            createRoot(document.getElementById('root')).render(React.createElement(PepperScore, { chrome: 'none', persist: false, skin: { theme: { accent: 'var(--bad-brand)' } } }));
+            createRoot(document.getElementById('root')).render(React.createElement(PepperScore, { chrome: 'none', persist: false, skin: { theme: { accent: 'var(--bad-brand)' }, bar: ['future-control'] } }));
           </script></body></html>`);
           response.setHeader('Content-Type', 'text/html'); response.end(html);
         } catch (error) { next(error); }
@@ -374,10 +451,12 @@ async function assertDevelopmentWarning(browser) {
   try {
     await host.listen();
     const page = await browser.newPage();
+    const barDiagnostic = page.waitForEvent('console', { predicate: event => event.type() === 'warning' && event.text().includes('Unknown bar item: future-control'), timeout: 30000 });
     const diagnostic = page.waitForEvent('console', { predicate: event => event.type() === 'warning' && event.text().includes('Invalid theme colour for accent'), timeout: 30000 });
-    await page.goto('http://127.0.0.1:5211/skin-warning-host.html');
+    await page.goto('http://127.0.0.1:5212/skin-warning-host.html');
     assert.equal(await page.evaluate(() => typeof process), 'undefined', 'plain development host has no process shim');
     assert.match((await diagnostic).text(), /var\(--bad-brand\)/, 'the real built package warns in a development host');
+    assert.match((await barDiagnostic).text(), /Unknown bar item/);
     await page.close();
   } finally { await host.close(); }
 }
