@@ -40,7 +40,7 @@ npm run check && npm run build && npm run test:manifest && npm run test:validati
 ```
 
 ## Decisions made / abcjs probe results
-- abcjs leaves `p.pitch` unchanged for `V: transpose=-9`; the interval is stored on the staff clef. MIDI headers are in `tune.formatting.midi`, while body directives can appear as voice `midi` elements. Brace endpoints are `staff.brace: start/end`.
+- abcjs leaves `p.pitch` unchanged for `V: transpose=-9`; the interval is stored on the staff clef. The initial probe found MIDI headers in `tune.formatting.midi` and body directives as voice `midi` elements. Review 5825890369 established that the folded header object loses voice attribution; the final implementation reads MIDI directives from source offsets instead. Brace endpoints are `staff.brace: start/end`.
 - abcjs drops explicit `transpose=0`, and a shared staff clef may expose a different voice's transpose. Read V selectors/declarations from source offsets, making the voice's declaration authoritative. Source note `startChar` plus the preceding V selector survives compressed arrays; ordinal overlay identity distinguishes abcjs-generated voices belonging to that host. Names are not used as identity.
 - Capture each voice's first source-coordinate prefix independently from its Part id. Grouping changes only Part ids; note ids retain their original prefix. Late/compressed voices receive distinct prefixes if their first coordinates collide.
 - Braced voices share `sourcePartId` and name; `scoreToMei` emits their label once on a brace group, with deterministic staffDef ids on the individual staves. No rendering or instrument-view changes are needed.
@@ -55,7 +55,7 @@ None.
 ## Return
 - **Outcome:** done
 - **Commits:** receiver ack 9fa5ae9; implementation 8a110c7; return document follows.
-- **Verification output:** setup, focused ABC tests, check, build and manifest passed. Validation suites before reader passed in the full command; reader through instrument-switch were resumed sequentially after a local build overlap interrupted the reader's static server (`ERR_HTTP_HEADERS_SENT`). No validation code was changed. Final check/build/manifest on implementation 8a110c7 passed as well.
+- **Initial submission verification output:** setup, focused ABC tests, check, build and manifest passed. Validation suites before reader passed in the full command; reader through instrument-switch were resumed sequentially after a local build overlap interrupted the reader's static server (`ERR_HTTP_HEADERS_SENT`). No validation code was changed. Final check/build/manifest on implementation 8a110c7 passed as well.
 
 ```text
 ABC: Test Files 1 passed (1), Tests 36 passed (36)
@@ -88,3 +88,43 @@ npm run test:reader && npm run test:chunks && npm run test:large && npm run test
 - **Out-of-scope issues found:** no new blockers. The existing per-layer duplicate mid-bar keySig suggestion remains deferred.
 - **Follow-ups:** lead to arrange the other-family exact-head review and update the ledger. No PR watch or polling was started.
 - **For GBrain (lead to promote):** abcjs may drop zero transpose and share another voice's clef transpose; source voice declarations prevent both precedence errors. Source offsets preserve identity when abcjs compresses staff arrays. GM storage is one-based although ABC programs are zero-based.
+
+
+## Review 5825890369 fixes
+
+Both blocking findings and the requested non-blocking items are addressed on the same branch/PR.
+
+- MIDI source lines are attributed using their preceding V selector, with offsets preserved when masking comments and `w:`/`W:` lyrics. Lines before any V supply tune-wide defaults. Header lines after V declarations and body lines after V selectors belong only to that voice. Defaults inherit per property; later body settings override that voice's earlier MIDI settings. Explicit `V: transpose=` still takes precedence, including zero. The folded abcjs MIDI object and its unattributed MIDI items no longer control imports.
+- Resolve the voice's sound/channel before parsing its notes. A body channel-10 directive produces the same percussion part/measure clefs and unpitched staff-position pitches as a header directive, without affecting a flute on another voice. Like the existing reduced Part model, the final program/channel supplies one sound for that voice; MIDI transpose is resolved at each measure's first source note.
+- Late voices use `-vN` fallback ids, a namespace disjoint from grand-staff `<pid>-1/-2` ids. The regression uses a bar-only initial voice followed by a later note, forcing abcjs to compress that staff into an occupied coordinate.
+- Braced staves share the explicitly specified sound, otherwise the named stave's instrument. A normal channel assignment does not outrank an explicit program on the other stave. Tests cover a named clarinet with an unnamed partner and a church-organ program declared only on LH.
+- **Accepted compatibility change:** re-grouped grand-staff scores start with fresh per-part settings. The README ABC section now states this; note ids and playback highlighting remain stable.
+- Added `__fixtures__/abc/multivoice-midi.abc` and regressions for header and body attribution, tune defaults, per-voice transpose/program/channel isolation, single-voice compatibility, body-only drums, id collisions, shared sounds, and selectors inside comments/lyrics.
+
+GBrain consulted: `projects/scoreflow-music-reader`. Lead to promote the source-attribution and accepted-settings-reset decisions; implementer performed no GBrain writes. Owned-file scope remains unchanged; no validation scripts or original spike assets were edited.
+
+### Review-round verification
+Implementation commit: `5895ed7`. The full unmodified verification chain completed with **exit 0**, sequentially in the foreground, with no overlapping build or reader processes:
+
+```bash
+npm ci && npx playwright-core install chromium && npm run test -w pepperscore -- --run src/lib/abc-import.test.ts && npm run check && npm run build && npm run test:manifest && npm run test:validation
+```
+
+```text
+Focused ABC: 44/44 tests passed
+Astro/TypeScript: 0 errors, 0 warnings, 0 hints
+Build: library and reader dist match; notices verified
+Manifest: 128 GM packs and sound packs verified
+Spelling: 7911 checks passed
+Library: 120/120 tests passed
+Editor: 273/273 tests passed
+All browser validation suites passed (editor/phone, reader, chunks, large, guardrails, embeds, clock, layout, TAB)
+TAB bake: all 824 checks passed
+Instrument switch: full reader picker (Instrument and Sound sections, trumpet, harp sound, level and fit, as written, hidden by the host, drum kit) passed
+Instrument switch: saved switch vs host settings (same host: the reader's flute; changed host: alto sax) passed
+Instrument switch: octave tool (select, Shift/second-click passage, phrase, 8va/8vb, out of range, auto-fit kept as written, reset, Escape, focus, saved, hidden, embed menu and compact entry) passed
+Instrument switch: chunked reader render moves tied notes across chunk boundaries; caches keyed by the spec passed
+Full verification chain: exit 0
+```
+
+Scope audit: only task-owned ABC implementation/tests/fixture, README ABC section and this return handoff changed in the review round. No test scripts were changed. Ready for the lead's other-family re-review; no PR watching or polling was started.
