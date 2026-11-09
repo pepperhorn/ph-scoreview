@@ -6,7 +6,7 @@
 - **Branch:** orch/0010-readme-abc-sync
 - **Worktree:** /home/shaun/.t3/worktrees/ph-vexflow-view/t3-98350ce6
 - **Base commit:** 7362cf70583b2ebbf4aff4da83fde80a2acff60f (includes required 8c19b8f)
-- **PR:** pending creation after this handoff is committed
+- **PR:** https://github.com/pepperhorn/ph-scoreview/pull/70 (draft)
 - **Status:** closed
 
 ## Goal
