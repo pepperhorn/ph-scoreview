@@ -135,7 +135,7 @@ function percussionPosition(pitch: ScoreNote['pitches'][number]): { loc: number;
   const notation = drumNotation(pitch.midi);
   return { loc: staffLoc(notation.step, notation.octave), head: notation.head };
 }
-function meiPitch(note: ScoreNote, index: number, continuation: number, dur: string, dots?: number, pieceIndex = 0, percussion = false): string {
+function meiPitch(note: ScoreNote, index: number, continuation: number, dur: string, dots?: number, pieceIndex = 0, percussion = false, octaveOffset = 0): string {
   const pitch = note.pitches[index];
   const source = generatedPitchId(note, index) + (continuation ? `_c${continuation}` : '') + (pieceIndex ? `_s${pieceIndex}` : '');
   const accidental = pitch.alter === 2 ? 'ss' : pitch.alter === -2 ? 'ff' : pitch.alter === 1 ? 's' : pitch.alter === -1 ? 'f' : 'n';
@@ -144,16 +144,16 @@ function meiPitch(note: ScoreNote, index: number, continuation: number, dur: str
   const position = percussion ? percussionPosition(pitch) : undefined;
   const placement = position
     ? `loc="${position.loc}"${position.head ? ` head.shape="${position.head}"` : ''}`
-    : `pname="${escape(pitch.step.toLowerCase())}" oct="${pitch.octave}" ${pitch.alter ? `accid.ges="${accidental}"` : ''} ${pitch.accidental ? `accid="${accidental}"` : ''}`;
+    : `pname="${escape(pitch.step.toLowerCase())}" oct="${pitch.octave + octaveOffset}" ${pitch.alter ? `accid.ges="${accidental}"` : ''} ${pitch.accidental ? `accid="${accidental}"` : ''}`;
   return `<note xml:id="${escape(source)}" ${placement} ${tie ? `tie="${tie}"` : ''} ${note.pitches.length === 1 ? `dur="${dur}"${dots ? ` dots="${dots}"` : ''}` : ''}/>`;
 }
-function meiEvent(note: ScoreNote, continuation: number, dur: string, dots?: number, pieceIndex = 0, percussion = false): string {
+function meiEvent(note: ScoreNote, continuation: number, dur: string, dots?: number, pieceIndex = 0, percussion = false, octaveOffset = 0): string {
   if (!note.pitches.length) return `<rest dur="${dur}"${dots ? ` dots="${dots}"` : ''}/>`;
   const lyric = note.lyric && !continuation ? `<verse n="1"><syl>${escape(note.lyric)}</syl></verse>` : '';
-  if (note.pitches.length === 1) return meiPitch(note, 0, continuation, dur, dots, pieceIndex, percussion).replace('/>', `>${lyric}</note>`);
-  return `<chord xml:id="${escape(xmlId(note.id) + (continuation ? `_c${continuation}` : '') + (pieceIndex ? `_s${pieceIndex}` : ''))}" dur="${dur}"${dots ? ` dots="${dots}"` : ''}>${note.pitches.map((_, index) => meiPitch(note, index, continuation, dur, dots, pieceIndex, percussion)).join('')}${lyric}</chord>`;
+  if (note.pitches.length === 1) return meiPitch(note, 0, continuation, dur, dots, pieceIndex, percussion, octaveOffset).replace('/>', `>${lyric}</note>`);
+  return `<chord xml:id="${escape(xmlId(note.id) + (continuation ? `_c${continuation}` : '') + (pieceIndex ? `_s${pieceIndex}` : ''))}" dur="${dur}"${dots ? ` dots="${dots}"` : ''}>${note.pitches.map((_, index) => meiPitch(note, index, continuation, dur, dots, pieceIndex, percussion, octaveOffset)).join('')}${lyric}</chord>`;
 }
-function layerXml(segments: Segment[], beats: number, percussion = false): string {
+function layerXml(segments: Segment[], beats: number, percussion = false, octaveOffset = 0): string {
   let cursor = 0;
   const tokens: string[] = [];
   // Open beam/tuplet wrappers, innermost last. MEI needs proper nesting, so a beam that
@@ -186,7 +186,7 @@ function layerXml(segments: Segment[], beats: number, percussion = false): strin
     if (segment.note.beamStart && !open.includes('beam')) { tokens.push('<beam>'); open.push('beam'); beamEndPending = false; }
     if (inTuplet && !open.includes('tuplet')) { tokens.push(`<tuplet num="${tuplet!.actual}" numbase="${tuplet!.normal}">`); open.push('tuplet'); tupletKey = key; }
     const pieces = inTuplet ? written! : durationPieces(segment.duration);
-    for (const [pieceIndex, piece] of pieces.entries()) tokens.push(meiEvent(segment.note, segment.continuation, piece.dur, piece.dots, pieceIndex, percussion));
+    for (const [pieceIndex, piece] of pieces.entries()) tokens.push(meiEvent(segment.note, segment.continuation, piece.dur, piece.dots, pieceIndex, percussion, octaveOffset));
     if (inTuplet && tuplet!.stop) closeTuplet();
     if (segment.note.beamEnd) closeBeam();
     cursor = Math.max(cursor, segment.start + segment.duration);
@@ -197,12 +197,22 @@ function layerXml(segments: Segment[], beats: number, percussion = false): strin
   return tokens.join('');
 }
 
+/** ABC octave-clef pitches are sounding pitches; move noteheads without moving playback. */
+const clefOctaveOffset = (clef: string) => clef.endsWith('-8') ? 1 : clef.endsWith('+8') ? -1 : 0;
+const meiClef = (clef: string) => {
+  const base = clef.replace(/[+-]8$/, '');
+  const shape = base === 'bass' ? 'F' : base === 'alto' || base === 'tenor' ? 'C' : base === 'percussion' ? 'perc' : 'G';
+  const line = base === 'bass' || base === 'tenor' ? 4 : base === 'alto' || base === 'percussion' ? 3 : 2;
+  return `clef.shape="${shape}" clef.line="${line}"${clefOctaveOffset(clef) ? ` clef.dis="8" clef.dis.place="${clef.endsWith('-8') ? 'below' : 'above'}"` : ''}`;
+};
+const meiKey = (key: number, mode?: string) => `key.sig="${key ? `${Math.abs(key)}${key > 0 ? 's' : 'f'}` : '0'}" key.mode="${mode || 'major'}"`;
+
 /** A semantic MEI adapter for the reduced ABC/MIDI/demo model. Never use this for MusicXML or MEI originals. */
 export function scoreToMei(score: Score): string {
   const count = Math.max(0, ...score.parts.map(part => part.measures.length));
   const meter = `meter.count="${score.beats}" meter.unit="${score.beatType}"`;
   const key = (score.key ? ` key.sig="${Math.abs(score.key)}${score.key > 0 ? 's' : 'f'}"` : ' key.sig="0"') + (score.keyMode === 'minor' ? ' key.mode="minor"' : '');
-  const staffDefs = score.parts.map((part, index) => `<staffDef xml:id="${escape(staffDefXmlId(part.id))}" n="${index + 1}" lines="5" label="${escape(part.name)}" clef.shape="${part.clef === 'bass' ? 'F' : part.clef === 'alto' ? 'C' : part.clef === 'percussion' ? 'perc' : 'G'}" clef.line="${part.clef === 'bass' ? 4 : part.clef === 'alto' || part.clef === 'percussion' ? 3 : 2}"/>`).join('');
+  const staffDefs = score.parts.map((part, index) => `<staffDef xml:id="${escape(staffDefXmlId(part.id))}" n="${index + 1}" lines="5" label="${escape(part.name)}" ${meiClef(part.clef)} ${meiKey(part.key ?? score.key, part.keyMode ?? score.keyMode)}/>`).join('');
   const navigation = Array.from({ length: count }, (_, index) => score.parts[0]?.measures[index]?.navigation);
   const jumpTarget = navigation.some(nav => nav?.toCoda) ? ' al Coda' : navigation.some(nav => nav?.fine) ? ' al Fine' : '';
   const measures = Array.from({ length: count }, (_, measureIndex) => {
@@ -230,8 +240,18 @@ export function scoreToMei(score: Score): string {
         if (layer < 0) layer = ends.length;
         (layers[layer] ||= []).push(segment); ends[layer] = segment.start + segment.duration;
       }
-      return `<staff n="${staffIndex + 1}">${(layers.length ? layers : [[]]).map((layer, index) => `<layer n="${index + 1}">${layerXml(layer, beats, part.clef === 'percussion')}</layer>`).join('')}</staff>`;
+      return `<staff n="${staffIndex + 1}">${(layers.length ? layers : [[]]).map((layer, index) => `<layer n="${index + 1}">${layerXml(layer, beats, part.clef === 'percussion' || measure?.clef === 'percussion', clefOctaveOffset(measure?.clef || part.clef))}</layer>`).join('')}</staff>`;
     }).join('');
+    const changes = score.parts.flatMap((part, index) => {
+      const measure = part.measures[measureIndex];
+      if (!measure) return [];
+      const previous = part.measures[measureIndex - 1];
+      const keyChanged = measure.key !== undefined && (measure.key !== (previous?.key ?? part.key ?? score.key) || measure.keyMode !== (previous?.keyMode ?? part.keyMode ?? score.keyMode ?? 'major'));
+      const clefChanged = part.clef !== 'percussion' && measure.clef !== undefined && measure.clef !== (previous?.clef ?? part.clef);
+      return keyChanged || clefChanged ? [`<staffDef n="${index + 1}" ${keyChanged ? meiKey(measure.key!, measure.keyMode) : ''} ${clefChanged ? meiClef(measure.clef!) : ''}/>`] : [];
+    }).join('');
+    const definitions = changes ? `<scoreDef><staffGrp>${changes}</staffGrp></scoreDef>` : '';
+    const directions = score.parts.flatMap((part, index) => part.measures[measureIndex]?.directions?.filter(dir => dir.text).map(dir => `<dir staff="${index + 1}" tstamp="${1 + dir.start * score.beatType / 4}" place="${dir.placement || 'above'}">${escape(dir.text!)}</dir>`) || []).join('');
     const harmonies = score.parts.flatMap((part, index) => part.measures[measureIndex]?.notes.filter(note => note.chordSymbol).map(note => `<harm staff="${index + 1}" tstamp="${1 + note.start}" >${escape(note.chordSymbol || '')}</harm>`) || []).join('');
     // A SMuFL quarter-note glyph (metNoteQuarterUp) followed by the beats per minute.
     const tempo = measureIndex === 0 ? `<tempo tstamp="1" staff="1" midi.bpm="${score.tempo}" mm="${score.tempo}" mm.unit="4"><rend glyph.auth="smufl">&#xE1D5;</rend> = ${score.tempo}</tempo>` : '';
@@ -249,9 +269,9 @@ export function scoreToMei(score: Score): string {
     ].join('');
     // Repeat barlines: a repeat end followed by a repeat start is one rptboth barline.
     const startsRepeat = nav.repeatStart && !navigation[measureIndex - 1]?.repeatEnd;
-    const right = nav.repeatEnd ? (navigation[measureIndex + 1]?.repeatStart ? 'rptboth' : 'rptend') : '';
+    const right = nav.repeatEnd ? (navigation[measureIndex + 1]?.repeatStart ? 'rptboth' : 'rptend') : reference?.rightBarline || '';
     const bars = `${startsRepeat ? ' left="rptstart"' : ''}${right ? ` right="${right}"` : ''}`;
-    return `<measure n="${measureIndex + 1}"${bars}>${staves}${harmonies}${tempo}${marks}</measure>`;
+    return `${definitions}<measure n="${measureIndex + 1}"${bars}>${staves}${harmonies}${directions}${tempo}${marks}</measure>`;
   });
   // Consecutive measures of one volta bracket are wrapped in an MEI <ending>.
   let sectionXml = '';

@@ -1,0 +1,8 @@
+X:7
+T:Case E Guitar
+M:4/4
+L:1/8
+Q:1/4=100
+V:1 clef=treble-8 name="Guitar"
+K:G
+G,A, B,C DE FG | "G"[G,B,D]4 "D"[F,A,D]4 |]

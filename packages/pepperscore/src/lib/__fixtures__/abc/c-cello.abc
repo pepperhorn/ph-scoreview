@@ -1,0 +1,8 @@
+X:3
+T:Case C Cello
+M:4/4
+L:1/4
+Q:1/4=72
+V:1 clef=bass name="Cello"
+K:Dm
+"Dm"D, F, A, D | "A7"E, ^C, E, A, | "Dm"F, A, D2 | "A7"^C,2 "Dm"D,2 |]
