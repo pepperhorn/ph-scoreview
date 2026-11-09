@@ -28,7 +28,7 @@ describe('skin bar resolution', () => {
     expect(resolveChrome('minimal', {}, ['play']).transport).toBe(true);
     expect(resolveChrome('minimal', { transport: false }, ['play']).transport).toBe(false);
     expect(resolveChrome('minimal', {}, []).header).toBe(false);
-    expect(resolveChrome('minimal', {}, []).compactPlay).toBe(false);
+    expect(resolveChrome('minimal', {}, []).compactPlay).toBe(true);
   });
   it('does not raise any flags or audio on none', () => {
     expect(resolveChrome('none', {}, ['play', 'options'])).toEqual(resolveChrome('none'));
@@ -45,11 +45,13 @@ describe('drawer extras and renderable chrome', () => {
     expect(drawerExtras(['options'], resolveChrome('minimal', {}, ['options']))).toEqual([]);
     expect(drawerExtras([], resolveChrome('full', { transport: false, viewToggle: false, zoom: false, mixer: false, openFile: false }))).toEqual([]);
   });
-  it('does not mount a header for items without renderable elements', () => {
+  it('restores preset chrome when no bar items can be shown', () => {
     for (const bar of [['pdf'], ['pitchColours'], ['instrumentSwitch']] as const) {
-      expect(resolveChrome('minimal', {}, [...bar], [])).toMatchObject({ header: false, compactPlay: false });
-      expect(resolveChrome('full', {}, [...bar], [])).toMatchObject({ header: false });
+      expect(resolveChrome('minimal', {}, [...bar], [])).toMatchObject({ header: false, compactPlay: true });
+      expect(resolveChrome('full', {}, [...bar], [])).toEqual(resolveChrome('full'));
     }
+    expect(resolveChrome('minimal', {}, ['pdf'])).toEqual(resolveChrome('minimal'));
+    expect(resolveChrome('full', {}, ['pdf'])).toEqual(resolveChrome('full'));
     expect(resolveChrome('minimal', {}, ['play'], ['play']).header).toBe(true);
   });
 });

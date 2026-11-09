@@ -464,3 +464,9 @@
 .pepperscore .skin-playback-toolbar{justify-content:flex-start;flex-wrap:wrap}
 .pepperscore .skin-playback-toolbar .header-control{display:flex;align-items:center}
 .pepperscore .skin-playback-toolbar .bpm-control{margin-left:0}
+
+/* Keep the drawer tab in its own strip, below every row of skin playback controls. */
+.pepperscore .app-shell.has-skin-toolbar:not(.no-drawer){padding-bottom:47px}
+.pepperscore .app-shell.has-skin-toolbar .octave-tool-dock.is-above-toolbar,
+.pepperscore .app-shell.has-skin-toolbar .ps-toast,
+.pepperscore .app-shell.has-skin-toolbar .reader-notices{bottom:calc(var(--ps-bottom-toolbar-h,0px) + 12px)}

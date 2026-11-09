@@ -400,6 +400,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const bottomToolbarRef = useRef<HTMLDivElement>(null);
   const uid = useId();
   const panelId = `${uid}-more`;
   /** The embed instrument switcher (minimal chrome): its menu, the source part it shows, and whether it sits in the phone toolbar. */
@@ -991,7 +992,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     const root = rootRef.current;
     if (!root) return;
     const observer = new ResizeObserver(() => {
-      setSkinPhone(root.clientWidth < 580);
+      setSkinPhone(root.clientWidth <= 580);
       const width = root.clientWidth, height = root.clientHeight, natural = root.dataset.psHeight === 'natural';
       flag(root, 'psShort', !natural && height <= 500);
       flag(root, 'psTiny', !natural && height <= 360);
@@ -1795,19 +1796,15 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
 
   const heightMode = height === 'fill' ? 'fill' : height ? 'fixed' : natural ? 'natural' : 'auto';
   const compactLabel = playing || loadingAudio ? 'Stop playback' : 'Play score';
-  const compactPlay = chrome.compactPlay && loaded && !clock ? <button type="button" className={`ps-compact-play icon-button ${loadingAudio ? 'is-loading' : ''}`} aria-label={compactLabel} title={compactLabel} onClick={() => { if (playing || loadingAudio) stop(true); else void play(); }}>{playing || loadingAudio ? <Square size={15} fill="currentColor"/> : <Play size={15} fill="currentColor"/>}</button> : null;
   /** One row per switchable source part (a grand staff's staves share one), in score order. */
   const switchSources = readerParts.filter((part, index) => switchablePart(part) && readerParts.findIndex(other => sourcePartOf(other) === sourcePartOf(part)) === index);
   const switchSource = switchSources.find(part => sourcePartOf(part) === switchSourceId) ?? switchSources[0];
-  const embedSwitchShown = (bar ? bar.includes('instrumentSwitch') : preset === 'minimal') && chrome.instrumentSwitch && loaded && Boolean(switchSource);
-  // The menu only renders with its switcher: when the switcher goes away (new score, instrumentSwitch off) the open state goes too, so keys are not left dead.
-  useEffect(() => { if (!embedSwitchShown) setSwitchMenu(false); }, [embedSwitchShown]);
   /** Focus leaving both the menu and its button closes the menu (focus has already moved on, so nothing is restored). */
   const closeSwitchOnFocusOut = (event: React.FocusEvent) => {
     const next = event.relatedTarget as Node | null;
     if (next && !switchMenuRef.current?.contains(next) && !switchButtonRef.current?.contains(next)) setSwitchMenu(false);
   };
-  const embedSwitch = embedSwitchShown ? <button ref={switchButtonRef} onBlur={closeSwitchOnFocusOut} type="button" className={`instrument-switch icon-button ${switchMenu ? 'is-open' : ''}`} aria-label="Choose your instrument" title="Choose your instrument" aria-haspopup="dialog" aria-expanded={switchMenu} aria-controls={switchMenu ? switchMenuId : undefined} onClick={() => setSwitchMenu(open => !open)}>
+  const embedSwitch = chrome.instrumentSwitch && loaded && switchSource ? <button ref={switchButtonRef} onBlur={closeSwitchOnFocusOut} type="button" className={`instrument-switch icon-button ${switchMenu ? 'is-open' : ''}`} aria-label="Choose your instrument" title="Choose your instrument" aria-haspopup="dialog" aria-expanded={switchMenu} aria-controls={switchMenu ? switchMenuId : undefined} onClick={() => setSwitchMenu(open => !open)}>
     <img className="instrument-switch-icon" src={instrumentDetails(shownInstrument(switchSource)).icon} alt=""/>
   </button> : null;
   const switchState = switchSource && partSwitches[switchSource.id];
@@ -1818,20 +1815,6 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   </div> : null;
   const octaveSelectionInfo = octaveOn && octaveSelection ? { count: octaveSelection.ids.length, partName: score.parts.find(part => part.id === octaveSelection.partId)?.name ?? '',
     outOfRange: octaveSelection.ids.filter(id => instrumentView.outOfRange.includes(id)).length } : null;
-  /** Minimal chrome without the instrument switcher: the octave tool's entry is its own compact button (corner, or the phone toolbar). */
-  const embedOctave = preset === 'minimal' && chrome.octaveTool && loaded && !embedSwitchShown
-    ? <button type="button" className={`octave-tool-toggle octave-tool-toggle-compact ${octaveOn ? 'is-selected' : ''}`} aria-pressed={octaveOn} title="Octave tool: select notes to move them by an octave" onClick={() => setOctaveToolOn(!octaveOn)}>Octave</button> : null;
-  const octaveCanReset = octaveSelection ? Object.keys(partSwitches[octaveSelection.partId]?.octaves ?? {}).length > 0 : Object.values(partSwitches).some(entry => Object.keys(entry.octaves).length > 0);
-  const embedSwitchMenu = embedSwitchShown && switchMenu ? <div ref={switchMenuRef} popover="manual" onBlur={closeSwitchOnFocusOut} id={switchMenuId} tabIndex={-1} className="instrument-menu" role="dialog" aria-label="Choose your instrument">
-    {switchSources.length > 1 && <div className="instrument-menu-parts" role="group" aria-label="Part">
-      {switchSources.map(part => <button key={part.id} type="button" className={`instrument-menu-part ${part === switchSource ? 'is-selected' : ''}`} aria-pressed={part === switchSource} onClick={() => setSwitchSourceId(sourcePartOf(part))}>
-        <img className="instrument-menu-part-icon" src={instrumentDetails(shownInstrument(part)).icon} alt=""/><span className="instrument-menu-part-name">{part.name}</span>
-      </button>)}
-    </div>}
-    <InstrumentChooser compact instruments={EMBED_INSTRUMENTS} current={switchState?.instrument} level={switchState?.level ?? hostSwitchDefaults().level} autoRange={switchState?.autoRange ?? hostSwitchDefaults().autoRange} asWrittenIcon={instrumentDetails(switchSource.importedInstrument ?? switchSource.instrument).icon}
-      onInstrument={id => setPartInstrument(sourcePartOf(switchSource), id)} onLevel={level => setPartLevel(sourcePartOf(switchSource), level)} onAutoRange={on => setPartAutoRange(sourcePartOf(switchSource), on)}/>
-    {octaveToggle('menu')}
-  </div> : null;
   const headerElements: Partial<Record<HeaderControlId, React.ReactNode>> = {
     stop: clock ? null : <button className="icon-button stop-button" aria-label="Stop playback" title="Stop playback" onClick={() => { stop(true); viewportRef.current?.scrollTo({ top: 0, left: 0, behavior: 'smooth' }); }}><Square size={17} fill="currentColor"/></button>,
     play: clock ? null : <button className={`play-button ${loadingAudio ? 'is-loading' : ''}`} aria-label={playing || loadingAudio ? 'Pause playback' : 'Play score'} onClick={() => void play()}>{playing || loadingAudio ? <Pause size={17} fill="currentColor"/> : <Play size={17} fill="currentColor"/>}<span className="play-button-label">{loadingAudio ? 'Loading' : playing ? 'Pause' : 'Play'}</span></button>,
@@ -1866,7 +1849,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     counts: <button type="button" className="icon-button skin-counts skin-annotation-toggle" aria-label="Counts" title="Counts" aria-pressed={prefs.counts} onClick={() => update({ counts: !prefs.counts })}><Hash size={18}/></button>,
     chordSymbols: <button type="button" className="icon-button skin-chord-symbols skin-annotation-toggle" aria-label="Chord symbols" title="Chord symbols" aria-pressed={prefs.chordSymbols && prefs.inferChordSymbols} onClick={() => { const on = !(prefs.chordSymbols && prefs.inferChordSymbols); update({ chordSymbols: on, inferChordSymbols: on }); }}><Music2 size={18}/></button>,
     options: <button type="button" className="icon-button skin-options" aria-label="Options" title="Options" aria-expanded={drawer} onClick={() => { setMoreOpen(false); setDrawer(!drawer); }}><Settings2 size={18}/></button>,
-    instrumentSwitch: embedSwitch,
+    instrumentSwitch: bar?.includes('instrumentSwitch') ? embedSwitch : null,
     octaveTool: octaveToggle('bar'),
     mixer: <button className="icon-button mixer-trigger" aria-label="Track mixer" title="Track mixer" aria-haspopup="dialog" aria-expanded={mixer} onClick={() => { setDrawer(false); setMoreOpen(false); setMixer(true); }}><SlidersHorizontal size={18}/><span className="mixer-trigger-label">Track mixer</span></button>,
   };
@@ -1874,22 +1857,53 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const playbackItems = new Set(['play', 'stop', 'tempo', 'transpose', 'keyFlip']);
   const toolbarBar = skinPhone ? visibleBar?.filter(id => playbackItems.has(id)) ?? [] : [];
   const headerBar = visibleBar?.filter(id => !toolbarBar.includes(id)) ?? null;
-  const showHeader = resolveChrome(preset, controls, bar, headerBar).header;
-  const renderControls = (tier: 'primary' | 'secondary') => HEADER_CONTROLS.filter(control => control.tier === tier && chrome[HEADER_CONTROL_GROUP[control.id]!] && headerElements[control.id]).map(control => <div key={control.id} className={`header-control header-control-${control.id}`} data-header-control={control.id}>{headerElements[control.id]}</div>);
+  const activeBar = visibleBar?.length ? bar : null;
+  const activeChrome = resolveChrome(preset, controls, bar, visibleBar);
+  const embedSwitchShown = (activeBar ? activeBar.includes('instrumentSwitch') : preset === 'minimal') && chrome.instrumentSwitch && loaded && Boolean(switchSource);
+  // The menu only renders with its switcher: when the switcher goes away (new score, instrumentSwitch off) the open state goes too, so keys are not left dead.
+  useEffect(() => { if (!embedSwitchShown) setSwitchMenu(false); }, [embedSwitchShown]);
+  /** Minimal chrome without the instrument switcher: the octave tool's entry is its own compact button (corner, or the phone toolbar). */
+  const embedOctave = preset === 'minimal' && chrome.octaveTool && loaded && !embedSwitchShown
+    ? <button type="button" className={`octave-tool-toggle octave-tool-toggle-compact ${octaveOn ? 'is-selected' : ''}`} aria-pressed={octaveOn} title="Octave tool: select notes to move them by an octave" onClick={() => setOctaveToolOn(!octaveOn)}>Octave</button> : null;
+  const octaveCanReset = octaveSelection ? Object.keys(partSwitches[octaveSelection.partId]?.octaves ?? {}).length > 0 : Object.values(partSwitches).some(entry => Object.keys(entry.octaves).length > 0);
+  const embedSwitchMenu = embedSwitchShown && switchMenu ? <div ref={switchMenuRef} popover="manual" onBlur={closeSwitchOnFocusOut} id={switchMenuId} tabIndex={-1} className="instrument-menu" role="dialog" aria-label="Choose your instrument">
+    {switchSources.length > 1 && <div className="instrument-menu-parts" role="group" aria-label="Part">
+      {switchSources.map(part => <button key={part.id} type="button" className={`instrument-menu-part ${part === switchSource ? 'is-selected' : ''}`} aria-pressed={part === switchSource} onClick={() => setSwitchSourceId(sourcePartOf(part))}>
+        <img className="instrument-menu-part-icon" src={instrumentDetails(shownInstrument(part)).icon} alt=""/><span className="instrument-menu-part-name">{part.name}</span>
+      </button>)}
+    </div>}
+    <InstrumentChooser compact instruments={EMBED_INSTRUMENTS} current={switchState?.instrument} level={switchState?.level ?? hostSwitchDefaults().level} autoRange={switchState?.autoRange ?? hostSwitchDefaults().autoRange} asWrittenIcon={instrumentDetails(switchSource.importedInstrument ?? switchSource.instrument).icon}
+      onInstrument={id => setPartInstrument(sourcePartOf(switchSource), id)} onLevel={level => setPartLevel(sourcePartOf(switchSource), level)} onAutoRange={on => setPartAutoRange(sourcePartOf(switchSource), on)}/>
+    {octaveToggle('menu')}
+  </div> : null;
+
+  const showHeader = activeChrome.header && (activeBar === null || Boolean(headerBar?.length));
+  const compactPlay = activeChrome.compactPlay && loaded && !clock ? <button type="button" className={`ps-compact-play icon-button ${loadingAudio ? 'is-loading' : ''}`} aria-label={compactLabel} title={compactLabel} onClick={() => { if (playing || loadingAudio) stop(true); else void play(); }}>{playing || loadingAudio ? <Square size={15} fill="currentColor"/> : <Play size={15} fill="currentColor"/>}</button> : null;
+  // Include the reserved drawer-tab strip in the measured bottom footprint.
+  useLayoutEffect(() => {
+    const root = rootRef.current, toolbar = bottomToolbarRef.current;
+    if (!root || !toolbar) return;
+    const measure = () => root.style.setProperty('--ps-bottom-toolbar-h', `${root.getBoundingClientRect().bottom - toolbar.getBoundingClientRect().top}px`);
+    const observer = new ResizeObserver(measure);
+    observer.observe(toolbar);
+    observer.observe(root);
+    measure();
+    return () => { observer.disconnect(); root.style.removeProperty('--ps-bottom-toolbar-h'); };
+  }, [toolbarBar.length > 0, chrome.drawer]);
+  const renderControls = (tier: 'primary' | 'secondary') => HEADER_CONTROLS.filter(control => control.tier === tier && activeChrome[HEADER_CONTROL_GROUP[control.id]!] && headerElements[control.id]).map(control => <div key={control.id} className={`header-control header-control-${control.id}`} data-header-control={control.id}>{headerElements[control.id]}</div>);
   const primaryControls = renderControls('primary');
   const secondaryControls = renderControls('secondary');
 
   /** On phones and tablets the switcher and the play button move to a bottom toolbar, within thumb reach. */
-  const inToolbar = bar === null && phoneToolbar && Boolean(embedSwitch || embedOctave);
-  const cornerSwitch = inToolbar || bar !== null ? null : embedSwitch ?? embedOctave;
+  const inToolbar = activeBar === null && phoneToolbar && Boolean(embedSwitch || embedOctave);
+  const cornerSwitch = inToolbar || activeBar !== null ? null : (embedSwitchShown ? embedSwitch : null) ?? embedOctave;
   const cornerPlay = inToolbar ? null : compactPlay;
   return <div ref={rootRef} className={`pepperscore ${className ?? ''}`.trim()} data-ps-height={heightMode} data-ps-clock={clock ? '' : undefined} data-ps-clickable={onElementClick || octaveOn ? '' : undefined} data-ps-octave-tool={octaveOn ? '' : undefined} style={{ ...themeStyle, ...(heightMode === 'fixed' ? { height } : {}) }}
     tabIndex={0} role="region" aria-label={ariaLabel || (loaded && score.title ? `Score: ${score.title}` : 'Score reader')} onKeyDown={onRootKeyDown}>
-  <main className={`app-shell ${chrome.drawer ? '' : 'no-drawer'}`}>
-    {chrome.openFile && <input ref={fileRef} type="file" accept={SCORE_FILE_ACCEPT} hidden onChange={e => { readFile(e.target.files?.[0]); e.target.value = ''; }}/> }
-    {showHeader && <header className={`topbar ${bar !== null ? 'skin-topbar' : ''}`} aria-label="Playback transport">
-
-      {bar !== null ? <SkinBar bar={headerBar ?? []} elements={headerElements} moreRef={moreRef} moreOpen={moreOpen} setMoreOpen={setMoreOpen} panelId={panelId}/> : <div className="transport">
+  <main className={`app-shell ${chrome.drawer ? '' : 'no-drawer'} ${toolbarBar.length ? 'has-skin-toolbar' : ''}`}>
+    {chrome.openFile && <input ref={fileRef} type="file" accept={SCORE_FILE_ACCEPT} hidden onChange={e => { readFile(e.target.files?.[0]); e.target.value = ''; }}/>}
+    {showHeader && <header className={`topbar ${activeBar !== null ? 'skin-topbar' : ''}`} aria-label="Playback transport">
+      {activeBar !== null ? <SkinBar bar={headerBar ?? []} elements={headerElements} moreRef={moreRef} moreOpen={moreOpen} setMoreOpen={setMoreOpen} panelId={panelId}/> : <div className="transport">
         {primaryControls}
         {/* Secondary controls render once. CSS lays them out inline above MOBILE_HEADER_BREAKPOINT and as the
             More dropdown (toggle shown, panel display:none until data-open) at or below it, so SSR paints the right arrangement. */}
@@ -1978,11 +1992,11 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
       </div>
       {chrome.zoom && <div className="page-controls"><button aria-label="Previous view" onClick={() => turn(-1)}><ChevronLeft size={18}/></button><span>{prefs.mode === 'portrait' ? 'SCROLL TO READ' : 'SWIPE TO READ'}</span><button aria-label="Next view" onClick={() => turn(1)}><ChevronRight size={18}/></button></div>}
     </section>
-    {toolbarBar.length > 0 && <div className="ps-embed-toolbar skin-playback-toolbar" role="toolbar" aria-label="Playback controls">
+    {toolbarBar.length > 0 && <div ref={bottomToolbarRef} className="ps-embed-toolbar skin-playback-toolbar" role="toolbar" aria-label="Playback controls">
       {toolbarBar.map(id => <div key={id} data-bar-item={id} className={`header-control header-control-${BAR_HEADER_ID[id]}`}>{headerElements[BAR_HEADER_ID[id]]}</div>)}
     </div>}
     {inToolbar && <div className="ps-embed-toolbar" role="toolbar" aria-label="Score controls">{embedSwitch ?? embedOctave}{compactPlay}</div>}
-    {octaveOn && <div className={`octave-tool-dock ${inToolbar ? 'is-above-toolbar' : ''}`}>
+    {octaveOn && <div className={`octave-tool-dock ${inToolbar || toolbarBar.length ? 'is-above-toolbar' : ''}`}>
       <OctaveTool selection={octaveSelectionInfo} canReset={octaveCanReset} onUp={() => stepSelection(12)} onDown={() => stepSelection(-12)}
         onPhrase={() => setOctaveSelection(current => current && selectOctavePhrase(score, current))} onReset={resetOctaves} onDone={() => setOctaveToolOn(false)}/>
     </div>}
@@ -1993,7 +2007,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     <aside className={`bottom-drawer ${drawer ? 'is-open' : ''}`} aria-hidden={!drawer}>
       <div className="drawer-top"><div><div className="ps-eyebrow">MAKE IT YOURS</div><h2>Reading options</h2></div><button className="icon-button" aria-label="Close options" onClick={() => setDrawer(false)}><X size={20}/></button></div>
       <div className="drawer-grid">
-        <DrawerControls items={drawerExtras(bar, chrome)} elements={headerElements}/>
+        <DrawerControls items={drawerExtras(activeBar, activeChrome)} elements={headerElements}/>
 
         <div className="drawer-panel reading-panel"><h3><Settings2 size={17}/> Reading</h3><div className="font-choice"><span>Notation font</span><div className="font-toggle" role="group" aria-label="Notation font"><button className={prefs.notationFont === 'Bravura' ? 'is-selected' : ''} aria-pressed={prefs.notationFont === 'Bravura'} onClick={() => update({ notationFont: 'Bravura' })}>Bravura</button><button className={prefs.notationFont === 'Petaluma' ? 'is-selected' : ''} aria-pressed={prefs.notationFont === 'Petaluma'} onClick={() => update({ notationFont: 'Petaluma' })}>Petaluma</button></div></div><div className="font-choice"><span>Stave text font</span><div className="font-toggle" role="group" aria-label="Stave text font">{(['Sans', 'Serif', 'Mono'] as const).map(font => <button key={font} className={prefs.annotationFont === font ? 'is-selected' : ''} aria-pressed={prefs.annotationFont === font} onClick={() => update({ annotationFont: font })}>{font}</button>)}</div></div><label className="field-label" htmlFor={overhangId}>Overhang <span>{prefs.overlap === 0 ? 'Off' : `${prefs.overlap} ${prefs.mode === 'portrait' ? (prefs.overlap === 1 ? 'system' : 'systems') : (prefs.overlap === 1 ? 'bar' : 'bars')}`}</span></label><input id={overhangId} className="ps-range" type="range" min="0" max="3" step="1" value={prefs.overlap} onChange={e => update({ overlap: Number(e.target.value) })}/>{chrome.tabToggle && tabAvailable && <div className="font-choice tab-view-choice"><span>TAB</span>{tabToggle('drawer')}</div>}{readerParts.length > 4 && <button className="text-action reset-staves" onClick={resetStaves}><RotateCcw size={15}/> Reset score staves</button>}</div>
         <div className="drawer-panel annotations-panel"><h3><Type size={17}/> Annotations</h3>{annotationRow('Note names', 'names', 'namesSize', () => update({ names: !prefs.names }))}{annotationRow('Chord symbols', 'chordSymbols', 'chordSymbolsSize', () => update({ chordSymbols: !prefs.chordSymbols }))}<label className="ps-switch-row inference-row"><span>Infer chord symbols</span><input type="checkbox" checked={prefs.inferChordSymbols} onChange={e => update({ inferChordSymbols: e.target.checked })}/></label>{annotationRow('Beat counts', 'counts', 'countsSize', () => update({ counts: !prefs.counts }))}{annotationRow('Count subdivisions', 'subdivisions', 'subdivisionsSize', () => update({ subdivisions: !prefs.subdivisions, counts: true }), prefs.counts && prefs.subdivisions)}</div>
