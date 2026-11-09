@@ -66,6 +66,7 @@ export const setPartInstrument: Command<{ partId: string; instrument: SwitchInst
     if (part.name === fields.name && part.instrument.gmProgram === fields.instrument.gmProgram && part.instrument.midiChannel !== 10 && part.staves === fields.staves && part.clefs.join() === fields.clefs.join() && JSON.stringify(part.transposition) === JSON.stringify(fields.transposition)) return;
     // Channel 10 is percussion, so an explicitly pitched target must not keep it.
     const channel = part.instrument.midiChannel;
+    const oldName = part.name;
     Object.assign(part, fields);
     if (channel !== undefined && channel !== 10) part.instrument.midiChannel = channel;
     if (!fields.transposition) delete part.transposition;
@@ -79,10 +80,13 @@ export const setPartInstrument: Command<{ partId: string; instrument: SwitchInst
       pm.beams = pm.beams.filter(b => b.events.every(id => ids.has(id)));
       pm.directions = pm.directions.filter(d => d.anchor.staff <= part.staves);
     });
-    for (const layout of doc.layouts) for (const lp of layout.parts) {
-      if (lp.partId !== partId || !lp.staves?.length) continue;
-      lp.staves = lp.staves.filter(s => s <= part.staves);
-      if (!lp.staves.length) delete lp.staves;
+    for (const layout of doc.layouts) {
+      if (layout.kind === 'part' && layout.parts.length === 1 && layout.parts[0].partId === partId && layout.name === oldName) layout.name = part.name;
+      for (const lp of layout.parts) {
+        if (lp.partId !== partId || !lp.staves?.length) continue;
+        lp.staves = lp.staves.filter(s => s <= part.staves);
+        if (!lp.staves.length) delete lp.staves;
+      }
     }
     repair(draft);
   },
@@ -94,6 +98,9 @@ export const removePart: Command<{ partId: string }> = {
     const doc = draft.document;
     if (doc.parts.length <= 1 || !canEditPart(doc, partId)) return;
     doc.parts = doc.parts.filter(p => p.id !== partId);
+    doc.layouts = doc.layouts.filter(l => !(l.kind === 'part' && l.parts.length > 0 && l.parts.every(p => p.partId === partId)));
+    // Record the fallback inside the command so undo restores the previously active Part layout.
+    if (!doc.layouts.some(l => l.id === draft.activeLayoutId)) draft.activeLayoutId = doc.layouts[0].id;
     for (const layout of doc.layouts) layout.parts = layout.parts.filter(p => p.partId !== partId);
     repair(draft);
   },

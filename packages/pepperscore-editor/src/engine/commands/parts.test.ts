@@ -1,3 +1,8 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { PartsPanel, partAddLimitReason } from '../../ui/PartsPanel';
+import { UiProvider } from '../../ui/controls';
+import { createPartLayouts, setActiveLayout } from './layouts';
 import { INSTRUMENTS, instrumentName } from 'pepperscore/instruments';
 import { createDocument } from '../../model/create';
 import { measureTicks } from '../../model/durations';
@@ -153,4 +158,71 @@ test('shrinking a piano prunes cross-staff rest slurs and repairs selected staff
   expect(after.selection.ids).toEqual([]);
   expect(after.document.layouts[1].parts[0].staves).toBeUndefined();
   store.undo(); expect(store.getState().document).toEqual(doc); clean(store.getState().document);
+});
+
+
+test('removing a part deletes its empty Part layout, falls back to Full score, and undo restores the active layout', () => {
+  const store = createEditorStore(createDocument({ parts: [
+    { name: 'Violin', clef: 'treble', gmProgram: 41 }, { name: 'Clarinet', clef: 'treble', gmProgram: 72 },
+  ], measures: 1 }));
+  store.dispatch(createPartLayouts, {});
+  const doc = structuredClone(store.getState().document);
+  const clarinet = doc.parts[1];
+  const ownLayout = doc.layouts.find(l => l.kind === 'part' && l.parts[0].partId === clarinet.id)!;
+  doc.layouts.push({ ...structuredClone(ownLayout), id: 'custom-clarinet', kind: 'custom' });
+  const s = createEditorStore(doc, { activeLayoutId: ownLayout.id });
+  s.dispatch(removePart, { partId: clarinet.id });
+  expect(s.getState().document.layouts.some(l => l.id === ownLayout.id)).toBe(false);
+  expect(s.getState().activeLayoutId).toBe(doc.layouts[0].id);
+  expect(s.getState().document.layouts.find(l => l.id === 'custom-clarinet')?.parts).toEqual([]);
+  expect(s.getState().document.layouts.some(l => l.kind === 'part' && l.parts[0]?.partId === doc.parts[0].id)).toBe(true);
+  clean(s.getState().document);
+  s.undo();
+  expect(s.getState().document).toEqual(doc);
+  expect(s.getState().activeLayoutId).toBe(ownLayout.id);
+  clean(s.getState().document);
+  s.redo(); expect(s.getState().activeLayoutId).toBe(doc.layouts[0].id); clean(s.getState().document);
+  // Removing an inactive part layout leaves the current Full score selection alone.
+  s.undo(); s.dispatch(setActiveLayout, { layoutId: doc.layouts[0].id });
+  s.dispatch(removePart, { partId: clarinet.id });
+  expect(s.getState().activeLayoutId).toBe(doc.layouts[0].id);
+});
+
+test('changing instrument renames only the own Part layout with an auto-generated name; undo restores names', () => {
+  const doc = createDocument({ parts: [{ name: 'Clarinet', clef: 'treble', gmProgram: 72 }], measures: 1 });
+  const store = createEditorStore(doc); store.dispatch(createPartLayouts, {});
+  const before = structuredClone(store.getState().document);
+  const own = before.layouts[1];
+  before.layouts.push({ ...structuredClone(own), id: 'renamed', name: 'Solo book' });
+  before.layouts.push({ ...structuredClone(own), id: 'custom', kind: 'custom' });
+  const s = createEditorStore(before);
+  s.dispatch(setPartInstrument, { partId: before.parts[0].id, instrument: 'trumpet' });
+  expect(s.getState().document.layouts.map(l => l.name)).toEqual(['Full score', 'Trumpet', 'Solo book', 'Clarinet']);
+  clean(s.getState().document);
+  s.undo(); expect(s.getState().document).toEqual(before); clean(s.getState().document);
+});
+
+test('Parts shows the add-limit reason once, only when blocked, naming the chosen instrument', () => {
+  const doc = fourBars();
+  const render = (maxStaves: number) => {
+    const store = createEditorStore(doc);
+    return renderToStaticMarkup(createElement(UiProvider, { value: {
+      store, editable: true, maxStaves, ctx: { store, play() {}, openPopover() {} }, refocus() {}, togglePopover() {},
+    } }, createElement(PartsPanel, { store })));
+  };
+  const allowed = render(4);
+  expect(allowed).not.toContain('Piano needs two staves');
+  expect(allowed).not.toContain('would exceed');
+  const blocked = render(1);
+  const reason = 'Adding Flute would exceed the 1-staff limit.';
+  expect(blocked.split(reason)).toHaveLength(2);
+  expect(blocked).not.toContain('Piano needs two staves');
+  const add = blocked.slice(blocked.indexOf('class="ps-parts-add"'));
+  expect(add).toContain(reason);
+  const rows = blocked.slice(0, blocked.indexOf('class="ps-parts-add"'));
+  expect(rows).not.toContain('would exceed');
+  expect(rows).not.toContain('licence allows');
+  expect(partAddLimitReason(doc, 2, 'flute')).toBe('');
+  expect(partAddLimitReason(doc, 2, 'piano')).toBe('Adding Piano would exceed the 2-staff limit. Piano needs two staves.');
+  expect(partAddLimitReason(doc, 3, 'piano')).toBe('');
 });

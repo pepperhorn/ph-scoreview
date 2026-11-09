@@ -28,7 +28,7 @@ Editor users can add pitched instrument/voice parts, change an empty part's inst
 
 ## Acceptance criteria
 - [x] Every plan T2 checklist case written before implementation. Initial run failed because the new parts module did not exist; subsequent implementation passed all nine tests.
-- [x] Added a tenth regression before its fix: shrinking a piano with a cross-staff rest slur produced a slur-target invariant error. Reference pruning fixes it. The ten Parts tests and all 287 editor tests pass.
+- [x] Added a tenth regression before its fix: shrinking a piano with a cross-staff rest slur produced a slur-target invariant error. Reference pruning fixes it. The original ten Parts tests passed; r1 adds three regression tests, for 13 Parts tests and 290 editor tests now passing.
 - [x] Tests cover four-bar flute addition, Full score/custom layouts, piano's two staves, inherited/changed time and refill, instrument metadata, empty/nonempty/missing parts, refusal to remove the last part, layout/cursor/selection repair, licence caps, clean invariants and undo/redo.
 - [x] Desktop 1280x900 and touch phone 390x844 task probes pass: actual Parts controls add/change/remove, enforce piano/cap options, show refusal reasons, exclude drums, undo/redo, and disable instrument/removal after entering a note. Native disabled option property checked directly. Poppins and measured panel width verified; screenshots inspected.
 - [x] Protected scope and MusicXML goldens unchanged; git diff --check clean.
@@ -61,7 +61,7 @@ Commands run in foreground; build and browser tests did not overlap. The resumed
 ## Decisions made
 - canAddPart keeps the planned two-argument call for a one-stave check and accepts an optional third instrument argument to count piano as two. The panel also checks changes against the cap after excluding the part being replaced. Document commands do not carry licence state: direct hosts must check the verified cap before dispatch, documented in README.
 - Source instrument metadata follows the plan; ordinary MIDI channels survive changes, channel 10 is removed for pitched targets, and obsolete source abbreviations are cleared.
-- Custom layouts that explicitly selected only a removed staff fall back to the remaining staff. An explicitly empty stave selection stays empty. Removing a part may leave an empty custom layout; layouts themselves are preserved.
+- Custom layouts that explicitly selected only a removed staff fall back to the remaining staff. An explicitly empty stave selection stays empty. Removing a part may leave an empty custom layout; custom layouts are preserved. Its own Part layout is removed if removal empties it, with an undoable switch to Full score when active.
 - The expanded files are used only for explicit context propagation; no globals or DOM side channel.
 
 ## Known gotchas / GBrain
@@ -76,7 +76,7 @@ None.
 - **For the ABC guide:** no ABC import or authoring behaviour changed.
 - **For GBrain (lead to promote):** shared PartsPanel receives the signed cap through EditorUi; cap-aware additions and changes count piano as two. Empty structural edits must prune slurs across removed staves, even when there are no notes.
 
-## Return / final verification output
+## Original implementation verification (head 66352a9)
 - **Status:** closed
 - **Outcome:** done
 - **Commits:** d3abf1b (initial ack), 39d27a9 (initial blocked return), bfe7b9b (scope-extension ack), 624ac3a (implementation), followed by this completed return-handoff commit.
@@ -115,3 +115,30 @@ test:instrument-switch: exit 0
 All 28 scripts in the root test:validation list have passing results across the original and resumed runs. No timing failure needed a threshold change. The separate editor-browser network-error run and successful isolated rerun are both retained.
 
 Logs: `/tmp/0003-t2-install.log`, `/tmp/0003-t2-red.log`, `/tmp/0003-t2-slur-red.log`, `/tmp/0003-t2-editor-final.log`, `/tmp/0003-t2-check-complete.log`, `/tmp/0003-t2-build-complete.log`, `/tmp/0003-t2-manifest-complete.log`, `/tmp/0003-t2-parts-browser-complete.log`, `/tmp/0003-t2-browser-built.log` (network failure), `/tmp/0003-t2-browser-retry.log` (isolated pass), `/tmp/0003-t2-phone.log`, `/tmp/0003-t2-validation.log` (interrupted), `/tmp/0003-t2-validation-remaining.log`, `/tmp/0003-t2-validation-progress.json` and `/tmp/0003-t2-<suite>-remaining.log` per resumed suite. Temporary task probe: `/tmp/0003-t2-parts-browser.mjs`. Inspected screenshots: `/tmp/0003-t2-parts-desktop.png` and `/tmp/0003-t2-parts-phone.png`.
+
+
+## Review r1 follow-up — done
+- **Review:** [5834277307](https://github.com/pepperhorn/ph-scoreview/pull/69#pullrequestreview-5834277307), approve on base `66352a9f40a62dd3ea6805452206ff3fdcf59b45`. The user requested all three minor findings be fixed before merge; no new delegation or merge was performed.
+- **Outcome:** done; same branch and PR. Changes are limited to `src/engine/commands/parts.ts`, `parts.test.ts`, `src/ui/PartsPanel.tsx`, and this return handoff.
+- **Finding 1:** removing a part deletes its own Part layout when that layout becomes empty. If active, the command records Full score as the fallback; undo restores both the removed layout and its active selection. Empty Custom layouts are preserved. The new test covers active/inactive layout removal, undo, redo and clean invariants.
+- **Finding 2:** instrument changes rename only a `kind: part` layout containing that part alone and named exactly after the old part. User-renamed Part layouts and Custom layouts retain their names. The new test checks these cases and undo.
+- **Finding 3:** the limit reason is emitted only when the selected addition cannot fit, once beside Add, with the instrument and actual staff limit. Piano's two-stave sentence appears only for a blocked Piano choice. Removed the unconditional per-row cap text/title; row explanations now describe only notes/read-only/last-part restrictions. Add and its select refer to the single reason through aria-describedby.
+- **Test evidence:** the three new tests were written first in the owned `parts.test.ts`; the red run had exactly 3 failures and the previous 10 tests passed. After fixes, all 13 Parts tests pass. The third test server-renders PartsPanel under EditorUi to verify absence when allowed, exact one-time placement by Add when blocked, and the chosen-instrument wording; the pure message helper covers Piano's two-stave branch. No new test files or ownership expansion needed.
+
+```text
+npm test -w pepperscore-editor -- --run src/engine/commands/parts.test.ts
+  red: 3 failed, 10 passed
+  green: 13 passed
+npm run test:editor: 26 files, 290 tests passed
+npm run check: 0 errors, 0 warnings, 0 hints
+npm run build: 10 pages, demo/library dist match
+node /tmp/0003-t2-parts-browser.mjs: desktop 1280x900 PASS, phone 390x844 PASS
+npm run test:editor-browser: PASS; max redraw 286ms
+npm run test:editor-phone: PASS
+git diff --check: clean
+```
+All commands ran in the foreground, sequentially, from the repository root; build preceded browser suites so they exercised the updated code. No timing gate failed, no retry or threshold adjustment needed. The earlier full-validation evidence remains historical at head 66352a9; r1 reran the five checks requested by the user plus the Parts probe.
+
+**Browser test follow-up (still open for T3):** the temporary Parts probe imports `validation/serve-dist.mjs`, serves the built `/editor`, and uses Playwright. Committing/promoting it belongs in `validation/editor.mjs` and `validation/editor-phone.mjs`, outside this task's ownership. It remains a follow-up rather than adding an unowned file or changing validation. The temporary probe was rerun with extra assertions for no limit text when adding is possible, a single Flute limit message at the cap, and the Piano-only two-stave explanation. The server-rendered message regression above is committed in the owned Parts test file.
+
+Current logs: `/tmp/0003-t2-r1-red.log`, `/tmp/0003-t2-r1-green.log`, `/tmp/0003-t2-r1-editor.log`, `/tmp/0003-t2-r1-check.log`, `/tmp/0003-t2-r1-build.log`, `/tmp/0003-t2-r1-parts-browser.log`, `/tmp/0003-t2-r1-browser.log`, `/tmp/0003-t2-r1-phone.log`. No core, validation, schema, dependency, ledger or MusicXML golden changes; no GBrain write. Lead next action: review the follow-up head and confirm CI before merging.
