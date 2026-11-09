@@ -13,6 +13,8 @@ export type EditorUi = {
   store: EditorStore;
   ctx: KeyContext;
   editable: boolean;
+  /** Verified licence staff cap, shared by both shells. */
+  maxStaves: number;
   /** Returns keyboard focus to the editor after a control is used. */
   refocus(): void;
   /** Opens popover `name`, or closes it when it is open. */

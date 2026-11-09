@@ -175,7 +175,7 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
   const ctx = useMemo<KeyContext>(() => ({ store, openPopover: setPopover, play: togglePlay }), [store, togglePlay]);
   const togglePopover = useCallback((name: PopoverName) => setPopover((current) => (current === name ? null : name)), []);
   const scrollToMeasure = useCallback((index: number) => void viewerRef.current?.scrollToMeasure(index), []);
-  const ui = useMemo<EditorUi>(() => ({ store, ctx, editable, refocus, togglePopover, scrollToMeasure }), [store, ctx, editable, refocus, togglePopover, scrollToMeasure]);
+  const ui = useMemo<EditorUi>(() => ({ store, ctx, editable, maxStaves, refocus, togglePopover, scrollToMeasure }), [store, ctx, editable, maxStaves, refocus, togglePopover, scrollToMeasure]);
 
   const onElementClick = useCallback(
     (info: PepperScoreClickInfo) => {

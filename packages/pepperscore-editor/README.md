@@ -115,7 +115,7 @@ transposing parts; a per-part written key is not compiled yet.
 Above 760px wide (measured on the editor, not the window) the editor has the desktop shell:
 
 - **Top bar**: brand, title and composer (double-click to edit; Enter or blur commits, Escape cancels), Key, Time and
-  Tempo chips that open popovers, a Details button, undo and redo, Play, Save, Export, Open and a licence badge.
+  Tempo chips that open popovers, Details and Parts buttons, undo and redo, Play, Save, Export, Open and a licence badge.
 - **Rail**: keycaps (56 x 52) for the value (whole to 32nd, dot), modify (rest, tie, slur), pitch (sharp, flat,
   natural, chord toggle) and group (tuplet, beam) tools, with legends taken from `KEYMAP`.
 - **Canvas header**: Entry / Edit pill, "Part · bar N of M", the layout selector and Page / Endless.
@@ -132,7 +132,7 @@ Above 760px wide (measured on the editor, not the window) the editor has the des
 At 760px wide or less (or with `forcePhone`) the editor switches to the phone shell:
 
 - **Two-row header** (78px) for occasional controls: the brand, title, composer, Undo, Redo, Play and an overflow menu
-  (Save, Export, Open, New score, Score details) on row 1, and "bar N of M", the layout chip and the Key / Time / Tempo chips on row 2.
+  (Save, Export, Open, New score, Score details, Parts) on row 1, and "bar N of M", the layout chip and the Key / Time / Tempo chips on row 2.
   After 4 seconds without input it collapses to a 28px strip (position, key chip); a touch, wheel or pointer down on
   the canvas, a header tap or a document change brings it back; scrolling caused by playback or by the collapse itself
   does not. The body padding follows the header height, so nothing jumps.
@@ -296,3 +296,24 @@ npm test -w pepperscore-editor    # unit tests (vitest)
 npm run check -w pepperscore-editor
 npm run build && node validation/editor.mjs   # the /editor demo in a browser
 ```
+
+### Parts
+
+Open **Parts** in the desktop header or phone menu to add a pitched instrument or
+voice, change an empty part's instrument, or remove an empty part. Piano is one
+part with two staves (treble and bass); all other choices use one. Drums and
+reordering are outside this flow. A part containing notes cannot change instrument
+or be removed, and the last part cannot be removed. Disabled controls explain why.
+The form enforces the current licence's `maxStaves` for additions and changes.
+
+The package exports undoable `addPart({ instrument })`,
+`setPartInstrument({ partId, instrument })` and `removePart({ partId })` commands
+for `store.dispatch`, plus `canEditPart(document, partId)` and
+`canAddPart(document, maxStaves, instrument?)`. Instrument ids use
+`SwitchInstrumentId` from `pepperscore/instruments` (excludes `drum-kit`). The
+optional third argument counts piano as two staves; the default checks a single
+stave. Hosts dispatching directly must check the verified licence cap before
+adding a part or expanding an empty part to piano (count the other parts plus the
+target's staves); commands do not hold licence state. Added parts receive an empty
+measure for every bar and join Full score; custom layouts are unchanged. Removal
+clears the part from every layout. All operations support undo/redo.

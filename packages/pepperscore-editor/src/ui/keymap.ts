@@ -11,7 +11,7 @@ import type { Articulation, Pitch } from '../model/schema';
 import { autoBeamSequence, cycleBarline, slurPair, targetEvent, targetNote } from './key-actions';
 import { pitchForLetter } from './pitch-entry';
 
-export type PopoverName = 'key' | 'time' | 'clef' | 'dynamic' | 'jump' | 'ending' | 'tempo' | 'details';
+export type PopoverName = 'key' | 'time' | 'clef' | 'dynamic' | 'jump' | 'ending' | 'tempo' | 'details' | 'parts';
 export type KeyContext = { store: EditorStore; openPopover(name: PopoverName): void; play(): void };
 /**
  * `keys` are readable combos (`'Ctrl+Shift+Z'`, `'ArrowUp'`, `'Shift+S'`), modifiers in the order
