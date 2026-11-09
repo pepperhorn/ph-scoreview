@@ -128,3 +128,42 @@ Full verification chain: exit 0
 ```
 
 Scope audit: only task-owned ABC implementation/tests/fixture, README ABC section and this return handoff changed in the review round. No test scripts were changed. Ready for the lead's other-family re-review; no PR watching or polling was started.
+
+## Review r2 / 5826251807 — 2026-11-10
+
+Implementation commits: `02a4ef9` and `e7dbcec`. Every listed item is addressed within the original task's owned files.
+
+- **First-tune isolation (blocking):** parsing and source scans now stop before the second `^X:` line. The prefix before the first `X:` is retained for file-header defaults. No later tune's V declarations, program, channel or transpose can affect tune 1. Regression cases compare the first tune alone with the first tune in a book (program only, channel 10 only, both; with/without V declarations in either tune), assert identical parts/MEI and pin the original flute/piano, treble clef and C/D/E/F pitches. Another test preserves a real file-header program and original offsets, including a preamble comment, while ignoring a later same-id voice's settings.
+- **Body default voice:** distinguish header V declarations from body selectors at the opening K header. Body directives and notes before a body selector belong to the first declared voice, or implicit voice `1` if there are no header declarations. abcjs otherwise assigns the initial unselected music to the last header voice, so this case receives an explicit default selector only in the parser input; returned element offsets are restored to the original source. A comparison against the explicitly selected form pins model and generated ids. Tests cover program/transpose, channel 10, regular body `V:B`, and implicit music followed by a later body-only voice.
+- **Bar-only voices:** register a voice from its first note or barline, and preserve the empty Part with the original staff id/name/instrument, as on `main`. Its padded empty measure engraves using the existing `<rest>` path. The earlier late-voice uniqueness test now expects `abc-2-0`: preserving that voice on its initial bar-only line means it no longer needs a later fallback. The disjoint `-vN` fallback rule is retained.
+- **Drum-name decision:** verified `main` uses the drum-kit instrument for a name like `Drums`, but leaves treble pitched notes unless the source has a percussion clef. This PR intentionally makes a drum-like name without a MIDI program unpitched percussion; the README now states that behavior. A valid MIDI program overrides name inference, while an explicit percussion clef/channel remains authoritative. Tests cover the name-only and program-override forms.
+- **Brace percussion isolation:** only pitched members participate in sharing a sound. Percussion keeps its own clef, instrument and unpitched notes and cannot change its pitched partners. Tests cover name, clef, header channel and body channel routes. Percussion-first three-staff braces additionally prove the two pitched partners share either an explicit clarinet sound or the named pitched voice's instrument when no program is supplied.
+- **Indexed MIDI lookups:** build cumulative directive snapshots per voice (and tune-default bucket) once per parse. Lookup uses a binary search for the latest snapshot at the source offset, then merges defaults and voice overrides; it no longer scans every directive for each measure. A twelve-measure regression covers negative, positive and zero transpose changes at their actual onsets without leaking into another voice.
+
+The README ABC section documents first-tune isolation, the body default voice, drum-name inference and percussion isolation. The accepted fresh per-part settings for re-grouped grand staves remains documented. Original spike assets, the ledger, other import paths and validation scripts are unchanged. GBrain consulted: `projects/scoreflow-music-reader`; the lead may promote these final source-boundary and percussion decisions.
+
+### R2 verification
+The full unmodified verification command completed with **exit 0** on the final implementation (`e7dbcec`), sequentially in the foreground with no build/reader overlap:
+
+```bash
+npm ci && npx playwright-core install chromium && npm run test -w pepperscore -- --run src/lib/abc-import.test.ts && npm run check && npm run build && npm run test:manifest && npm run test:validation
+```
+
+```text
+Focused ABC: 60/60 tests passed
+Astro/TypeScript: 0 errors, 0 warnings, 0 hints
+Build: library and reader dist match; notices verified
+Manifest: 128 GM packs and sound packs verified
+Spelling: 7911 checks passed
+Library: 136/136 tests passed
+Editor: 273/273 tests passed
+All browser suites passed: editor/phone, reader, chunks, large, guardrails, embed, clock-embed, layout, TAB and instrument-switch
+TAB bake: all 824 checks passed
+Instrument switch: full reader picker (Instrument and Sound sections, trumpet, harp sound, level and fit, as written, hidden by the host, drum kit) passed
+Instrument switch: saved switch vs host settings (same host: the reader's flute; changed host: alto sax) passed
+Instrument switch: octave tool (select, Shift/second-click passage, phrase, 8va/8vb, out of range, auto-fit kept as written, reset, Escape, focus, saved, hidden, embed menu and compact entry) passed
+Instrument switch: chunked reader render moves tied notes across chunk boundaries; caches keyed by the spec passed
+Full unmodified verification command: exit 0
+```
+
+Only the ABC importer, its tests, the README ABC section and this return handoff changed in r2. No validation scripts were edited. Ready for the lead's other-family re-review; no PR watch or polling was started.
