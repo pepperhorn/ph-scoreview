@@ -99,3 +99,30 @@ PASS template 3: One Piano source part, treble/bass staves, MEI brace, Swing tex
 PASS template 4: Guitar, treble-8, GM 24, written G4 sounds G3.
 PASS 4/4 README templates parsed with parseAbc; no repo-relative/docs link in ABC section.
 ```
+
+## Review r1 follow-up — 2026-11-10
+
+Applied all three non-blocking README corrections requested after r1 approved head `3c99f49ca7a0c2fe73c3f09d41eec25e8fb16a92`:
+1. Replace general “file-wide defaults” with the actual pre-`X:` MIDI default rule; explicitly state pre-`X:` `M:`, `L:`, `Q:`, `C:` are ignored and belong after `X:`. Fetched `origin/main` at `06dc90a`: 0008 is not merged there, and its guide still documents the pre-`X:` voice-clef limitation, so that limitation remains in the README.
+2. Match the guide's octave-clef wording: ABC note letters are sounding pitch (ABC 2.1); guitar `G,` sounds G3 and is drawn as G4 under `clef=treble-8`.
+3. Move the internal 1–128 GM storage sentence from the `name=` bullet to `%%MIDI program`.
+
+Scope for this follow-up: README ABC section only, plus this requested return-handoff update. No runtime, template or test changes. No new decisions or open questions.
+
+Verification ran sequentially in the foreground from the repo root:
+```bash
+npm run check && npm run build
+```
+Exit status: **0**. Output tail:
+```text
+Result (22 files):
+- 0 errors
+- 0 warnings
+- 0 hints
+[build] 10 page(s) built in 21.54s
+[build] Complete!
+Demo build uses the library dist (worker chunks and Verovio files match) and ships its notices
+```
+`git diff --check` passes. The prior full-validation results above remain historical; full validation was not rerun for these wording-only corrections, as requested.
+
+**For the ABC guide:** no ABC behavior changed; the README now matches the corrected guide on `origin/main` for file-header handling and octave-clef explanation. Earlier template follow-ups above are already reflected in that guide.

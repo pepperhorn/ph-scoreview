@@ -523,7 +523,7 @@ ABC is parsed with abcjs and engraved through PepperScore's score model. Chord s
 
 #### Tune and header
 
-- Only the first tune (`X:` to the next `X:`) is read. Lines before the first `X:` are file-wide defaults. A `K:` there doesn't end the tune header; the tune's own first `K:` does. `V:` lines before `X:` lose their clef, so declare voices after `X:`.
+- Only the first tune (`X:` to the next `X:`) is read. Before the first `X:`, only `%%MIDI` lines apply (as defaults); `M:`, `L:`, `Q:`, `C:` there are ignored, so put them after `X:`. A `K:` there doesn't end the tune header; the tune's own first `K:` does. `V:` lines before `X:` lose their clef, so declare voices after `X:`.
 - Honoured: `T:` title, `C:` composer, `M:` meter, `L:` default length, `Q:` tempo, `K:` key (with `m`/`min` for minor).
 
 #### Keys and accidentals
@@ -535,12 +535,12 @@ ABC is parsed with abcjs and engraved through PepperScore's score model. Chord s
 #### Clefs
 
 - `clef=treble|bass|alto|tenor|treble-8|treble+8|bass-8|perc` on `V:` (or `K:`).
-- Octave clefs import into **written** pitch. Guitar: `clef=treble-8`, and `G,` imports as G4 written and sounds G3. With this importer, the octave clef raises the ABC pitch into written notation; `G` imports as G5 written and sounds G4. Don't also add `transpose=-12`; the clef already does it.
+- Octave clefs: ABC note letters are the **sounding** pitch (ABC 2.1); the clef draws them an octave higher. Guitar: `clef=treble-8`, and `G,` sounds G3 and is drawn as G4. Don't also add `transpose=-12`; the clef already does it.
 
 #### Instruments and sound
 
-- `name="…"` selects the instrument from its name (e.g. "Flute", "Cello", "Alto Saxophone") when no `%%MIDI program` is given. A name never implies transposition. PepperScore stores GM programs as 1–128 internally.
-- `%%MIDI program N`: **zero-based** GM number (0–127), e.g. 0 piano, 40 violin, 42 cello, 65 alto sax, 73 flute.
+- `name="…"` selects the instrument from its name (e.g. "Flute", "Cello", "Alto Saxophone") when no `%%MIDI program` is given. A name never implies transposition.
+- `%%MIDI program N`: **zero-based** GM number (0–127), e.g. 0 piano, 40 violin, 42 cello, 65 alto sax, 73 flute. PepperScore stores GM programs as 1–128 internally.
 - `%%MIDI channel 10` selects the drum kit and unpitched notation, taking precedence over the MIDI program. A voice named like "Drums" also imports as unpitched percussion when no MIDI program is supplied. Use `clef=perc`.
 - Header MIDI directives before any `V:` declaration are tune-wide defaults; after a `V:` declaration, they apply only to that voice. Each voice inherits default properties it has not overridden. Body directives override that voice’s earlier MIDI settings, but explicit `V: transpose=` still wins.
 - Body-only voices: a `%%MIDI` line after `[V:id]` / `V:id` in the body applies to that voice. One before any voice selector applies to the first voice, unless notes or a barline come before every selector: then it belongs to that implicit default voice and later voices don't inherit it. Safest: put each `%%MIDI` line right after its voice's `V:` line.
