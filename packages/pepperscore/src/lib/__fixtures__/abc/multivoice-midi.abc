@@ -1,0 +1,14 @@
+X:1
+T:Per-voice MIDI header and body
+M:4/4
+L:1/4
+V:F name="Flute"
+%%MIDI program 73
+%%MIDI transpose -2
+V:D name="Drums"
+%%MIDI channel 10
+K:C
+[V:F] C D E F |]
+[V:D]
+%%MIDI channel 10
+C D E F |]
