@@ -5,7 +5,7 @@
 > Waiting on: `child <taskId>` · `review <taskId>` · `ci` · `human: <why>` · `lead: <next action>`. Set it on every status change. A row needs the lead when it starts with `lead`, or when it's empty and Status is dispatched, in-review, changes-requested, ready, or merged. The lead's Stop hook won't let the lead end its turn while any row needs it.
 > Type: normal items have a spec and plan. Quick items have the title prefix `[quick]` (no spec or plan, a short handoff). PRs adopted by `orch-sweep` have the prefix `[pr]`.
 
-Next ID: 0010
+Next ID: 0011
 
 ## Active
 
@@ -14,12 +14,13 @@ Next ID: 0010
 | 0001 | Composable player skins | dispatched (t3; t1 #59, t2 #66 merged) | child 0001-t3-impl-r1 | codex/gpt-6.1-sol | orch/0001-t3-drawer-controls |  |  | task `0001-t3-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0001-t3-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-10-0001-t3-drawer-controls--lead-to-codex.md | 2026-11-10 |
 | 0002 | PDF export | dispatched (t1) | child 0002-t1-impl-r1 | codex/gpt-6.1-sol | orch/0002-t1-pdf-page-model |  |  | task `0002-t1-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0002-t1-impl-r1` | specs/0002-pdf-export.md | plans/0002-pdf-export.md | handoffs/2026-11-10-0002-t1-pdf-page-model--lead-to-codex.md | 2026-11-10 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | dispatched (t2; t1 merged #68) | child 0003-t2-impl-r1-fix1 | codex/gpt-6.1-sol | orch/0003-t2-parts | https://github.com/pepperhorn/ph-scoreview/pull/69 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-561b6b7c | task `0003-t2-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0003-t2-impl-r1` | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-10-0003-t2-parts--lead-to-codex.md | 2026-11-10 |
-| 0008 | [quick] ABC: a V: line before X: keeps its clef (S5) | in-review | review 0008-review-r2 | codex/gpt-6.1-sol | orch/0008-abc-voice-before-x | https://github.com/pepperhorn/ph-scoreview/pull/67 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-056df41c | task `0008-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0008-impl-r1` |  |  | handoffs/2026-11-10-0008-abc-voice-before-x--codex-to-lead.md (@a84e9f9) | 2026-11-10 |
+| 0010 | [quick] README ABC section: sync with 0008 (V: before X: now honoured; default-voice note) | dispatched | lead: delegate | codex/gpt-6.1-sol | orch/0010-readme-abc-sync |  |  |  |  |  | handoffs/2026-11-10-0010-readme-abc-sync--lead-to-codex.md | 2026-11-10 |
 
 ## Done / closed
 
 | K | Title | PR | Merged | Notes |
 |---|---|---|---|---|
+| 0008 | [quick] ABC: a V: line before X: keeps its clef (S5) | https://github.com/pepperhorn/ph-scoreview/pull/67 | 2026-11-10 | 8c19b8f; ABC guide updated; README sync → 0010 |
 | 0001-t2 | Composable main bar and toggles (task of 0001) | https://github.com/pepperhorn/ph-scoreview/pull/66 | 2026-11-10 | 13d48eb; 0001 continues with T3 |
 | 0001-t1 | Skin module and theme tokens (task of 0001) | https://github.com/pepperhorn/ph-scoreview/pull/59 | 2026-11-01 | 9afa2f2 |
 | 0003-t1 | Score details fields (task of 0003) | https://github.com/pepperhorn/ph-scoreview/pull/68 | 2026-11-10 | b8fb939; 0003 continues with T2 |
@@ -38,7 +39,7 @@ Next ID: 0010
 | S2 | fix | Body `%%MIDI` is dropped when voices are declared only in the body (contradicts README rule) | `packages/pepperscore/src/lib/import.ts:197`, `packages/pepperscore/README.md:517` | S | medium: common ABC style | PR #61 review r3 | done (0006, PR #62) |
 | S3 | fix | A `K:` in the file header before the first `X:` makes every `V:` count as body music | `packages/pepperscore/src/lib/import.ts:193` | S | low: unusual input | PR #61 review r3 | done (0006, PR #62) |
 | S4 | fix | README link to `docs/guides/abc-authoring.md` is dead on npm (private repo, no `repository` in package.json); publish the guide content in the package README or a public URL | `packages/pepperscore/README.md` ABC section; `packages/pepperscore/package.json` | S | medium before npm release | PR #62 review | done (0007, PR #64) |
-| S5 | fix | A `V:` line before `X:` has its clef ignored (pre-existing) | `packages/pepperscore/src/lib/import.ts` header scan | S | low | PR #62 review | accepted → 0008 |
+| S5 | fix | A `V:` line before `X:` has its clef ignored (pre-existing) | `packages/pepperscore/src/lib/import.ts` header scan | S | low | PR #62 review | done (0008, PR #67) |
 | S6 | docs | README sentence on body directives before the first selector is unclear for body-only voices | `packages/pepperscore/README.md` ABC headers | XS | low | PR #62 review | done (0007, PR #64) |
 | S7 | test | Add a transposed case and a held-across-change case (keySig falls back to layer 1, drawn late) to the mid-bar keySig test | `packages/pepperscore/src/lib/notation/document-keysig.test.ts` | XS | low | PR #63 review | done (0009, PR #65) |
 | S8 | fix | Apply ABC 2.1 file-header defaults (`M:`, `L:`, `Q:`, `C:` before `X:`), currently dropped | PR #64 review r1 (`packages/pepperscore/README.md:526`); `packages/pepperscore/src/lib/import.ts` header scan | S | low (authors can put them after X:) | PR #64 review | new |
@@ -53,6 +54,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-10 0008 in-review→closed — r2 approve on a84e9f9, CI green, merged PR #67 (8c19b8f), 74 ABC tests on main; guide updated. 0010 dispatched to sync package README
 2026-11-10 0003-t2 dispatched→blocked→dispatched — implementer blocked on maxStaves plumbing outside ownership; lead granted PepperScoreEditor.tsx/controls.tsx for pass-through only (answers appended to dispatch handoff); resumed
 2026-11-10 0008 changes-requested→in-review — fix pushed a84e9f9 (74 ABC tests); review r2
 2026-11-10 0001-t2 in-review→merged — r1 approve on 3cbc7ef, CI green, merged PR #66 (13d48eb) per human. 0001-t3 dispatched with r1 follow-ups (phone: play in bottom toolbar per spec; no empty bar; ephemeral skin.mjs port). 0002-t1 dispatched (unblocked by 0001 T2)
