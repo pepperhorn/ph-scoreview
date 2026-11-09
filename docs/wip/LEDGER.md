@@ -5,7 +5,7 @@
 > Waiting on: `child <taskId>` · `review <taskId>` · `ci` · `human: <why>` · `lead: <next action>`. Set it on every status change. A row needs the lead when it starts with `lead`, or when it's empty and Status is dispatched, in-review, changes-requested, ready, or merged. The lead's Stop hook won't let the lead end its turn while any row needs it.
 > Type: normal items have a spec and plan. Quick items have the title prefix `[quick]` (no spec or plan, a short handoff). PRs adopted by `orch-sweep` have the prefix `[pr]`.
 
-Next ID: 0011
+Next ID: 0012
 
 ## Active
 
@@ -15,6 +15,7 @@ Next ID: 0011
 | 0002 | PDF export | changes-requested (t1) | child 0002-t1-impl-r1-fix1 | codex/gpt-6.1-sol | orch/0002-t1-pdf-page-model | https://github.com/pepperhorn/ph-scoreview/pull/71 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-e3689cb4 | task `0002-t1-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0002-t1-impl-r1` | specs/0002-pdf-export.md | plans/0002-pdf-export.md | handoffs/2026-11-10-0002-t1-pdf-page-model--codex-to-lead.md (@1d72271) | 2026-11-10 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | changes-requested (t2; t1 merged #68) | child 0003-t2-impl-r1-fix2 | codex/gpt-6.1-sol | orch/0003-t2-parts | https://github.com/pepperhorn/ph-scoreview/pull/69 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-561b6b7c | task `0003-t2-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0003-t2-impl-r1` | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-10-0003-t2-parts--codex-to-lead.md (@66352a9) | 2026-11-10 |
 | 0010 | [quick] README ABC section: sync with 0008 (V: before X: now honoured; default-voice note) | ready | ci | codex/gpt-6.1-sol | orch/0010-readme-abc-sync | https://github.com/pepperhorn/ph-scoreview/pull/70 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-98350ce6 | task `0010-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0010-impl-r1` |  |  | handoffs/2026-11-10-0010-readme-abc-sync--codex-to-lead.md (@86d42fa) | 2026-11-10 |
+| 0011 | [quick] Validation harness reliability: ephemeral ports, load-aware timing gates (S12, S14) | dispatched | lead: delegate | codex/gpt-6.1-sol | orch/0011-validation-harness |  |  |  |  |  | handoffs/2026-11-10-0011-validation-harness-reliability--lead-to-codex.md | 2026-11-10 |
 
 ## Done / closed
 
@@ -46,15 +47,16 @@ Next ID: 0011
 | S9 | test | Assert which layer carries the fallback mid-bar keySig in the older held-note test (it passes even if the fallback always goes to layer 1) | `packages/pepperscore/src/lib/notation/document-keysig.test.ts` (PR #63 test) | XS | low | PR #65 review | new |
 | S10 | risk | Reader (webkit) CI flake: "1280px: a user stave scale is restored instead of the default" failed on README-only PR #64, passed on its twin run | CI run 42699660294 job 129440692432; `validation/reader.mjs` | S | medium: flaky CI blocks merges | PR #64 CI | new |
 | S11 | fix | Details field keeps showing untidied text when the tidied value equals the saved one (e.g. `jazz,jazz`) | `packages/pepperscore-editor/src/ui/DetailsPanel.tsx` | XS | low | PR #68 review | new |
-| S12 | risk | Editor browser validation is load-sensitive: redraw <800 ms (`validation/editor.mjs:518`) and null click target in custom layout (`:354`) fail under parallel worktrees | PR #68 and #65 local runs | S | medium: false failures slow every task | PR #68 review | new |
+| S12 | risk | Editor browser validation is load-sensitive: redraw <800 ms (`validation/editor.mjs:518`) and null click target in custom layout (`:354`) fail under parallel worktrees | PR #68 and #65 local runs | S | medium: false failures slow every task | PR #68 review | accepted → 0011 |
 | S13 | risk | `validation/skin.mjs` binds a hard-coded port 5211, so parallel worktrees collide | 0003-t1 return handoff | XS | medium: parallel tasks | 0003-t1 return | accepted → 0001-t3 (skin.mjs port) |
-| S14 | risk | Browser validation harnesses bind fixed ports (e.g. `validation/transpose.mjs:137` → 43991) and silently attach to another worktree's server; parser-diff also fetch-flakes | 0002-t1 return handoff | S | high while tasks run in parallel | 0002-t1 return | new |
+| S14 | risk | Browser validation harnesses bind fixed ports (e.g. `validation/transpose.mjs:137` → 43991) and silently attach to another worktree's server; parser-diff also fetch-flakes | 0002-t1 return handoff | S | high while tasks run in parallel | 0002-t1 return | accepted → 0011 |
 | S1 | fix | Emit a mid-bar `<keySig>` only in layer 1; Verovio draws one per layer | `packages/pepperscore/src/lib/notation/document.ts:249` (probe: 2 layers → 3 keySig groups) | S | low today (ABC overlays are separate parts); matters for MIDI/multi-layer | PR #60 review r2 | done (0005, PR #63) |
 
 Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-10 0011 new→dispatched — human OK for harness reliability item; human: merge #69 and #72 on approve + green
 2026-11-10 0003-t2 in-review→changes-requested — r1 approve on 66352a9 with 3 minor UX findings (empty part layout left active, stale layout name, misleading stave-limit message); lead asked to fix before merge
 2026-11-10 0002-t1 in-review→changes-requested — r1 on 1d72271: plan stands (T2–T4 as written); bar widths under-measured (top-stave first note only; mid-line key/time lost) → lines up to 155% of width silently compressed; fix: in-context measurement + fit check; AC6 property test
 2026-11-10 0003-t2 dispatched→in-review — PR #69 @66352a9; all 28 validation scripts pass (with documented retries); review r1
