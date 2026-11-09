@@ -16,7 +16,7 @@ Next ID: 0010
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | dispatched (t1) | child 0003-t1-impl-r1 | codex/gpt-6.1-sol | orch/0003-t1-score-details |  |  | task `0003-t1-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0003-t1-impl-r1` | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-10-0003-t1-score-details--lead-to-codex.md | 2026-11-10 |
 | 0007 | [quick] Package README carries the ABC authoring rules (S4, S6) | ready | ci | codex/gpt-6.1-sol | orch/0007-readme-abc-authoring | https://github.com/pepperhorn/ph-scoreview/pull/64 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-d0aeb650 | task `0007-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0007-impl-r1` |  |  | handoffs/2026-11-10-0007-readme-abc-authoring--codex-to-lead.md (@4ab1300) | 2026-11-10 |
 | 0008 | [quick] ABC: a V: line before X: keeps its clef (S5) | dispatched | child 0008-impl-r1 | codex/gpt-6.1-sol | orch/0008-abc-voice-before-x |  |  | task `0008-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0008-impl-r1` |  |  | handoffs/2026-11-10-0008-abc-voice-before-x--lead-to-codex.md | 2026-11-10 |
-| 0009 | [quick] More mid-bar key signature tests (S7) | dispatched | child 0009-impl-r1 | codex/gpt-6.1-sol | orch/0009-keysig-tests |  |  | task `0009-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0009-impl-r1` |  |  | handoffs/2026-11-10-0009-keysig-tests--lead-to-codex.md | 2026-11-10 |
+| 0009 | [quick] More mid-bar key signature tests (S7) | in-review | review 0009-review-r1 | codex/gpt-6.1-sol | orch/0009-keysig-tests | https://github.com/pepperhorn/ph-scoreview/pull/65 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-acb160fd | task `0009-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0009-impl-r1` |  |  | handoffs/2026-11-10-0009-keysig-tests--codex-to-lead.md (@62135b7) | 2026-11-10 |
 
 ## Done / closed
 
@@ -45,6 +45,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-10 0009 dispatched→in-review — PR #65 @62135b7 (tests only, 7 pass); local full validation had timing/browser failures likely from parallel-worktree load; CI decides
 2026-11-10 0007 changes-requested→ready — 4ab1300 applies exactly r1's three README wording fixes (lead checked the 6-line diff; no further review round for a docs-only delta the reviewer specified); watching CI
 2026-11-10 0007 in-review→changes-requested — r1 approve on 3c99f49 with 3 README wording fixes; lead asked for them before merge; guide file-header sentence corrected; S8 logged
 2026-11-10 0007 dispatched→in-review — PR #64 @3c99f49; implementer found guide piano/guitar templates wrong; lead corrected guide + scale-to-song handoff copy; local validation hit port contention (parallel worktrees), CI to confirm
