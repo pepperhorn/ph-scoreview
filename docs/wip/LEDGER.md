@@ -14,8 +14,8 @@ Next ID: 0007
 | 0001 | Composable player skins | merged (t1) | human: confirm dispatch of T2 | codex/gpt-6.1-sol | orch/0001-t1-skin-tokens | https://github.com/pepperhorn/ph-scoreview/pull/59 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-66013276 | task/thread `0001-t1-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-01-0001-t1-skin-module-and-tokens--lead-to-codex.md | 2026-11-01 |
 | 0002 | PDF export | planned | human: confirm dispatch | lead | | | | | specs/0002-pdf-export.md | plans/0002-pdf-export.md | | 2026-10-31 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned | human: confirm dispatch T1–T3 (T4–T6 blocked) | lead | | | | | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | | 2026-11-02 |
-| 0005 | [quick] Mid-bar key signature drawn once per staff (S1) | dispatched | lead: delegate | codex/gpt-6.1-sol | orch/0005-mid-bar-keysig-once | | | | | | handoffs/2026-11-10-0005-mid-bar-keysig-once--lead-to-codex.md | 2026-11-10 |
-| 0006 | [quick] ABC directive scoping: body-only voices, header K: before X: (S2, S3) | dispatched | lead: delegate | codex/gpt-6.1-sol | orch/0006-abc-directive-scoping | | | | | | handoffs/2026-11-10-0006-abc-directive-scoping--lead-to-codex.md | 2026-11-10 |
+| 0005 | [quick] Mid-bar key signature drawn once per staff (S1) | dispatched | child 0005-impl-r1 | codex/gpt-6.1-sol | orch/0005-mid-bar-keysig-once | | | | | task `0005-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Aaf2bbd54-bfdf-427c-9712-8c870e6781ee%3Adelegate-task%3A0005-impl-r1` | 2026-11-10 |
+| 0006 | [quick] ABC directive scoping: body-only voices, header K: before X: (S2, S3) | dispatched | child 0006-impl-r1 | codex/gpt-6.1-sol | orch/0006-abc-directive-scoping | | | | | task `0006-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Aaf2bbd54-bfdf-427c-9712-8c870e6781ee%3Adelegate-task%3A0006-impl-r1` | 2026-11-10 |
 
 ## Done / closed
 
