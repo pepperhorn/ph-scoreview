@@ -14,7 +14,7 @@ Next ID: 0005
 | 0001 | Composable player skins | merged (t1) | human: confirm dispatch of T2 | codex/gpt-6.1-sol | orch/0001-t1-skin-tokens | https://github.com/pepperhorn/ph-scoreview/pull/59 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-66013276 | task/thread `0001-t1-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-01-0001-t1-skin-module-and-tokens--lead-to-codex.md | 2026-11-01 |
 | 0002 | PDF export | planned | human: confirm dispatch | lead | | | | | specs/0002-pdf-export.md | plans/0002-pdf-export.md | | 2026-10-31 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned | human: confirm dispatch T1–T3 (T4–T6 blocked) | lead | | | | | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | | 2026-11-02 |
-| 0004 | ABC import parity with MusicXML | in-review (t1) | review 0004-t1-review-r1b | codex/gpt-6.1-sol | orch/0004-t1-abc-engraving | https://github.com/pepperhorn/ph-scoreview/pull/60 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-bb111b69 | specs/0004-abc-import-parity.md | plans/0004-abc-import-parity.md | handoffs/2026-11-09-0004-t1-abc-engraving-fidelity--lead-to-codex.md | handoffs/2026-11-09-0004-t1-abc-engraving-fidelity--codex-to-lead.md (@b852bf0)
+| 0004 | ABC import parity with MusicXML | changes-requested (t1) | child 0004-t1-impl-r1-fix2 | codex/gpt-6.1-sol | orch/0004-t1-abc-engraving | https://github.com/pepperhorn/ph-scoreview/pull/60 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-bb111b69 | specs/0004-abc-import-parity.md | plans/0004-abc-import-parity.md | handoffs/2026-11-09-0004-t1-abc-engraving-fidelity--lead-to-codex.md | handoffs/2026-11-09-0004-t1-abc-engraving-fidelity--codex-to-lead.md (@b852bf0)
 
 ## Done / closed
 
@@ -32,6 +32,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-09 0004-t1 in-review→changes-requested — r1 posted after all on b852bf0 (octave-clef double shift with instrument switch, tie accidental, mid-bar K:); r1b cancelled; fix round 2 sent, may touch instrument-view.ts/transpose.ts if needed
 2026-11-09 0004-t1 in-review — review r1 ended without posting (suite still running); relaunched as r1b
 2026-11-09 0004-t1 changes-requested→in-review — head b852bf0, full validation green; review r1 (claude-opus-5-5)
 2026-11-09 0004-t1 dispatched→changes-requested — PR #60 @f1ba720; lead granted validation/document.mjs to update stale final-barline assertion (AC4)
