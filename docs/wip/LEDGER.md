@@ -42,7 +42,7 @@ Last health scan: never
 2026-11-09 0004-t2 in-review→changes-requested — r1 on 5fedffb: header %%MIDI folded score-wide (regression), body channel 10 not unpitched; lead: header MIDI after V: applies to that voice, before any V: is a default; per-part settings reset for regrouped piano ABC accepted
 2026-11-09 0004-t2 dispatched→in-review — PR #61 @5fedffb (36 ABC tests; `score=` left unimplemented); review r1
 2026-11-09 0004-t2 planned→dispatched — grand staff, transpose/MIDI, README; includes r2 suggestions 1-2 (harm tstamp, voice-identity map)
-2026-11-09 0004-t1 in-review→merged — r2 approve on 7744cc2, CI green, merged PR #60 (8037061) per standing merge-when-green preference; GBrain: pending write-back (abcjs key-array naturals, tenor=alto clefPos 8, octave clef as written+transposition, mid-bar keySig through spelling pass)
+2026-11-09 0004-t1 in-review→merged — r2 approve on 7744cc2, CI green, merged PR #60 (8037061) per standing merge-when-green preference; GBrain written 2026-11-10 (projects/scoreflow-music-reader timeline + gotchas-abc-import)
 2026-11-09 0004-t1 changes-requested→in-review — fix round 2 pushed 7744cc2; review r2
 2026-11-09 0004-t1 changes-requested — lead granted notation/mei-spelling.ts (narrow: keep mid-bar keySig through the reader spelling pass)
 2026-11-09 0004-t1 in-review→changes-requested — r1 posted after all on b852bf0 (octave-clef double shift with instrument switch, tie accidental, mid-bar K:); r1b cancelled; fix round 2 sent, may touch instrument-view.ts/transpose.ts if needed
