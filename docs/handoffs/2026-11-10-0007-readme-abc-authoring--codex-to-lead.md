@@ -5,7 +5,7 @@
 - **Ledger:** 0007 (S4, S6); quick item, no spec or plan
 - **Branch:** orch/0007-readme-abc-authoring
 - **Worktree:** /home/shaun/.t3/worktrees/ph-vexflow-view/t3-d0aeb650
-- **PR:** draft against main; URL to be recorded after creation
+- **PR:** https://github.com/pepperhorn/ph-scoreview/pull/64 (draft against main)
 - **Base commit:** 7eb7fd0
 - **Implementation commit:** 265a8f1aedbd7702b25d9ffba77ced254075a999 (ack: 16a6f36)
 - **Port:** n/a; no persistent server
@@ -47,7 +47,7 @@ None within the assigned scope. Lead should reconcile the guide with the correct
 ---
 ## Return (implementer → lead)
 - **Outcome:** done (documentation acceptance criteria met); full validation not green, with exact failures below.
-- **PR:** draft against main on the branch above.
+- **PR:** https://github.com/pepperhorn/ph-scoreview/pull/64 (draft).
 - **Commits:** receiver acknowledgement 16a6f36; README 265a8f1; this return document.
 - **What changed:** self-contained ABC reference, clarified header versus body MIDI scope, four verified examples.
 - **Decisions made:** move `%%score` before voice declarations because the original guide example parsed as two ungrouped parts; lower guitar ABC spelling by one octave so the model is written G4 / sounding G3. Keep runtime behavior unchanged. Clarify tenor sax as -14 semitones, avoiding the guide's ambiguous “clarinet/trumpet/tenor sax -2 (tenor sax -14)” wording. No ADR needed.
