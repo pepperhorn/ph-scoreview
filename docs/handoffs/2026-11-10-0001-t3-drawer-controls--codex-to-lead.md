@@ -26,7 +26,7 @@ The linked spec, plan and dispatch are authoritative. GBrain consulted: `project
 - [x] `drawerExtras(null, chrome)` returns `[]`; other cases respect availability, explicit false and bar exclusion.
 - [x] Playback and view panel reuses the six existing action elements. The file input is outside the header; file and scale refs mount once.
 - [x] Phone (<580px container) play/pause and other playback controls occupy a wrapping bottom toolbar; instrument switch and options stay in the header. Browser assertions cover the becreative bar at 390px.
-- [x] Empty renderable skin bars mount no header. Unit tests cover reserved/unavailable items; browser regression checks `['pdf']`.
+- [x] Per lead decision after r1, unshowable bars restore the preset defaults: full gets its normal header, minimal keeps compact play. Unit and browser tests cover `['pdf']`, including an explicitly enabled instrument switcher.
 - [x] Development consumer binds port 0 and navigates to the actual assigned port.
 
 ## Verify with
@@ -39,7 +39,7 @@ Build completed before browser suites; suites run sequentially.
 
 ## Known gotchas / decisions made
 - Drawer actions reuse `headerElements`; bar/drawer exclusion prevents duplicate state-bound refs. Unavailable elements (e.g. clock-owned Stop) are filtered before the new panel renders.
-- Renderable items are passed as an optional fourth argument to `resolveChrome`. Availability still derives from the requested bar; rendered header presence derives from actual elements. Explicit empty/unrenderable bars keep minimal's compact play suppressed, consistent with the skin's explicit bar request.
+- Renderable items are passed as an optional fourth argument to `resolveChrome`. Availability still derives from the requested bar; rendered header presence derives from actual elements. R1 supersedes the original empty-bar choice: empty/unrenderable bars now restore all default preset rendering, including compact play and explicitly enabled instrument selection.
 - Skin phone placement uses the existing root ResizeObserver with the <580px threshold, rather than the viewport/device-class query used by legacy snippets. Initial state is SSR safe. A narrow embed in a wide host receives the same placement. Playback items are play, stop, tempo, transpose and key flip; each element mounts once. Desktop order stays unchanged; phone order is preserved within each location.
 - The phone toolbar wraps rather than introducing another More popover/ref. The existing header More remains responsible for occasional controls.
 - The instrument popover-in-More regression now runs at 640px, where the five-item bar retains overflow after the phone playback split.
@@ -51,7 +51,7 @@ None about implementation or scope. Lead owns other-family review and merge.
 Lead to acknowledge through the ledger on main.
 
 ## Return
-- **Outcome:** done; all required suites passed individually, with aggregate-run failures and successful retries recorded below
+- **Outcome:** done; review r1 fixes and the lead's empty-bar decision are implemented. All seven commands requested for this review round passed; initial submission results remain below as history.
 - **Commits:** receiver ack `7501683`; implementation `6079501`.
 - **What changed:** drawer panel/resolver, single file input outside header, renderable header suppression, phone playback toolbar and ephemeral Vite port; unit and browser regression checks.
 - **Verification output:** setup, check (0 errors/warnings/hints), build, skin (5 skin + 7 bar/drawer unit tests and browser checks), embed, layout, standalone reader and manifest passed. Full validation and remainder results are recorded below.
@@ -72,7 +72,7 @@ Editor browser passed (reported render times 121–384 ms); large-score passed w
 - **For GBrain (lead to promote):** compose drawer additions from the existing action elements and keep hidden inputs independent of header presence; filter actual available elements before reserving header height.
 
 
-### Final verification results
+### Initial submission verification results
 - Setup, `npm run check`, `npm run build`, `npm run test:skin`, `npm run test:embed`, `npm run test:layout`, `npm run test:reader`, and `npm run test:manifest`: exit 0.
 - `npm run test:validation`: exit 1 at the Vite/abcjs fetch above. Transpose rerun and every subsequent constituent script passed individually; the repeated reader failure also passed on its final isolated rerun. This was not a single uninterrupted green aggregate run.
 - Library unit tests: 156/156; editor unit tests: 277/277.
@@ -101,3 +101,32 @@ test:tab-bake: exit 0
 test:instrument-switch: exit 0
 final isolated test:reader retry: exit 0
 ```
+
+
+## Review r1 response — 5834310199
+- **Request:** [review](https://github.com/pepperhorn/ph-scoreview/pull/72#pullrequestreview-5834310199), plus lead decisions in the follow-up brief.
+- **Scope:** the same owned files; no PDF/import/notation/editor/ledger/dependency changes.
+- **Drawer tab overlap:** skin playback toolbars with a drawer reserve a separate 47px strip below the toolbar. Every row remains above the tab rather than sharing its bottom strip. Full and minimal browser checks at 320, 390 and 580px hit-test each item's centre using `document.elementFromPoint`, click Play, assert Pause state and active playing-note marks, then pause again. Fixtures use `audio={false}`: this proves transport/scheduler activity without requiring sound output.
+- **Wrapped floating UI:** a ResizeObserver measures the toolbar's real bottom footprint (including the drawer strip) into private `--ps-bottom-toolbar-h`. The octave dock, error toast and reader notices sit 12px above it. Both presets get a five-action, genuinely wrapped 320px toolbar test; the real octave dock and a real failed-file toast are checked for geometric clearance, and toolbar item hit-testing is repeated with each visible. Measurement is refreshed when drawer availability changes and removed when the toolbar unmounts.
+- **Empty-bar fallback:** `resolveChrome` falls back to preset flags when no items can be shown. Reserved PDF/pitch-colour items are unavailable by default; actual element availability is passed by the component. An empty header-only phone partition does not trigger fallback if playback items still exist in the bottom toolbar. Full renders its original header and no new drawer rows; minimal renders compact play and any host-enabled default instrument switcher. Tests cover `resolveChrome('minimal', {}, ['pdf'])` and browser fallback with explicit `instrumentSwitch: true`.
+- **Formatting:** removed the stray space before the hidden input's closing brace and the blank header line.
+- **Test development:** updated empty-bar unit tests failed against the reviewed implementation before the fix. An initial browser-test attempt incorrectly tried to close a drawer that enabling the octave tool had already closed; corrected the test to await its closing animation. No timing thresholds were changed.
+- **For GBrain (lead to promote):** visibility and containment do not prove pointer reachability. Hit-test control centres with drawer handles and floating UI present, and measure wrapped toolbar offsets rather than assuming one row.
+- **Code commit:** `a7ffcf50d6e9c9a73eb5cdba94e293725093d6de` (handoff-only commit follows).
+- **Verification:** all seven requested commands passed from the repo root, foreground and sequential. Check: 0 errors/warnings/hints. Skin: 5 skin + 7 bar/drawer unit tests plus browser checks. The final build and skin rerun include the CSS refinement that keeps no-drawer defaults from overriding measured offsets, and a test disabling/re-enabling the drawer while the wrapped toolbar stays mounted. Embed/layout/reader fixtures use unchanged default chrome; the refined selectors apply only to skin toolbars. No timing gate failed in this review round; no threshold changes or timing retries were needed. The earlier full-validation evidence above remains historical; full validation was not requested again.
+
+```text
+npm run check: exit 0
+npm run build: exit 0
+npm run test:skin: exit 0
+npm run test:embed: exit 0
+npm run test:layout: exit 0
+npm run test:reader: exit 0
+npm run test:manifest: exit 0
+Skin phone r1: full/minimal 320/390/580px item-centre hit tests and playback; wrapped dock/toast offsets passed
+Skin drawer: omitted actions, single refs, mode/bars/zoom/stop/mixer/file chooser, empty-bar preset fallback and no-skin restoration passed
+```
+
+- **Scope audit:** compared with reviewed head `2a185b515166f1aec2acb818691055170b4255ec`, only `PepperScore.tsx`, `lib/chrome.ts`, `lib/bar-items.test.ts`, `styles.css`, `validation/skin.mjs`, and this owned return handoff changed. `git diff --check` passed.
+- **For T5:** document the new lead decision that an unshowable skin bar restores the preset's default controls. On minimal, omitted actions still require their control groups to be available (the becreative bar enables Stop via transport; the other five can be enabled through `controls`).
+- **Follow-up:** other-family re-review on the pushed head. No merge, release, watching or polling.
