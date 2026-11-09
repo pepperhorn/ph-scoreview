@@ -5,7 +5,7 @@
 - **Ledger:** 0005 (suggestion S1) · **Spec:** none · **Plan:** none
 - **Branch:** orch/0005-mid-bar-keysig-once · **Worktree:** created by T3
 - **Base commit:** 2b4d032
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 `scoreToMei` (`packages/pepperscore/src/lib/notation/document.ts`, `layerXml` ~line 249) emits a mid-bar `<keySig>` into every layer that has events after the change, and Verovio then draws one signature per layer (probe from PR #61 review: 1 layer → 2 keySig groups, 2 layers → 3). Emit it so a staff draws exactly one mid-bar key signature regardless of layer count, and the following pitches in every layer are still spelled and played in the new key. Context: `docs/handoffs/2026-11-09-0004-t1-abc-engraving-fidelity--codex-to-lead.md` (Decisions made: mid-bar keys) and PR #60/#61 reviews.
