@@ -25,3 +25,5 @@ npm run check && npm run build
 
 ---
 ## Receiver ack
+
+I will update only the four identified ABC README spots to match the current guide and importer: grouping directives precede voice declarations; file-header voices provide per-property defaults overridden by tune-header declarations; unselected body music uses the first declared voice; remove the obsolete pre-X clef limit. I own only the README ABC section and my 0010 handoff files. I will verify against import.ts and abc-import.test.ts, run the requested setup/check/build commands, and return a committed handoff plus a draft PR. No open questions. GBrain consulted: default:projects/scoreflow-music-reader and default:projects/scoreflow-music-reader/gotchas-abc-import; repository docs remain authoritative.

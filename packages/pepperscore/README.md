@@ -511,9 +511,9 @@ ABC is parsed with abcjs and engraved through PepperScore's score model. Chord s
 ### Quick checklist
 
 1. One tune per string. Start with `X:1`. Only the first tune is imported.
-2. Header order: `X:` → `T:` → `C:` → `M:` → `L:` → `Q:` → `%%score` (if grouping staves) → `V:` lines (with their `%%MIDI` lines right after each) → `K:` last.
+2. Header order: `X:` → `T:` → `C:` → `M:` → `L:` → `Q:` → `%%score`/`%%staves` (if grouping) → `V:` lines (with their `%%MIDI` lines right after each) → `K:` last. Put `%%score`/`%%staves` **before** the `V:` lines they group.
 3. Keep `K:` after `X:` (a file-level `K:` before `X:` is tolerated but has no effect on voices).
-4. Declare every voice with `V:<id> name="…" clef=…` (preferably in the tune header; body-only declarations also work), even a single voice, if you need a specific instrument, clef or transposition. Don't put `V:` lines before `X:`; their clef is ignored.
+4. Declare every voice with `V:<id> name="…" clef=…` (preferably in the tune header; body-only declarations also work), even a single voice, if you need a specific instrument, clef or transposition. `V:` lines before `X:` also work as file-wide defaults, but prefer the tune header.
 5. Put `%%MIDI program|channel|transpose` **directly after the `V:` line it belongs to**. In the header, a `%%MIDI` line before any `V:` is a default for every voice.
 6. Transposing instruments: write the notes **as the player reads them** and add `transpose=<semitones written→sounding>` on the `V:` line.
 7. End the piece with `|]`.
@@ -523,7 +523,7 @@ ABC is parsed with abcjs and engraved through PepperScore's score model. Chord s
 
 #### Tune and header
 
-- Only the first tune (`X:` to the next `X:`) is read. Before the first `X:`, only `%%MIDI` lines apply (as defaults); `M:`, `L:`, `Q:`, `C:` there are ignored, so put them after `X:`. A `K:` there doesn't end the tune header; the tune's own first `K:` does. `V:` lines before `X:` lose their clef, so declare voices after `X:`.
+- Only the first tune (`X:` to the next `X:`) is read. Before the first `X:`, only `%%MIDI` and `V:` lines apply (as defaults); `M:`, `L:`, `Q:`, `C:` there are ignored, so put them after `X:`. A `K:` there doesn't end the tune header; the tune's own first `K:` does. A `V:` line before `X:` supplies defaults (clef, name, transposition) for that voice; a tune-header `V:` for the same id overrides each property it sets. If the body has music before any `[V:…]` selector, it goes to the first declared voice — which may be a file-header voice — so select voices explicitly in the body.
 - Honoured: `T:` title, `C:` composer, `M:` meter, `L:` default length, `Q:` tempo, `K:` key (with `m`/`min` for minor).
 
 #### Keys and accidentals
@@ -626,5 +626,4 @@ G, A, B, C | D4 |]
 
 - Lyrics, decorations, tuplet engraving, multi-tune files: outside the parity guarantee.
 - `score=` on `V:` is ignored.
-- A `V:` line before `X:` has its clef ignored.
 - Saved per-part reader settings reset for piano ABC scores first shown before 2026-11-10 (grand-staff regrouping).
