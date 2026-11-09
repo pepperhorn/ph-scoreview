@@ -16,7 +16,7 @@
 ## Rules
 
 ### Tune and header
-- Only the first tune (`X:` to the next `X:`) is read. Lines before the first `X:` are file-wide defaults. A `K:` there doesn't end the tune header; the tune's own first `K:` does. `V:` lines before `X:` lose their clef, so declare voices after `X:`.
+- Only the first tune (`X:` to the next `X:`) is read. Before the first `X:`, only `%%MIDI` lines apply (as defaults); `M:`, `L:`, `Q:`, `C:` there are ignored, so put them after `X:`. A `K:` there doesn't end the tune header; the tune's own first `K:` does. `V:` lines before `X:` lose their clef, so declare voices after `X:`.
 - Honoured: `T:` title, `C:` composer, `M:` meter, `L:` default length, `Q:` tempo, `K:` key (with `m`/`min` for minor).
 
 ### Keys and accidentals
@@ -105,6 +105,7 @@ G, A, B, C | D4 |]
 ## Known limits (don't rely on these)
 - Lyrics, decorations, tuplet engraving, multi-tune files: outside the parity guarantee.
 - `score=` on `V:` is ignored.
+- `M:`, `L:`, `Q:`, `C:` before `X:` are ignored (ABC 2.1 file-header defaults aren't applied).
 - A `V:` line before `X:` has its clef ignored.
 - Saved per-part reader settings reset for piano ABC scores first shown before 2026-11-10 (grand-staff regrouping).
 
