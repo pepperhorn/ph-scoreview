@@ -28,3 +28,7 @@ Run long commands in the foreground; don't overlap build with reader tests.
 
 ---
 ## Receiver ack
+
+Acknowledged 2026-11-10 (Codex). I will emit one mid-bar key signature per staff regardless of layer count, retain post-change pitch spelling and playback, and add native Verovio SVG regression tests for one and two layers. I own only `notation/document.ts`, new `notation/document-keysig.test.ts`, and my 0005 handoffs. I will run the specified setup and verification commands, then push this branch and open a draft PR; no merge or PR watching. No open questions. Base ancestry `2b4d032` verified; starting HEAD `6f3196450a6939e4b237b2f5816ae5403b0f4cc4`, clean worktree.
+
+GBrain consulted: `default:projects/scoreflow-music-reader` and `default:projects/scoreflow-music-reader/gotchas-abc-import` (mid-bar signatures must survive the shared spelling pass). The spelling pass remains outside ownership.
