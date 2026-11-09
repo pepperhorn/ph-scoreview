@@ -72,7 +72,7 @@ Lead to acknowledge through the ledger on main.
 
 ## Return
 - **Outcome:** partial — implementation and T2 acceptance checks complete; required global verification has timing failures
-- **PR:** to be opened as draft
+- **PR:** https://github.com/pepperhorn/ph-scoreview/pull/66 (draft)
 - **Commits:** receiver ack `1c4a9e4`; implementation `812fd25`; this return is a docs-only follow-up.
 - **Out-of-scope issues found:** reader frame sampling and editor redraw timing failures above. The editor is explicitly protected; no editor code or performance thresholds were changed.
 - **Follow-ups:** other-family review; T3/T4/T5 remain separate. No release, merge, PR watching or polling.
