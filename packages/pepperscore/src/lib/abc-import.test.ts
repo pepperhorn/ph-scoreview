@@ -604,3 +604,51 @@ describe('ABC r2 tune and default-voice boundaries', () => {
     expect(score.parts[1].measures[0].transposition?.semitones).toBe(0);
   });
 });
+
+describe('ABC body-only voice and file-header directive scoping', () => {
+  it.each(['V:A', '[V:A]'])('attributes body-only voice MIDI after %s', async selector => {
+    const score = await abc(`${selector}\n%%MIDI program 65\n%%MIDI transpose -9\nA4 |]\nV:B\n%%MIDI channel 10\nC4 |]\nV:C\n%%MIDI program 73\n%%MIDI transpose -2\nD4 |]`);
+    expect(score.parts).toHaveLength(3);
+    expect(score.parts[0]).toMatchObject({ gmProgram: 66, instrument: 'alto-saxophone', transposition: { semitones: -9 } });
+    expect(score.parts[1]).toMatchObject({ instrument: 'drum-kit', clef: 'percussion' });
+    expect(score.parts[1].measures[0].notes[0].pitches[0].unpitched).toBe(true);
+    expect(score.parts[2]).toMatchObject({ gmProgram: 74, instrument: 'flute', transposition: { semitones: -2 } });
+    expect(score.parts.map(p => soundingMidi(p, p.measures[0], p.measures[0].notes[0].pitches[0], 0))).toEqual([60, 60, 60]);
+  });
+
+  it('applies pre-selector body MIDI to the first body-only voice', async () => {
+    const score = await abc('%%MIDI program 65\n%%MIDI transpose -9\nV:A\nA4 |]\nV:B\nC4 |]');
+    expect(score.parts).toHaveLength(2);
+    expect(score.parts[0]).toMatchObject({ gmProgram: 66, instrument: 'alto-saxophone', transposition: { semitones: -9 } });
+    expect(score.parts[1]).toMatchObject({ instrument: 'piano', transposition: { semitones: 0 } });
+    expect(score.parts[1].gmProgram).toBeUndefined();
+  });
+
+  it('applies a pre-selector body channel only to the first body-only voice', async () => {
+    const score = await abc('%%MIDI channel 10\nV:A\nC4 |]\nV:B\nC4 |]');
+    expect(score.parts[0]).toMatchObject({ instrument: 'drum-kit', clef: 'percussion' });
+    expect(score.parts[0].measures[0].notes[0].pitches[0].unpitched).toBe(true);
+    expect(score.parts[1]).toMatchObject({ instrument: 'piano', clef: 'treble' });
+    expect(score.parts[1].measures[0].notes[0].pitches[0].unpitched).toBeUndefined();
+  });
+
+  it('keeps pre-selector MIDI on an implicit bar-only voice', async () => {
+    const score = await abc('%%MIDI program 40\n|]\nV:B\nC4 |]');
+    expect(score.parts).toHaveLength(2);
+    expect(score.parts[0]).toMatchObject({ instrument: 'violin', gmProgram: 41 });
+    expect(score.parts[0].measures[0].notes).toEqual([]);
+    expect(score.parts[1].instrument).toBe('piano');
+    expect(score.parts[1].gmProgram).toBeUndefined();
+  });
+
+  it('ends the tune header at its own K: despite a file-header K:', async () => {
+    const first = 'K:G\n%%MIDI program 73\nX:1\nM:4/4\nL:1/4\nV:A name="Solo" clef=alto\n%%MIDI program 65\n%%MIDI transpose -9\nV:B name="Bass" clef=bass\n%%MIDI program 42\nK:C\nA4 |]\n[V:B] C,4 |]\n';
+    const score = await parseAbc(first + '\nX:2\nV:A\n%%MIDI channel 10\nK:A\nA4 |]');
+    expect(score.parts).toEqual((await parseAbc(first)).parts);
+    expect(score.key).toBe(0);
+    expect(score.parts.map(p => p.name)).toEqual(['Solo', 'Bass']);
+    expect(score.parts.map(p => p.clef)).toEqual(['alto', 'bass']);
+    expect(score.parts.map(p => p.gmProgram)).toEqual([66, 43]);
+    expect(score.parts.map(p => p.transposition?.semitones)).toEqual([-9, 0]);
+  });
+});

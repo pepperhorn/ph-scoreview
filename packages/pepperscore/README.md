@@ -506,6 +506,8 @@ The package licence is `MIT AND LGPL-3.0-or-later`:
 
 ## ABC headers
 
+See the repository [ABC authoring guide](../../docs/guides/abc-authoring.md) for authoring rules and examples.
+
 ABC is parsed with abcjs and engraved through PepperScore's score model. Only the first tune is imported; source headers from later tunes are ignored, while file-header defaults before the first `X:` are retained. The reader honours `T:` (title), `C:` (composer), `M:` (meter), `L:` (note length), `Q:` (tempo), `K:` (key, including inline key changes), and `V:` voice names and clefs. Supported clefs include treble, bass, alto, tenor, `treble-8`, `treble+8`, `bass-8` and percussion. Chord symbols, text annotations, accidentals, ties, beams and final/double barlines are retained.
 
 - `%%score {RH | LH}` groups the braced voices as one named part with a grand-staff brace. Unbraced voices remain separate parts. Pitched staves in a brace share one instrument and sound, taking an explicit MIDI sound when present, otherwise the named pitched voice’s instrument. Percussion remains specific to its own staff and never changes a pitched partner into drums. Re-grouped grand-staff scores start with fresh per-part settings.
