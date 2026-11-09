@@ -8,7 +8,7 @@
 - **Worktree:** /home/shaun/.t3/worktrees/ph-vexflow-view/t3-d5fb1a89
 - **Base commit:** 6f3196450a6939e4b237b2f5816ae5403b0f4cc4 (contains pinned 2b4d032)
 - **Implementation commit:** 608dd0e
-- **PR:** pending creation after verification
+- **PR:** https://github.com/pepperhorn/ph-scoreview/pull/63 (draft)
 - **Status:** done; ready for lead review
 
 ## Goal
