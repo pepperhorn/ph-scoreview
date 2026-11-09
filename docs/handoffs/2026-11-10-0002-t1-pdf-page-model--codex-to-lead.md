@@ -6,7 +6,7 @@
 - **Dispatch:** [lead-to-codex](2026-11-10-0002-t1-pdf-page-model--lead-to-codex.md)
 - **Branch:** orch/0002-t1-pdf-page-model
 - **Worktree:** /home/shaun/.t3/worktrees/ph-vexflow-view/t3-e3689cb4
-- **PR:** pending creation after this handoff is committed
+- **PR:** https://github.com/pepperhorn/ph-scoreview/pull/71 (draft)
 - **Base commit:** 13d48eb (required ancestor); acknowledgement bb46a41
 - **Port:** validation uses ephemeral port 0 on 127.0.0.1; no persistent server
 - **Status:** closed (implementation complete; aggregate harness caveat recorded)
