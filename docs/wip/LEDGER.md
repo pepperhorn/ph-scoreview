@@ -5,15 +5,18 @@
 > Waiting on: `child <taskId>` · `review <taskId>` · `ci` · `human: <why>` · `lead: <next action>`. Set it on every status change. A row needs the lead when it starts with `lead`, or when it's empty and Status is dispatched, in-review, changes-requested, ready, or merged. The lead's Stop hook won't let the lead end its turn while any row needs it.
 > Type: normal items have a spec and plan. Quick items have the title prefix `[quick]` (no spec or plan, a short handoff). PRs adopted by `orch-sweep` have the prefix `[pr]`.
 
-Next ID: 0007
+Next ID: 0010
 
 ## Active
 
 | K | Title | Status | Waiting on | Owner (provider/model) | Branch | PR | Worktree | T3 task/thread | Spec | Plan | Latest handoff | Updated |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 0001 | Composable player skins | merged (t1) | human: confirm dispatch of T2 | codex/gpt-6.1-sol | orch/0001-t1-skin-tokens | https://github.com/pepperhorn/ph-scoreview/pull/59 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-66013276 | task/thread `0001-t1-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-01-0001-t1-skin-module-and-tokens--lead-to-codex.md | 2026-11-01 |
-| 0002 | PDF export | planned | human: confirm dispatch | lead | | | | | specs/0002-pdf-export.md | plans/0002-pdf-export.md | | 2026-10-31 |
-| 0003 | Teaching layer (part 1: goal picker and setup tour) | planned | human: confirm dispatch T1–T3 (T4–T6 blocked) | lead | | | | | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | | 2026-11-02 |
+| 0001 | Composable player skins | dispatched (t2; t1 merged #59) | lead: delegate | codex/gpt-6.1-sol | orch/0001-t2-skin-bar |  |  |  | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-10-0001-t2-skin-bar--lead-to-codex.md | 2026-11-10 |
+| 0002 | PDF export | planned | child 0001-t2 (T1 depends on 0001 T2) | lead |  |  |  |  | specs/0002-pdf-export.md | plans/0002-pdf-export.md |  | 2026-11-10 |
+| 0003 | Teaching layer (part 1: goal picker and setup tour) | dispatched (t1) | lead: delegate | codex/gpt-6.1-sol | orch/0003-t1-score-details |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-10-0003-t1-score-details--lead-to-codex.md | 2026-11-10 |
+| 0007 | [quick] Package README carries the ABC authoring rules (S4, S6) | dispatched | lead: delegate | codex/gpt-6.1-sol | orch/0007-readme-abc-authoring |  |  |  |  |  | handoffs/2026-11-10-0007-readme-abc-authoring--lead-to-codex.md | 2026-11-10 |
+| 0008 | [quick] ABC: a V: line before X: keeps its clef (S5) | dispatched | lead: delegate | codex/gpt-6.1-sol | orch/0008-abc-voice-before-x |  |  |  |  |  | handoffs/2026-11-10-0008-abc-voice-before-x--lead-to-codex.md | 2026-11-10 |
+| 0009 | [quick] More mid-bar key signature tests (S7) | dispatched | lead: delegate | codex/gpt-6.1-sol | orch/0009-keysig-tests |  |  |  |  |  | handoffs/2026-11-10-0009-keysig-tests--lead-to-codex.md | 2026-11-10 |
 
 ## Done / closed
 
@@ -31,16 +34,17 @@ Next ID: 0007
 |---|---|---|---|---|---|---|---|
 | S2 | fix | Body `%%MIDI` is dropped when voices are declared only in the body (contradicts README rule) | `packages/pepperscore/src/lib/import.ts:197`, `packages/pepperscore/README.md:517` | S | medium: common ABC style | PR #61 review r3 | done (0006, PR #62) |
 | S3 | fix | A `K:` in the file header before the first `X:` makes every `V:` count as body music | `packages/pepperscore/src/lib/import.ts:193` | S | low: unusual input | PR #61 review r3 | done (0006, PR #62) |
-| S4 | fix | README link to `docs/guides/abc-authoring.md` is dead on npm (private repo, no `repository` in package.json); publish the guide content in the package README or a public URL | `packages/pepperscore/README.md` ABC section; `packages/pepperscore/package.json` | S | medium before npm release | PR #62 review | new |
-| S5 | fix | A `V:` line before `X:` has its clef ignored (pre-existing) | `packages/pepperscore/src/lib/import.ts` header scan | S | low | PR #62 review | new |
-| S6 | docs | README sentence on body directives before the first selector is unclear for body-only voices | `packages/pepperscore/README.md` ABC headers | XS | low | PR #62 review | new |
-| S7 | test | Add a transposed case and a held-across-change case (keySig falls back to layer 1, drawn late) to the mid-bar keySig test | `packages/pepperscore/src/lib/notation/document-keysig.test.ts` | XS | low | PR #63 review | new |
+| S4 | fix | README link to `docs/guides/abc-authoring.md` is dead on npm (private repo, no `repository` in package.json); publish the guide content in the package README or a public URL | `packages/pepperscore/README.md` ABC section; `packages/pepperscore/package.json` | S | medium before npm release | PR #62 review | accepted → 0007 |
+| S5 | fix | A `V:` line before `X:` has its clef ignored (pre-existing) | `packages/pepperscore/src/lib/import.ts` header scan | S | low | PR #62 review | accepted → 0008 |
+| S6 | docs | README sentence on body directives before the first selector is unclear for body-only voices | `packages/pepperscore/README.md` ABC headers | XS | low | PR #62 review | accepted → 0007 |
+| S7 | test | Add a transposed case and a held-across-change case (keySig falls back to layer 1, drawn late) to the mid-bar keySig test | `packages/pepperscore/src/lib/notation/document-keysig.test.ts` | XS | low | PR #63 review | accepted → 0009 |
 | S1 | fix | Emit a mid-bar `<keySig>` only in layer 1; Verovio draws one per layer | `packages/pepperscore/src/lib/notation/document.ts:249` (probe: 2 layers → 3 keySig groups) | S | low today (ABC overlays are separate parts); matters for MIDI/multi-layer | PR #60 review r2 | done (0005, PR #63) |
 
 Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-10 0001-t2, 0003-t1, 0007, 0008, 0009 →dispatched — human go-ahead; 0002 waits on 0001 T2 (plan dependency); 0004–0006 worktrees and branches removed; ABC guide handoff sent to scale-to-song (handoffs/2026-11-10-adhoc-abc-authoring-guide--pepperscore-to-scale-to-song.md, copied into its docs/handoffs)
 2026-11-10 0005 in-review→closed — r1 approve on bc487b1, CI green, merged PR #63 (c48dc0e); 70 tests pass on main; S7 logged; GBrain gotchas updated
 2026-11-10 0006 in-review→closed — r1 approve on e4a6934, CI green, merged PR #62 (f766e13); ABC guide updated; S4–S6 logged
 2026-11-10 0005 dispatched→in-review — PR #63 @bc487b1; review r1
