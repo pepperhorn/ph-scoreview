@@ -506,28 +506,125 @@ The package licence is `MIT AND LGPL-3.0-or-later`:
 
 ## ABC headers
 
-See the repository [ABC authoring guide](../../docs/guides/abc-authoring.md) for authoring rules and examples.
+ABC is parsed with abcjs and engraved through PepperScore's score model. Chord symbols, text annotations, accidentals, ties, beams and final/double barlines are retained. Use the checklist, rules and templates below when generating ABC for `<PepperScore abc={…}>`.
 
-ABC is parsed with abcjs and engraved through PepperScore's score model. Only the first tune is imported; source headers from later tunes are ignored, while file-header defaults before the first `X:` are retained. The reader honours `T:` (title), `C:` (composer), `M:` (meter), `L:` (note length), `Q:` (tempo), `K:` (key, including inline key changes), and `V:` voice names and clefs. Supported clefs include treble, bass, alto, tenor, `treble-8`, `treble+8`, `bass-8` and percussion. Chord symbols, text annotations, accidentals, ties, beams and final/double barlines are retained.
+### Quick checklist
 
-- `%%score {RH | LH}` groups the braced voices as one named part with a grand-staff brace. Unbraced voices remain separate parts. Pitched staves in a brace share one instrument and sound, taking an explicit MIDI sound when present, otherwise the named pitched voice’s instrument. Percussion remains specific to its own staff and never changes a pitched partner into drums. Re-grouped grand-staff scores start with fresh per-part settings.
-- `V:alto name="Alto Saxophone" transpose=-9` keeps the displayed notes and key as written and lowers playback by nine semitones. A written A4 sounds C4. `transpose=` takes precedence over `%%MIDI transpose N`, including an explicit `transpose=0`. A name alone selects an instrument but does not infer transposition. `score=` is not interpreted as instrument transposition.
+1. One tune per string. Start with `X:1`. Only the first tune is imported.
+2. Header order: `X:` → `T:` → `C:` → `M:` → `L:` → `Q:` → `%%score` (if grouping staves) → `V:` lines (with their `%%MIDI` lines right after each) → `K:` last.
+3. Keep `K:` after `X:` (a file-level `K:` before `X:` is tolerated but has no effect on voices).
+4. Declare every voice with `V:<id> name="…" clef=…` (preferably in the tune header; body-only declarations also work), even a single voice, if you need a specific instrument, clef or transposition. Don't put `V:` lines before `X:`; their clef is ignored.
+5. Put `%%MIDI program|channel|transpose` **directly after the `V:` line it belongs to**. In the header, a `%%MIDI` line before any `V:` is a default for every voice.
+6. Transposing instruments: write the notes **as the player reads them** and add `transpose=<semitones written→sounding>` on the `V:` line.
+7. End the piece with `|]`.
+8. Chord symbols in plain quotes (`"C7"`); text in quotes with a position prefix (`"^Swing"`, `"_rit."`).
+
+### Rules
+
+#### Tune and header
+
+- Only the first tune (`X:` to the next `X:`) is read. Before the first `X:`, only `%%MIDI` lines apply (as defaults); `M:`, `L:`, `Q:`, `C:` there are ignored, so put them after `X:`. A `K:` there doesn't end the tune header; the tune's own first `K:` does. `V:` lines before `X:` lose their clef, so declare voices after `X:`.
+- Honoured: `T:` title, `C:` composer, `M:` meter, `L:` default length, `Q:` tempo, `K:` key (with `m`/`min` for minor).
+
+#### Keys and accidentals
+
+- Change key mid-tune with a `K:` line or inline `[K:Gb]`, including mid-bar. The new signature is drawn where it occurs.
+- Write accidentals normally (`^F`, `_B`, `=F`). Per-bar rules apply: an accidental carries to later notes of the same pitch in that bar, and a tie (`^F- | F`) carries it into the next bar.
+- Spelling is kept as written: `^E` in F♯ major and `_C` in G♭ major stay E♯ and C♭.
+
+#### Clefs
+
+- `clef=treble|bass|alto|tenor|treble-8|treble+8|bass-8|perc` on `V:` (or `K:`).
+- Octave clefs: ABC note letters are the **sounding** pitch (ABC 2.1); the clef draws them an octave higher. Guitar: `clef=treble-8`, and `G,` sounds G3 and is drawn as G4. Don't also add `transpose=-12`; the clef already does it.
+
+#### Instruments and sound
+
+- `name="…"` selects the instrument from its name (e.g. "Flute", "Cello", "Alto Saxophone") when no `%%MIDI program` is given. A name never implies transposition.
+- `%%MIDI program N`: **zero-based** GM number (0–127), e.g. 0 piano, 40 violin, 42 cello, 65 alto sax, 73 flute. PepperScore stores GM programs as 1–128 internally.
+- `%%MIDI channel 10` selects the drum kit and unpitched notation, taking precedence over the MIDI program. A voice named like "Drums" also imports as unpitched percussion when no MIDI program is supplied. Use `clef=perc`.
+- Header MIDI directives before any `V:` declaration are tune-wide defaults; after a `V:` declaration, they apply only to that voice. Each voice inherits default properties it has not overridden. Body directives override that voice’s earlier MIDI settings, but explicit `V: transpose=` still wins.
+- Body-only voices: a `%%MIDI` line after `[V:id]` / `V:id` in the body applies to that voice. One before any voice selector applies to the first voice, unless notes or a barline come before every selector: then it belongs to that implicit default voice and later voices don't inherit it. Safest: put each `%%MIDI` line right after its voice's `V:` line.
+
+#### Transposing instruments
+
+- `V:sax name="Alto Saxophone" transpose=-9` → written A4 sounds C4. Values are written→sounding semitones: B♭ clarinet/trumpet -2, tenor sax -14, alto sax -9, horn in F -7, baritone sax -21.
+- `transpose=` wins over `%%MIDI transpose`, including an explicit `transpose=0`. Prefer `transpose=`.
 - `%%MIDI transpose N` supplies written-to-sounding semitones when the voice has no explicit `transpose=`. Instrument intervals add to octave-clef intervals; instrument switching and concert-pitch display use the combined interval. Diatonic steps follow conventional intervals within each octave (0–11 semitones: unison, minor/major second, minor/major third, fourth, augmented fourth, fifth, minor/major sixth, minor/major seventh), with the same sign and seven steps per octave. Thus -9 maps to -5 diatonic steps.
-- `%%MIDI program N` uses a **zero-based** General MIDI sound number (0–127); for example, 65 is alto sax. PepperScore stores GM programs as 1–128 internally. Without a program, the voice name supplies the sound.
-- `%%MIDI channel 10` selects the drum kit and unpitched notation, taking precedence over the MIDI program. A voice named like "Drums" also imports as unpitched percussion when no MIDI program is supplied.
+- `score=` is **not** supported; don't use it.
+- The written key goes in `K:`: for alto sax in concert C, write `K:A`.
+- Don't send concert-pitch ABC *and* `transpose=`; pick written pitch + `transpose=`. (Alternative: concert-pitch ABC with no `transpose=`, and the host sets `settings.instrument`.)
 
-Header MIDI directives before any `V:` declaration are tune-wide defaults. A header directive following a `V:` declaration applies only to that voice; body directives after a `V:` selector also apply only to that voice and override its earlier MIDI settings. A body directive or note before any body `V:` selector belongs to the first declared voice (or the implicit default voice when none is declared). Each voice inherits default properties it has not overridden. Explicit `V: transpose=` still wins over MIDI transpose.
+#### Grand staff (piano, harp, organ)
 
-For example:
+- Group voices with braces using `%%score {RH | LH}` **before** their `V:` declarations; putting the grouping after the declarations leaves the staves separate. They become one part with one name and a brace. Name the first voice (`name="Piano"`); the second inherits the instrument. Pitched staves in a brace share one instrument and sound, taking an explicit MIDI sound when present, otherwise the named pitched voice’s instrument. Percussion remains specific to its own staff and never changes a pitched partner into drums.
+- Without braces, voices stay separate parts.
+
+#### Chord symbols, text and dyads
+
+- `"C7"`, `"Am7b5"`, `"C/E"`: chord symbols (default position).
+- `"^Swing"` above, `"_rit."` below: text, never a chord symbol. You can put text and a chord on the same note: `"^Swing""C7"c`.
+- Dyads/chords: `[CE]` gives one stem with two pitches.
+
+#### Barlines
+
+- `|]` final barline, `||` double barline, `|:` `:|` `::` repeats, `[1` `[2` endings.
+
+### Templates
+
+**Single melody, concert pitch**
+
+```abc
+X:1
+T:Scale study
+M:4/4
+L:1/8
+Q:1/4=90
+V:1 name="Flute"
+K:D
+DEFG ABcd | d2c2 B2A2 |]
+```
+
+**Transposing instrument (alto sax, concert C major)**
 
 ```abc
 X:1
 M:4/4
 L:1/4
-V:alto name="Alto Saxophone" transpose=-9
+V:sax name="Alto Saxophone" transpose=-9
 %%MIDI program 65
 K:A
 A B c d | e2 A2 |]
 ```
 
-Lyrics, decorations, tuplets and multi-tune files are outside this ABC parity guarantee.
+**Piano grand staff with text and chords**
+
+```abc
+X:1
+M:4/4
+L:1/4
+%%score {RH | LH}
+V:RH name="Piano" clef=treble
+V:LH clef=bass
+K:C
+[V:RH] "^Swing""C7"c e g e | c4 |]
+[V:LH] C, G, E, G, | C,4 |]
+```
+
+**Guitar**
+
+```abc
+X:1
+M:4/4
+L:1/4
+V:gtr name="Guitar" clef=treble-8
+%%MIDI program 24
+K:G
+G, A, B, C | D4 |]
+```
+
+### Known limits (don't rely on these)
+
+- Lyrics, decorations, tuplet engraving, multi-tune files: outside the parity guarantee.
+- `score=` on `V:` is ignored.
+- A `V:` line before `X:` has its clef ignored.
+- Saved per-part reader settings reset for piano ABC scores first shown before 2026-11-10 (grand-staff regrouping).

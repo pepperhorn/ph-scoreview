@@ -28,3 +28,7 @@ npm run check && npm run build && npm run test:manifest && npm run test:validati
 
 ---
 ## Receiver ack
+
+Understood: make the package README ABC section self-contained by incorporating the guide's checklist, rules, four templates and limits, remove its repo-relative guide link, and clarify body MIDI directive scoping. No runtime changes. I own only that README section and my 0007 handoffs. I will scratch-parse every template with `parseAbc`, report any template correction, run the specified verification, and push a draft PR with a committed return handoff including “For the ABC guide”. No open questions.
+
+Context consulted: GBrain `projects/scoreflow-music-reader/gotchas-abc-import` (source `default`): root-level install; build and validation must run sequentially; source-offset MIDI scoping. Repository guide remains authoritative.
