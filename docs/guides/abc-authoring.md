@@ -5,7 +5,7 @@
 ## Quick checklist
 
 1. One tune per string. Start with `X:1`. Only the first tune is imported.
-2. Header order: `X:` → `T:` → `C:` → `M:` → `L:` → `Q:` → `V:` lines (with their `%%MIDI` lines right after each) → `%%score` → `K:` last.
+2. Header order: `X:` → `T:` → `C:` → `M:` → `L:` → `Q:` → `%%score` (if grouping) → `V:` lines (with their `%%MIDI` lines right after each) → `K:` last. `%%score` must come **before** the `V:` lines it groups.
 3. Keep `K:` after `X:` (a file-level `K:` before `X:` is tolerated but has no effect on voices).
 4. Declare every voice with `V:<id> name="…" clef=…` (preferably in the tune header; body-only declarations also work), even a single voice, if you need a specific instrument, clef or transposition. Don't put `V:` lines before `X:`; their clef is ignored.
 5. Put `%%MIDI program|channel|transpose` **directly after the `V:` line it belongs to**. A `%%MIDI` line before any `V:` is a default for every voice.
@@ -26,7 +26,7 @@
 
 ### Clefs
 - `clef=treble|bass|alto|tenor|treble-8|treble+8|bass-8|perc` on `V:` (or `K:`).
-- Octave clefs: write notes at **written** pitch. Guitar: `clef=treble-8`, and `G` (G4 written) sounds G3. Don't also add `transpose=-12`; the clef already does it.
+- Octave clefs: ABC note letters are the **sounding** pitch (ABC 2.1); the clef draws them an octave higher. Guitar: `clef=treble-8`, and `G,` sounds G3 and is drawn as G4 (second line). Writing `G` gives sounding G4, drawn G5. Don't also add `transpose=-12`; the clef already does it.
 
 ### Instruments and sound
 - `name="…"` selects the instrument from its name (e.g. "Flute", "Cello", "Alto Saxophone") when no `%%MIDI program` is given. A name never implies transposition.
@@ -35,14 +35,14 @@
 - Body-only voices: a `%%MIDI` line after `[V:id]` / `V:id` in the body applies to that voice. One before any voice selector applies to the first voice, unless notes or a barline come before every selector: then it belongs to that implicit default voice and later voices don't inherit it. Safest: put each `%%MIDI` line right after its voice's `V:` line.
 
 ### Transposing instruments
-- `V:sax name="Alto Saxophone" transpose=-9` → written A4 sounds C4. Values are written→sounding semitones: B♭ clarinet/trumpet/tenor sax -2 (tenor sax -14), alto sax -9, horn in F -7, baritone sax -21.
+- `V:sax name="Alto Saxophone" transpose=-9` → written A4 sounds C4. Values are written→sounding semitones: B♭ clarinet/trumpet -2, tenor sax -14, alto sax -9, horn in F -7, baritone sax -21.
 - `transpose=` wins over `%%MIDI transpose`. Prefer `transpose=`.
 - `score=` is **not** supported; don't use it.
 - The written key goes in `K:`: for alto sax in concert C, write `K:A`.
 - Don't send concert-pitch ABC *and* `transpose=`; pick written pitch + `transpose=`. (Alternative: concert-pitch ABC with no `transpose=`, and the host sets `settings.instrument`.)
 
 ### Grand staff (piano, harp, organ)
-- Declare both voices, then group them with braces: `%%score {RH | LH}`. They become one part with one name and a brace. Name the first voice (`name="Piano"`); the second inherits the instrument.
+- Group the voices with braces, `%%score {RH | LH}`, **before** declaring them, then declare both voices. They become one part with one name and a brace. Name the first voice (`name="Piano"`); the second inherits the instrument.
 - Without braces, voices stay separate parts.
 
 ### Chord symbols, text and dyads
@@ -83,9 +83,9 @@ A B c d | e2 A2 |]
 X:1
 M:4/4
 L:1/4
+%%score {RH | LH}
 V:RH name="Piano" clef=treble
 V:LH clef=bass
-%%score {RH | LH}
 K:C
 [V:RH] "^Swing""C7"c e g e | c4 |]
 [V:LH] C, G, E, G, | C,4 |]
@@ -99,7 +99,7 @@ L:1/4
 V:gtr name="Guitar" clef=treble-8
 %%MIDI program 24
 K:G
-G A B c | d4 |]
+G, A, B, C | D4 |]
 ```
 
 ## Known limits (don't rely on these)
@@ -110,6 +110,7 @@ G A B c | d4 |]
 
 ## Change log
 <!-- Newest first: YYYY-MM-DD — ledger item / PR — what changed for ABC authors -->
+- 2026-11-10 — guide correction (found by 0007) — `%%score` must precede the `V:` lines it groups (the earlier piano template didn't group); octave-clef notes are written at sounding pitch (guitar template now `G, A, B, C`); tenor sax is -14. No code change.
 - 2026-11-10 — 0006 / PR #62 — `%%MIDI` works with voices declared only in the body; a file-level `K:` before `X:` no longer breaks tune-header `V:` lines.
 - 2026-11-10 — 0004-t2 / PR #61 — `%%score {…}` grand staff; `V: transpose=`, `%%MIDI transpose|program|channel` per voice; drums by channel 10 or name; only the first tune is read.
 - 2026-11-10 — 0004-t1 / PR #60 — accidentals drawn per bar (incl. ties); mid-tune and mid-bar key changes; `^`/`_` text separate from chord symbols; `|]` and `||` drawn; octave, alto and tenor clefs.

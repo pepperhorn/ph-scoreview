@@ -18,8 +18,9 @@ accidentals per bar (incl. ties), mid-tune and mid-bar `K:` changes, `"^text"` s
    - One tune per string, `X:1` first; `K:` last in the header.
    - Declare each voice with `V:<id> name="…" clef=…`; put its `%%MIDI program N` (zero-based GM) right after the `V:` line.
    - Transposing instruments: write notes as the player reads them, add `transpose=<written→sounding semitones>` (alto sax -9, B♭ trumpet/clarinet -2). Don't also set `settings.instrument` for the same transposition.
-   - Guitar: `clef=treble-8`, written pitch; no extra `transpose=-12`.
-   - Piano: two voices plus `%%score {RH | LH}`.
+   - Guitar: `clef=treble-8` and note letters at **sounding** pitch (`G,` = sounding G3, drawn G4); no extra `transpose=-12`.
+   - Piano: `%%score {RH | LH}` **before** the two `V:` lines.
+   - Correction 2026-11-10: an earlier copy of this snapshot and the guide had the piano and guitar templates wrong; use the guide's current templates.
    - Chord symbols `"C7"`; text `"^Swing"` / `"_rit."`. End with `|]`.
 3. Requires a PepperScore build that includes PR #63 (main at or after `c48dc0e`); no npm release with these fixes yet.
 
