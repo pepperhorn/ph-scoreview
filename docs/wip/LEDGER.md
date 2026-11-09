@@ -14,7 +14,7 @@ Next ID: 0005
 | 0001 | Composable player skins | merged (t1) | human: confirm dispatch of T2 | codex/gpt-6.1-sol | orch/0001-t1-skin-tokens | https://github.com/pepperhorn/ph-scoreview/pull/59 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-66013276 | task/thread `0001-t1-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-01-0001-t1-skin-module-and-tokens--lead-to-codex.md | 2026-11-01 |
 | 0002 | PDF export | planned | human: confirm dispatch | lead | | | | | specs/0002-pdf-export.md | plans/0002-pdf-export.md | | 2026-10-31 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned | human: confirm dispatch T1–T3 (T4–T6 blocked) | lead | | | | | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | | 2026-11-02 |
-| 0004 | ABC import parity with MusicXML | changes-requested (t2; t1 merged #60) | child 0004-t2-impl-r1-fix1 | codex/gpt-6.1-sol | orch/0004-t2-abc-parts | https://github.com/pepperhorn/ph-scoreview/pull/61 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-4f2d2f71 | task `0004-t2-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A0e06bfc5-8825-491b-a63c-b7e720534d3b%3Adelegate-task%3A0004-t2-impl-r1` | plans/0004-abc-import-parity.md | handoffs/2026-11-09-0004-t1-abc-engraving-fidelity--lead-to-codex.md | handoffs/2026-11-09-0004-t2-abc-parts-and-instruments--codex-to-lead.md (@5fedffb)
+| 0004 | ABC import parity with MusicXML | in-review (t2; t1 merged #60) | review 0004-t2-review-r2 | codex/gpt-6.1-sol | orch/0004-t2-abc-parts | https://github.com/pepperhorn/ph-scoreview/pull/61 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-4f2d2f71 | task `0004-t2-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A0e06bfc5-8825-491b-a63c-b7e720534d3b%3Adelegate-task%3A0004-t2-impl-r1` | plans/0004-abc-import-parity.md | handoffs/2026-11-09-0004-t1-abc-engraving-fidelity--lead-to-codex.md | handoffs/2026-11-09-0004-t2-abc-parts-and-instruments--codex-to-lead.md (@600d1ea)
 
 ## Done / closed
 
@@ -33,6 +33,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-09 0004-t2 changes-requested→in-review — fix round pushed 600d1ea; review r2
 2026-11-09 0004-t2 in-review→changes-requested — r1 on 5fedffb: header %%MIDI folded score-wide (regression), body channel 10 not unpitched; lead: header MIDI after V: applies to that voice, before any V: is a default; per-part settings reset for regrouped piano ABC accepted
 2026-11-09 0004-t2 dispatched→in-review — PR #61 @5fedffb (36 ABC tests; `score=` left unimplemented); review r1
 2026-11-09 0004-t2 planned→dispatched — grand staff, transpose/MIDI, README; includes r2 suggestions 1-2 (harm tstamp, voice-identity map)
