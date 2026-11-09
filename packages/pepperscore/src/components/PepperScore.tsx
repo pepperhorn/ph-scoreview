@@ -1,5 +1,6 @@
-import { resolveBar, warnUnknownBar } from '../lib/bar-items';
+import { BAR_HEADER_ID, drawerExtras, resolveBar, warnUnknownBar } from '../lib/bar-items';
 import SkinBar from './SkinBar';
+import DrawerControls from './DrawerControls';
 import { skinKey, skinStyle, warnInvalidTheme, type PepperScoreSkin } from '../lib/skin';
 import { useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
@@ -404,6 +405,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   /** The embed instrument switcher (minimal chrome): its menu, the source part it shows, and whether it sits in the phone toolbar. */
   const [switchMenu, setSwitchMenu] = useState(false);
   const [switchSourceId, setSwitchSourceId] = useState<string | null>(null);
+  const [skinPhone, setSkinPhone] = useState(false);
   const [phoneToolbar, setPhoneToolbar] = useState(false);
   const switchButtonRef = useRef<HTMLButtonElement>(null);
   const switchMenuRef = useRef<HTMLDivElement>(null);
@@ -989,6 +991,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     const root = rootRef.current;
     if (!root) return;
     const observer = new ResizeObserver(() => {
+      setSkinPhone(root.clientWidth < 580);
       const width = root.clientWidth, height = root.clientHeight, natural = root.dataset.psHeight === 'natural';
       flag(root, 'psShort', !natural && height <= 500);
       flag(root, 'psTiny', !natural && height <= 360);
@@ -1867,6 +1870,11 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     octaveTool: octaveToggle('bar'),
     mixer: <button className="icon-button mixer-trigger" aria-label="Track mixer" title="Track mixer" aria-haspopup="dialog" aria-expanded={mixer} onClick={() => { setDrawer(false); setMoreOpen(false); setMixer(true); }}><SlidersHorizontal size={18}/><span className="mixer-trigger-label">Track mixer</span></button>,
   };
+  const visibleBar = bar?.filter(id => headerElements[BAR_HEADER_ID[id]] != null) ?? null;
+  const playbackItems = new Set(['play', 'stop', 'tempo', 'transpose', 'keyFlip']);
+  const toolbarBar = skinPhone ? visibleBar?.filter(id => playbackItems.has(id)) ?? [] : [];
+  const headerBar = visibleBar?.filter(id => !toolbarBar.includes(id)) ?? null;
+  const showHeader = resolveChrome(preset, controls, bar, headerBar).header;
   const renderControls = (tier: 'primary' | 'secondary') => HEADER_CONTROLS.filter(control => control.tier === tier && chrome[HEADER_CONTROL_GROUP[control.id]!] && headerElements[control.id]).map(control => <div key={control.id} className={`header-control header-control-${control.id}`} data-header-control={control.id}>{headerElements[control.id]}</div>);
   const primaryControls = renderControls('primary');
   const secondaryControls = renderControls('secondary');
@@ -1878,9 +1886,10 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   return <div ref={rootRef} className={`pepperscore ${className ?? ''}`.trim()} data-ps-height={heightMode} data-ps-clock={clock ? '' : undefined} data-ps-clickable={onElementClick || octaveOn ? '' : undefined} data-ps-octave-tool={octaveOn ? '' : undefined} style={{ ...themeStyle, ...(heightMode === 'fixed' ? { height } : {}) }}
     tabIndex={0} role="region" aria-label={ariaLabel || (loaded && score.title ? `Score: ${score.title}` : 'Score reader')} onKeyDown={onRootKeyDown}>
   <main className={`app-shell ${chrome.drawer ? '' : 'no-drawer'}`}>
-    {chrome.header && <header className={`topbar ${bar !== null ? 'skin-topbar' : ''}`} aria-label="Playback transport">
-      {chrome.openFile && <input ref={fileRef} type="file" accept={SCORE_FILE_ACCEPT} hidden onChange={e => { readFile(e.target.files?.[0]); e.target.value = ''; }}/>}
-      {bar !== null ? <SkinBar bar={bar} elements={headerElements} moreRef={moreRef} moreOpen={moreOpen} setMoreOpen={setMoreOpen} panelId={panelId}/> : <div className="transport">
+    {chrome.openFile && <input ref={fileRef} type="file" accept={SCORE_FILE_ACCEPT} hidden onChange={e => { readFile(e.target.files?.[0]); e.target.value = ''; }}/> }
+    {showHeader && <header className={`topbar ${bar !== null ? 'skin-topbar' : ''}`} aria-label="Playback transport">
+
+      {bar !== null ? <SkinBar bar={headerBar ?? []} elements={headerElements} moreRef={moreRef} moreOpen={moreOpen} setMoreOpen={setMoreOpen} panelId={panelId}/> : <div className="transport">
         {primaryControls}
         {/* Secondary controls render once. CSS lays them out inline above MOBILE_HEADER_BREAKPOINT and as the
             More dropdown (toggle shown, panel display:none until data-open) at or below it, so SSR paints the right arrangement. */}
@@ -1894,8 +1903,8 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     </header>}
     {/* Shown once a score has loaded: an empty or failed snippet has nothing to play. With a header (minimal + controls)
         it sits in the header's right end, above the sticky header rather than under it. */}
-    {!chrome.header && cornerSwitch && <div className={`ps-corner-controls ${compactPlay ? 'has-compact-play' : ''}`}>{cornerSwitch}</div>}
-    {!chrome.header && cornerPlay}
+    {!showHeader && cornerSwitch && <div className={`ps-corner-controls ${compactPlay ? 'has-compact-play' : ''}`}>{cornerSwitch}</div>}
+    {!showHeader && cornerPlay}
     {embedSwitchMenu}
 
     {chrome.mixer && mixer && <div className="mixer-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setMixer(false); }}>
@@ -1969,6 +1978,9 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
       </div>
       {chrome.zoom && <div className="page-controls"><button aria-label="Previous view" onClick={() => turn(-1)}><ChevronLeft size={18}/></button><span>{prefs.mode === 'portrait' ? 'SCROLL TO READ' : 'SWIPE TO READ'}</span><button aria-label="Next view" onClick={() => turn(1)}><ChevronRight size={18}/></button></div>}
     </section>
+    {toolbarBar.length > 0 && <div className="ps-embed-toolbar skin-playback-toolbar" role="toolbar" aria-label="Playback controls">
+      {toolbarBar.map(id => <div key={id} data-bar-item={id} className={`header-control header-control-${BAR_HEADER_ID[id]}`}>{headerElements[BAR_HEADER_ID[id]]}</div>)}
+    </div>}
     {inToolbar && <div className="ps-embed-toolbar" role="toolbar" aria-label="Score controls">{embedSwitch ?? embedOctave}{compactPlay}</div>}
     {octaveOn && <div className={`octave-tool-dock ${inToolbar ? 'is-above-toolbar' : ''}`}>
       <OctaveTool selection={octaveSelectionInfo} canReset={octaveCanReset} onUp={() => stepSelection(12)} onDown={() => stepSelection(-12)}
@@ -1981,6 +1993,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     <aside className={`bottom-drawer ${drawer ? 'is-open' : ''}`} aria-hidden={!drawer}>
       <div className="drawer-top"><div><div className="ps-eyebrow">MAKE IT YOURS</div><h2>Reading options</h2></div><button className="icon-button" aria-label="Close options" onClick={() => setDrawer(false)}><X size={20}/></button></div>
       <div className="drawer-grid">
+        <DrawerControls items={drawerExtras(bar, chrome)} elements={headerElements}/>
 
         <div className="drawer-panel reading-panel"><h3><Settings2 size={17}/> Reading</h3><div className="font-choice"><span>Notation font</span><div className="font-toggle" role="group" aria-label="Notation font"><button className={prefs.notationFont === 'Bravura' ? 'is-selected' : ''} aria-pressed={prefs.notationFont === 'Bravura'} onClick={() => update({ notationFont: 'Bravura' })}>Bravura</button><button className={prefs.notationFont === 'Petaluma' ? 'is-selected' : ''} aria-pressed={prefs.notationFont === 'Petaluma'} onClick={() => update({ notationFont: 'Petaluma' })}>Petaluma</button></div></div><div className="font-choice"><span>Stave text font</span><div className="font-toggle" role="group" aria-label="Stave text font">{(['Sans', 'Serif', 'Mono'] as const).map(font => <button key={font} className={prefs.annotationFont === font ? 'is-selected' : ''} aria-pressed={prefs.annotationFont === font} onClick={() => update({ annotationFont: font })}>{font}</button>)}</div></div><label className="field-label" htmlFor={overhangId}>Overhang <span>{prefs.overlap === 0 ? 'Off' : `${prefs.overlap} ${prefs.mode === 'portrait' ? (prefs.overlap === 1 ? 'system' : 'systems') : (prefs.overlap === 1 ? 'bar' : 'bars')}`}</span></label><input id={overhangId} className="ps-range" type="range" min="0" max="3" step="1" value={prefs.overlap} onChange={e => update({ overlap: Number(e.target.value) })}/>{chrome.tabToggle && tabAvailable && <div className="font-choice tab-view-choice"><span>TAB</span>{tabToggle('drawer')}</div>}{readerParts.length > 4 && <button className="text-action reset-staves" onClick={resetStaves}><RotateCcw size={15}/> Reset score staves</button>}</div>
         <div className="drawer-panel annotations-panel"><h3><Type size={17}/> Annotations</h3>{annotationRow('Note names', 'names', 'namesSize', () => update({ names: !prefs.names }))}{annotationRow('Chord symbols', 'chordSymbols', 'chordSymbolsSize', () => update({ chordSymbols: !prefs.chordSymbols }))}<label className="ps-switch-row inference-row"><span>Infer chord symbols</span><input type="checkbox" checked={prefs.inferChordSymbols} onChange={e => update({ inferChordSymbols: e.target.checked })}/></label>{annotationRow('Beat counts', 'counts', 'countsSize', () => update({ counts: !prefs.counts }))}{annotationRow('Count subdivisions', 'subdivisions', 'subdivisionsSize', () => update({ subdivisions: !prefs.subdivisions, counts: true }), prefs.counts && prefs.subdivisions)}</div>

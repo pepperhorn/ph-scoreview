@@ -404,6 +404,15 @@ try {
   await page.waitForFunction(() => document.querySelector('.skin-reader .skin-chord-symbols')?.getAttribute('aria-pressed') === 'true');
   for (const selector of ['.skin-note-names', '.skin-counts', '.skin-chord-symbols']) assert.equal(await page.locator('.skin-reader ' + selector).getAttribute('aria-pressed'), 'true', 'prefs survive reload');
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator('.skin-reader .skin-playback-toolbar .play-button').waitFor({ state: 'visible' });
+  assert.equal(await page.locator('.skin-reader .topbar .play-button').count(), 0, 'phone play is mounted only in the bottom toolbar');
+  assert.equal(await page.locator('.skin-reader .topbar .instrument-switch').isVisible(), true, 'occasional instrument control stays in the header');
+  assert.equal(await page.locator('.skin-reader .skin-playback-toolbar .bpm-control').isVisible(), true, 'tempo accompanies playback');
+  assert.ok(await page.locator('.skin-reader').evaluate(root => {
+    const toolbar = root.querySelector('.skin-playback-toolbar').getBoundingClientRect();
+    const viewport = root.querySelector('.score-viewport').getBoundingClientRect();
+    return toolbar.top >= viewport.bottom - 1 && toolbar.width <= root.clientWidth;
+  }), 'phone playback toolbar sits below the score without clipping');
   await page.locator('.skin-reader .header-more-toggle').click();
   await page.locator('.skin-reader .skin-options').waitFor({ state: 'visible' });
   assert.ok(await page.locator('.skin-reader').evaluate(el => el.scrollWidth <= el.clientWidth), '390px bar does not clip');
@@ -413,6 +422,7 @@ try {
   await page.evaluate(() => window.__skin.setSkin({ bar: ['counts', 'future-control', 'play', 'counts'] }));
   await page.waitForFunction(() => document.querySelectorAll('.skin-reader [data-bar-item]').length === 2);
   assert.deepEqual(await page.locator('.skin-reader [data-bar-item]').evaluateAll(nodes => nodes.map(el => el.dataset.barItem)), ['counts', 'play']);
+  await page.setViewportSize({ width: 640, height: 900 });
   await page.evaluate(() => window.__skin.setSkin({ bar: ['play', 'tempo', 'noteNames', 'counts', 'instrumentSwitch'] }));
   await page.locator('.skin-reader .header-more-toggle').click();
   await page.locator('.skin-reader .instrument-switch').click();
@@ -426,14 +436,48 @@ try {
     assert.deepEqual(await page.locator(`${root} [data-bar-item]`).evaluateAll(nodes => nodes.map(el => el.dataset.barItem)), ['counts'], 'explicit false wins');
     assert.equal(await page.locator(`${root} .bottom-drawer`).count(), 0);
   }
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.evaluate(() => { window.__skin.setControls({}); window.__skin.setSkin({ bar: ['options'] }); });
+  const extras = page.locator('.skin-reader .playback-view-panel');
+  await page.locator('.skin-reader .skin-options').click();
+  await extras.waitFor({ state: 'visible' });
+  assert.deepEqual(await extras.locator('[data-drawer-control]').evaluateAll(nodes => nodes.map(el => el.dataset.drawerControl)), ['stop', 'viewToggle', 'bars', 'zoom', 'mixer', 'openFile']);
+  assert.equal(await page.locator('.skin-reader input[type=file]').count(), 1, 'one input even when Open is omitted from the bar');
+  assert.equal(await page.locator('.skin-reader .header-stave-scale-input').count(), 1, 'one zoom ref');
+  await extras.getByRole('button', { name: 'Endless view', exact: true }).click();
+  await page.locator('.skin-reader .ps-landscape').waitFor();
+  assert.equal(await extras.getByLabel('Bars per line', { exact: true }).isDisabled(), true);
+  await extras.getByRole('button', { name: 'Vertical view', exact: true }).click();
+  await extras.getByLabel('Bars per line', { exact: true }).selectOption('2');
+  assert.equal(await extras.getByLabel('Bars per line', { exact: true }).inputValue(), '2');
+  const zoomSlider = extras.getByRole('slider', { name: 'Stave scale', exact: true });
+  const oldZoom = await zoomSlider.inputValue();
+  await zoomSlider.focus();
+  await page.keyboard.press('ArrowRight');
+  assert.notEqual(await zoomSlider.inputValue(), oldZoom, 'drawer zoom updates the scale');
+  await extras.getByRole('button', { name: 'Stop playback', exact: true }).click();
+  await extras.getByRole('button', { name: 'Track mixer', exact: true }).click();
+  await page.locator('.skin-reader .mixer-panel').waitFor({ state: 'visible' });
+  await page.locator('.skin-reader').getByRole('button', { name: 'Close track mixer', exact: true }).click();
+  await page.locator('.skin-reader .skin-options').click();
+  await extras.getByRole('button', { name: 'Open score file', exact: true }).click();
+  const chooser = page.waitForEvent('filechooser');
+  await page.locator('.skin-reader').getByRole('button', { name: /browse/i }).click();
+  await chooser;
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => window.__skin.setSkin({ bar: ['pdf'] }));
+  await page.waitForFunction(() => !document.querySelector('.skin-reader .topbar'));
+  await page.evaluate(() => window.__skin.setSkin(undefined));
+  await page.waitForFunction(() => !document.querySelector('.skin-reader .playback-view-panel'));
   assert.deepEqual(errors, []);
+  console.log('Skin drawer: omitted actions, single refs, mode/bars/zoom/stop/mixer/file chooser, empty header and no-skin restoration passed');
   console.log('Skin bar: ordered full/minimal bars, instrument selection, drawer sync, derived chords, persisted toggles, 390px More and unknown/duplicate ids passed');
 } finally { await browser.close(); await server.close(); }
 
 async function assertDevelopmentWarning(browser) {
   const host = await createServer({
     configFile: false, root, logLevel: 'error', mode: 'development',
-    server: { host: '0.0.0.0', port: 5212, strictPort: true },
+    server: { host: '0.0.0.0', port: 0 },
     optimizeDeps: { include: ['react', 'react-dom/client', 'pepperscore'], force: true },
     plugins: [{ name: 'skin-warning-consumer', configureServer(server) {
       server.middlewares.use(async (request, response, next) => {
@@ -453,7 +497,7 @@ async function assertDevelopmentWarning(browser) {
     const page = await browser.newPage();
     const barDiagnostic = page.waitForEvent('console', { predicate: event => event.type() === 'warning' && event.text().includes('Unknown bar item: future-control'), timeout: 30000 });
     const diagnostic = page.waitForEvent('console', { predicate: event => event.type() === 'warning' && event.text().includes('Invalid theme colour for accent'), timeout: 30000 });
-    await page.goto('http://127.0.0.1:5212/skin-warning-host.html');
+    await page.goto(`http://127.0.0.1:${host.httpServer.address().port}/skin-warning-host.html`);
     assert.equal(await page.evaluate(() => typeof process), 'undefined', 'plain development host has no process shim');
     assert.match((await diagnostic).text(), /var\(--bad-brand\)/, 'the real built package warns in a development host');
     assert.match((await barDiagnostic).text(), /Unknown bar item/);

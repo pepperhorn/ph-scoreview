@@ -28,13 +28,13 @@ export type ResolvedChrome = {
  * `tabToggle` the Notation / TAB / Both switch (header and drawer); `instrumentSwitch` the instrument switcher;
  * `octaveTool` the octave tool. Each defaults to on for `full`, off otherwise.
  */
-export function resolveChrome(preset: ChromePreset = 'full', controls: PepperScoreControls = {}, bar?: BarItemId[] | null): ResolvedChrome {
+export function resolveChrome(preset: ChromePreset = 'full', controls: PepperScoreControls = {}, bar?: BarItemId[] | null, renderableBar: BarItemId[] | null | undefined = bar): ResolvedChrome {
   const composed = preset !== 'none' && bar != null;
   const on = (key: keyof PepperScoreControls) => controls[key] ?? (preset === 'full' || (composed && bar.some(id => BAR_CONTROL_GROUP[id] === key)));
   const transport = on('transport'), viewToggle = on('viewToggle'), openFile = on('openFile'), mixer = on('mixer'), drawer = on('drawer'), zoom = on('zoom'), tabToggle = on('tabToggle');
   const instrumentSwitch = on('instrumentSwitch'), octaveTool = on('octaveTool');
   return {
-    header: composed ? bar.length > 0 : transport || viewToggle || openFile || mixer || zoom || tabToggle,
+    header: composed ? Boolean(renderableBar?.length) : transport || viewToggle || openFile || mixer || zoom || tabToggle,
     transport, viewToggle, openFile, mixer, drawer, zoom, tabToggle, instrumentSwitch, octaveTool,
     compactPlay: preset === 'minimal' && !composed && !transport,
     playhead: preset !== 'none' || transport,
