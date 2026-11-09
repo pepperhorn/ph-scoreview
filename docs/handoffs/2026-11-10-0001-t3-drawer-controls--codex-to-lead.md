@@ -6,7 +6,7 @@
 - **Dispatch:** [lead-to-codex](2026-11-10-0001-t3-drawer-controls--lead-to-codex.md)
 - **Branch:** orch/0001-t3-drawer-controls
 - **Worktree:** /home/shaun/.t3/worktrees/ph-vexflow-view/t3-1eaa3a60
-- **PR:** pending creation after this document is committed
+- **PR:** https://github.com/pepperhorn/ph-scoreview/pull/72 (draft)
 - **Base commit:** aa407d5da86669d0193a5519a113a06c6a78c30b (includes required ancestor 13d48eb)
 - **Status:** closed
 
@@ -54,7 +54,7 @@ Lead to acknowledge through the ledger on main.
 - **Outcome:** done; all required suites passed individually, with aggregate-run failures and successful retries recorded below
 - **Commits:** receiver ack `7501683`; implementation `6079501`.
 - **What changed:** drawer panel/resolver, single file input outside header, renderable header suppression, phone playback toolbar and ephemeral Vite port; unit and browser regression checks.
-- **Verification output:** setup, check (0 errors/warnings/hints), build, skin (5 skin + 7 bar/drawer unit tests and browser checks), embed, layout, standalone reader and manifest passed. Full validation/remainder results are being recorded below.
+- **Verification output:** setup, check (0 errors/warnings/hints), build, skin (5 skin + 7 bar/drawer unit tests and browser checks), embed, layout, standalone reader and manifest passed. Full validation and remainder results are recorded below.
 
 ```text
 Skin drawer: omitted actions, single refs, mode/bars/zoom/stop/mixer/file chooser, empty header and no-skin restoration passed
