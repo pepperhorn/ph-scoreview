@@ -589,6 +589,12 @@ describe('ABC r2 tune and default-voice boundaries', () => {
     expect(new Set(score.parts.map(sourcePartOf)).size).toBe(1);
   });
 
+  it('chooses the named pitched voice when a mixed brace has no explicit program', async () => {
+    const score = await abc('[V:R] C4 |]\n[V:M] C,4 |]\n[V:D] C4 |]', '%%score {D | R | M}\nV:R\nV:M name="Clarinet" clef=bass\nV:D name="Drums"\nK:C');
+    expect(score.parts[0]).toMatchObject({ instrument: 'drum-kit', clef: 'percussion' });
+    expect(score.parts.filter(p => p.clef !== 'percussion').map(p => p.instrument)).toEqual(['clarinet', 'clarinet']);
+  });
+
   it('keeps indexed MIDI changes aligned with their measure onsets, including zero', async () => {
     const shifts = [0, -2, -5, 0, 2, 5, 0, -9, 0, 12, -12, 0];
     const score = await abc('[V:A]\n' + shifts.map(shift => `%%MIDI transpose ${shift}\nC4 |`).join('\n') + '\n[V:B] C4 |]', '%%MIDI program 73\nV:A\nV:B\nK:C');

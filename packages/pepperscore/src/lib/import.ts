@@ -302,7 +302,8 @@ export async function parseAbc(text: string): Promise<Score> {
     const name = named?.name || 'Piano';
     const pitched = group.filter(part => part.clef !== 'percussion');
     const sound = pitched.find(p => [...identities.values()].some(entry => entry.part === p && entry.explicitSound))
-      || pitched.find(p => p.gmProgram !== undefined) || pitched.find(p => p === named) || pitched[0];
+      || pitched.find(p => p.gmProgram !== undefined)
+      || pitched.find(p => p.name !== 'Melody' && !/^Voice \d+$/.test(p.name)) || pitched[0];
     group.forEach((part, i) => {
       part.sourcePartId = pid; part.id = `${pid}-${i + 1}`; part.name = name;
       if (part.clef !== 'percussion' && sound) { part.instrument = sound.instrument; part.gmProgram = sound.gmProgram; part.gmSoundfont = sound.gmSoundfont; }
