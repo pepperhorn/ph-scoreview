@@ -6,7 +6,7 @@
 - **Dispatch:** [lead → codex](2026-11-09-0004-t2-abc-parts-and-instruments--lead-to-codex.md)
 - **Branch:** orch/0004-t2-abc-parts
 - **Worktree:** /home/shaun/.t3/worktrees/ph-vexflow-view/t3-4f2d2f71
-- **PR:** pending creation after verification
+- **PR:** https://github.com/pepperhorn/ph-scoreview/pull/61
 - **Base commit:** 8037061 (T1 merge; dispatch checkout includes lead docs)
 - **Port:** 5242 (no manual preview server used)
 - **Status:** open
