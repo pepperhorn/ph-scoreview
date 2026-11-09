@@ -208,12 +208,14 @@ export async function parseAbc(text: string): Promise<Score> {
     && source.slice(bodyStart, bodySelectors[0]?.start ?? source.length).trim().length > 0;
   const selection = selectDefault ? `[V:${defaultVoice}]\n` : '';
   // TuneBook keeps only %% directives before X:, dropping file-header V: lines.
-  // Replay those declarations before tune-header overrides so abcjs still owns
-  // the voice/clef grammar. Record insertions to restore original source offsets.
-  const tuneHeader = /^X:[^\r\n]*(?:\r?\n|$)/m.exec(source);
+  // Replay after the tune's layout directives, before its first V: (or K:).
+  // abcjs must see %%score/%%staves before any voices to retain staff grouping.
+  // Record insertions to restore original source offsets.
+  const firstTuneDeclaration = /^(?:V:|K:)/m.exec(source.slice(tuneStart, bodyStart));
+  const replayStart = firstTuneDeclaration ? tuneStart + firstTuneDeclaration.index : bodyStart;
   const fileVoices = [...source.slice(0, tuneStart).matchAll(/^V:[^\r\n]*/gm)].map(m => m[0]);
   const insertions = [
-    { start: tuneHeader ? tuneStart + tuneHeader[0].length : 0, text: fileVoices.length ? fileVoices.join('\n') + '\n' : '' },
+    { start: replayStart, text: fileVoices.length ? fileVoices.join('\n') + '\n' : '' },
     { start: bodyStart, text: selection },
   ].filter(insertion => insertion.text);
   let parseText = firstTuneText;
@@ -301,8 +303,7 @@ export async function parseAbc(text: string): Promise<Score> {
         const identity = `${host}:${overlay}`;
         let entry = identities.get(identity);
         if (!entry) {
-          // Repeated declarations make abcjs append titles instead of replacing
-          // them. A tune-header name must override the replayed file-header name.
+          // Repeated declarations do not reliably replace abcjs titles. A tune-header name must override the replayed file-header name.
           const declaredName = fileVoices.length ? headerSelectors.filter(s => s.id === host).map(s => {
             const declaration = source.slice(s.start).split('\n', 1)[0];
             return /\b(?:name|nm)\s*=\s*(?:"([^"]*)"|([^\s]+))/.exec(declaration);

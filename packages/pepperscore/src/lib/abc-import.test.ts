@@ -694,3 +694,38 @@ describe('ABC file-header voice declarations', () => {
     expect(score.parts[1].measures[0].transposition?.semitones).toBe(-2);
   });
 });
+
+describe('ABC file-header voices respect tune-header layout', () => {
+  it.each(['%%score {RH | LH}', '%%staves {RH LH}'])('preserves a braced Piano and stable ids with %s', async layout => {
+    const file = 'V:RH clef=treble\nV:LH clef=bass\n';
+    const header = `X:1\nM:4/4\nL:1/4\n${layout}\n%%staffwidth 600\n`;
+    for (const override of ['', 'V:RH name="Piano"\n']) {
+      const tune = `${header}${override}K:C\n[V:RH] c4 |]\n[V:LH] C,4 |]`;
+      const score = await parseAbc(file + tune);
+      const control = await parseAbc(header + file + tune.slice(header.length));
+      const withoutFileVoices = await parseAbc(tune);
+      expect(score.parts).toEqual(control.parts);
+      expect(score.parts.map(part => ({ id: part.id, sourcePartId: part.sourcePartId, name: part.name, notes: part.measures.flatMap(m => m.notes.map(n => n.id)) }))).toEqual(
+        withoutFileVoices.parts.map(part => ({ id: part.id, sourcePartId: part.sourcePartId, name: part.name, notes: part.measures.flatMap(m => m.notes.map(n => n.id)) })),
+      );
+      expect(score.parts.map(p => ({ id: p.id, sourcePartId: p.sourcePartId, name: p.name, clef: p.clef }))).toEqual([
+        { id: 'abc-0-0-1', sourcePartId: 'abc-0-0', name: 'Piano', clef: 'treble' },
+        { id: 'abc-0-0-2', sourcePartId: 'abc-0-0', name: 'Piano', clef: 'bass' },
+      ]);
+      expect(scoreToMei(score)).toContain('symbol="brace"');
+      expect(scoreToMei(score)).toBe(scoreToMei(control));
+    }
+  });
+
+  it('keeps %%score (S A) voices on one staff and restores MIDI source coordinates', async () => {
+    const file = 'V:S clef=treble\n';
+    const header = 'X:1\nM:4/4\nL:1/4\n%%score (S A)\n%%staffwidth 600\n';
+    const body = 'V:S\nV:A\nK:C\n[V:S] C4 |]\n[V:A]\n%%MIDI transpose -2\nE4 |]';
+    const score = await parseAbc(file + header + body);
+    const control = await parseAbc(header + file + body);
+    expect(score.parts).toEqual(control.parts);
+    expect(score.parts.map(p => p.id)).toEqual(['abc-0-0', 'abc-0-1']);
+    expect(score.parts.map(p => p.measures[0].transposition?.semitones)).toEqual([0, -2]);
+    expect(scoreToMei(score)).toBe(scoreToMei(control));
+  });
+});
