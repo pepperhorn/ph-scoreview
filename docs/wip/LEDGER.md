@@ -15,12 +15,12 @@ Next ID: 0007
 | 0002 | PDF export | planned | human: confirm dispatch | lead | | | | | specs/0002-pdf-export.md | plans/0002-pdf-export.md | | 2026-10-31 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned | human: confirm dispatch T1–T3 (T4–T6 blocked) | lead | | | | | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | | 2026-11-02 |
 | 0005 | [quick] Mid-bar key signature drawn once per staff (S1) | in-review | review 0005-review-r1 | codex/gpt-6.1-sol | orch/0005-mid-bar-keysig-once | https://github.com/pepperhorn/ph-scoreview/pull/63 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-d5fb1a89 | task `0005-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Aaf2bbd54-bfdf-427c-9712-8c870e6781ee%3Adelegate-task%3A0005-impl-r1` |  |  | handoffs/2026-11-10-0005-mid-bar-keysig-once--codex-to-lead.md (@bc487b1) | 2026-11-10 |
-| 0006 | [quick] ABC directive scoping: body-only voices, header K: before X: (S2, S3) | in-review | review 0006-review-r1 | codex/gpt-6.1-sol | orch/0006-abc-directive-scoping | https://github.com/pepperhorn/ph-scoreview/pull/62 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-228ee709 | task `0006-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Aaf2bbd54-bfdf-427c-9712-8c870e6781ee%3Adelegate-task%3A0006-impl-r1` |  |  | handoffs/2026-11-10-0006-abc-directive-scoping--codex-to-lead.md (@e4a6934) | 2026-11-10 |
 
 ## Done / closed
 
 | K | Title | PR | Merged | Notes |
 |---|---|---|---|---|
+| 0006 | [quick] ABC directive scoping: body-only voices, header K: before X: (S2, S3) | https://github.com/pepperhorn/ph-scoreview/pull/62 | 2026-11-10 | f766e13; ABC guide updated |
 | 0004 | ABC import parity with MusicXML | https://github.com/pepperhorn/ph-scoreview/pull/60 , https://github.com/pepperhorn/ph-scoreview/pull/61 | 2026-11-10 | t1 8037061, t2 18ee573; `score=` not supported (documented) |
 
 ## Suggestions
@@ -29,14 +29,18 @@ Next ID: 0007
 
 | S | Kind | Suggestion | Evidence | Effort (S/M/L) | Value | Source | Status |
 |---|---|---|---|---|---|---|---|
-| S2 | fix | Body `%%MIDI` is dropped when voices are declared only in the body (contradicts README rule) | `packages/pepperscore/src/lib/import.ts:197`, `packages/pepperscore/README.md:517` | S | medium: common ABC style | PR #61 review r3 | accepted → 0006 |
-| S3 | fix | A `K:` in the file header before the first `X:` makes every `V:` count as body music | `packages/pepperscore/src/lib/import.ts:193` | S | low: unusual input | PR #61 review r3 | accepted → 0006 |
+| S2 | fix | Body `%%MIDI` is dropped when voices are declared only in the body (contradicts README rule) | `packages/pepperscore/src/lib/import.ts:197`, `packages/pepperscore/README.md:517` | S | medium: common ABC style | PR #61 review r3 | done (0006, PR #62) |
+| S3 | fix | A `K:` in the file header before the first `X:` makes every `V:` count as body music | `packages/pepperscore/src/lib/import.ts:193` | S | low: unusual input | PR #61 review r3 | done (0006, PR #62) |
+| S4 | fix | README link to `docs/guides/abc-authoring.md` is dead on npm (private repo, no `repository` in package.json); publish the guide content in the package README or a public URL | `packages/pepperscore/README.md` ABC section; `packages/pepperscore/package.json` | S | medium before npm release | PR #62 review | new |
+| S5 | fix | A `V:` line before `X:` has its clef ignored (pre-existing) | `packages/pepperscore/src/lib/import.ts` header scan | S | low | PR #62 review | new |
+| S6 | docs | README sentence on body directives before the first selector is unclear for body-only voices | `packages/pepperscore/README.md` ABC headers | XS | low | PR #62 review | new |
 | S1 | fix | Emit a mid-bar `<keySig>` only in layer 1; Verovio draws one per layer | `packages/pepperscore/src/lib/notation/document.ts:249` (probe: 2 layers → 3 keySig groups) | S | low today (ABC overlays are separate parts); matters for MIDI/multi-layer | PR #60 review r2 | accepted → 0005 |
 
 Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-10 0006 in-review→closed — r1 approve on e4a6934, CI green, merged PR #62 (f766e13); ABC guide updated; S4–S6 logged
 2026-11-10 0005 dispatched→in-review — PR #63 @bc487b1; review r1
 2026-11-10 0006 dispatched→in-review — PR #62 @e4a6934 (66 ABC tests); review r1
 2026-11-10 0005, 0006 new→dispatched — human accepted S1–S3 as quick items; ABC authoring guide started at docs/guides/abc-authoring.md (human request)

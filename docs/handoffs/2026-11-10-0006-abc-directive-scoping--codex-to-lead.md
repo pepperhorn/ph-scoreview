@@ -10,7 +10,7 @@
 - **Base commit:** 6f31964 (includes dispatch docs; descends from pinned 2b4d032)
 - **Implementation commit:** 15ebd62
 - **Port:** none; no manual preview server
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 Fix source attribution of body-only ABC voice MIDI and locate the tune's opening K: independently of file-header K: lines, preserving first-tune isolation.

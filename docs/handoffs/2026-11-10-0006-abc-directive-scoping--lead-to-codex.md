@@ -5,7 +5,7 @@
 - **Ledger:** 0006 (suggestions S2, S3) · **Spec:** docs/specs/0004-abc-import-parity.md (follow-up) · **Plan:** none
 - **Branch:** orch/0006-abc-directive-scoping · **Worktree:** created by T3
 - **Base commit:** 2b4d032
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 One concern: `parseAbc`'s source scan that attributes `V:` and `%%MIDI` lines (`packages/pepperscore/src/lib/import.ts` ~193–200, from PR #61).

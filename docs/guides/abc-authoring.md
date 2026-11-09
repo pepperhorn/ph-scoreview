@@ -6,8 +6,8 @@
 
 1. One tune per string. Start with `X:1`. Only the first tune is imported.
 2. Header order: `X:` → `T:` → `C:` → `M:` → `L:` → `Q:` → `V:` lines (with their `%%MIDI` lines right after each) → `%%score` → `K:` last.
-3. Never put `K:` before `X:`.
-4. Declare every voice in the header with `V:<id> name="…" clef=…`, even a single voice, if you need a specific instrument, clef or transposition.
+3. Keep `K:` after `X:` (a file-level `K:` before `X:` is tolerated but has no effect on voices).
+4. Declare every voice with `V:<id> name="…" clef=…` (preferably in the tune header; body-only declarations also work), even a single voice, if you need a specific instrument, clef or transposition. Don't put `V:` lines before `X:`; their clef is ignored.
 5. Put `%%MIDI program|channel|transpose` **directly after the `V:` line it belongs to**. A `%%MIDI` line before any `V:` is a default for every voice.
 6. Transposing instruments: write the notes **as the player reads them** and add `transpose=<semitones written→sounding>` on the `V:` line.
 7. End the piece with `|]`.
@@ -16,7 +16,7 @@
 ## Rules
 
 ### Tune and header
-- Only the first tune (`X:` to the next `X:`) is read. Lines before the first `X:` are file-wide defaults; avoid `K:` there (see Known limits).
+- Only the first tune (`X:` to the next `X:`) is read. Lines before the first `X:` are file-wide defaults. A `K:` there doesn't end the tune header; the tune's own first `K:` does. `V:` lines before `X:` lose their clef, so declare voices after `X:`.
 - Honoured: `T:` title, `C:` composer, `M:` meter, `L:` default length, `Q:` tempo, `K:` key (with `m`/`min` for minor).
 
 ### Keys and accidentals
@@ -32,6 +32,7 @@
 - `name="…"` selects the instrument from its name (e.g. "Flute", "Cello", "Alto Saxophone") when no `%%MIDI program` is given. A name never implies transposition.
 - `%%MIDI program N`: **zero-based** GM number (0–127), e.g. 0 piano, 40 violin, 42 cello, 65 alto sax, 73 flute.
 - `%%MIDI channel 10` or a voice named like "Drums": unpitched percussion. Use `clef=perc`.
+- Body-only voices: a `%%MIDI` line after `[V:id]` / `V:id` in the body applies to that voice. One before any voice selector applies to the first voice, unless notes or a barline come before every selector: then it belongs to that implicit default voice and later voices don't inherit it. Safest: put each `%%MIDI` line right after its voice's `V:` line.
 
 ### Transposing instruments
 - `V:sax name="Alto Saxophone" transpose=-9` → written A4 sounds C4. Values are written→sounding semitones: B♭ clarinet/trumpet/tenor sax -2 (tenor sax -14), alto sax -9, horn in F -7, baritone sax -21.
@@ -104,10 +105,11 @@ G A B c | d4 |]
 ## Known limits (don't rely on these)
 - Lyrics, decorations, tuplet engraving, multi-tune files: outside the parity guarantee.
 - `score=` on `V:` is ignored.
-- Being fixed (ledger 0006): a `%%MIDI` line in the body is ignored when voices are declared only in the body; a `K:` before `X:` misreads `V:` lines. Until then, declare voices in the header and keep `K:` after `X:`.
+- A `V:` line before `X:` has its clef ignored.
 - Saved per-part reader settings reset for piano ABC scores first shown before 2026-11-10 (grand-staff regrouping).
 
 ## Change log
 <!-- Newest first: YYYY-MM-DD — ledger item / PR — what changed for ABC authors -->
+- 2026-11-10 — 0006 / PR #62 — `%%MIDI` works with voices declared only in the body; a file-level `K:` before `X:` no longer breaks tune-header `V:` lines.
 - 2026-11-10 — 0004-t2 / PR #61 — `%%score {…}` grand staff; `V: transpose=`, `%%MIDI transpose|program|channel` per voice; drums by channel 10 or name; only the first tune is read.
 - 2026-11-10 — 0004-t1 / PR #60 — accidentals drawn per bar (incl. ties); mid-tune and mid-bar key changes; `^`/`_` text separate from chord symbols; `|]` and `||` drawn; octave, alto and tenor clefs.
