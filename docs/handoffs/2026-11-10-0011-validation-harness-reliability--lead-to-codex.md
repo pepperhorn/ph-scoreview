@@ -30,3 +30,5 @@ npm run check && npm run build && npm run test:manifest && npm run test:validati
 
 ---
 ## Receiver ack
+
+I will isolate owned validation servers with ephemeral ports and strict Vite startup, share explicit timing-budget scaling and local failure hints, and investigate the custom-layout click race without changing app code. I own only the listed validation files/new lib helpers and my 0011 handoffs; skin.mjs, pdf.mjs, app/library code and the ledger remain outside scope. I will run the required checks, concurrent server proof, and full validation, then push the task branch and open a draft PR. No scope questions.
