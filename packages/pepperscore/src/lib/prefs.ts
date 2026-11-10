@@ -1,4 +1,5 @@
 import type { FileSettings } from './file-state';
+import type { TabInstruments } from './tab/string-instruments';
 import type { TabView } from './tab/tab-parts';
 import type { RangeLevel, SwitchInstrumentId } from './instrument-model';
 
@@ -78,9 +79,11 @@ export type PepperScoreSettings = Partial<{
    * counts between beats). Only the add-ons given are applied; unknown sizes are ignored.
    */
   annotationSizes: PepperScoreAnnotationSizes;
-  /** Which staves guitar parts show: `'notation'` (default), `'tab'` or `'both'`. */
+  /** Which staves fretted string parts show: `'notation'` (default), `'tab'` or `'both'`. */
   tabView: TabView;
-  /** Open-string MIDI pitches of generated TAB, low to high (default EADGBE, [40, 45, 50, 55, 59, 64]). */
+  /** TAB identity by onReady part id; "none" suppresses TAB. Does not change playback. */
+  tabInstruments: TabInstruments;
+  /** Open-string MIDI in physical bottom-to-top string order (re-entrant allowed). Overrides generated parts with the same string count; other parts keep instrument defaults. */
   tabTuning: number[];
   /** Capo fret 0-12 of generated TAB; frets are relative to it. */
   capo: number;

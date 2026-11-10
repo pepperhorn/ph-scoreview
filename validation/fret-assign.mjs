@@ -263,3 +263,18 @@ function randomEvents(count, seed) {
 }
 
 console.log(`fret-assign: ${checks} checks passed`);
+
+// Re-entrant GCEA: the high fourth string is physically below C/E/A, not sorted by pitch.
+{
+  const tuning = [67, 60, 64, 69];
+  const pitches = [60, 64, 67, 69];
+  const chord = assignFrets([{ onset: 0, pitches, durations: [1, 1, 1, 1] }], { tuning, octaveFold: false })[0];
+  eq(pairs(chord), [[3, 0], [2, 0], [4, 0], [1, 0]], 'Re-entrant uke open chord keeps all physical strings');
+  const held = assignFrets([
+    { onset: 0, pitches: [67], durations: [4], fixed: [{ string: 4, fret: 0 }] },
+    { onset: 1, pitches: [60, 64, 69], durations: [1, 1, 1] },
+  ], { tuning, octaveFold: false });
+  eq(pairs(held[0]), [[4, 0]], 'High fourth string can be held');
+  ok(held[1].every(note => !('unplayable' in note) && note.string !== 4), 'Other voices avoid the ringing high fourth string');
+  console.log('fret-assign: re-entrant open chord and ringing high fourth string passed');
+}

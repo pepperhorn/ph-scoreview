@@ -31,6 +31,8 @@ export type TabSpec = {
   retarget: Record<string, string>;
   /** Open-string MIDI pitches, low to high. */
   tuning: number[];
+  /** Per notation staff tuning; overrides the global fallback. Physical string order, bottom to top. */
+  tunings?: Record<string, number[]>;
   /** Capo fret; frets are relative to it. */
   capo: number;
   /** Use `tab.course`/`tab.fret` already on notation notes as fixed fingerings (false when the view moved pitches). */
@@ -275,8 +277,9 @@ function collect(mei: string, spec: TabSpec): { staves: Map<string, EventRec[]>;
  */
 function solve(staves: Map<string, EventRec[]>, tieStarts: Set<string>, tieEnds: Set<string>, info: Map<string, StaffInfo>, spec: TabSpec, memory: FretMemory | undefined): Map<string, FretResult> {
   const frets = new Map<string, FretResult>();
-  const tuning = tuningOf(spec.tuning), capo = capoOf(spec.capo);
+  const capo = capoOf(spec.capo);
   for (const [n, events] of staves) {
+    const tuning = tuningOf(spec.tunings?.[n] ?? spec.tuning);
     const recs: NoteRec[] = [];
     const notes: FretNote[] = [];
     for (const event of events) for (const rec of event.notes) {
@@ -326,8 +329,7 @@ export function injectTab(mei: string, spec: TabSpec, memory?: FretMemory): stri
   /** Tie continuations, with the fingering of the note each continues. */
   const continuations = new Map<string, FretResult | undefined>();
   for (const events of staves.values()) for (const event of events) for (const rec of event.notes) if (rec.continuation) continuations.set(rec.id, rec.held);
-  const tuning = tuningOf(spec.tuning), capo = capoOf(spec.capo);
-  const tuningElement = tuningXml(tuning, capo);
+  const capo = capoOf(spec.capo);
   /** Generated TAB staff numbers (an event moved onto one is attached to the TAB clone of its note). */
   const generatedTabs = new Set([...generate].map(n => String(100 + Number(n))));
 
@@ -343,6 +345,8 @@ export function injectTab(mei: string, spec: TabSpec, memory?: FretMemory): stri
   /** The depth of the imported TAB staff being re-fingered. */
   let refretDepth = -1;
   const staffDefXml = (n: string, id: string, meterSig: string) => {
+    const tuning = tuningOf(spec.tunings?.[n] ?? spec.tuning);
+    const tuningElement = tuningXml(tuning, capo);
     const ppq = info.get(n)?.ppq;
     return `<staffDef${idAttr(id, '-tab')} n="${100 + Number(n)}" lines="${tuning.length}" notationtype="tab.guitar" keysig="0"${ppq ? ` ppq="${ppq}"` : ''}><clef shape="TAB" line="${tuning.length - 1}"/>${tuningElement}${meterSig}</staffDef>`;
   };
