@@ -57,6 +57,23 @@ Server-side stamping; editing templates inside PepperScore (StampUI stays the ed
 - [ ] AC5 — Watermark zone with opacity renders behind/over notation as configured, vector, text selectable or not per setting.
 - [ ] AC6 — No template → export identical to 0002 output; template code lazy-loaded with the PDF code.
 
+## Decisions so far (human, 2026-11-11)
+- **Paper fit:** anchor each zone to its nearest edge(s)/corner, keeping its size and distance from those edges; a per-zone `anchor` overrides.
+- **v1 zone types:** text, rotated_text, logo, QR (with centre logo), watermark (new), and the licence marks (DMRE, MicroPDF417, DataMatrix; bwip-js lazy-loaded with the PDF code).
+- **Format:** pending — human asked to improve PepperHorn's schema first (see "Proposed PepperHorn schema improvements").
+
+## Proposed PepperHorn schema improvements (from the stamp-pdf review)
+1. **No schema, types or version** — `stamp_manifest.overlays` is an unvalidated JSON column (`lib/overlays.js:301`). Add a JSON Schema + `schemaVersion`, validate in StampUI on save and in the service on stamp.
+2. **Absolute Letter/A4 coordinates; `paper_size` unused at render** — add `paper` (any size) and per-zone `anchor` so one template fits A4/A3/Letter/Legal.
+3. **White box always painted** — make it an explicit `background: "white" | "none"` (default white, back-compatible).
+4. **No opacity or watermark** — add `opacity` and a `watermark` zone type with free rotation (text rotation is limited to 0/90/180/270 today).
+5. **`logo` is a server file path** — not portable to the browser; use a URL, asset id or data URI.
+6. **Fonts fetched from Google at render, list only in code** — put the font list in the schema (enum) and allow a font URL.
+7. **Missing Liquid variables render silently empty** — keep the behaviour but report missing keys in StampUI preview and in a diagnostics field.
+8. **`stamp_data` keys aren't specified** — publish a schema for the data contract too (licensee, licence text, verification URL, copyright, ISMN, …).
+9. **Dead fields** — `merge_all` and legacy `terms.stamp_manifest`: deprecate in the schema.
+10. **No constraints** — zone `id` uniqueness, positive sizes, `page` syntax: express in the schema rather than silently skipping.
+
 ## Open questions
 1. Compatibility level: accept PepperHorn zones as-is (pt, bottom-left, white box) as the native format, or a cleaner PepperScore-native format with an importer for StampUI JSON?
 2. Different paper sizes: PepperHorn coordinates are absolute for Letter/A4. Scale proportionally, anchor to the nearest corner, or require one template per paper?
