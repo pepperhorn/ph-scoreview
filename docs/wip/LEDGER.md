@@ -16,7 +16,7 @@ Next ID: 0018
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | human: P1–P3 (editor distribution, private repo name, BeCreative licence) before T4 | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0013 | TAB for stringed instruments | planned (t3, t4; t1 #77, t2 #74 merged) | child 0002-t2 (T3 touches render paths incl. lib/pdf and render.ts; dispatch after #78 and 0001-T4 ordering) | codex/gpt-6.1-sol |  |  |  |  | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md |  | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
-| 0016 | [quick] Instrument names: bare Bass = bass guitar, ukulele sound, tabTuning mismatch warning | in-review | review 0016-review-r2 | codex/gpt-6.1-sol | orch/0016-instrument-names | https://github.com/pepperhorn/ph-scoreview/pull/80 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-f4c5a8a8-bae6c18130633ca8 | task `0016-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0016-impl-r1` |  |  | handoffs/2026-11-11-0016-instrument-names--codex-to-lead.md (@bda5923) | 2026-11-11 |
+| 0016 | [quick] Instrument names: bare Bass = bass guitar, ukulele sound, tabTuning mismatch warning | changes-requested | child 0016-impl-r1-fix2 | codex/gpt-6.1-sol | orch/0016-instrument-names | https://github.com/pepperhorn/ph-scoreview/pull/80 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-f4c5a8a8-bae6c18130633ca8 | task `0016-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0016-impl-r1` |  |  | handoffs/2026-11-11-0016-instrument-names--codex-to-lead.md (@bda5923) | 2026-11-11 |
 | 0017 | Release pepperscore 0.5.0 (CHANGELOG, version) | planned | child 0016 (release after it merges) | lead |  |  |  |  |  |  |  | 2026-11-11 |
 
 ## Done / closed
@@ -72,12 +72,14 @@ Next ID: 0018
 | S21 | ci | Install `poppler-utils` in the CI validate job so the PDF raster check runs in CI, not only locally | PR #78 review r2 | XS | medium | PR #78 review | new |
 | S22 | fix | Firefox PDF export: notation ~10× too large (offscreen layout root has no width/height, so Firefox returns identity CTM); give the root SVG explicit size before measuring — goes in 0002 T4 handoff | PR #78 review r3; `BROWSER=firefox node validation/pdf.mjs` | S | high before shipping PDF | PR #78 review | new |
 | S23 | fix | PDF annotations: TAB staves default to none when not passed; shadow offset drops multi-value `dy` | PR #78 review r3 | XS | low | PR #78 review | new |
+| S24 | fix | tabTuning mismatch warning always says "host": `PepperScore.tsx:495-497` passes host and reader-saved tunings through the same field | PR #80 review r2 | XS | low | PR #80 review | new |
 | S1 | fix | Emit a mid-bar `<keySig>` only in layer 1; Verovio draws one per layer | `packages/pepperscore/src/lib/notation/document.ts:249` (probe: 2 layers → 3 keySig groups) | S | low today (ABC overlays are separate parts); matters for MIDI/multi-layer | PR #60 review r2 | done (0005, PR #63) |
 
 Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-11 0016 in-review→changes-requested — r2: CI parser-diff fails, lone "A" became a voice; lead: choir only with a Bass/B part + (Soprano or ≥3 of S/A/T/B), skip with drums/brass/sax/guitar/keys or numbered labels (big band); last round; S24 logged
 2026-11-11 0016 changes-requested→in-review — fixes pushed bda5923; review r2
 2026-11-11 0016 in-review→changes-requested — r1: other "bass" names fell to piano; lead: fallback to bass guitar; SATB context → Bass/B is a voice (score-level pass, import.ts/musicxml-source.ts granted); warning once per part, worded by source
 2026-11-11 0001-t4 dispatched→in-review — PR #81 @96809a0 (full validation green); review r1
