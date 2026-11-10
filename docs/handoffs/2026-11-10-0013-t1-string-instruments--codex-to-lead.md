@@ -7,7 +7,8 @@
 - **Branch:** orch/0013-t1-string-instruments
 - **Worktree:** /home/shaun/.t3/worktrees/ph-vexflow-view/t3-5fdad52b-93573c8f57e66b60
 - **Base commit:** ea2fb11 (includes pinned ancestor 9205fc6)
-- **PR:** pending creation after this commit
+- **PR:** https://github.com/pepperhorn/ph-scoreview/pull/77
+- **Implementation commits:** 55956df (receiver ack), fc4e8e3 (implementation and return handoff); this follow-up records the PR URL.
 - **Status:** blocked
 - **Outcome:** partial — implementation and targeted acceptance checks complete; required full validation is blocked by an out-of-scope stale assertion.
 
@@ -90,4 +91,3 @@ actual:   stop,play,openFile,mode,bpm,transpose,keyFlip,bars,staveScale,mixer
 expected: stop,play,openFile,mode,tab,bpm,transpose,keyFlip,bars,staveScale,mixer
 ```
 The aggregate passed API/audio/clock/CSS/skin/assets/sounds/spelling/transpose/document/parser-diff/score-db/performance/clock-contract, all 230 reader-library unit tests, all 290 editor unit tests, editor browser and phone suites before this stale reader assertion. An earlier aggregate attempt was interrupted by Vite navigation while final source edits were still happening; the stable-source rerun above supersedes it.
-
