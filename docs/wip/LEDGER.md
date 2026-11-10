@@ -5,17 +5,19 @@
 > Waiting on: `child <taskId>` · `review <taskId>` · `ci` · `human: <why>` · `lead: <next action>`. Set it on every status change. A row needs the lead when it starts with `lead`, or when it's empty and Status is dispatched, in-review, changes-requested, ready, or merged. The lead's Stop hook won't let the lead end its turn while any row needs it.
 > Type: normal items have a spec and plan. Quick items have the title prefix `[quick]` (no spec or plan, a short handoff). PRs adopted by `orch-sweep` have the prefix `[pr]`.
 
-Next ID: 0016
+Next ID: 0018
 
 ## Active
 
 | K | Title | Status | Waiting on | Owner (provider/model) | Branch | PR | Worktree | T3 task/thread | Spec | Plan | Latest handoff | Updated |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 0001 | Composable player skins | dispatched (t4; t1 #59, t2 #66, t3 #72 merged) | child 0001-t4-impl-r1 | codex/gpt-6.1-sol | orch/0001-t4-pitch-colours |  |  | task `0001-t4-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0001-t4-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-11-0001-t4-pitch-colours--lead-to-codex.md | 2026-11-10 |
-| 0002 | PDF export | planned (t3, t4; t1 #71, t2 #78 merged) | child 0001-t4-impl-r1 (T3 shares PepperScore.tsx/chrome/bar-items/styles) | codex/gpt-6.1-sol |  |  |  |  | specs/0002-pdf-export.md | plans/0002-pdf-export.md |  | 2026-11-10 |
+| 0002 | PDF export | planned (t3, t4; t1 #71, t2 #78 merged) | child 0001-t4-impl-r1 (T3 shares files); human: merge T3/T4 on green | codex/gpt-6.1-sol |  |  |  |  | specs/0002-pdf-export.md | plans/0002-pdf-export.md |  | 2026-11-10 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | human: P1–P3 (editor distribution, private repo name, BeCreative licence) before T4 | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0013 | TAB for stringed instruments | planned (t3, t4; t1 #77, t2 #74 merged) | child 0002-t2 (T3 touches render paths incl. lib/pdf and render.ts; dispatch after #78 and 0001-T4 ordering) | codex/gpt-6.1-sol |  |  |  |  | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md |  | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
+| 0016 | [quick] Instrument names: bare Bass = bass guitar, ukulele sound, tabTuning mismatch warning | dispatched | lead: delegate | codex/gpt-6.1-sol | orch/0016-instrument-names |  |  |  |  |  | handoffs/2026-11-11-0016-instrument-names--lead-to-codex.md | 2026-11-11 |
+| 0017 | Release pepperscore 0.5.0 (CHANGELOG, version) | planned | child 0016 (release after it merges) | lead |  |  |  |  |  |  |  | 2026-11-11 |
 
 ## Done / closed
 
@@ -76,6 +78,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-11 — scale-to-song re-test: all cases pass on main 12f4bea; they display MusicXML; need an npm release. Human: merge 0002 T3/T4 on green; release 0.5.0 now; bare "Bass" = bass guitar. 0016 dispatched (names/ukulele sound/tuning warning); 0017 release after 0016; README TAB wording → 0013-T4
 2026-11-11 0002-t2 ready→merged — CI green on 7c40488, merged PR #78 (03d0ac7). 0001-t4 dispatched incl. 0002 AC8a PDF parity
 2026-11-11 0002-t2 in-review→ready — r3 approve on 7c40488 (outline within 1 px of screen at 600 dpi); waiting on chromium CI; S22 (Firefox export 10× scale, for T4), S23 logged
 2026-11-11 0002-t2 changes-requested→in-review — stroke-width fix pushed 7c40488; review r3 (last)

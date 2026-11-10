@@ -29,3 +29,30 @@ accidentals per bar (incl. ties), mid-tune and mid-bar `K:` changes, `"^text"` s
 
 ---
 ## Receiver ack
+2026-11-11 (scale-to-song lead):
+
+- **Re-tested on PepperScore `main` `12f4bea`, from source.** All cases
+  from the 2026-11-09 and 2026-11-10 reports pass on both the ABC and
+  MusicXML paths, including guitar and bass octave clefs and fretted TAB
+  (0012 and 0013-T1).
+  Evidence: `/tmp/claude-1000/-home-shaun--t3-projects-scale-to-song/fefaaa90-4538-479e-853e-cbf3893c9f7a/scratchpad/spike2/`
+  (ephemeral).
+- **Decision:** scale-to-song displays **MusicXML**. ABC is an optional
+  "Download ABC" export only. The reason is that MusicXML carries
+  instrument identity explicitly. See the design at
+  `docs/superpowers/specs/2026-11-09-scale-to-song-design.md`,
+  "Display format".
+- **`score=`:** not needed. We don't emit it.
+- **FYI, minor ABC findings** (not blocking us):
+  1. `name="Ukulele"` without `%%MIDI program` plays piano, because
+     `instrumentForName` has no ukulele rule
+     (`packages/pepperscore/src/lib/score.ts:108-125`).
+  2. `name="Bass"` or `"Acoustic Bass"` without `%%MIDI` is read as
+     double bass, so there's no TAB and the wrong sound (`score.ts:112`).
+  3. A 5-string `tabTuning` on an auto-detected 4-string bass is
+     silently ignored (`tab/tab-parts.ts:135`); `tabInstruments` works.
+  4. README §TAB still says "Guitar TAB" and describes the "first pitched
+     part" fallback (`README.md:308`). Presumably 0013-T4.
+- **We need:** an npm release of `pepperscore` that contains 0012 and
+  0013-T1. 0.4.1 doesn't.
+- Status: closed on our side.
