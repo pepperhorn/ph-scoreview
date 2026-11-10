@@ -19,9 +19,9 @@ Deliver plan T3: a public session-scoped plugin host and usable control targets 
 Read the linked spec, plan T3 and dispatch. GBrain checked: `projects/scoreflow-music-reader`; the repo docs govern this change. Also read T1 and T2 return handoffs and `docs/specs/pepperscore-plugins-and-embeds.md`. No private tour logic or wording is included.
 
 ## Scope
-- **In:** host factory and unit tests, exported types, editor props/overlays, session origin, target markers/reveal, phone metadata editing, README, demo-only stub and editor browser validation.
+- **In:** host factory and unit tests, exported types, editor props/overlays, session origin, target markers/reveal, README, demo-only stub and editor browser validation.
 - **Out:** T4–T6, private packages, publishing, dependencies, core `packages/pepperscore/**`, other validation files, ledger, ABC import.
-- **Files owned / changed:** `packages/pepperscore-editor/src/plugin/host.ts`, `host.test.ts`; editor `src/index.ts`, `src/ui/PepperScoreEditor.tsx`, `session.ts`, `TopBar.tsx`, `ScoreTab.tsx`, `TempoFields.tsx`, `controls.tsx` (target attribute plumbing only), `phone/PhoneHeader.tsx`, `PhoneMenu.tsx`, `PhoneShell.tsx`, `PhoneTabs.tsx`; editor README; `apps/reader/src/embed/EditorDemo.tsx`, `EditorStubPlugin.tsx`; `validation/editor.mjs`; this task's dispatch ack and return handoff.
+- **Files owned / changed:** `packages/pepperscore-editor/src/plugin/host.ts`, `host.test.ts`; editor `src/index.ts`, `src/ui/PepperScoreEditor.tsx`, `session.ts`, `TopBar.tsx`, `ScoreTab.tsx`, `TempoFields.tsx`, `controls.tsx` (target attribute plumbing only), `phone/PhoneHeader.tsx`, `PhoneMenu.tsx`, `PhoneShell.tsx`, `PhoneTabs.tsx`, `desktop/DesktopShell.tsx` (r1 scope extension: plugin Escape guard only); editor README; `apps/reader/src/embed/EditorDemo.tsx`, `EditorStubPlugin.tsx`; `validation/editor.mjs`; this task's dispatch ack and return handoff.
 - **Do not touch:** all other paths. Scope audit uses `git diff --stat main...HEAD`; main has advanced independently since dispatch.
 
 ## Acceptance criteria
@@ -63,10 +63,10 @@ The initial full run passed every stage through editor-phone before stopping at 
 Logs are `/tmp/0003-t3-{setup,red,unit,build,browser,phone,check,manifest,validation}.log`.
 
 ## Known gotchas / decisions made
-- Plugin host depends on a root getter rather than global DOM lookup; targets exclude plugin content and inert ancestors. Visible selection uses non-null `offsetParent` as planned.
+- Plugin host depends on a root getter rather than global DOM lookup; targets exclude plugin content and inert ancestors. Visible selection checks offsetParent, computed visibility, a non-empty on-screen centre and elementFromPoint hit, rejecting closed drawers and occluded targets.
 - `revealTarget` initiates React updates; callers wait for the render before finding/measuring the target. Phone reveal is a root-scoped internal event handled by PhoneShell; desktop reveal uses existing inspector controls, preserving file ownership.
 - Read-only hosts refuse dispatch. First-party plugins own their cleanup; the host is not a sandbox or a remote loader. The browser stub deliberately registers both a document subscription and a window listener so cleanup is observable.
-- Phone title/composer previously had display text only (and composer was absent when empty). Reused TopBar's existing MetaText editor so both targets can actually be edited, with the same double-click, Enter, blur and Escape behavior; an empty composer now shows its placeholder. No styles were changed.
+- Lead rejected the initial phone editing extension in review r1. Phone title/composer retain their original read-only display behavior; the empty composer is absent. Neither has an existing phone editing location. revealTarget wakes the header, and findTarget returns the display (or null for an empty composer). Desktop metadata editing is unchanged.
 - `startedNew` is consumed only when creating the initial session; subsequent real Open/New actions determine their own origin.
 - Browser coverage at 1280, 900 and 390 pixels also promotes a real Details edit scenario from the T1 follow-up. The stub remains outside the editor package, under `?stubPlugin=1`.
 
@@ -80,3 +80,25 @@ None.
 - **Follow-ups:** lead to arrange the cross-family review and merge. T4–T6 remain gated by the plan's owner prerequisites. The broader T2 Parts browser probe remains a separate follow-up; this change opens the shared Parts panel but does not reproduce its full instrument/cap matrix.
 - **For the ABC guide:** no ABC import behavior changed.
 - **For GBrain (lead to promote):** plugin API v1 is session-scoped; callers wait after reveal, remeasure on resize/scroll, and release subscriptions/listeners on unmount. An initial page load is `opened` unless its host explicitly passes `startedNew`. Implementer made no GBrain writes.
+
+
+## Review r1 — 5837990574
+
+Lead decisions applied on 2026-11-10:
+- `findTarget` now rejects hidden, off-screen, clipped and centre-occluded elements. Closed medium drawers return null; reveal uses the drawer's open state and visible toggle, including when another inspector tab is mounted. Score targets fall back to opening the inspector when their other controls are unavailable.
+- Phone title/composer editing and blank-composer placeholder reverted. No-plugin phone coverage checks that a double-click does not create an input, blank composer remains absent, and auto-collapse leaves the displayed title unchanged. With populated metadata, both phone displays carry targets and pass centre hit-tests; there is no existing phone editor to open.
+- Scope extension interpreted as the existing `src/ui/desktop/DesktopShell.tsx` (the review names this path; no `src/ui/DesktopShell.tsx` exists). Only its Escape guard changed. Regression test focuses plugin input with the 900px inspector open and verifies Escape leaves it open.
+- Every target is revealed and centre-hit-tested at 1280, 900 and 390px. Tests first reject the closed drawer and missing phone composer, populate composer for the full target matrix, start the phone collapsed and desktop inspector on Layout, then exercise the real controls.
+- Non-blocking outside-pointer behavior and a persistent phone header hold remain T4 follow-ups; this revision does not broaden scope to those handlers.
+
+Verification (final code, foreground, sequential):
+```text
+npm run test:editor: 27 files, 293 tests passed
+npm run build: 10 pages; demo/library dist match
+npm run test:editor-browser: PASS (1280/900/390px centre-hit matrix, drawer Escape, no-plugin phone baseline)
+  redraw times: 210,175,274,161,204,299,252,230 ms
+npm run test:editor-phone: PASS
+npm run check: 0 errors, 0 warnings, 0 hints
+git diff --check: clean
+```
+No timing gate failed, so no budget-scale retry was needed. An earlier passing run warned at 481/613 ms but stayed below the 800 ms gate; the final run had no warning. Logs: `/tmp/0003-t3-r1-final-{unit,build,browser,phone,check}.log`. No core, dependency, ledger, style or other validation files changed.

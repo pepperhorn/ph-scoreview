@@ -20,7 +20,7 @@ export type TopBarProps = {
 };
 
 /** Title or composer: double-click to edit, Enter or blur commits (a blank value clears), Escape cancels. */
-export function MetaText({ field, placeholder, className }: { field: 'title' | 'composer'; placeholder: string; className: string }) {
+function MetaText({ field, placeholder, className }: { field: 'title' | 'composer'; placeholder: string; className: string }) {
   const { store, editable, refocus } = useUi();
   const value = useEditorStore(store, (s) => s.document.meta[field]);
   const [draft, setDraft] = useState<string | null>(null);

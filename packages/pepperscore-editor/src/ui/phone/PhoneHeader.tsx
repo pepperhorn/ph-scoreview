@@ -8,7 +8,6 @@ import { layoutLabel } from '../LayoutTab';
 import { keyName } from '../Popover';
 import { tempoAt } from '../TempoFields';
 import { useEditorStore } from '../useEditorStore';
-import { MetaText } from '../TopBar';
 import { PhoneMenu, type PhoneMenuProps } from './PhoneMenu';
 
 /**
@@ -86,8 +85,8 @@ export const PhoneHeader = memo(function PhoneHeader({ collapsed, wake, playing,
         <div className="ps-phead-main" inert={collapsed}>
           <span className="ps-brand-mark ps-phead-brand"><Glyph c={SMUFL.gClef} alt="𝄞" /></span>
           <div className="ps-phead-titles">
-            <MetaText field="title" placeholder="Untitled score" className="ps-score-title ps-phead-title" />
-            <MetaText field="composer" placeholder="Composer" className="ps-score-composer ps-phead-composer" />
+            <h1 data-ps-target="title" className={`ps-score-title ps-phead-title ${document.meta.title ? '' : 'is-empty'}`.trim()}>{document.meta.title || 'Untitled score'}</h1>
+            {document.meta.composer && <p data-ps-target="composer" className="ps-score-composer ps-phead-composer">{document.meta.composer}</p>}
           </div>
           <div className="ps-phead-history" role="group" aria-label="History">
             <button type="button" className="ps-btn ps-icon-btn ps-phead-undo" aria-label="Undo" title="Undo" disabled={!editable || !canUndo} onClick={() => run('Undo')}>

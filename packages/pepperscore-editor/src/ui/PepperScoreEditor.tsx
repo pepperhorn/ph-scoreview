@@ -2,7 +2,7 @@ import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, 
 import type { PepperScoreClickInfo, PepperScoreHandle } from 'pepperscore';
 import { compileToMusicXml } from '../compile/to-musicxml';
 import { setCursor, setEntryMode, setSelection } from '../engine/commands/index';
-import { createEditorHost, type EditorPlugin, type EditorTarget } from '../plugin/host';
+import { createEditorHost, isVisibleTarget, type EditorPlugin, type EditorTarget } from '../plugin/host';
 import type { EditorStore } from '../engine/store';
 import { importMusicXml } from '../import/from-musicxml';
 import { DEFAULT_MAX_STAVES, readOnlyMessage } from '../licence';
@@ -198,10 +198,15 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
           setPopover(null);
           root.querySelector<HTMLElement>('.ps-ptab[data-tab="score"]')?.click();
         }
-      } else if (target === 'clef') {
+      } else {
+        // Score controls may be unmounted while another inspector tab is selected.
+        const inInspector = ['clef', 'key', 'time', 'tempo'].includes(target);
+        const visible = [...root.querySelectorAll<HTMLElement>(`[data-ps-target="${target}"]`)].some(isVisibleTarget);
+        if (target !== 'clef' && (!inInspector || visible)) return;
         setPopover(null);
         const inspector = root.querySelector<HTMLElement>('.ps-inspector');
-        if (inspector && inspector.offsetParent === null) root.querySelector<HTMLElement>('.ps-inspector-toggle')?.click();
+        const toggle = root.querySelector<HTMLElement>('.ps-inspector-toggle');
+        if (inspector && !inspector.classList.contains('is-open') && toggle && isVisibleTarget(toggle)) toggle.click();
         root.querySelector<HTMLElement>('.ps-inspector [data-tab="score"]')?.click();
       }
     },

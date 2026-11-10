@@ -331,9 +331,9 @@ The editor's New action also starts a `new` session.
 
 Targets are `title`, `composer`, `details`, `key`, `time`, `tempo`, `clef` and `parts`. Call `revealTarget(target)` to
 expand the phone header/menu or select the Score tab/inspector drawer, then wait for React to render and call
-`findTarget(target)`. It returns the visible `data-ps-target` element in this editor, or null; remeasure it on scroll
+`findTarget(target)`. It returns an on-screen `data-ps-target` element whose centre is reachable in this editor, or null; remeasure it on scroll
 and resize. `openPopover(name)` opens the existing editor control (including `details` and `parts`). Title/composer
-use the same double-click editing in both shells.
+use double-click editing on desktop. On phone they remain read-only displays; an empty composer has no target.
 
 Overlays are wrapped in `[data-ps-plugin="<id>"]`. Their keys bypass editor shortcuts and note entry. Plugins own their
 listeners and subscriptions: release them in effect cleanup. Opening another file or starting a new score unmounts

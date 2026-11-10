@@ -50,6 +50,7 @@ function useInspectorDrawer(workspace: RefObject<HTMLDivElement | null>, open: b
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
       const editor = workspace.current?.closest('.ps-editor');
+      if ((event.target as Element)?.closest?.('[data-ps-plugin]')) return;
       if (event.key !== 'Escape' || !editor?.contains(event.target as Node)) return;
       // An open popover takes Escape first (the editor root closes it); the drawer closes on the next one.
       if (editor.querySelector('.ps-popover')) return;

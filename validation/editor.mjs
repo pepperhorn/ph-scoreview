@@ -60,6 +60,22 @@ try {
 
   assert.equal(await page.locator('[data-ps-plugin]').count(), 0, 'no plugins prop renders no plugin wrapper');
 
+  // No-plugin phone baseline: title/composer are display-only, with no blank composer placeholder.
+  {
+    const phone = await browser.newContext({ viewport: { width: 390, height: 900 } });
+    const p = await phone.newPage();
+    await p.goto(`${server.url}/editor`);
+    await p.waitForSelector('.ps-shell-phone[data-header="full"]');
+    assert.equal(await p.locator('[data-ps-plugin]').count(), 0);
+    assert.equal(await p.locator('.ps-phead-composer').count(), 0, 'blank composer stays absent');
+    await p.locator('.ps-phead-title').dblclick();
+    assert.equal(await p.locator('.ps-meta-input').count(), 0, 'double-clicking phone title does not start editing');
+    await p.waitForSelector('.ps-shell-phone[data-header="collapsed"]');
+    assert.equal(await p.locator('.ps-phead-title').textContent(), 'Untitled score');
+    assert.equal(await p.locator('.ps-meta-input').count(), 0, 'collapse never commits a title draft');
+    await phone.close();
+  }
+
   // Plugin host: exercise real session replacement, listeners, keyboard isolation and all targets in both shells.
   for (const width of [1280, 900, 390]) {
     const plugins = await browser.newContext({ viewport: { width, height: 900 } });
@@ -70,11 +86,26 @@ try {
     assert.equal(await p.locator('[data-ps-plugin]').count(), 1);
     assert.equal(await p.evaluate(() => window.__plugin.host.origin), 'opened');
     assert.equal(await p.evaluate(() => window.__plugin.host.shell), width <= 760 ? 'phone' : 'desktop');
+    if (width === 900) assert.equal(await p.evaluate(() => window.__plugin.host.findTarget('clef')), null, 'closed drawer is not a visible target');
+    if (width <= 760) assert.equal(await p.evaluate(() => window.__plugin.host.findTarget('composer')), null, 'empty phone composer has no display');
+    await p.evaluate(() => window.__plugin.host.dispatch({ label: 'Target fixture', run: draft => { draft.document.meta.composer = 'A'; } }, {}));
     if (width <= 760) await p.waitForSelector('.ps-shell-phone[data-header="collapsed"]');
     else await p.evaluate(() => document.querySelector('.ps-inspector [data-tab="layout"]').click());
     for (const target of ['title', 'composer', 'key', 'time', 'tempo', 'clef', 'details', 'parts']) {
       await p.evaluate(target => window.__plugin.host.revealTarget(target), target);
-      await p.waitForFunction(target => window.__plugin.host.findTarget(target) !== null, target);
+      await p.waitForFunction(target => {
+        const element = window.__plugin.host.findTarget(target);
+        if (!element) return false;
+        const rect = element.getBoundingClientRect();
+        const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return rect.width > 0 && rect.height > 0 && hit && element.contains(hit);
+      }, target);
+      if (width === 900 && target === 'clef') {
+        assert.equal(await p.locator('.ps-inspector').evaluate(el => el.classList.contains('is-open')), true, 'reveal opens the medium drawer');
+        await p.locator('[aria-label="Plugin input"]').focus();
+        await p.keyboard.press('Escape');
+        assert.equal(await p.locator('.ps-inspector').evaluate(el => el.classList.contains('is-open')), true, 'plugin Escape preserves the inspector drawer');
+      }
     }
     // Leave the menu and inspector drawer closed so shortcuts would reach note entry without isolation.
     await p.evaluate(() => window.__plugin.host.revealTarget('title'));
