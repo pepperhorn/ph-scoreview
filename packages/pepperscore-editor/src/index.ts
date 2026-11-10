@@ -19,3 +19,5 @@ export {
   PEPPERSCORE_EXTENSION, PEPPERSCORE_MIME, PepperScoreFileSchema, readPepperScoreFile, writePepperScoreFile, type PepperScoreFile,
 } from './format/pepperscore-file';
 export { DEFAULT_LICENCE_PUBLIC_KEY_JWK, DEFAULT_MAX_STAVES, verifyLicence, type Licence } from './licence';
+
+export type { EditorHost, EditorPlugin, EditorTarget } from './plugin/host';

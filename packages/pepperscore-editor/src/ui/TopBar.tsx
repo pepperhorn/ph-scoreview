@@ -20,7 +20,7 @@ export type TopBarProps = {
 };
 
 /** Title or composer: double-click to edit, Enter or blur commits (a blank value clears), Escape cancels. */
-function MetaText({ field, placeholder, className }: { field: 'title' | 'composer'; placeholder: string; className: string }) {
+export function MetaText({ field, placeholder, className }: { field: 'title' | 'composer'; placeholder: string; className: string }) {
   const { store, editable, refocus } = useUi();
   const value = useEditorStore(store, (s) => s.document.meta[field]);
   const [draft, setDraft] = useState<string | null>(null);
@@ -37,6 +37,7 @@ function MetaText({ field, placeholder, className }: { field: 'title' | 'compose
     };
     return (
       <input
+        data-ps-target={field}
         className={`ps-input ps-meta-input ps-meta-input-${field} ${className}`}
         aria-label={field === 'title' ? 'Score title' : 'Composer'}
         value={draft}
@@ -56,7 +57,7 @@ function MetaText({ field, placeholder, className }: { field: 'title' | 'compose
     );
   }
   return (
-    <Tag className={`${className} ${value ? '' : 'is-empty'}`.trim()} title={editable ? 'Double-click to edit' : undefined} onDoubleClick={editable ? () => { cancelled.current = false; setDraft(value ?? ''); } : undefined}>
+    <Tag data-ps-target={field} className={`${className} ${value ? '' : 'is-empty'}`.trim()} title={editable ? 'Double-click to edit' : undefined} onDoubleClick={editable ? () => { cancelled.current = false; setDraft(value ?? ''); } : undefined}>
       {value || placeholder}
     </Tag>
   );
@@ -74,7 +75,7 @@ export const TopBar = memo(function TopBar({ playing, licence, onPlay, onSave, o
   const time = effectiveTime(document, index);
   const tempo = tempoAt(document, index);
   const chip = (name: PopoverName, label: string, k: string, value: ReactNode) => (
-    <button type="button" className={`ps-btn ps-chip ps-chip-${name}`} aria-label={label} title={tip(label)} data-ps-popover-for={name} disabled={!editable} onClick={() => togglePopover(name)}>
+    <button type="button" className={`ps-btn ps-chip ps-chip-${name}`} aria-label={label} title={tip(label)} data-ps-target={name} data-ps-popover-for={name} disabled={!editable} onClick={() => togglePopover(name)}>
       <span className="ps-chip-k">{k}</span>{value}
     </button>
   );
@@ -90,8 +91,8 @@ export const TopBar = memo(function TopBar({ playing, licence, onPlay, onSave, o
         <MetaText field="title" placeholder="Untitled score" className="ps-score-title" />
         <MetaText field="composer" placeholder="Composer" className="ps-score-composer" />
       </div>
-      <button type="button" className="ps-btn ps-btn-ghost ps-btn-details" aria-label="Score details" data-ps-popover-for="details" disabled={!editable} onClick={() => togglePopover('details')}>Details</button>
-      <button type="button" className="ps-btn ps-btn-ghost ps-btn-parts" aria-label="Parts" data-ps-popover-for="parts" disabled={!editable} onClick={() => togglePopover('parts')}>Parts</button>
+      <button type="button" className="ps-btn ps-btn-ghost ps-btn-details" aria-label="Score details" data-ps-target="details" data-ps-popover-for="details" disabled={!editable} onClick={() => togglePopover('details')}>Details</button>
+      <button type="button" className="ps-btn ps-btn-ghost ps-btn-parts" aria-label="Parts" data-ps-target="parts" data-ps-popover-for="parts" disabled={!editable} onClick={() => togglePopover('parts')}>Parts</button>
       <div className="ps-chips" aria-label="Score settings">
         {chip('key', 'Key signature', 'Key', keyName(key.fifths, key.mode ?? 'major'))}
         {chip('time', 'Time signature', 'Time', `${time.count}/${time.unit}`)}

@@ -317,3 +317,25 @@ adding a part or expanding an empty part to piano (count the other parts plus th
 target's staves); commands do not hold licence state. Added parts receive an empty
 measure for every bar and join Full score; custom layouts are unchanged. Removal
 clears the part from every layout. All operations support undo/redo.
+
+### Editor plugins (API v1)
+
+Pass `plugins?: EditorPlugin[]` to mount optional overlays inside the measured editor shell. Without it no plugin
+wrappers are rendered. Each plugin has a unique `id`, `apiVersion: 1` and `Overlay: ComponentType<{ host: EditorHost }>`.
+`EditorHost`, `EditorPlugin` and `EditorTarget` are exported from the package root.
+
+The host exposes `apiVersion: 1`, `getDocument()`, document-only `subscribe(listener)` (returns an unsubscribe function),
+and undoable `dispatch(command, args)`. Dispatch is disabled when `editable` is false. `shell` is `desktop` or `phone`.
+`origin` is `opened` on an ordinary page load or file open; set `startedNew` for an explicitly new initial score.
+The editor's New action also starts a `new` session.
+
+Targets are `title`, `composer`, `details`, `key`, `time`, `tempo`, `clef` and `parts`. Call `revealTarget(target)` to
+expand the phone header/menu or select the Score tab/inspector drawer, then wait for React to render and call
+`findTarget(target)`. It returns the visible `data-ps-target` element in this editor, or null; remeasure it on scroll
+and resize. `openPopover(name)` opens the existing editor control (including `details` and `parts`). Title/composer
+use the same double-click editing in both shells.
+
+Overlays are wrapped in `[data-ps-plugin="<id>"]`. Their keys bypass editor shortcuts and note entry. Plugins own their
+listeners and subscriptions: release them in effect cleanup. Opening another file or starting a new score unmounts
+the old session and its overlays. API versions other than 1 are not mounted. The `/editor?stubPlugin=1` demo includes
+a validation stub; it is outside the editor package. Coaching logic and scripts belong in separate packages.

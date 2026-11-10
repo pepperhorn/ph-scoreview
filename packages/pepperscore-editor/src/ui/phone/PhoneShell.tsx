@@ -19,6 +19,17 @@ export function PhoneShell(props: ShellProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const { collapsed, wake } = useAutoCollapse(4000, menuOpen, shell, refocus);
 
+  useEffect(() => {
+    const editor = shell.current?.closest('.ps-editor');
+    const reveal = (event: Event) => {
+      wake();
+      const target = (event as CustomEvent<string>).detail;
+      setMenuOpen(target === 'details' || target === 'parts');
+    };
+    editor?.addEventListener('ps-plugin-reveal', reveal);
+    return () => editor?.removeEventListener('ps-plugin-reveal', reveal);
+  }, [wake]);
+
   // Any dispatch, and the user's own touch, wheel or pointer on the canvas, expands the header and restarts its
   // idle timer. Not `scroll`: the collapse itself (a taller viewport clamping scrollTop) and playback's
   // auto-scroll fire it too, which would keep the header bouncing open.

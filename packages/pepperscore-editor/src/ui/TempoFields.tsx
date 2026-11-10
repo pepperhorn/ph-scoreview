@@ -38,7 +38,7 @@ export function TempoFields({ store, document, measureId, index, editable, onDon
     onDone?.();
   };
   return (
-    <div className="ps-tempo">
+    <div className="ps-tempo" data-ps-target="tempo">
       <input className="ps-input ps-tempo-text" aria-label="Tempo text" placeholder="Tempo text" value={text} disabled={!editable} onChange={(e) => setText(e.target.value)} onBlur={() => bpm.trim() && apply()} onKeyDown={onKeyDown} />
       <span className="ps-tempo-mm">
         <Glyph c={SMUFL.quarter} alt="♩" className="ps-glyph-mm" /> =
