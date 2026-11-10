@@ -26,9 +26,12 @@ function StubOverlay({ host }: { host: EditorHost }) {
       window.removeEventListener('ps-stub-pulse', pulse);
     };
   }, [host]);
-  return <aside className="ps-stub-plugin" aria-label="Plugin validation" style={{ position: 'absolute', top: 120, right: 20, zIndex: 100, background: 'white', padding: 8 }}>
-    <input aria-label="Plugin input" />
-    <button type="button" onClick={() => host.dispatch(setMeta, { project: 'Stub' })}>Plugin edit</button>
-  </aside>;
+  return <>
+    <div className="ps-stub-backdrop" hidden style={{ position: 'fixed', inset: 0, zIndex: 99, background: 'rgba(0,0,0,.2)', pointerEvents: 'auto' }} />
+    <aside className="ps-stub-plugin" aria-label="Plugin validation" style={{ position: 'absolute', top: 120, right: 20, zIndex: 100, background: 'white', padding: 8 }}>
+      <input aria-label="Plugin input" />
+      <button type="button" onClick={() => host.dispatch(setMeta, { project: 'Stub' })}>Plugin edit</button>
+    </aside>
+  </>;
 }
 export const editorStubPlugin: EditorPlugin = { id: 'validation-stub', apiVersion: 1, Overlay: StubOverlay };

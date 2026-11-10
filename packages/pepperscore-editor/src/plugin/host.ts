@@ -20,7 +20,7 @@ export type EditorHost = {
 export type EditorPlugin = { id: string; apiVersion: 1; Overlay: ComponentType<{ host: EditorHost }> };
 type HostDeps = Pick<EditorHost, 'revealTarget' | 'openPopover' | 'shell' | 'editable' | 'origin'> & { root(): HTMLElement | null };
 
-/** A target must be painted on screen and reachable at its centre, including through clipping ancestors. */
+/** A target must be painted on screen and reachable at its centre, including through clipping ancestors, ignoring plugin overlays. */
 export function isVisibleTarget(element: HTMLElement): boolean {
   if (element.offsetParent === null || element.closest('[inert], [data-ps-plugin]')) return false;
   const view = element.ownerDocument.defaultView;
@@ -30,8 +30,9 @@ export function isVisibleTarget(element: HTMLElement): boolean {
   const rect = element.getBoundingClientRect();
   const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
   if (rect.width <= 0 || rect.height <= 0 || x < 0 || y < 0 || x >= view.innerWidth || y >= view.innerHeight) return false;
-  const hit = element.ownerDocument.elementFromPoint(x, y);
-  return hit !== null && element.contains(hit);
+  const hit = element.ownerDocument.elementsFromPoint(x, y)
+    .find(candidate => !candidate.closest('[data-ps-plugin]'));
+  return hit !== undefined && element.contains(hit);
 }
 
 /** One host per measured shell/session. Plugins own and must dispose their subscriptions on unmount. */

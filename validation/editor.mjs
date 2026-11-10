@@ -100,6 +100,27 @@ try {
         const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
         return rect.width > 0 && rect.height > 0 && hit && element.contains(hit);
       }, target);
+      const visibleThroughBackdrop = await p.evaluate(target => {
+        const host = window.__plugin.host;
+        const before = host.findTarget(target);
+        const backdrop = document.querySelector('.ps-stub-backdrop');
+        backdrop.hidden = false;
+        host.revealTarget(target);
+        const rect = before.getBoundingClientRect();
+        const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
+        const intercepted = Boolean(document.elementFromPoint(x, y)?.closest('[data-ps-plugin]'));
+        const after = host.findTarget(target);
+        // A real editor-owned cover below the plugin must still occlude the target.
+        const cover = document.createElement('div');
+        Object.assign(cover.style, { position: 'fixed', left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px`, zIndex: '98', pointerEvents: 'auto' });
+        document.querySelector('.ps-editor').append(cover);
+        const covered = host.findTarget(target);
+        cover.remove();
+        const restored = host.findTarget(target) === before;
+        backdrop.hidden = true;
+        return { intercepted, same: after === before, blocked: covered === null, restored };
+      }, target);
+      assert.deepEqual(visibleThroughBackdrop, { intercepted: true, same: true, blocked: true, restored: true }, `${width}px ${target}: plugin backdrop ignored, editor cover respected`);
       if (width === 900 && target === 'clef') {
         assert.equal(await p.locator('.ps-inspector').evaluate(el => el.classList.contains('is-open')), true, 'reveal opens the medium drawer');
         await p.locator('[aria-label="Plugin input"]').focus();
@@ -137,7 +158,10 @@ try {
     await answerConfirm(p, true);
     // Use a real file input, which remounts EditorSession without replacing the outer demo.
     const unmounts = await p.evaluate(() => { window.__oldPluginHost = window.__plugin.host; return window.__plugin.unmounts; });
-    if (width <= 760) await p.click('.ps-phead-more');
+    if (width <= 760) {
+      await p.evaluate(() => window.__plugin.host.revealTarget('title'));
+      await p.click('.ps-phead-more');
+    }
     await p.setInputFiles('.ps-open-input', { name: 'opened.musicxml', mimeType: 'application/xml', buffer: Buffer.from(before) });
     await p.waitForFunction(n => window.__plugin.unmounts === n + 1 && window.__plugin.active === 1, unmounts);
     assert.equal(await p.evaluate(() => window.__plugin.host.origin), 'opened');
