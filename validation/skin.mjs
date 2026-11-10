@@ -681,7 +681,7 @@ async function assertLegacyPhoneChrome(browser, server) {
       const html = await server.transformIndexHtml('/pitch-host', `<!doctype html><div id="root"></div><script type="module">
       import React from 'react';import {createRoot} from 'react-dom/client';import {PepperScore,CRF_PITCH_COLOURS} from 'pepperscore';import 'pepperscore/style.css';
       const root=createRoot(document.getElementById('root'));let palette=CRF_PITCH_COLOURS,settings={};window.pitchHandle=React.createRef();
-      const abc='X:1\\nT:Pitch colours\\nM:4/4\\nL:1/4\\nK:C\\n[CE] ^C _D D ^D E F ^F G ^G A ^A B | '+Array(100).fill('[CE] D E F |').join(' ');
+      const abc='X:1\\nT:Pitch colours\\nM:4/4\\nL:1/4\\nK:C\\n[CE] ^C _D =D | ^D E F ^F | G ^G A ^A | B4 | '+Array(100).fill('[CE] D E F |').join(' ');
       window.pitchRender=(patch={})=>{if('palette' in patch)palette=patch.palette;if(patch.settings)settings=patch.settings;root.render(React.createElement(PepperScore,{ref:window.pitchHandle,abc,skin:{pitchColours:palette,bar:['pitchColours','options','transpose']},settings,persist:'pitch-acceptance',height:'650px'}));};window.pitchRender();
       </script>`);res.setHeader('Content-Type','text/html');res.end(html);
     });
