@@ -17,6 +17,12 @@ const load = (name: string) => parseAbc(fixtures[`./__fixtures__/abc/${name}.abc
 const abc = (body: string, header = 'K:C') => parseAbc(`X:1\nM:4/4\nL:1/4\n${header}\n${body}`);
 
 describe('ABC engraving fidelity', () => {
+  it.each(['Bass', 'Acoustic Bass', 'Electric Bass', 'Bass Guitar', 'Ukulele', 'Tenor Ukulele'])('imports the named sound for %s without a MIDI program', async name => {
+    const score = await abc('CDEF |', `V:1 name="${name}"\nK:C`);
+    expect(score.parts[0].instrument).toBe(name.includes('Ukulele') ? 'guitar' : 'bassguitar');
+    expect(score.parts[0].gmProgram).toBeUndefined();
+  });
+
   it('preserves explicit signs, carried alterations and bar resets', async () => {
     const score = await load('g-accidentals');
     const [a, b] = score.parts[0].measures;

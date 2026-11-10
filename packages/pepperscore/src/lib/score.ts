@@ -108,8 +108,10 @@ export function noteName(p: Pitch): string { return `${p.step}${p.alter === 1 ? 
 export function instrumentForName(name: string): InstrumentId {
   const n = name.toLowerCase();
   if (/drum|percussion/.test(n)) return 'drum-kit';
-  if (/bass guitar|bassguitar|electric bass/.test(n)) return 'bassguitar';
-  if (/double bass|contrabass|acoustic bass|upright bass|\bbass\b/.test(n)) return 'double-bass';
+  if (/\b(?:voice|vocal|choir|singer|satb)\b/.test(n)) return 'microphone';
+  if (/\b(?:ukulele|ukelele)\b/.test(n)) return 'guitar';
+  if (/\b(?:double[ -]?bass|contrabass|upright bass|string bass)\b/.test(n)) return 'double-bass';
+  if (/\b(?:bass[ -]?guitar|(?:electric|acoustic|fretless)[ -]+bass|e-bass)\b/.test(n) || /^bass$/.test(n.trim())) return 'bassguitar';
   if (/guitar/.test(n)) return 'guitar';
   if (/baritone sax|bari sax/.test(n)) return 'bari-saxophone';
   if (/tenor sax/.test(n)) return 'tenor-saxophone';

@@ -26,13 +26,14 @@ export function withTabSettings(score: Score, instruments?: TabInstruments, tuni
 }
 
 const namedFretted = (name: string): TabInstrument | undefined => {
+  if (/\b(?:voice|vocal|choir|singer|satb)\b/i.test(name)) return;
   if (/\b(?:ukulele|ukelele)\b/i.test(name)) {
     if (/\bbaritone\b/i.test(name)) return 'ukulele-baritone';
     if (/\bbass\b/i.test(name)) return 'ukulele-bass';
     return /\btenor\b/i.test(name) ? 'ukulele-tenor' : 'ukulele-soprano';
   }
-  if (/\b(?:double[ -]?bass|contrabass|upright bass)\b/i.test(name)) return 'double-bass';
-  if (/\b(?:bass[ -]?guitar|(?:electric|acoustic|fretless)[ -]+bass|e-bass)\b/i.test(name)) return 'bass4';
+  if (/\b(?:double[ -]?bass|contrabass|upright bass|string bass)\b/i.test(name)) return 'double-bass';
+  if (/\b(?:bass[ -]?guitar|(?:electric|acoustic|fretless)[ -]+bass|e-bass)\b/i.test(name) || /^bass$/i.test(name.trim())) return 'bass4';
   if (/\bguitar\b/i.test(name)) return 'guitar';
 };
 
