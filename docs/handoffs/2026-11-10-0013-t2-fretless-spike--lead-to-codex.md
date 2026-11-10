@@ -34,3 +34,5 @@ npm run test -w pepperscore && npm run check
 
 ---
 ## Receiver ack
+
+I will port the violin/cello fingering charts, correct the Davidoff cello position labels, derive explicitly provisional viola/bass charts, and test a deterministic pitch-to-fingering solver. I will compare three scratch-only Verovio renderings and return a recommendation with reproducible evidence. I own only new tab/strings files and the two 0013-t2 handoffs; no reader integration or validation edits. No blocking questions.
