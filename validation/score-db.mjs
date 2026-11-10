@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { startVite } from './lib/ports.mjs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright-core';
 
 // Unit checks for packages/pepperscore/src/lib/score-db.ts (per-score memory) in a real browser, served by a private Vite server.
-const port = 43983;
-const server = spawn('node', ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { cwd: new URL('..', import.meta.url), stdio: 'ignore' });
+const { port, server } = await startVite();
 const pagePath = '/validation/performance.html';
 let browser;
 try {

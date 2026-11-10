@@ -4,14 +4,13 @@
 // own tempo map. Clock mode maps a time to the score through playbackPositionAt at the score's own tempo, so each onset
 // must also land on its note.
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { startVite } from './lib/ports.mjs';
 import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright-core';
 
 const fixture = readFileSync(new URL('./fixtures/clock-contract.musicxml', import.meta.url), 'utf8');
 const expected = JSON.parse(readFileSync(new URL('./fixtures/clock-contract.expected.json', import.meta.url), 'utf8'));
-const port = 43986;
-const server = spawn('node', ['node_modules/vite/bin/vite.js', '--host', '0.0.0.0', '--port', String(port), '--strictPort'], { cwd: new URL('..', import.meta.url), stdio: 'ignore' });
+const { port, server } = await startVite();
 let browser;
 try {
   for (let attempt = 0; attempt < 100; attempt++) {

@@ -7,7 +7,7 @@
 // piano scores, flips the engraving, lists the guitar once, follows transposition, persists per score and sits in the
 // More panel on a phone. BROWSER=chromium|firefox|webkit for part 2 (part 1 always runs on Chromium).
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { startVite } from './lib/ports.mjs';
 import { readFileSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium, firefox, webkit } from 'playwright-core';
@@ -28,8 +28,7 @@ const launcher = { chromium, firefox, webkit }[engine];
 if (!launcher) throw new Error(`BROWSER must be chromium, firefox or webkit (got "${engine}")`);
 
 // --- Part 1: the pipeline -------------------------------------------------------------------------------------------
-const port = 43993;
-const vite = spawn('node', ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { cwd: new URL('..', import.meta.url), stdio: 'ignore' });
+const { port, server: vite } = await startVite();
 let browser;
 try {
   let baseUrl;

@@ -7,7 +7,7 @@
 // equal the engraved spelling, percussion keeps no key signature and never moves, chord symbols are respelled, and
 // a chunked engraving shows the same keys and spellings across chunk boundaries. Playback pitches never depend on the flip.
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { startVite } from './lib/ports.mjs';
 import { readFileSync, readdirSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright-core';
@@ -134,8 +134,7 @@ const minorToMajorMei = `<?xml version="1.0" encoding="UTF-8"?><mei xmlns="http:
   + `<scoreDef key.sig="1s"/><measure n="2"><staff n="1"><layer n="1"><note xml:id="m5" dur="4" pname="g" oct="4"/><note xml:id="m6" dur="4" pname="e" oct="4" accid="f" accid.ges="f"/><note xml:id="m7" dur="4" pname="d" oct="4"/><note xml:id="m8" dur="4" pname="g" oct="4"/></layer></staff></measure></section></score></mdiv></body></music></mei>`;
 
 // --- Run in a page served by a private Vite server (as validation/document.mjs) -------------------------------
-const port = 43991;
-const server = spawn('node', ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { cwd: new URL('..', import.meta.url), stdio: 'ignore' });
+const { port, server } = await startVite();
 let browser;
 try {
   let baseUrl;
