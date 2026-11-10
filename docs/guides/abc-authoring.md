@@ -105,11 +105,13 @@ G, A, B, C | D4 |]
 ## Known limits (don't rely on these)
 - Lyrics, decorations, tuplet engraving, multi-tune files: outside the parity guarantee.
 - `score=` on `V:` is ignored.
+- **Octave clefs currently draw an octave high** (e.g. `clef=treble-8`: `G,` sounds G3 correctly but is drawn at the G4-above-the-staff position, and generated TAB is an octave high). Being fixed in ledger 0012. Until then, avoid `treble-8` in ABC; for guitar use MusicXML at sounding pitch with `<clef-octave-change>-1` and no `<transpose>`.
 - `M:`, `L:`, `Q:`, `C:` before `X:` are ignored (ABC 2.1 file-header defaults aren't applied).
 - Saved per-part reader settings reset for piano ABC scores first shown before 2026-11-10 (grand-staff regrouping).
 
 ## Change log
 <!-- Newest first: YYYY-MM-DD — ledger item / PR — what changed for ABC authors -->
+- 2026-11-10 — known limit added (scale-to-song report) — octave clefs draw an octave high; fix tracked as 0012.
 - 2026-11-10 — 0008 / PR #67 — `V:` lines before `X:` now keep clef, name and transposition as defaults (tune-header `V:` overrides per property); `%%score`/`%%staves` grouping is kept.
 - 2026-11-10 — 0007 / PR #64 — the npm package README now carries the full ABC authoring rules and templates (no behaviour change).
 - 2026-11-10 — guide correction (found by 0007) — `%%score` must precede the `V:` lines it groups (the earlier piano template didn't group); octave-clef notes are written at sounding pitch (guitar template now `G, A, B, C`); tenor sax is -14. No code change.

@@ -2,11 +2,11 @@
 
 - **Date:** 2026-11-10
 - **Type:** dispatch (an issue report for the lead to triage into the ledger)
-- **Ledger:** none yet (`adhoc`). The lead should assign an ID if it takes this on.
+- **Ledger:** 0012 (octave-clef display: #1, #2, #4) and 0013 (stringed-instrument TAB: #6–#8)
 - **Spec / plan:** none yet. This document is the problem statement.
 - **Branch / worktree / PR:** none
 - **Base commit:** `4b57e63` (main)
-- **Status:** open
+- **Status:** acked
 - **Follows:** `docs/handoffs/2026-11-09-adhoc-abc-import-fidelity--scale-to-song-to-lead.md`. Everything in that report re-tested OK on 2026-11-10 (main `1a903eb`), **except** the octave-clef item, which is still wrong and is detailed here.
 
 ## Goal

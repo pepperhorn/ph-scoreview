@@ -5,7 +5,7 @@
 > Waiting on: `child <taskId>` · `review <taskId>` · `ci` · `human: <why>` · `lead: <next action>`. Set it on every status change. A row needs the lead when it starts with `lead`, or when it's empty and Status is dispatched, in-review, changes-requested, ready, or merged. The lead's Stop hook won't let the lead end its turn while any row needs it.
 > Type: normal items have a spec and plan. Quick items have the title prefix `[quick]` (no spec or plan, a short handoff). PRs adopted by `orch-sweep` have the prefix `[pr]`.
 
-Next ID: 0012
+Next ID: 0014
 
 ## Active
 
@@ -15,6 +15,8 @@ Next ID: 0012
 | 0002 | PDF export | in-review (t1) | review 0002-t1-review-r2 | codex/gpt-6.1-sol | orch/0002-t1-pdf-page-model | https://github.com/pepperhorn/ph-scoreview/pull/71 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-e3689cb4 | task `0002-t1-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0002-t1-impl-r1` | specs/0002-pdf-export.md | plans/0002-pdf-export.md | handoffs/2026-11-10-0002-t1-pdf-page-model--codex-to-lead.md (@70b782c) | 2026-11-10 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | in-review (t2; t1 merged #68) | review 0003-t2-review-r2 | codex/gpt-6.1-sol | orch/0003-t2-parts | https://github.com/pepperhorn/ph-scoreview/pull/69 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-561b6b7c | task `0003-t2-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0003-t2-impl-r1` | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-10-0003-t2-parts--codex-to-lead.md (@434e5e9) | 2026-11-10 |
 | 0011 | [quick] Validation harness reliability: ephemeral ports, load-aware timing gates (S12, S14) | dispatched | child 0011-impl-r1 | codex/gpt-6.1-sol | orch/0011-validation-harness |  |  | task `0011-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0011-impl-r1` |  |  | handoffs/2026-11-10-0011-validation-harness-reliability--lead-to-codex.md | 2026-11-10 |
+| 0012 | Octave-clef parts draw at the right octave (ABC + MusicXML) | dispatched | lead: delegate | codex/gpt-6.1-sol | orch/0012-octave-clef |  |  |  | specs/0012-octave-clef-display.md | plans/0012-octave-clef-display.md | handoffs/2026-11-10-0012-octave-clef--lead-to-codex.md | 2026-11-10 |
+| 0013 | TAB for stringed instruments | dispatched (t2 spike) | lead: delegate | codex/gpt-6.1-sol | orch/0013-t2-fretless-spike |  |  |  | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md | handoffs/2026-11-10-0013-t2-fretless-spike--lead-to-codex.md | 2026-11-10 |
 
 ## Done / closed
 
@@ -56,6 +58,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-10 0012, 0013 new→planned→dispatched — from scale-to-song octave-clef/TAB report; human: TAB for all stringed instruments (guitar, bass 4/5, ukulele ×4, violin family with finger+position), MusicXML pre-pass + upstream report, bass 4-string default, ukulele by name + host override. 0012 T1 and 0013 T2 spike dispatched; 0013 T1 waits on 0012 and 0001-t3
 2026-11-10 0003-t2 in-review — PR #69 conflicts with main only in its dispatch handoff (lead answers vs ack); implementer merging main (docs-only merge commit, review r2 continues on 434e5e9 code)
 2026-11-10 0002-t1 changes-requested→in-review — measurement fix pushed 70b782c; review r2
 2026-11-10 0003-t2 changes-requested→in-review — fixes pushed 434e5e9; review r2
