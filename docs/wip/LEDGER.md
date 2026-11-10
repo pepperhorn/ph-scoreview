@@ -11,7 +11,7 @@ Next ID: 0018
 
 | K | Title | Status | Waiting on | Owner (provider/model) | Branch | PR | Worktree | T3 task/thread | Spec | Plan | Latest handoff | Updated |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 0001 | Composable player skins | dispatched (t4; t1 #59, t2 #66, t3 #72 merged) | child 0001-t4-impl-r1 | codex/gpt-6.1-sol | orch/0001-t4-pitch-colours |  |  | task `0001-t4-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0001-t4-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-11-0001-t4-pitch-colours--lead-to-codex.md | 2026-11-10 |
+| 0001 | Composable player skins | in-review (t4; t1 #59, t2 #66, t3 #72 merged) | review 0001-t4-review-r1 | codex/gpt-6.1-sol | orch/0001-t4-pitch-colours | https://github.com/pepperhorn/ph-scoreview/pull/81 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-6e1573c8-388b2ff6de2075c9 | task `0001-t4-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0001-t4-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-11-0001-t4-pitch-colours--codex-to-lead.md (@96809a0) | 2026-11-10 |
 | 0002 | PDF export | planned (t3, t4; t1 #71, t2 #78 merged) | child 0001-t4-impl-r1 (T3 shares files); human: merge T3/T4 on green | codex/gpt-6.1-sol |  |  |  |  | specs/0002-pdf-export.md | plans/0002-pdf-export.md |  | 2026-11-10 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | human: P1–P3 (editor distribution, private repo name, BeCreative licence) before T4 | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0013 | TAB for stringed instruments | planned (t3, t4; t1 #77, t2 #74 merged) | child 0002-t2 (T3 touches render paths incl. lib/pdf and render.ts; dispatch after #78 and 0001-T4 ordering) | codex/gpt-6.1-sol |  |  |  |  | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md |  | 2026-11-10 |
@@ -78,6 +78,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-11 0001-t4 dispatched→in-review — PR #81 @96809a0 (full validation green); review r1
 2026-11-11 0016 dispatched→in-review — PR #80 @df68cd0 (270 pkg tests, full validation green); review r1
 2026-11-11 — scale-to-song re-test: all cases pass on main 12f4bea; they display MusicXML; need an npm release. Human: merge 0002 T3/T4 on green; release 0.5.0 now; bare "Bass" = bass guitar. 0016 dispatched (names/ukulele sound/tuning warning); 0017 release after 0016; README TAB wording → 0013-T4
 2026-11-11 0002-t2 ready→merged — CI green on 7c40488, merged PR #78 (03d0ac7). 0001-t4 dispatched incl. 0002 AC8a PDF parity
