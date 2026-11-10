@@ -5,7 +5,7 @@
 - **Ledger:** 0014 (suggestion S20)
 - **Branch:** orch/0014-plugin-findtarget-overlay · **Worktree:** created by T3
 - **Base commit:** 08e0102 (0003 T3 merged as PR #76)
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 `findTarget` in `packages/pepperscore-editor/src/plugin/host.ts` (~line 33) uses a centre `elementFromPoint` check, so when a plugin draws its own overlay over the editor (e.g. a click-blocking spotlight backdrop for the tour), the hit lands on the overlay and `findTarget` returns null. Use `elementsFromPoint` and ignore hits inside `[data-ps-plugin]`, so a visible target under the plugin's own overlay is still found; anything else covering it (another editor element) still counts as hidden. Context: PR #76 review r2 (`gh pr view 76 --comments`).
