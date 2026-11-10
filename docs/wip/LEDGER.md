@@ -5,7 +5,7 @@
 > Waiting on: `child <taskId>` · `review <taskId>` · `ci` · `human: <why>` · `lead: <next action>`. Set it on every status change. A row needs the lead when it starts with `lead`, or when it's empty and Status is dispatched, in-review, changes-requested, ready, or merged. The lead's Stop hook won't let the lead end its turn while any row needs it.
 > Type: normal items have a spec and plan. Quick items have the title prefix `[quick]` (no spec or plan, a short handoff). PRs adopted by `orch-sweep` have the prefix `[pr]`.
 
-Next ID: 0015
+Next ID: 0016
 
 ## Active
 
@@ -15,6 +15,7 @@ Next ID: 0015
 | 0002 | PDF export | changes-requested (t2; t1 merged #71) | child 0002-t2-impl-r1-fix2 | codex/gpt-6.1-sol | orch/0002-t2-pdf-composition | https://github.com/pepperhorn/ph-scoreview/pull/78 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-4829b32d-6df260c4995f3118 | task `0002-t2-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0002-t2-impl-r1` | specs/0002-pdf-export.md | plans/0002-pdf-export.md | handoffs/2026-11-10-0002-t2-pdf-composition--codex-to-lead.md (@6bac927) | 2026-11-10 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | human: P1–P3 (editor distribution, private repo name, BeCreative licence) before T4 | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0013 | TAB for stringed instruments | in-review (t1; t2 spike #74 merged) | review 0013-t1-review-r3 | codex/gpt-6.1-sol | orch/0013-t1-string-instruments | https://github.com/pepperhorn/ph-scoreview/pull/77 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-5fdad52b-93573c8f57e66b60 | task `0013-t1-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0013-t1-impl-r1` | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md | handoffs/2026-11-10-0013-t1-string-instruments--codex-to-lead.md (@5bf0068) | 2026-11-10 |
+| 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
 
 ## Done / closed
 
@@ -71,6 +72,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-11 0015 new→specced (draft) — PDF overlay templates; human: shared typesafe PepperHorn stamp schema v1 first, anchor-to-edge paper fit, all zone types incl. watermark and licence marks; handoff to pepperhorn-platform lead (copied into its docs/handoffs, not committed there)
 2026-11-11 0014 ready→closed — CI green on 3eef105, merged PR #79
 2026-11-11 0002-t2 in-review→changes-requested — r2: notation size, ♯/♭, font/centring, shared lanes fixed; outline stroke ~10× too thick (svg2pdf doesn't scale stroke width); last fix round; S21 logged
 2026-11-11 0013-t1 changes-requested→in-review — switch-target fix pushed 5bf0068; review r3 (last)

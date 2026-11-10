@@ -1,6 +1,6 @@
 # 0015 — PDF overlay templates (stamping)
 
-- **Status:** draft (open questions below)
+- **Status:** draft — blocked on the shared schema (pepperhorn-platform)
 - **Ledger:** 0015 · **Plan:** (after approval)
 - **Author:** lead · **Date:** 2026-11-11
 
@@ -60,7 +60,7 @@ Server-side stamping; editing templates inside PepperScore (StampUI stays the ed
 ## Decisions so far (human, 2026-11-11)
 - **Paper fit:** anchor each zone to its nearest edge(s)/corner, keeping its size and distance from those edges; a per-zone `anchor` overrides.
 - **v1 zone types:** text, rotated_text, logo, QR (with centre logo), watermark (new), and the licence marks (DMRE, MicroPDF417, DataMatrix; bwip-js lazy-loaded with the PDF code).
-- **Format:** pending — human asked to improve PepperHorn's schema first (see "Proposed PepperHorn schema improvements").
+- **Format:** PepperHorn stamp template **v1** — a shared, typesafe schema (Zod 4 → TS types + runtime validation + published JSON Schema) defined in pepperhorn-platform, adopted by stamp-pdf/StampUI, and consumed by PepperScore. Handoff: `../handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md`. PepperScore implementation waits for that package.
 
 ## Proposed PepperHorn schema improvements (from the stamp-pdf review)
 1. **No schema, types or version** — `stamp_manifest.overlays` is an unvalidated JSON column (`lib/overlays.js:301`). Add a JSON Schema + `schemaVersion`, validate in StampUI on save and in the service on stamp.
