@@ -80,6 +80,8 @@ export function assignFrets(events: FretEvent[], options: FretOptions = {}): Fre
   /** Open pitch per string index from the top (0 = string 1, the highest). */
   const openTop = new Int32Array(nStr);
   for (let t = 0; t < nStr; t++) openTop[t] = tuning[tuning.length - 1 - t] + capo;
+  // Re-entrant strings retain physical course numbers; pitch order cannot constrain their assignment.
+  const reentrant = openTop.some((pitch, i) => i > 0 && pitch > openTop[i - 1]);
   const positions = Math.max(1, frets);           // hand positions 1..positions
   const P = positions + 1;
 
@@ -111,7 +113,7 @@ export function assignFrets(events: FretEvent[], options: FretOptions = {}): Fre
         posLo = Math.max(1, maxF - HAND); posHi = Math.max(1, minF);
         if (posLo > posHi) posLo = posHi = Math.max(1, minF); // a stretch beyond the hand: anchor on the lowest fret
       }
-      const skipped = n > 1 ? (str[n - 1] - str[0] + 1) - n : 0;
+      const skipped = n > 1 ? ((reentrant ? Math.max(...str) - Math.min(...str) : str[n - 1] - str[0]) + 1) - n : 0;
       const cost = W_OPEN * opens + W_BODY * Math.max(0, maxF - 12) ** 2 + W_STRETCH * span ** 1.5 + W_SKIP * skipped + W_HIGH_STR * sumT;
       const rank = cost + W_HEIGHT * posLo;
       // Insert sorted by rank (stable), keep the cheapest MAX_SHAPES.
@@ -122,13 +124,13 @@ export function assignFrets(events: FretEvent[], options: FretOptions = {}): Fre
       out.splice(i, 0, shape);
       if (out.length > MAX_SHAPES) out.pop();
     };
-    const dfs = (j: number, fromT: number, minF: number, maxF: number) => {
+    const dfs = (j: number, fromT: number, minF: number, maxF: number, used = mask) => {
       if (j === n) { push(); return; }
       const p = pitches[j];
-      const lastT = nStr - (n - j);               // leave room for the remaining notes
-      for (let t = fromT; t <= lastT; t++) {
+      const lastT = reentrant ? nStr - 1 : nStr - (n - j);               // leave room for the remaining notes
+      for (let t = reentrant ? 0 : fromT; t <= lastT; t++) {
         if (fixedT[j] >= 0 && t !== fixedT[j]) continue;
-        if (mask & (1 << t)) continue;
+        if (used & (1 << t)) continue;
         const f = p - openTop[t];
         if (f < 0 || f > frets) continue;
         if (fixedFret[j] >= 0 && f !== fixedFret[j]) continue;
@@ -138,7 +140,7 @@ export function assignFrets(events: FretEvent[], options: FretOptions = {}): Fre
           if (hi - lo > (lo >= 7 ? 5 : 4)) continue;
         }
         str[j] = t; fr[j] = f;
-        dfs(j + 1, t + 1, lo, hi);
+        dfs(j + 1, t + 1, lo, hi, used | (1 << t));
       }
     };
     dfs(0, 0, 99, -1);

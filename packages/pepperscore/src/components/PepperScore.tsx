@@ -39,6 +39,8 @@ import type { ExternalClock } from '../lib/clock';
 import type { Shift } from '../lib/range-fit-core';
 import { measureSeekSeconds, noteSeekSeconds } from '../lib/playback/clock-time';
 import { nearestNote, noteInBox } from '../lib/hit-test';
+import { withTabSettings } from '../lib/tab/string-instruments';
+import { validTabTuning, STANDARD_TAB_TUNING } from '../lib/prefs';
 import { canShowTab, hiddenReaderParts, type TabView } from '../lib/tab/tab-parts';
 import { sourcePartOf, switchablePart, withPickedSound, type PartSwitch } from '../lib/instrument-view';
 import { EMBED_INSTRUMENTS, type InstrumentId, type RangeLevel } from '../lib/instrument-model';
@@ -489,7 +491,10 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   // The instrument switch runs last (a later scoreForView would drop it); the result carries its own pitches, so the
   // renderer never re-views it.
   const instrumentView = useMemo(() => switchedView(viewedScore, partSwitches, scorePitch), [viewedScore, partSwitches, scorePitch]);
-  const displayScore = instrumentView.score;
+  const tabInstrumentsKey = JSON.stringify(settings?.tabInstruments);
+  const explicitTabTuning = validTabTuning(settings?.tabTuning) || prefs.tabTuning.join() !== STANDARD_TAB_TUNING.join();
+  const displayScore = useMemo(() => withTabSettings(instrumentView.score, settings?.tabInstruments,
+    explicitTabTuning ? prefs.tabTuning : undefined), [instrumentView.score, tabInstrumentsKey, tabTuningKey, explicitTabTuning]);
   /** The Notation / TAB / Both switch only shows when a stave of the score as shown (switched) can take TAB. */
   const tabAvailable = useMemo(() => canShowTab(displayScore), [displayScore]);
   const switchKey = JSON.stringify(partSwitches);
@@ -1133,7 +1138,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     const delay = !quiet && !newSource && hasPaintedRef.current && !window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 260 : 0;
     timer = window.setTimeout(() => void draw(), delay);
     return () => { disposed = true; window.clearTimeout(timer); cancelAnimationFrame(frame); };
-  }, [ready, resizeTick, scoreRevision, chrome.partControls, renderHiddenIds, switchKey, prefs.mode, prefs.notationFont, prefs.annotationFont, prefs.names, prefs.chordSymbols, prefs.inferChordSymbols, prefs.counts, prefs.subdivisions, prefs.namesSize, prefs.chordSymbolsSize, prefs.countsSize, prefs.subdivisionsSize, prefs.barsPerLine, prefs.zoom, prefs.semitones, prefs.keyFlip, scorePitch, prefs.tabView, tabTuningKey, prefs.capo]);
+  }, [ready, resizeTick, scoreRevision, chrome.partControls, renderHiddenIds, switchKey, prefs.mode, prefs.notationFont, prefs.annotationFont, prefs.names, prefs.chordSymbols, prefs.inferChordSymbols, prefs.counts, prefs.subdivisions, prefs.namesSize, prefs.chordSymbolsSize, prefs.countsSize, prefs.subdivisionsSize, prefs.barsPerLine, prefs.zoom, prefs.semitones, prefs.keyFlip, scorePitch, prefs.tabView, tabTuningKey, tabInstrumentsKey, explicitTabTuning, prefs.capo]);
 
   /** Each rendered system's top and bottom in the viewport's scroll coordinates (score title included). */
   const systemSpans = (): SystemSpan[] => {

@@ -4,7 +4,7 @@
 // guitar score gets one generated tabGrp per note or chord, transposing replaces imported TAB with regenerated frets,
 // chord symbols survive the TAB-only view, chunked engraving keeps fingerings, and settings survive a saved record.
 // Part 2 drives the built demo reader (apps/reader/dist; run `npm run build` first): the switch shows for guitar and
-// piano scores, flips the engraving, lists the guitar once, follows transposition, persists per score and sits in the
+// hides for piano scores, flips the engraving, lists the guitar once, follows transposition, persists per score and sits in the
 // More panel on a phone. BROWSER=chromium|firefox|webkit for part 2 (part 1 always runs on Chromium).
 import assert from 'node:assert/strict';
 import { startVite } from './lib/ports.mjs';
@@ -62,7 +62,7 @@ try {
   }
   assert.equal((await call('parts', NOTATION)).parts.every(part => !part.tab), true, 'A notation-only score has no TAB parts');
   assert.equal(notation.canShowTab, true, 'A guitar score can show TAB');
-  assert.equal((await call('parts', ENSEMBLE)).canShowTab, true, 'A piano score can show TAB (its first pitched part)');
+  assert.equal((await call('parts', ENSEMBLE)).canShowTab, false, 'A piano score has no TAB option');
   assert.equal((await call('parts', DRUMS)).canShowTab, false, 'A drums-only score cannot show TAB');
   console.log(`TAB: an imported TAB staff or part is flagged, linked to its notation part and performed once (${notation.timelineNotes} notes) passed`);
 
@@ -141,11 +141,37 @@ try {
   assert.ok(chunked.chunks.tabNotes.length - generated.tab.tabNotes.length <= 1, 'Only the tied note at a chunk start is extra');
   console.log('TAB: chunked engraving keeps fingerings across chunks passed');
 
-  // 7. Piano score: the first pitched part's top staff takes TAB.
+  // 7. Non-string scores never get generated TAB.
   const piano = await call('engraveTab', ENSEMBLE, { view: 'both' });
-  assert.equal(piano.generate.length, 1, `Piano: one staff takes TAB (${piano.generate})`);
-  assert.ok(piano.staves.includes(String(100 + Number(piano.generate[0]))) && piano.tabGroups > 0, 'Piano: its TAB staff is drawn');
-  console.log('TAB: a piano score gets TAB on its first pitched part passed');
+  assert.deepEqual(piano.generate, []);
+  assert.equal(piano.tabGroups, 0);
+  const report = name => readFileSync(new URL('../docs/handoffs/assets/2026-11-10-octave-clef-tab/cases/' + name, import.meta.url), 'utf8');
+  const bassTuning = [28, 33, 38, 43];
+  const bass = await call('engraveTab', report('h-bass-sounding.musicxml'), { view: 'both' });
+  assert.equal(bass.staffLines['101'], 4, 'Bass defaults to four strings');
+  assert.equal(bass.drawnLines['101'], 4, 'Four bass lines are engraved');
+  assert.deepEqual(bass.tabNotes.map(note => pitchOf(note, bassTuning)),
+    [36,40,43,45,31,35,38,41], 'Bass notes retain sounding pitch');
+  for (const name of ['e-guitar.abc', 'e-guitar.musicxml', 'e2-guitar-sounding.musicxml']) {
+    const data = report(name);
+    const source = name.endsWith('.abc') ? { abc: data } : data;
+    for (const switches of [undefined, ...(name.endsWith('.abc') ? [{ 0: { instrument: 'guitar', level: 'advanced', autoRange: false, octaves: {} } }] : [])]) {
+      const guitar = await call('engraveTab', source, { view: 'both', switches });
+      assert.deepEqual(guitar.tabNotes.slice(0, 8).map(note => note.fret), [0,2,0,5,3,0,2,3], name + ': octave-clef run frets preserved');
+    }
+  }
+  for (const [name, strings] of [['Ukulele',4], ['Tenor Ukulele',4], ['Baritone Ukulele',4], ['Bass Ukulele',4]]) {
+    const xml = NOTATION.replaceAll('Guitar', name);
+    const result = await call('engraveTab', xml, { view: 'both' });
+    assert.equal(result.staffLines['101'], strings, name + ': staff count');
+    assert.equal(result.drawnLines['101'], strings, name + ': drawn lines');
+  }
+  for (const name of ['a-piano-grand.abc', 'c-cello.abc']) {
+    const abc = readFileSync(new URL('../docs/handoffs/assets/2026-11-09-abc-import-spike/cases/' + name, import.meta.url), 'utf8');
+    assert.equal((await call('parts', { abc })).canShowTab, false, name + ': no TAB option');
+    assert.equal((await call('engraveTab', { abc }, { view: 'both' })).tabGroups, 0, name + ': no generated TAB');
+  }
+  console.log('TAB: non-string exclusion, bass and ukulele defaults, octave-clef regressions passed');
 
   // 8. Settings: host settings map to prefs, survive a saved per-score record, and bad or missing values get defaults.
   const round = await call('settingsRoundTrip', { tabView: 'both', tabTuning: dropD, capo: 3, bpm: 120.4, keyFlip: true }, NOTATION);
@@ -312,14 +338,9 @@ try {
   const choose = view => page.locator(`.tab-view-toggle-header .tab-view-toggle-${view}`).click();
   await page.goto(server.url);
   await page.waitForSelector('.score-system svg', { timeout: 60000 });
-  // The built-in sample is a piano score: the switch shows, and TAB view draws its top staff as TAB.
-  assert.equal(await page.locator('.tab-view-toggle-header').count(), 1, 'The switch shows for a piano score');
-  assert.equal(await page.locator('.tab-view-toggle-header').getAttribute('role'), 'group');
-  await choose('tab');
-  await settled(state => state.tabGroups > 0 && state.staves.every(n => Number(n) > 100), 'Piano TAB view');
-  await choose('notation');
-  await settled(state => state.tabGroups === 0, 'Piano notation view');
-
+  // The built-in sample is piano: no TAB option or generated staff.
+  assert.equal(await page.locator('.tab-view-toggle-header').count(), 0, 'Piano has no TAB toggle');
+  assert.equal((await drawn()).tabGroups, 0);
   const open = async name => {
     await page.setInputFiles('input[type=file]', fixturePath(name));
     await page.waitForFunction(title => document.querySelector('.pepperscore')?.getAttribute('aria-label')?.includes(title), name === 'guitar-notation.musicxml' ? 'Guitar notation' : 'TAB staves', { timeout: 30000 });
@@ -377,6 +398,8 @@ try {
   mobile.on('pageerror', error => errors.push(error.message));
   await mobile.goto(server.url);
   await mobile.waitForSelector('.score-system svg', { timeout: 60000 });
+  await mobile.setInputFiles('input[type=file]', fixturePath('guitar-notation.musicxml'));
+  await mobile.waitForSelector('.tab-view-toggle-header', { state: 'attached' });
   assert.equal(await mobile.locator('.tab-view-toggle-header').isVisible(), false, 'Phone: the switch is in the More panel');
   await mobile.locator('.header-more-toggle').click();
   await mobile.locator('.tab-view-toggle-header .tab-view-toggle-both').click();
@@ -391,6 +414,8 @@ try {
   mid.on('pageerror', error => errors.push(error.message));
   await mid.goto(server.url);
   await mid.waitForSelector('.score-system svg', { timeout: 60000 });
+  await mid.setInputFiles('input[type=file]', fixturePath('guitar-notation.musicxml'));
+  await mid.waitForSelector('.tab-view-toggle-drawer', { state: 'attached' });
   assert.equal(await mid.locator('.tab-view-toggle-header').isVisible(), false, 'Mid width: no switch in the header');
   assert.equal(await mid.evaluate(() => document.querySelector('.topbar').scrollWidth <= document.querySelector('.topbar').clientWidth), true, 'Mid width: the header fits');
   await mid.locator('.drawer-handle').click();

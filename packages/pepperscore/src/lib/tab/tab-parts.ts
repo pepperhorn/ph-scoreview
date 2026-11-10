@@ -6,6 +6,8 @@
 import type { Measure, Part, Pitch, Score, ScoreNote } from '../score';
 import type { TabSpec } from '../notation/mei-tab';
 import type { PartState } from '../file-state';
+import { instrumentFor, STRING_INSTRUMENTS, type TabScore } from './string-instruments';
+import { STANDARD_TUNING } from './fret-assign';
 
 export type TabView = 'notation' | 'tab' | 'both';
 /** A generated TAB staff's number: 100 + its notation staff's number. */
@@ -61,17 +63,19 @@ const switchedParts = (score: Score) => new Set(Object.entries(score.instrumentV
 const staleTabOf = (score: Score) => new Set(Object.keys(score.instrumentView?.staves ?? {}));
 
 /**
- * Notation parts that take TAB: every guitar part (and every part an imported TAB doubles), else the first pitched
- * part. A part switched to another instrument (instrument-view.ts) takes TAB only if its new instrument is a guitar
- * (its name and its imported TAB no longer count).
+ * Fretted notation parts take generated TAB. Authored imported TAB remains usable; there is no pitched-part fallback.
+ * Instrument switches use the new instrument identity instead of the original name.
  */
 export function tabParts(score: Score): Part[] {
   const switched = switchedParts(score);
   const doubled = new Set(score.parts.flatMap(part => part.tabOf ? [part.tabOf] : []));
-  const guitars = score.parts.filter(part => !part.tab && (switched.has(part.id) ? part.clef !== 'percussion' && guitarSound(part) : isGuitarPart(part) || doubled.has(part.id)));
-  if (guitars.length) return guitars;
-  const first = score.parts.find(part => pitched(part) && !switched.has(part.id));
-  return first ? [first] : [];
+  return score.parts.filter(part => {
+    const instrument = instrumentFor(score, part, switched.has(part.id));
+    // Retain explicitly authored imported TAB, but never invent TAB for a non-string part.
+    return !part.tab && part.clef !== 'percussion' && (instrument
+      ? STRING_INSTRUMENTS[instrument].kind === 'fretted'
+      : !switched.has(part.id) && doubled.has(part.id) && (score as TabScore).tabSettings?.instruments?.[part.id] !== 'none');
+  });
 }
 /** Whether the Notation / TAB / Both switch has anything to switch. */
 export const canShowTab = (score: Score) => tabParts(score).length > 0;
@@ -117,6 +121,7 @@ export function planTab(score: Score, staffOf: Map<string, string>, view: TabVie
   // A doubling TAB staff shows only for its partner in a TAB view (and not when hidden with its partner).
   const used = new Set<Part>();
   const generate: string[] = [];
+  const tunings: Record<string, number[]> = {};
   const retarget: Record<string, string> = {};
   // Switched or octave-moved parts: their imported TAB and the fingerings on their notes are stale.
   const stale = staleTabOf(score);
@@ -125,6 +130,11 @@ export function planTab(score: Score, staffOf: Map<string, string>, view: TabVie
     for (const part of tabParts(score)) {
       const n = staffOf.get(part.id);
       if (!n || hiddenIds.has(part.id)) continue;
+      const instrument = instrumentFor(score, part, switchedParts(score).has(part.id));
+      const configured = (score as TabScore).tabSettings;
+      // A supplied global tuning applies to every generated part. Legacy standard tuning means auto.
+      const explicit = configured?.tuning ?? (options.tuning.join() !== STANDARD_TUNING.join() ? options.tuning : undefined);
+      tunings[n] = explicit ?? (instrument ? [...STRING_INSTRUMENTS[instrument].tuning] : options.tuning);
       const partner = partnerOf.get(part.id);
       const partnerN = partner && staffOf.get(partner.id);
       let tabN: string;
@@ -148,7 +158,7 @@ export function planTab(score: Score, staffOf: Map<string, string>, view: TabVie
     if (n && generate.includes(n) && score.instrumentView?.staves[part.id]?.clef) switched[n] = (part.transposition?.semitones ?? 0) + (score.instrumentView?.staves[part.id]?.clef === 'treble8vb' ? 12 : 0);
   }
   if (generate.length || Object.keys(retarget).length || Object.keys(refret).length) {
-    plan.spec = { generate, retarget, tuning: options.tuning, capo: options.capo, fixed: !options.stale, ...(sounding.length ? { sounding } : {}), ...(Object.keys(switched).length ? { switched } : {}), ...(unfixed.length && !options.stale ? { unfixed } : {}), ...(Object.keys(refret).length ? { refret } : {}) };
+    plan.spec = { generate, retarget, tuning: options.tuning, tunings, capo: options.capo, fixed: !options.stale, ...(sounding.length ? { sounding } : {}), ...(Object.keys(switched).length ? { switched } : {}), ...(unfixed.length && !options.stale ? { unfixed } : {}), ...(Object.keys(refret).length ? { refret } : {}) };
   }
   return plan;
 }
