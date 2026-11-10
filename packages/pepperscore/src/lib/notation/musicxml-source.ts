@@ -1,3 +1,4 @@
+import { normalizeOctaveClefs } from './musicxml-octave-clef';
 import { gmProgramForNumber, gmProgramForVirtualName, instrumentForName, midiPitch, pitch, ucfirst, type MeasureNavigation, type Measure, type Part, type Score, type ScoreNote, type Transposition } from '../score';
 import { attachNavigation, musicXmlNavigationReader } from './navigation';
 import { linkTabParts } from '../tab/tab-parts';
@@ -278,6 +279,7 @@ export function readMusicXml(text: string): MusicXmlRead {
     source = converted.text;
     inventory = converted.inventory;
   }
+  source = normalizeOctaveClefs(source);
   try { return readPartwise(source, inventory); }
   catch (error) {
     if (!(error instanceof LateHeader)) throw error;

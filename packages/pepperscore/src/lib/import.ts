@@ -271,10 +271,6 @@ export async function parseAbc(text: string): Promise<Score> {
   const keyNumber = (signature: any) => (signature?.accidentals || []).reduce((n: number, a: any) => n + (a.acc === 'sharp' ? 1 : a.acc === 'flat' ? -1 : 0), 0);
   const keyMode = (signature: any): KeyMode => /^m(?:in)?$/i.test(signature?.mode || '') ? 'minor' : 'major';
   const abcClef = (clef: any): string => clef?.type === 'perc' ? 'percussion' : clef?.type === 'alto' && clef.clefPos === 8 ? 'tenor' : clef?.type || 'treble';
-  const clefTransposition = (clef: string): Transposition => {
-    const octaves = clef.endsWith('-8') ? -1 : clef.endsWith('+8') ? 1 : 0;
-    return { semitones: octaves * 12, diatonic: octaves * 7 };
-  };
   const key = keyNumber(tune.getKeySignature?.());
   const interval = (semitones: number): Transposition => {
     const n = Math.abs(semitones);
@@ -282,10 +278,8 @@ export async function parseAbc(text: string): Promise<Score> {
     const diatonic = Math.floor(n / 12) * 7 + [0, 1, 1, 2, 2, 3, 3, 4, 5, 5, 6, 6][n % 12];
     return { semitones, diatonic: Math.sign(semitones) * diatonic };
   };
-  const composed = (clef: string, semitones: number): Transposition => {
-    const octave = clefTransposition(clef), instrument = interval(semitones);
-    return { semitones: octave.semitones + instrument.semitones, diatonic: octave.diatonic! + instrument.diatonic! };
-  };
+  // Octave-clef ABC letters already carry sounding octaves. Only an explicit instrument interval moves them.
+  const composed = (_clef: string, semitones: number): Transposition => interval(semitones);
   const parts: Part[] = [];
   type AbcVoice = { part: Part; host: string; overlay: number; idPrefix: string; transpose?: number; explicitSound: boolean };
   const identities = new Map<string, AbcVoice>();
@@ -448,7 +442,7 @@ export async function parseAbc(text: string): Promise<Score> {
         const step = steps[((degree % 7) + 7) % 7];
         // abcjs pitch coordinates keep the source/sounding octave even under an octave clef.
         const sourceOctave = 4 + Math.floor(degree / 7);
-        const octave = sourceOctave - clefTransposition(activeClef).semitones / 12;
+        const octave = sourceOctave;
         const line = `${step}${sourceOctave}`;
         const tiedAlter = p.endTie ? openTies.get(line) : undefined;
         const explicit = ({ sharp: 1, flat: -1, natural: 0, dblsharp: 2, dblflat: -2 } as Record<string, number>)[p.accidental];
