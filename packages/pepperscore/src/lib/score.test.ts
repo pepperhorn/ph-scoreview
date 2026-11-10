@@ -5,11 +5,11 @@ import { canShowTab } from './tab/tab-parts';
 import { stringInstrument } from './tab/string-instruments';
 
 const cases = [
-  ...['Bass', 'Acoustic Bass', 'Electric Bass', 'Bass Guitar'].map(name => [name, 'bassguitar', 'bass4'] as const),
+  ...['Bass', 'Acoustic Bass', 'Electric Bass', 'Bass Guitar', 'Bass 1', 'Bass I', 'Synth Bass', 'Bass line', 'Jazz Bass', 'Bass (8vb)'].map(name => [name, 'bassguitar', 'bass4'] as const),
   ...['Double Bass', 'Contrabass', 'Upright Bass', 'String Bass'].map(name => [name, 'double-bass', 'double-bass'] as const),
   ...['Choir Bass', 'Bass voice', 'Vocal Bass', 'SATB Bass'].map(name => [name, 'microphone', undefined] as const),
   ['Bassoon', 'piano', undefined], ['Bass Clarinet', 'clarinet', undefined],
-  ['Bass Trombone', 'trombone', undefined], ['Bass Flute', 'flute', undefined],
+  ['Bass Trombone', 'trombone', undefined], ['Bass Saxophone', 'alto-saxophone', undefined], ['Bass Flute', 'flute', undefined],
   ...['Ukulele', 'Tenor Ukulele', 'Baritone Ukulele', 'Bass Ukulele'].map((name, i) =>
     [name, 'guitar', ['ukulele-soprano', 'ukulele-tenor', 'ukulele-baritone', 'ukulele-bass'][i]] as const),
 ] as const;

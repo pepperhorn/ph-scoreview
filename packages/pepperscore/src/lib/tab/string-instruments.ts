@@ -1,4 +1,4 @@
-import type { Part, Score } from '../score';
+import { instrumentForName, type Part, type Score } from '../score';
 
 /** TAB instrument identity is independent of the playback sound (ukuleles use nylon guitar). */
 export const STRING_INSTRUMENTS = {
@@ -33,8 +33,9 @@ const namedFretted = (name: string): TabInstrument | undefined => {
     return /\btenor\b/i.test(name) ? 'ukulele-tenor' : 'ukulele-soprano';
   }
   if (/\b(?:double[ -]?bass|contrabass|upright bass|string bass)\b/i.test(name)) return 'double-bass';
-  if (/\b(?:bass[ -]?guitar|(?:electric|acoustic|fretless)[ -]+bass|e-bass)\b/i.test(name) || /^bass$/i.test(name.trim())) return 'bass4';
+  if (/\b(?:bass[ -]?guitar|(?:electric|acoustic|fretless)[ -]+bass|e-bass)\b/i.test(name)) return 'bass4';
   if (/\bguitar\b/i.test(name)) return 'guitar';
+  if (/\bbass\b/i.test(name) && instrumentForName(name) === 'bassguitar') return 'bass4';
 };
 
 /** Switched target ids are exact; source programs gate name-based classification before a switch. */
@@ -65,6 +66,7 @@ export function stringInstrument(part: Part, override?: TabInstrument | 'none', 
     if (gm === 44) return 'double-bass';
     return;
   }
+  if (part.instrument === 'microphone') return;
   const fretted = namedFretted(name);
   if (fretted) return fretted;
   if (/\b(?:violin|fiddle)\b/i.test(name)) return 'violin';
@@ -75,4 +77,19 @@ export function stringInstrument(part: Part, override?: TabInstrument | 'none', 
 /** Overrides use the exact part id reported by onReady; unknown keys/values are ignored. */
 export function instrumentFor(score: TabScore, part: Part, switched = false) {
   return stringInstrument(part, score.tabSettings?.instruments?.[part.id], switched);
+}
+
+
+/** Resolve ambiguous vocal labels once all imported parts are known; explicit source programs always win. */
+export function resolveChoirNames(score: Score): Score {
+  const upperVoice = (name: string) => /^(?:soprano|alto|tenor|sop\.?|alt\.?|ten\.?|[sat])(?:\s+(?:[ivx]+|\d+))?$/i.test(name.trim());
+  const bassVoice = (name: string) => /^(?:bass|b)(?:\s+(?:[ivx]+|\d+))?$/i.test(name.trim());
+  if (!score.parts.some(part => upperVoice(part.name))) return score;
+  for (const part of score.parts) {
+    if (part.gmProgram !== undefined || part.tab || part.clef === 'percussion') continue;
+    if (upperVoice(part.name) || bassVoice(part.name)) {
+      part.instrument = 'microphone';
+    }
+  }
+  return score;
 }

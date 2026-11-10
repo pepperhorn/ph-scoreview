@@ -111,7 +111,7 @@ export function instrumentForName(name: string): InstrumentId {
   if (/\b(?:voice|vocal|choir|singer|satb)\b/.test(n)) return 'microphone';
   if (/\b(?:ukulele|ukelele)\b/.test(n)) return 'guitar';
   if (/\b(?:double[ -]?bass|contrabass|upright bass|string bass)\b/.test(n)) return 'double-bass';
-  if (/\b(?:bass[ -]?guitar|(?:electric|acoustic|fretless)[ -]+bass|e-bass)\b/.test(n) || /^bass$/.test(n.trim())) return 'bassguitar';
+  if (/\b(?:bass[ -]?guitar|(?:electric|acoustic|fretless)[ -]+bass|e-bass)\b/.test(n)) return 'bassguitar';
   if (/guitar/.test(n)) return 'guitar';
   if (/baritone sax|bari sax/.test(n)) return 'bari-saxophone';
   if (/tenor sax/.test(n)) return 'tenor-saxophone';
@@ -124,6 +124,7 @@ export function instrumentForName(name: string): InstrumentId {
   if (/viola/.test(n)) return 'viola';
   if (/cello/.test(n)) return 'cello';
   if (/voice|vocal|choir|singer/.test(n)) return 'microphone';
+  if (/\bbass\b/.test(n)) return 'bassguitar';
   return 'piano';
 }
 export function exampleScore(): Score {

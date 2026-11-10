@@ -8,6 +8,8 @@ import { extractMxlScore, formatMb, MAX_SCORE_FILE_BYTES } from './mxl';
 import type { ImportReply, ImportRequest } from './import-protocol';
 import { registerBaseTimeline, type BaseTimeline } from './playback/timeline';
 
+import { resolveChoirNames } from './tab/string-instruments';
+
 export { extractMxlScore, MAX_SCORE_FILE_BYTES, MXL_MAX_SCORE_BYTES } from './mxl';
 
 // DOM helpers for MEI, which is read on the main thread (MusicXML is read by the streaming reader, see below).
@@ -501,6 +503,7 @@ export async function parseAbc(text: string): Promise<Score> {
   });
   const minor = /^m(?:in)?$/i.test(String(tune.getKeySignature?.()?.mode || ''));
   const score = normalized({ ...(minor ? { keyMode: 'minor' as const } : {}), title: tune.metaText?.title || '', subtitle: tune.lines.find((line: any) => line.subtitle)?.subtitle?.text || '', composer: tune.metaText?.composer || '', source: 'ABC', tempo: Number(tune.metaText?.tempo?.bpm) || 100, beats, beatType, key, parts });
+  resolveChoirNames(score);
   attachNavigation(score, navigation);
   score.document = makeSourceDocument({ format: 'abc', engravingFormat: 'mei', originalText: text, engravingText: scoreToMei(score), identity: identityForScore(score) });
   return score;

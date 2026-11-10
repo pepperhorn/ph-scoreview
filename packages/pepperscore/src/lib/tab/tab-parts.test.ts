@@ -63,15 +63,31 @@ describe('custom tuning diagnostics', () => {
     expect(planTab(configured, staves, 'both', options).spec!.tunings!['1']).toEqual([28,33,38,43]);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('part "Bass" (b1)'));
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("settings.tabInstruments: { 'b1': 'bass5' }"));
+    planTab(configured, staves, 'tab', options);
+    planTab({ ...configured, parts: [{ ...bass }] }, staves, 'both', options);
+    expect(warn).toHaveBeenCalledTimes(1);
     warn.mockClear();
     expect(planTab(withTabSettings(configured, { b1: 'bass5' }, tuning), staves, 'both', options).spec!.tunings!['1']).toEqual(tuning);
     expect(warn).not.toHaveBeenCalled();
+  });
+  it('directs saved reader tunings to the reader and warns only once for that part', () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const saved = { ...source, parts: [{ ...bass, id: 'saved-bass' }] };
+    const staff = new Map([['saved-bass', '1']]);
+    planTab(saved, staff, 'both', { ...options, tuning });
+    planTab(saved, staff, 'tab', { ...options, tuning: [30,35,40,45,50,55] });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Reader saved tuning'));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('in the reader'));
+    expect(warn.mock.calls[0][0]).not.toContain('settings.tabInstruments');
   });
   it.each(['production', 'no-process'])('skips diagnostics safely in %s hosts', environment => {
     if (environment === 'production') vi.stubEnv('NODE_ENV', 'production');
     else vi.stubGlobal('process', undefined);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    expect(planTab(configured, staves, 'both', options).spec!.tunings!['1']).toEqual([28,33,38,43]);
+    const id = environment;
+    expect(planTab({ ...configured, parts: [{ ...bass, id }] }, new Map([[id, '1']]), 'both', options).spec!.tunings!['1']).toEqual([28,33,38,43]);
     expect(warn).not.toHaveBeenCalled();
   });
 });

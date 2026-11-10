@@ -8,11 +8,11 @@
 - **Worktree:** `/home/shaun/.t3/worktrees/ph-vexflow-view/t3-f4c5a8a8-bae6c18130633ca8`
 - **Base:** `e88ac67` (contains requested base `12f4bea`)
 - **Implementation commit:** `09c4025da9e4f28ebffb063c35bd8906312ccc28`
-- **PR:** draft PR on this branch (URL returned to lead after creation)
+- **PR:** https://github.com/pepperhorn/ph-scoreview/pull/80
 - **Status:** closed (implementation done; ready for lead review)
 
 ## Goal and scope
-Align name-only bass/ukulele playback and TAB detection, and explain ignored custom tuning counts in development. Owned changes: `lib/score.ts` (`instrumentForName` only), `lib/tab/string-instruments.ts`, `lib/tab/tab-parts.ts` (diagnostic only), tests in those areas and `lib/abc-import.test.ts`, and the two 0016 handoffs. No render, components, PDF, prefs/file-state, instrument model, dependencies or ledger changes.
+Align name-only bass/ukulele playback and TAB detection, and explain ignored custom tuning counts in development. Owned changes: `lib/score.ts` (`instrumentForName` only), `lib/tab/string-instruments.ts`, `lib/tab/tab-parts.ts` (diagnostic only), tests in those areas and `lib/abc-import.test.ts`, and the two 0016 handoffs. Review r1 scope additionally includes `lib/import.ts` and `lib/notation/musicxml-source.ts` for calling the score-level choir pass only, plus its import tests. No render, components, PDF, prefs/file-state, instrument model, dependencies or ledger changes.
 
 ## Acceptance criteria
 - [x] Bass, Acoustic Bass, Electric Bass and Bass Guitar select bass guitar sound and bass4 TAB.
@@ -24,14 +24,21 @@ Align name-only bass/ukulele playback and TAB detection, and explain ignored cus
 
 ## Decisions made
 - Reused `guitar`: GM 25 (nylon guitar). `instrumentDetails.program` is zero-based (24), while the instrument model's `gmProgram` is one-based (25). No new instrument id needed. Bass guitar uses existing GM 34.
-- Exact trimmed bare Bass is bass guitar; vocal keywords (voice, vocal, choir, singer, SATB) precede bass-name detection. Explicit MIDI still wins during import/TAB classification. No score-wide sibling-name inference was added: `instrumentForName` receives only a name. SATB producers should keep explicit vocal labels or choir MIDI programs when calling a part simply Bass.
-- Tuning warning uses the approved inline try/catch around `process.env.NODE_ENV`, plus a type-only declaration, preserving browser-native safety and production elimination.
+- Names containing the word Bass fall back to bass guitar after wind/voice checks (including Bass 1, Bass I, Synth Bass and Bass line). Explicit double-bass and ukulele rules keep precedence. A score-level pass called after ABC and MusicXML import identifies choir context from Soprano/Alto/Tenor, S/A/T or Sop./Alt./Ten. labels (also numbered variants). It assigns microphone to those vocal labels and Bass/B (also numbered variants), only without explicit GM programs. TAB respects the resolved microphone identity. Full-name winds such as Tenor Saxophone do not establish choir context.
+- Tuning warning uses the approved inline try/catch around `process.env.NODE_ENV`, plus a type-only declaration, preserving browser-native safety and production elimination. A module-level set limits it to one warning per part id per session. Host `tabTuning` points to `settings.tabInstruments` (bass5 for the five-string/bass4 mismatch); reader-saved tuning points to choosing a matching tuning in the reader.
 
 ## Known gotchas
 GBrain searched: `default:projects/scoreflow-music-reader` (historical project context); current repo dispatch controls name rules. Per implementer role, no GBrain writes.
 
 ## For the ABC guide
-Without an explicit MIDI program: Bass/Acoustic Bass/Electric Bass/Bass Guitar → bass guitar + bass4; Double Bass/Contrabass/Upright Bass/String Bass → double bass, no generated TAB; vocal/choir/SATB labels → voice; ukulele sizes → nylon guitar playback with independent ukulele TAB tuning. Explicit MIDI programs retain precedence. For five-string bass set `settings.tabInstruments: { '<part-id>': 'bass5' }` alongside a five-note `tabTuning`; a mismatched count keeps instrument defaults and emits only a development diagnostic.
+For existing ABC and MusicXML files **without an explicit MIDI program**, defaults now change as follows:
+- Bass/Acoustic Bass/Electric Bass/Bass Guitar and other names containing the word Bass (Bass 1, Bass I, Synth Bass, Bass line, Jazz Bass, Bass (8vb)) → bass guitar + bass4 TAB, instead of double bass/no TAB. The reviewed r1 piano regression for the broader names is fixed.
+- Double Bass/Contrabass/Upright Bass/String Bass → double bass, no generated TAB.
+- Bass Clarinet/Trombone/Flute → the respective wind sound instead of double bass; Bass Sax/Saxophone → existing alto-sax approximation, no TAB. Bassoon remains non-TAB.
+- Vocal/choir/SATB labels → voice. In a score with Soprano/Alto/Tenor, S/A/T or Sop./Alt./Ten., Bass/B becomes microphone with no TAB; known upper vocal labels also use microphone. A band with Guitar + Bass remains fretted.
+- Ukulele sizes → nylon guitar playback instead of piano, with independent ukulele TAB tuning.
+- Explicit MIDI programs retain precedence in both formats. Existing saved per-part sound choices continue to override import defaults when restored (review r1 notes); new defaults affect fresh imports without those saved overrides.
+- For five-string bass set `settings.tabInstruments: { '<part-id>': 'bass5' }` alongside five-note host `tabTuning`. A mismatched count keeps instrument defaults and emits a development-only diagnostic once per part id/session, with advice for host settings versus reader tuning as appropriate.
 
 ## Verify with
 ```bash
@@ -45,7 +52,7 @@ npm run test:manifest
 npm run test:validation
 ```
 
-## Verification output
+## Verification output (initial implementation)
 All commands above exited 0 on implementation commit `09c4025`; only this handoff changes afterward. Logs: `/tmp/0016-{unit,check,build,tab,switch,manifest,validation}.log`.
 
 ```text
@@ -70,3 +77,26 @@ Done. Receiver ack committed first (`8b874d1`), implementation committed (`09c40
 
 ## Open questions / follow-ups
 No implementation blockers. Lead to update the ABC guide on merge and promote the diagnostic/native-host lesson to GBrain if useful. Release is owned separately by 0017.
+
+
+## Review r1 — 5850219867
+Review: https://github.com/pepperhorn/ph-scoreview/pull/80#pullrequestreview-5850219867
+
+Lead-authorized scope expansion implemented the score-level choir pass in `lib/tab/string-instruments.ts`, with call sites only in `lib/import.ts` and `lib/notation/musicxml-source.ts`. Broader bass fallback, contextual choir identity and once-per-session source-specific warnings are all covered by tests. No remaining review findings or open questions.
+
+All requested r1 commands ran in the foreground and exited 0 against the code in this revision:
+
+```text
+npm run test -w pepperscore: 16 test files, 305 tests passed
+npm run check: 0 errors, 0 warnings, 0 hints
+npm run build: Complete; demo/library dist check passed
+npm run test:tab: pipeline and reader switch checks passed (chromium)
+npm run test:instrument-switch: full suite passed, including saved switches and chunked render
+npm run test:document: import workers, 48 MEI view cases, MusicXML chunks/identity, timewise/MXL, ABC adapter and navigation regressions passed
+Production reader JS: no host/reader tuning diagnostic strings
+git diff --check: passed
+```
+
+Tests cover numbered/synth/line bass names, bass saxophone exclusion, full and abbreviated choir labels on ABC/MusicXML plus the worker reader, explicit-program precedence, Guitar+Bass bands, tenor-sax exclusion, repeated render/chunk warning suppression and source-specific advice. Initial two-part-choir test failures exposed the upper voice retaining piano; fixed before the final green run.
+
+Scope audit from reviewed head `df68cd0`: only owned classifier/warning/tests, the newly authorized two import call sites, and this return handoff. No render/component/PDF/prefs/file-state/dependency/ledger changes. Logs: `/tmp/0016-r1-{unit,check,build,tab,switch,document}.log`.
