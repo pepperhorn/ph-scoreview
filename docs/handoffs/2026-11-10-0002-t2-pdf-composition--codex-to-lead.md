@@ -49,11 +49,12 @@ exportScore({
   score: viewScore,
   visiblePartIds: planned.visibleParts.map(part => part.id),
   tabAliases: planned.tabAlias,
+  tabStaves: planned.tabStaves,
   annotations: { showNames, showCounts, subdivisions, showChordSymbols,
     inferChordSymbols, scale: annotationScale },
 }, signal): Promise<Blob>
 ```
-`viewScore` is the immutable Save-time instrument/transposition view; `view` is the corresponding `planStaves` view (hiddenStaves, spelling, TAB, chordSymbols). Pass `visiblePartIds` and `tabAliases` from the same `planStaves` result so hidden parts do not affect annotation spacing and imported TAB events resolve like the reader. The caller owns the snapshot; do not pass live mutable state. The function never uses the reader's toolkit/channel or live score DOM. `composePdf(pages, {paper,title?}, signal)` is the lower-level page composer. T3 owns filenames, download errors and the UI. `engravePages` remains available for checking fit.
+`viewScore` is the immutable Save-time instrument/transposition view; `view` is the corresponding `planStaves` view (hiddenStaves, spelling, TAB, chordSymbols). Pass `visiblePartIds`, `tabAliases` and `tabStaves` from the same `planStaves` result so hidden parts do not affect annotation spacing and imported TAB events resolve like the reader. The caller owns the snapshot; do not pass live mutable state. The function never uses the reader's toolkit/channel or live score DOM. `composePdf(pages, {paper,title?}, signal)` is the lower-level page composer. T3 owns filenames, download errors and the UI. `engravePages` remains available for checking fit.
 
 ### Decisions made
 - jsPDF 4.2.1 and svg2pdf.js 2.9.0 are runtime dependencies imported dynamically within composition; pdf-lib 1.17.1 is test-only. Notices walk the runtime dependency trees automatically and include their licences.
@@ -147,3 +148,40 @@ All commands ran in the foreground at normal timing limits. No timing gate faile
 The exported geometry, house-style and F♯m/B♭ PDFs were also rasterized to PNG and visually inspected in this worktree. Local review artifacts: `/tmp/scoreview-r1/{geometry,house,accidentals}.{pdf,png}`. They are reproducible test outputs, not committed source assets. The tests always check decoded graphics/text state and run Poppler ink checks when available.
 
 No protected files or dependencies changed in r1. AC8a's screen pitch-colour integration gate remains as accepted by the reviewer; the three-pass support it needs is now covered here. For GBrain (lead to promote): page dimensions and selectable text alone cannot prove PDF layout; assert actual transformed geometry and rendered ink, including nested SVG viewports and inline-CSS text styles.
+
+## Review r2 corrections (2026-11-11; review 5839239756)
+
+Review: https://github.com/pepperhorn/ph-scoreview/pull/78#pullrequestreview-5839239756
+
+- Correct text stroke coordinates: svg2pdf places the SVG/viewBox scale in the text matrix while stroking with its page-mm CTM. The outline and shadow stroke widths now multiply the original SVG stroke width by the element-to-root scale and the root-to-page-mm scale. Path strokes retain their existing handling. Text shadow offset is an explicit +0.5 SVG-unit `dy`, so it follows the same text matrix as the fill.
+- Replace the 1:1 house-style page with a 2100×2970 viewBox on A4 (10 SVG units/mm). Also cover an additional half-scale group with presentation attributes alongside the inline-CSS case. Assert physical stroke width after the CTM, stroke-to-glyph-em ratio, and shadow displacement in page mm rather than the raw `w` operand.
+- Take the small inferred-chord suggestion: accidental runs are 1.4× the root font size and raised to align with the root capital (0.35 em for sharp, 0.165 em for flat). Following chord text resets to its original baseline; selectable F♯m/B♭ text and font/baseline checks remain covered.
+- Take the small TAB suggestion: `ExportRequest.tabStaves` passes the reader's planned `ReadonlySet<string>` directly to `annotatePage`, alongside `tabAliases`. Remove heuristic detection. T3 must pass the same `planStaves().tabStaves` set as the screen (see the updated integration example above). The six-line TAB regression supplies the explicit plan.
+- **CI follow-up (not changed here):** lead/T4 should add `poppler-utils` to the validation runner so the Poppler raster block runs in CI as well as locally. No CI files or dependencies changed in r2.
+
+Verification for this round is recorded below before pushing.
+
+### r2 verification output
+```text
+npm run check: exit 0 (Astro: 0 errors, 0 warnings, 0 hints)
+npm run build: exit 0; demo dist/runtime/notices verification passed
+PDF_ARTIFACTS=/tmp/scoreview-r2 npm run test:pdf: exit 0
+  fit.test.ts: 6 passed
+  Non-unit viewBox CSS case: effective outline/shadow stroke 0.30 mm; offset 0.05 mm
+  Additional half-scale attribute case: effective stroke 0.15 mm; offset 0.025 mm
+  Stroke/glyph-em ratio: 3/20 in both coordinate systems
+  Poppler raster: staff width/6.5 mm height, known notehead and aligned note-name ink passed.
+  Vector composition, F♯m/B♭ size/baseline, planned TAB staves, embedded fonts,
+  cancellation and missing-glyph checks passed.
+  PDF page model spike passed (chromium): A4 4 lines; A3 4; 2 pages for 80 bars.
+npm run test:reader: exit 0 (all scenarios, annotation sizes and Endless scrollbars included)
+npm run test:layout: exit 0 (chromium)
+npm run test:manifest: exit 0 (128 local packs, 16 icons; complete/core packs)
+npm run test:pack: exit 0 (fresh Vite, Astro client-only and Astro SSR hosts; Node import)
+```
+
+The final PDF-only accidental alignment refinement was followed by another passing foreground `check`, `build`, and full `test:pdf`. No timing gate failed; all runs used normal limits and did not need `VALIDATION_BUDGET_SCALE=2`.
+
+A negative-control probe changed the corrected page's outline operand back to `3 w` (3 page mm). The updated validator rejected it with `effective outline is 3 SVG units in page mm`, demonstrating that the assertion catches the r2 blocker instead of rewarding it. The exported house fixture was rasterized and visually inspected at 600 dpi; the former oversized halo is gone. The larger/raised chord accidentals were also rasterized and inspected at 300 dpi. Local artifacts are under `/tmp/scoreview-r2/` and can be regenerated with `PDF_ARTIFACTS` as above.
+
+CI follow-up remains **install `poppler-utils` in the validation job**; no CI changes were made. All r2 changes remain within the original PDF/validation/own-handoff scope. Screen pitch-colour integration remains the previously accepted AC8a gate, not an additional blocker introduced by this round.

@@ -25,11 +25,26 @@ export function normalizeText(svg: SVGSVGElement): void {
     for (const node of Array.from(text.childNodes)) {
       if (node.nodeType !== Node.TEXT_NODE || !/[♯♭♮𝄪𝄫]/u.test(node.textContent || '')) continue;
       const fragment = document.createDocumentFragment();
+      let baseline = 0;
+      const chord = text.closest('.chord-symbol');
+      const size = parseFloat(getComputedStyle(text).fontSize);
       for (const run of (node.textContent || '').split(/([♯♭♮𝄪𝄫])/u).filter(Boolean)) {
         const span = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
         // jsPDF's text encoder is UTF-16: use equivalent BMP SMuFL double accidentals.
         span.textContent = run === '𝄪' ? '\ue263' : run === '𝄫' ? '\ue264' : run;
-        if (/^[♯♭♮𝄪𝄫]$/u.test(run)) span.style.fontFamily = 'Bravura';
+        const accidental = /^[♯♭♮𝄪𝄫]$/u.test(run);
+        if (accidental) {
+          span.style.fontFamily = 'Bravura';
+          if (chord) span.style.fontSize = `${size * 1.4}px`;
+        }
+        if (chord) {
+          // Bravura's Unicode sharp is centred on the baseline; its flat sits higher.
+          // Centre their enlarged ink on the Poppins capital root instead of using one offset.
+          const lift = run === '♯' ? 0.35 : run === '♭' ? 0.165 : 0.12;
+          const shift = accidental ? -size * lift : 0;
+          if (shift !== baseline) span.setAttribute('dy', String(shift - baseline));
+          baseline = shift;
+        }
         fragment.appendChild(span);
       }
       node.replaceWith(fragment);

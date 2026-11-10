@@ -30,7 +30,8 @@ try {
     const { exportScore } = await import('/packages/pepperscore/src/lib/pdf/export.ts');
     const { parseAbc } = await import('/packages/pepperscore/src/lib/import.ts');
     const signal = new AbortController().signal;
-    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 210 297"><text x="12" y="20" font-size="5">PDF fixture</text><g class="notehead" fill="#f04a38" stroke="#000000" stroke-width="0.4"><circle cx="23" cy="33" r="6"/><path d="M 50 30 L 55 30 L 55 34 Z"/></g><text x="23" y="33" style="font-family:Poppins,sans-serif;font-weight:600;font-size:8px;fill:white;stroke:rgba(0,0,0,0.35);stroke-width:3;paint-order:stroke;text-anchor:middle;dominant-baseline:central">C</text></svg>';
+    // Real-page unit ratio: 10 SVG units/mm, plus a half-scale presentation-attribute case.
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2100 2970"><text x="120" y="200" font-size="50">PDF fixture</text><g class="notehead" fill="#f04a38" stroke="#000000" stroke-width="0.4"><circle cx="230" cy="330" r="16"/><path d="M 500 300 L 550 300 L 550 340 Z"/></g><text x="230" y="330" style="font-family:Poppins,sans-serif;font-weight:600;font-size:20px;fill:white;stroke:rgba(0,0,0,0.35);stroke-width:3;paint-order:stroke;text-anchor:middle;dominant-baseline:central">C</text><g transform="translate(300 0) scale(0.5)"><circle cx="460" cy="660" r="16" fill="#f04a38"/><text x="460" y="660" font-family="Poppins" font-weight="600" font-size="20" fill="white" stroke="rgba(0,0,0,0.35)" stroke-width="3" paint-order="stroke" text-anchor="middle" dominant-baseline="central">G</text></g></svg>';
     const files = [];
     for (const paper of ['a4','a3','letter','legal']) {
       const blob = await composePdf([svg,svg], {paper,title:'PDF fixture'}, signal);
@@ -66,12 +67,12 @@ try {
     const twoParts = await parseAbc('X:1\nT:View snapshot\nM:4/4\nL:1/4\n%%score (one two)\nV:one clef=treble\nV:two clef=bass\nK:C\n[V:one] [CEG]4 |\n[V:two] C,4 |\nw: Hiddenword');
     const viewScore = scoreForView(twoParts, 'written', 2);
     const plan = planStaves(scanBaseline(twoParts.document.engravingText),viewScore,new Set([viewScore.parts[1].id]));
-    const viewBlob = await exportScore({input:{data:twoParts.document.engravingText,view:{breakEvery:0,hiddenStaves:plan.hiddenStaves,chordSymbols:true,spelling:plan.spelling}},score:viewScore,options:{paper:'a4',maxBars:4,files:runtime},annotations:{showNames:true,showCounts:true,inferChordSymbols:true,showChordSymbols:true}},signal);
+    const viewBlob = await exportScore({input:{data:twoParts.document.engravingText,view:{breakEvery:0,hiddenStaves:plan.hiddenStaves,chordSymbols:true,spelling:plan.spelling}},score:viewScore,tabStaves:plan.tabStaves,options:{paper:'a4',maxBars:4,files:runtime},annotations:{showNames:true,showCounts:true,inferChordSymbols:true,showChordSymbols:true}},signal);
     const { annotatePage } = await import('/packages/pepperscore/src/lib/pdf/annotations.ts');
     const tabSvg = new DOMParser().parseFromString('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><g class="system"><g class="measure"><g class="staff" data-n="1"><path d="M 10 20 L 190 20"/><path d="M 10 30 L 190 30"/><path d="M 10 40 L 190 40"/><path d="M 10 50 L 190 50"/><path d="M 10 60 L 190 60"/><path d="M 10 70 L 190 70"/><g class="tabGrp" id="imported-tab"><rect x="30" y="20" width="10" height="10"/></g></g><g class="staff" data-n="2"><path d="M 10 100 L 190 100"/></g><g class="dir"><rect x="50" y="72" width="5" height="5"/></g></g></g></svg>','image/svg+xml').documentElement;
     document.body.appendChild(tabSvg);
     const event = twoParts.parts[0].measures[0].notes[0];
-    annotatePage(tabSvg,twoParts,{showNames:true},undefined,new Map([[event.id,{...event,id:'imported-tab',sourceId:'imported-tab',pitches:[]}]]));
+    annotatePage(tabSvg,twoParts,{showNames:true},undefined,new Map([[event.id,{...event,id:'imported-tab',sourceId:'imported-tab',pitches:[]}]]),new Set(['1']));
     const tabAliasWorked = tabSvg.querySelectorAll('.note-label').length === event.pitches.length;
     const tabLaneWorked = tabSvg.querySelector('.note-label').getAttribute('y') === '96.0';
     tabSvg.remove();
@@ -185,16 +186,37 @@ try {
   assert.ok(house.every(run=>run.fontName.includes('Poppins') && run.semibold && run.size===house[0].size), 'all passes use embedded Poppins SemiBold at identical size');
   assert.deepEqual(house[0].matrix,house[2].matrix,'outline/fill share exactly one text matrix');
   assert.ok(Math.abs(house[1].matrix[4]-house[2].matrix[4])<0.001);
-  assert.ok(Math.abs(Math.abs(house[1].matrix[5]-house[2].matrix[5])-0.5*72/25.4)<0.01,'shadow moves exactly 0.5 SVG units');
-  assert.ok(Math.abs(house[2].tm[5]-36)<0.01,'central baseline uses the glyph ascent/descent offset (33 + 3)');
-  assert.ok(Math.abs((house[2].matrix[4]+house[2].matrix[0]*house[2].size*knownAdvance/2)*25.4/72-23)<0.01,'embedded C advance is centred at x=23');
+  const mmPerPoint=25.4/72;
+  const checkPaintScale = (passes, expectedScale, centerX) => {
+    assert.equal(passes.length,3);
+    const fill=passes[2], outline=passes[0], shadow=passes[1];
+    const glyphScale=Math.hypot(fill.matrix[0],fill.matrix[1])*mmPerPoint;
+    assert.ok(Math.abs(glyphScale-expectedScale)<0.0001,'text follows page and element SVG scales');
+    const strokeMM=run=>run.width*Math.hypot(run.ctm[0],run.ctm[1])*mmPerPoint;
+    assert.ok(Math.abs(strokeMM(outline)-3*glyphScale)<0.001,'effective outline is 3 SVG units in page mm');
+    assert.ok(Math.abs(strokeMM(shadow)-3*glyphScale)<0.001,'shadow stroke follows glyph scale');
+    assert.ok(Math.abs(strokeMM(outline)/(fill.size*glyphScale)-3/20)<0.001,'outline/glyph-em ratio stays 3/20');
+    const shadowMM=Math.hypot(shadow.matrix[4]-fill.matrix[4],shadow.matrix[5]-fill.matrix[5])*mmPerPoint;
+    assert.ok(Math.abs(shadowMM-0.5*glyphScale)<0.001,'shadow displacement is 0.5 SVG units in page mm');
+    assert.ok(Math.abs((fill.matrix[4]+fill.matrix[0]*fill.size*knownAdvance/2)*mmPerPoint-centerX)<0.01,'glyph advance remains centred');
+    assert.ok(passes.every(run=>run.semibold && run.size===20),'all scaled passes retain embedded SemiBold');
+    assert.deepEqual(outline.matrix,fill.matrix);
+  };
+  checkPaintScale(house,0.1,23);
+  const housePdf=await parsePdf(composition.files[0].bytes);
+  checkPaintScale(housePdf.runs.filter(run=>run.text==='G').slice(0,3),0.05,53);
+  assert.ok(Math.abs(297-house[2].matrix[5]*mmPerPoint-33.75)<0.1,'central baseline offset follows the non-unit SVG scale');
   assert.match(house[2].fill,/1[.0]* g|1[.0]* 1[.0]* 1[.0]* rg/,'solid white fill');
-  const houseResources=(await parsePdf(composition.files[0].bytes)).doc.getPages()[0].node.Resources();
+  const houseResources=housePdf.doc.getPages()[0].node.Resources();
   const outlineGs=houseResources.lookup(PDFName.of('ExtGState')).lookup(PDFName.of(house[0].gs));
   assert.ok(Math.abs(outlineGs.lookup(PDFName.of('CA')).asNumber()-0.35)<0.001,'outline alpha is 35%');
-  assert.ok(Math.abs(house[0].width-3)<0.001,'house outline width is 3 in fill coordinates');
+  const rootRun=accidentalPdf.runs.find(run=>run.text==='F');
+  const sharpRun=accidentalPdf.runs.find(run=>run.text==='♯');
+  const suffixRun=accidentalPdf.runs.find(run=>run.text==='m');
+  assert.ok(Math.abs(sharpRun.size/rootRun.size-1.4)<0.01,'inferred accidentals are full-height at 1.4x');
+  assert.ok(sharpRun.matrix[5]>rootRun.matrix[5],'inferred accidental is raised');
+  assert.ok(Math.abs(suffixRun.matrix[5]-rootRun.matrix[5])<0.01,'following chord suffix returns to its baseline');
   const geometry=await parsePdf(composition.geometry.bytes), expected=composition.geometry.expected;
-  const mmPerPoint=25.4/72;
   const staffSegments=geometry.segments.filter(segment=>Math.abs(segment.from[1]-segment.to[1])<0.01 && Math.abs(segment.to[0]-segment.from[0])*mmPerPoint>10 && 297-segment.from[1]*mmPerPoint>=expected.lines[0].y-0.1 && 297-segment.from[1]*mmPerPoint<=expected.lines[4].y+0.1);
   assert.ok(staffSegments.length>=5,'PDF contains full-size horizontal staff paths');
   const staffYs=[...new Set(staffSegments.map(segment=>Math.round(segment.from[1]*mmPerPoint*100)/100))].sort((a,b)=>a-b);

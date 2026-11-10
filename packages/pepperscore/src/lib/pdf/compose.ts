@@ -37,7 +37,7 @@ export async function composePdf(pages: string[], opts: ComposeOptions, signal: 
           throw new Error(`PDF font ${pdf.getFont().fontName} has no glyph for "${character}". Use a supported title or text.`);
         }
       }
-      materializePaint(svg, (element, size) => {
+      materializePaint(svg, size, (element, size) => {
         pdf.setFont(element.getAttribute('font-family') || 'Poppins', element.getAttribute('font-weight') === 'bold' ? 'bold' : 'normal');
         return pdf.getStringUnitWidth(element.textContent || '') * size;
       });

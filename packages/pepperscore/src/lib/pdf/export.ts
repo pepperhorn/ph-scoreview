@@ -10,7 +10,7 @@ import { engravePages, type PageInput, type PageOptions } from './engrave';
  * input.view is its planStaves view (including hidden staves, spelling and TAB).
  * No reader channel or live DOM is used. T3 imports only this module, dynamically.
  */
-export type ExportRequest = { input: PageInput; options: PageOptions; score: Score; annotations?: AnnotationSettings; visiblePartIds?: string[]; tabAliases?: ReadonlyMap<string, ScoreNote> };
+export type ExportRequest = { input: PageInput; options: PageOptions; score: Score; annotations?: AnnotationSettings; visiblePartIds?: string[]; tabAliases?: ReadonlyMap<string, ScoreNote>; tabStaves?: ReadonlySet<string> };
 export async function exportScore(request: ExportRequest, signal: AbortSignal): Promise<Blob> {
   signal.throwIfAborted();
   const score = request.visiblePartIds ? { ...request.score, parts: request.score.parts.filter(part => request.visiblePartIds!.includes(part.id)) } : request.score;
@@ -29,7 +29,7 @@ export async function exportScore(request: ExportRequest, signal: AbortSignal): 
       const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
       const svg = sanitizeSvg(doc);
       host.replaceChildren(svg);
-      annotatePage(svg, score, settings, request.options.font, request.tabAliases);
+      annotatePage(svg, score, settings, request.options.font, request.tabAliases, request.tabStaves);
       if (!index) {
         const ratio = svg.viewBox.baseVal.width / PAPER_SIZES[request.options.paper].width;
         // Metadata stays in the reserved heading band, shrinking long lines to fit the page.
