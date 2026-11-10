@@ -16,7 +16,7 @@ Next ID: 0018
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | human: P1–P3 (editor distribution, private repo name, BeCreative licence) before T4 | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0013 | TAB for stringed instruments | planned (t3, t4; t1 #77, t2 #74 merged) | child 0002-t2 (T3 touches render paths incl. lib/pdf and render.ts; dispatch after #78 and 0001-T4 ordering) | codex/gpt-6.1-sol |  |  |  |  | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md |  | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
-| 0016 | [quick] Instrument names: bare Bass = bass guitar, ukulele sound, tabTuning mismatch warning | changes-requested | child 0016-impl-r1-fix1 | codex/gpt-6.1-sol | orch/0016-instrument-names | https://github.com/pepperhorn/ph-scoreview/pull/80 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-f4c5a8a8-bae6c18130633ca8 | task `0016-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0016-impl-r1` |  |  | handoffs/2026-11-11-0016-instrument-names--codex-to-lead.md (@df68cd0) | 2026-11-11 |
+| 0016 | [quick] Instrument names: bare Bass = bass guitar, ukulele sound, tabTuning mismatch warning | in-review | review 0016-review-r2 | codex/gpt-6.1-sol | orch/0016-instrument-names | https://github.com/pepperhorn/ph-scoreview/pull/80 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-f4c5a8a8-bae6c18130633ca8 | task `0016-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0016-impl-r1` |  |  | handoffs/2026-11-11-0016-instrument-names--codex-to-lead.md (@bda5923) | 2026-11-11 |
 | 0017 | Release pepperscore 0.5.0 (CHANGELOG, version) | planned | child 0016 (release after it merges) | lead |  |  |  |  |  |  |  | 2026-11-11 |
 
 ## Done / closed
@@ -78,6 +78,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-11 0016 changes-requested→in-review — fixes pushed bda5923; review r2
 2026-11-11 0016 in-review→changes-requested — r1: other "bass" names fell to piano; lead: fallback to bass guitar; SATB context → Bass/B is a voice (score-level pass, import.ts/musicxml-source.ts granted); warning once per part, worded by source
 2026-11-11 0001-t4 dispatched→in-review — PR #81 @96809a0 (full validation green); review r1
 2026-11-11 0016 dispatched→in-review — PR #80 @df68cd0 (270 pkg tests, full validation green); review r1
