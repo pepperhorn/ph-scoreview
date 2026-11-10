@@ -24,6 +24,7 @@ export function PhoneMenu({ licence, onSave, onExport, onOpen, onNew, onClose }:
     // Escape is taken on the window in the capture phase, ahead of the editor root's key handling (which would
     // otherwise read it as "select mode"), whether or not focus is in the menu.
     const escape = (event: KeyboardEvent) => {
+      if ((event.target as Element)?.closest?.('[data-ps-plugin]')) return;
       if (event.key !== 'Escape' || !root.current?.closest('.ps-editor')?.contains(event.target as Node)) return;
       event.preventDefault();
       event.stopPropagation();
@@ -58,8 +59,8 @@ export function PhoneMenu({ licence, onSave, onExport, onOpen, onNew, onClose }:
         <Icon name="open" size={16} />Open…
         <input className="ps-open-input" type="file" accept={OPEN_ACCEPT} hidden disabled={!editable} onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; onClose(); if (file) onOpen(file); }} />
       </label>
-      <button type="button" role="menuitem" className="ps-btn ps-pmenu-item ps-btn-details" data-ps-popover-for="details" disabled={!editable} onClick={choose(() => togglePopover('details'))}>Score details</button>
-      <button type="button" role="menuitem" className="ps-btn ps-pmenu-item ps-btn-parts" data-ps-popover-for="parts" disabled={!editable} onClick={choose(() => togglePopover('parts'))}>Parts</button>
+      <button type="button" role="menuitem" className="ps-btn ps-pmenu-item ps-btn-details" data-ps-target="details" data-ps-popover-for="details" disabled={!editable} onClick={choose(() => togglePopover('details'))}>Score details</button>
+      <button type="button" role="menuitem" className="ps-btn ps-pmenu-item ps-btn-parts" data-ps-target="parts" data-ps-popover-for="parts" disabled={!editable} onClick={choose(() => togglePopover('parts'))}>Parts</button>
       <button type="button" role="menuitem" className="ps-btn ps-pmenu-item ps-btn-new" disabled={!editable} onClick={choose(onNew)}><Icon name="plus" size={16} />New score</button>
       <span className={`ps-licence ps-pmenu-licence ${licence.editable ? '' : 'is-viewer'}`.trim()}>
         <span className="ps-licence-dot" />

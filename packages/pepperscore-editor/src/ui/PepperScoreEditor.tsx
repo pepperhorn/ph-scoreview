@@ -2,6 +2,7 @@ import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, 
 import type { PepperScoreClickInfo, PepperScoreHandle } from 'pepperscore';
 import { compileToMusicXml } from '../compile/to-musicxml';
 import { setCursor, setEntryMode, setSelection } from '../engine/commands/index';
+import { createEditorHost, isVisibleTarget, type EditorPlugin, type EditorTarget } from '../plugin/host';
 import type { EditorStore } from '../engine/store';
 import { importMusicXml } from '../import/from-musicxml';
 import { DEFAULT_MAX_STAVES, readOnlyMessage } from '../licence';
@@ -25,6 +26,10 @@ import { useEditorStore } from './useEditorStore';
 export type PepperScoreEditorProps = {
   /** The score to edit; `musicXml` is imported instead when given; neither opens a new 8-bar treble score. */
   document?: Document;
+  /** Optional session-scoped overlays. */
+  plugins?: EditorPlugin[];
+  /** The host explicitly started a new score (a page load alone is opened). */
+  startedNew?: boolean;
   musicXml?: string;
   /**
    * A signed licence key (see README); its `maxStaves` caps the score size (default 4). Absent, invalid or
@@ -73,7 +78,7 @@ export function PepperScoreEditor(props: PepperScoreEditorProps & { ref?: Ref<Pe
       if (props.document) return { document: props.document, dropped: [] };
       if (props.musicXml) return importMusicXml(props.musicXml, { maxStaves: Infinity });
       return { document: newScore(), dropped: [] };
-    }, props.musicXml),
+    }, props.musicXml, props.startedNew ? 'new' : 'opened'),
   );
   const licence = useLicence(props.licenceKey);
   const maxStaves = licence?.maxStaves ?? DEFAULT_MAX_STAVES;
@@ -177,6 +182,36 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
   const scrollToMeasure = useCallback((index: number) => void viewerRef.current?.scrollToMeasure(index), []);
   const ui = useMemo<EditorUi>(() => ({ store, ctx, editable, maxStaves, refocus, togglePopover, scrollToMeasure }), [store, ctx, editable, maxStaves, refocus, togglePopover, scrollToMeasure]);
 
+  const pluginHost = useMemo(() => createEditorHost(store, {
+    root: () => rootRef.current,
+    shell: phone ? 'phone' : 'desktop', editable, origin: session.origin,
+    openPopover: (name) => {
+      rootRef.current?.dispatchEvent(new CustomEvent('ps-plugin-reveal'));
+      setPopover(name);
+    },
+    revealTarget: (target: EditorTarget) => {
+      const root = rootRef.current;
+      if (!root) return;
+      root.dispatchEvent(new CustomEvent('ps-plugin-reveal', { detail: target }));
+      if (phone) {
+        if (target === 'clef') {
+          setPopover(null);
+          root.querySelector<HTMLElement>('.ps-ptab[data-tab="score"]')?.click();
+        }
+      } else {
+        // Score controls may be unmounted while another inspector tab is selected.
+        const inInspector = ['clef', 'key', 'time', 'tempo'].includes(target);
+        const visible = [...root.querySelectorAll<HTMLElement>(`[data-ps-target="${target}"]`)].some(isVisibleTarget);
+        if (target !== 'clef' && (!inInspector || visible)) return;
+        setPopover(null);
+        const inspector = root.querySelector<HTMLElement>('.ps-inspector');
+        const toggle = root.querySelector<HTMLElement>('.ps-inspector-toggle');
+        if (inspector && !inspector.classList.contains('is-open') && toggle && isVisibleTarget(toggle)) toggle.click();
+        root.querySelector<HTMLElement>('.ps-inspector [data-tab="score"]')?.click();
+      }
+    },
+  }), [store, phone, editable, session.origin]);
+
   const onElementClick = useCallback(
     (info: PepperScoreClickInfo) => {
       // The engraving is the active layout's view: its ids are the document's, its staves the layout's visible ones.
@@ -196,9 +231,9 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
 
   /** Replaces the score (Open, New), after the discard prompt when there are unsaved changes. */
   const replace = useCallback(
-    (opened: Opened) => {
+    (opened: Opened, origin: 'new' | 'opened' = 'opened') => {
       if (!confirmDiscard(store)) return;
-      onOpened(openSession(() => opened));
+      onOpened(openSession(() => opened, undefined, origin));
       callbacks.current.onChange?.(opened.document);
     },
     [onOpened, store],
@@ -217,7 +252,7 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
     },
     [replace, maxStaves],
   );
-  const onNew = useCallback(() => replace({ document: newScore(), dropped: [] }), [replace]);
+  const onNew = useCallback(() => replace({ document: newScore(), dropped: [] }, 'new'), [replace]);
   const onExport = useCallback(() => exportMusicXml(store.getState().document), [store]);
   const onSave = useCallback(
     () =>
@@ -271,6 +306,7 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
       data-ps-editable={editable ? '' : undefined}
       data-ps-glyphs={glyphs}
       onKeyDownCapture={(event) => {
+        if ((event.target as Element).closest('[data-ps-plugin]')) return;
         if (!editable) return;
         if (popover) {
           if (event.key === 'Escape') {
@@ -286,6 +322,9 @@ function EditorSession({ session, editable, checking, maxStaves, onOpened, class
     >
       <UiProvider value={ui}>
         {phone === null ? null : phone ? <PhoneShell {...shell} /> : <DesktopShell {...shell} />}
+        {phone !== null && props.plugins?.filter(plugin => plugin.apiVersion === 1).map(({ id, Overlay }) => (
+          <div key={id} className="ps-plugin" data-ps-plugin={id}><Overlay host={pluginHost} /></div>
+        ))}
       </UiProvider>
     </div>
   );

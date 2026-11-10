@@ -75,7 +75,7 @@ export const PhoneHeader = memo(function PhoneHeader({ collapsed, wake, playing,
     refocus();
   }, [setMenuOpen, refocus]);
   const chip = (name: PopoverName, label: string, k: string, value: ReactNode) => (
-    <button type="button" className={`ps-btn ps-chip ps-pchip ps-chip-${name}`} aria-label={label} disabled={!editable} onClick={() => togglePopover(name)}>
+    <button type="button" className={`ps-btn ps-chip ps-pchip ps-chip-${name}`} aria-label={label} data-ps-target={name} disabled={!editable} onClick={() => togglePopover(name)}>
       <span className="ps-chip-k">{k}</span>{value}
     </button>
   );
@@ -85,8 +85,8 @@ export const PhoneHeader = memo(function PhoneHeader({ collapsed, wake, playing,
         <div className="ps-phead-main" inert={collapsed}>
           <span className="ps-brand-mark ps-phead-brand"><Glyph c={SMUFL.gClef} alt="𝄞" /></span>
           <div className="ps-phead-titles">
-            <h1 className={`ps-score-title ps-phead-title ${document.meta.title ? '' : 'is-empty'}`.trim()}>{document.meta.title || 'Untitled score'}</h1>
-            {document.meta.composer && <p className="ps-score-composer ps-phead-composer">{document.meta.composer}</p>}
+            <h1 data-ps-target="title" className={`ps-score-title ps-phead-title ${document.meta.title ? '' : 'is-empty'}`.trim()}>{document.meta.title || 'Untitled score'}</h1>
+            {document.meta.composer && <p data-ps-target="composer" className="ps-score-composer ps-phead-composer">{document.meta.composer}</p>}
           </div>
           <div className="ps-phead-history" role="group" aria-label="History">
             <button type="button" className="ps-btn ps-icon-btn ps-phead-undo" aria-label="Undo" title="Undo" disabled={!editable || !canUndo} onClick={() => run('Undo')}>

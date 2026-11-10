@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { compileToMusicXml, PepperScoreEditor, renderCounts, type Document, type PepperScoreEditorHandle } from 'pepperscore-editor';
+import { editorStubPlugin } from './EditorStubPlugin';
 import ensemble from '../../../../validation/fixtures/ensemble.musicxml?raw';
 import { tenorPianoDocument } from './editor-fixtures';
 
 declare global { interface Window { __editor: { ref: React.RefObject<PepperScoreEditorHandle | null>; renderCounts: Record<string, number> } } }
 
-type Source = { key: number; musicXml?: string; document?: Document };
+type Source = { key: number; musicXml?: string; document?: Document; startedNew?: boolean };
 /** The demo's signed licence (4 staves, expires 2028-01-01); `'dev'` would only work in development builds. */
 const DEMO_LICENCE = 'eyJzdWIiOiJwZXBwZXJzY29yZS1kZW1vIiwiZXhwIjoxODMwMjk3NjAwLCJtYXhTdGF2ZXMiOjR9.htvTu3iKMVooELSmmTmArtBQpsDE9tcvtuebGyZZ3BGbvuxBAZ1ip25IGtfNJCuE0_OlRTvGM6v1NcLsaL04Bg';
 /** `?licence=<key>` overrides the demo licence (`?licence=` shows the read-only editor). */
@@ -36,7 +37,7 @@ export default function EditorDemo() {
     <header className="editor-demo-header">
       <h1 className="editor-demo-title">pepperscore editor</h1>
       <div className="editor-demo-actions">
-        <button type="button" className="editor-demo-btn editor-demo-new" onClick={() => replace({})}>New</button>
+        <button type="button" className="editor-demo-btn editor-demo-new" onClick={() => replace({ startedNew: true })}>New</button>
         <button type="button" className="editor-demo-btn editor-demo-ensemble" onClick={() => replace({ musicXml: ensemble })}>Open ensemble fixture</button>
         <button type="button" className="editor-demo-btn editor-demo-tenor" onClick={() => replace({ document: tenorPianoDocument() })}>Open tenor sax + piano fixture</button>
         <button type="button" className="editor-demo-btn editor-demo-toggle-xml" aria-pressed={showXml} onClick={() => { setShowXml(v => !v); const doc = ref.current?.getDocument(); if (!showXml && doc) setXml(compileToMusicXml(doc)); }}>{showXml ? 'Hide' : 'Show'} MusicXML</button>
@@ -47,6 +48,8 @@ export default function EditorDemo() {
         key={source.key}
         ref={ref}
         className="editor-demo-editor"
+        plugins={new URLSearchParams(window.location.search).get('stubPlugin') === '1' ? [editorStubPlugin] : undefined}
+        startedNew={source.startedNew}
         musicXml={source.musicXml}
         document={source.document}
         licenceKey={licenceKey()}

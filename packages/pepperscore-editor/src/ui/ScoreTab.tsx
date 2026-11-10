@@ -37,11 +37,11 @@ export function ScoreTab() {
     <>
       <Section title="Key & time">
         <Row label="Key">
-          <button type="button" className="ps-btn ps-select ps-select-button" aria-label="Edit key signature" data-ps-popover-for="key" disabled={!editable} onClick={() => togglePopover('key')}>
+          <button type="button" className="ps-btn ps-select ps-select-button" aria-label="Edit key signature" data-ps-target="key" data-ps-popover-for="key" disabled={!editable} onClick={() => togglePopover('key')}>
             <span className="ps-select-value">{keyName(key.fifths, key.mode ?? 'major')}</span><Icon name="chevron" size={14} />
           </button>
         </Row>
-        <Row label="Time">
+        <Row label="Time" target="time">
           <Seg
             label="Time signature"
             value={(TIMES as readonly string[]).includes(timeValue) ? timeValue : 'more'}
@@ -54,7 +54,7 @@ export function ScoreTab() {
           />
         </Row>
         <Row label="Clef">
-          <div className="ps-glyph-row">
+          <div className="ps-glyph-row" data-ps-target="clef">
             {CLEF_BUTTONS.map((c) => <GlyphBtn key={c.value} c={c.c} alt={c.alt} label={c.label} on={clef === c.value} onClick={() => part && dispatch(setClef, { partId: part.id, measureId, staff: cursor.staff, clef: c.value })} />)}
             <GlyphBtn alt="…" text label="Other clef" onClick={() => togglePopover('clef')} />
           </div>

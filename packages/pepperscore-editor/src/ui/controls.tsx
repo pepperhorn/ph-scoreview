@@ -97,8 +97,8 @@ export function useCursorBeat(): number {
 export function Section({ title, className = '', children }: { title: string; className?: string; children: ReactNode }) {
   return <section className={`ps-insp-section ${className}`.trim()}><h4 className="ps-insp-title">{title}</h4>{children}</section>;
 }
-export function Row({ label, children }: { label: string; children: ReactNode }) {
-  return <div className="ps-insp-row"><span className="ps-insp-label">{label}</span><div className="ps-insp-control">{children}</div></div>;
+export function Row({ label, children, target }: { label: string; children: ReactNode; target?: string }) {
+  return <div className="ps-insp-row" data-ps-target={target}><span className="ps-insp-label">{label}</span><div className="ps-insp-control">{children}</div></div>;
 }
 
 /** A segmented control; `value` picks the lit item. */

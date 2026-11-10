@@ -40,3 +40,5 @@ None. Escalate per AGENTS.md §7.
 
 ---
 ## Receiver ack
+
+I will implement plan T3 only: the exported session-scoped plugin host, visible control targets and reveal behavior in both shells, optional overlays with key isolation, session origin, and a demo stub with browser lifecycle coverage. I will change only the owned paths, run the prescribed verification, and return a committed handoff and draft PR. No open questions. GBrain checked: projects/scoreflow-music-reader; repo spec and plan govern this task.

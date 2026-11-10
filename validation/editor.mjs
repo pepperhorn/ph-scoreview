@@ -58,6 +58,111 @@ try {
   assert.equal(await page.locator('.ps-editor-banner.ps-editor-readonly').count(), 0, 'the dev licence makes the demo editable');
   assert.equal(await page.locator('.ps-status-check').textContent(), 'Score check: no problems', 'no invariant errors');
 
+  assert.equal(await page.locator('[data-ps-plugin]').count(), 0, 'no plugins prop renders no plugin wrapper');
+
+  // No-plugin phone baseline: title/composer are display-only, with no blank composer placeholder.
+  {
+    const phone = await browser.newContext({ viewport: { width: 390, height: 900 } });
+    const p = await phone.newPage();
+    await p.goto(`${server.url}/editor`);
+    await p.waitForSelector('.ps-shell-phone[data-header="full"]');
+    assert.equal(await p.locator('[data-ps-plugin]').count(), 0);
+    assert.equal(await p.locator('.ps-phead-composer').count(), 0, 'blank composer stays absent');
+    await p.locator('.ps-phead-title').dblclick();
+    assert.equal(await p.locator('.ps-meta-input').count(), 0, 'double-clicking phone title does not start editing');
+    await p.waitForSelector('.ps-shell-phone[data-header="collapsed"]');
+    assert.equal(await p.locator('.ps-phead-title').textContent(), 'Untitled score');
+    assert.equal(await p.locator('.ps-meta-input').count(), 0, 'collapse never commits a title draft');
+    await phone.close();
+  }
+
+  // Plugin host: exercise real session replacement, listeners, keyboard isolation and all targets in both shells.
+  for (const width of [1280, 900, 390]) {
+    const plugins = await browser.newContext({ viewport: { width, height: 900 } });
+    const p = await plugins.newPage();
+    p.on('pageerror', error => errors.push(error.message));
+    await p.goto(`${server.url}/editor?stubPlugin=1`);
+    await p.waitForSelector('.ps-editor[data-ps-editable] [data-ps-plugin]', { state: 'attached' });
+    assert.equal(await p.locator('[data-ps-plugin]').count(), 1);
+    assert.equal(await p.evaluate(() => window.__plugin.host.origin), 'opened');
+    assert.equal(await p.evaluate(() => window.__plugin.host.shell), width <= 760 ? 'phone' : 'desktop');
+    if (width === 900) assert.equal(await p.evaluate(() => window.__plugin.host.findTarget('clef')), null, 'closed drawer is not a visible target');
+    if (width <= 760) assert.equal(await p.evaluate(() => window.__plugin.host.findTarget('composer')), null, 'empty phone composer has no display');
+    await p.evaluate(() => window.__plugin.host.dispatch({ label: 'Target fixture', run: draft => { draft.document.meta.composer = 'A'; } }, {}));
+    if (width <= 760) await p.waitForSelector('.ps-shell-phone[data-header="collapsed"]');
+    else await p.evaluate(() => document.querySelector('.ps-inspector [data-tab="layout"]').click());
+    for (const target of ['title', 'composer', 'key', 'time', 'tempo', 'clef', 'details', 'parts']) {
+      await p.evaluate(target => window.__plugin.host.revealTarget(target), target);
+      await p.waitForFunction(target => {
+        const element = window.__plugin.host.findTarget(target);
+        if (!element) return false;
+        const rect = element.getBoundingClientRect();
+        const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return rect.width > 0 && rect.height > 0 && hit && element.contains(hit);
+      }, target);
+      if (width === 900 && target === 'clef') {
+        assert.equal(await p.locator('.ps-inspector').evaluate(el => el.classList.contains('is-open')), true, 'reveal opens the medium drawer');
+        await p.locator('[aria-label="Plugin input"]').focus();
+        await p.keyboard.press('Escape');
+        assert.equal(await p.locator('.ps-inspector').evaluate(el => el.classList.contains('is-open')), true, 'plugin Escape preserves the inspector drawer');
+      }
+    }
+    // Leave the menu and inspector drawer closed so shortcuts would reach note entry without isolation.
+    await p.evaluate(() => window.__plugin.host.revealTarget('title'));
+    await p.locator('.ps-editor').focus();
+    await p.keyboard.press('Escape');
+    const before = await musicXml(p);
+    const mode = await p.locator('.ps-editor').getAttribute('data-ps-mode');
+    await p.getByRole('button', { name: 'Plugin edit', exact: true }).focus();
+    await p.keyboard.type('nc');
+    await p.locator('[aria-label="Plugin input"]').focus();
+    await p.keyboard.type('ncdefg');
+    await p.keyboard.press('Escape');
+    await p.keyboard.press('Control+z');
+    assert.equal(await musicXml(p), before, 'plugin typing and shortcuts leave the document alone');
+    assert.equal(await p.locator('.ps-editor').getAttribute('data-ps-mode'), mode);
+    await p.evaluate(() => window.__plugin.host.openPopover('details'));
+    await p.locator('.ps-popover-details').waitFor();
+    await p.locator('[aria-label="Plugin input"]').focus();
+    await p.keyboard.press('Escape');
+    assert.equal(await p.locator('.ps-popover-details').count(), 1, 'plugin Escape does not close editor popovers');
+    await p.locator('[aria-label="Plugin input"]').fill('');
+    // Real Details fields and Parts controls remain independently usable.
+    await p.getByLabel('Description', { exact: true }).fill('A study');
+    await p.getByLabel('Project', { exact: true }).fill('Album');
+    await p.getByLabel('Project', { exact: true }).press('Tab');
+    assert.equal(await p.evaluate(() => window.__plugin.host.getDocument().meta.description), 'A study');
+    await p.evaluate(() => window.__plugin.host.openPopover('parts'));
+    await p.locator('.ps-popover-parts').waitFor();
+    await answerConfirm(p, true);
+    // Use a real file input, which remounts EditorSession without replacing the outer demo.
+    const unmounts = await p.evaluate(() => { window.__oldPluginHost = window.__plugin.host; return window.__plugin.unmounts; });
+    if (width <= 760) await p.click('.ps-phead-more');
+    await p.setInputFiles('.ps-open-input', { name: 'opened.musicxml', mimeType: 'application/xml', buffer: Buffer.from(before) });
+    await p.waitForFunction(n => window.__plugin.unmounts === n + 1 && window.__plugin.active === 1, unmounts);
+    assert.equal(await p.evaluate(() => window.__plugin.host.origin), 'opened');
+    const pulses = await p.evaluate(() => window.__plugin.pulses);
+    await p.evaluate(() => window.dispatchEvent(new Event('ps-stub-pulse')));
+    assert.equal(await p.evaluate(() => window.__plugin.pulses), pulses + 1, 'only the new listener remains');
+    const notifications = await p.evaluate(() => window.__plugin.notifications);
+    await p.evaluate(() => window.__oldPluginHost.dispatch({ label: 'Old session edit', run: draft => { draft.document.meta.title = 'Old'; } }, {}));
+    assert.equal(await p.evaluate(() => window.__plugin.notifications), notifications, 'old store subscription was removed');
+    await p.getByRole('button', { name: 'Plugin edit', exact: true }).click();
+    assert.equal(await p.evaluate(() => window.__plugin.notifications), notifications + 1, 'only one document subscription remains');
+    await answerConfirm(p, true);
+    if (width > 760) {
+      await p.click('.editor-demo-new');
+      await p.waitForFunction(() => window.__plugin.host.origin === 'new');
+    } else {
+      await p.click('.ps-phead-more');
+      await p.click('.ps-btn-new');
+      await p.waitForFunction(n => window.__plugin.unmounts > n, unmounts + 1);
+      assert.equal(await p.evaluate(() => window.__plugin.host.origin), 'new', 'phone New starts a new session');
+    }
+    console.log(`Plugin host: ${width}px targets, key isolation, details, file-open cleanup and origin pass`);
+    await plugins.close();
+  }
+
   // 0. The desktop shell: rail keycaps are keycap-sized, and the layout selector lists the full score.
   const keycap = await page.locator('.ps-rail .ps-keycap[aria-label="Quarter note"]').boundingBox();
   assert.ok(keycap.height >= 52 && keycap.width >= 56, `rail keycaps are 56x52 (${keycap.width}x${keycap.height})`);

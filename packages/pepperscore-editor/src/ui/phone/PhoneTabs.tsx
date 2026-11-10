@@ -17,10 +17,10 @@ import { useEditorStore } from '../useEditorStore';
 
 export type PhoneTab = 'value' | 'marks' | 'bar' | 'score' | 'layout';
 
-type PBtnProps = { label: string; on?: boolean; text?: boolean; disabled?: boolean; className?: string; onClick?(): void; children: ReactNode };
+type PBtnProps = { target?: string; label: string; on?: boolean; text?: boolean; disabled?: boolean; className?: string; onClick?(): void; children: ReactNode };
 
 /** A 44px toolbar target (a text button grows wider); without `onClick` it runs the keymap binding labelled `label`. */
-export function PBtn({ label, on, text, disabled, className = '', onClick, children }: PBtnProps) {
+export function PBtn({ target, label, on, text, disabled, className = '', onClick, children }: PBtnProps) {
   const { editable } = useUi();
   const run = useRun();
   const keys = binding(label)?.keys.join(' / ');
@@ -29,6 +29,7 @@ export function PBtn({ label, on, text, disabled, className = '', onClick, child
       type="button"
       className={`ps-btn ps-pbtn ${text ? 'ps-pbtn-text' : ''} ${on ? 'is-active' : ''} ${className}`.replace(/\s+/g, ' ').trim()}
       aria-label={label}
+      data-ps-target={target}
       aria-pressed={on ?? false}
       title={keys ? `${label} (${keys})` : label}
       disabled={!editable || disabled}
@@ -225,7 +226,7 @@ function ScoreRows() {
   const part = document.parts.find((p) => p.id === cursor.partId);
   const clef = part ? effectiveClef(part, index, cursor.staff) : undefined;
   const chip = (name: PopoverName, label: string, k: string, value: ReactNode) => (
-    <PBtn label={label} text className={`ps-pbtn-field ps-pchip-${name}`} onClick={() => togglePopover(name)}><span className="ps-chip-k">{k}</span>{value}</PBtn>
+    <PBtn target={name} label={label} text className={`ps-pbtn-field ps-pchip-${name}`} onClick={() => togglePopover(name)}><span className="ps-chip-k">{k}</span>{value}</PBtn>
   );
   return (
     <>
