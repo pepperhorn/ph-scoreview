@@ -13,6 +13,11 @@ Generated TAB assumes a 6-string guitar and falls back to "the first pitched par
 - **Ukulele detection:** from the part name ("Ukulele" = soprano GCEA re-entrant, "Tenor/Baritone/Bass Ukulele") plus a per-part host override. Sound: nylon guitar (GM 25, zero-based 24) until a uke sample exists.
 - **Fretless strings** (violin, viola, cello, double bass): **finger + position** notation, ported from the violintab app's charts (`~/violintab/src/lib/tab/instruments.ts`), with Davidoff cello positions and the known mislabel fix above 2nd position (memory `fretboard-alignment`).
 
+## Decisions after the T2 spike (human, 2026-11-10)
+- **Rendering: option D** — a four-line Verovio TAB staff with finger numbers, the `L`/`H` modifiers placed inline on the string line by SVG text substitution keyed by stable note ids (Verovio 6.3 throws on letters in `tab.fret`), position changes as `<dir>` ("I pos.", "III pos.", "pos. ½"). Applies to every render path (probe, chunk, whole, PDF). Evidence: `../handoffs/assets/2026-11-10-0013-t2-fretless-spike/`.
+- **Charts:** violin and cello ship (cello with the Davidoff relabel). Viola and double bass get **no** finger TAB until a teacher-approved chart is supplied; their parts show notation only.
+- Finger numbers are display only; playback stays on the score timeline.
+
 ## Default tunings (MIDI, low → high)
 | Instrument | Tuning |
 |---|---|
@@ -26,9 +31,9 @@ Generated TAB assumes a 6-string guitar and falls back to "the first pitched par
 ## Acceptance criteria
 - [ ] AC1 — TAB is offered and generated only for stringed parts; piano/cello/flute scores without strings show no TAB option; no TAB staff inside a piano brace.
 - [ ] AC2 — Each fretted instrument gets its string count and default tuning; re-entrant ukulele fingering is playable (solver handles a high 4th string); bass defaults to 4-string; host override per part and `tabTuning` work.
-- [ ] AC3 — Fretless parts get finger + position TAB matching violintab's charts (violin 1st–4th, cello half–4th Davidoff), engraved readably in Verovio.
+- [ ] AC3 — Violin and cello parts get finger + position TAB (option D) matching the charts (violin 1st–4th, cello half–4½ Davidoff), readable in dense passages, on every render path incl. PDF; double stops share a feasible hand position. Viola and double bass show no TAB yet.
 - [ ] AC4 — README "Guitar TAB" becomes "String TAB" and documents instruments, detection, defaults and overrides.
 - [ ] AC5 — Existing guitar TAB validation (`test:tab`, `test:tab-bake`, `test:fret-assign`) still passes.
 
 ## Open questions
-- T2 spike decides how finger + position renders in Verovio's TAB staff (or a custom lane) — lead will bring options to the human if there's a real trade-off.
+None (resolved after T2).
