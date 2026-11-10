@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-model href="https://music-encoding.org/schema/dev/mei-all.rng" type="application/xml" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<?xml-model href="https://music-encoding.org/schema/dev/mei-all.rng" type="application/xml" schematypens="http://purl.oclc.org/dsdl/schematron"?>
+<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="6.0-dev">
+   <meiHead>
+      <fileDesc>
+         <titleStmt>
+            <title>fing probe</title>
+         </titleStmt>
+         <pubStmt />
+      </fileDesc>
+   </meiHead>
+   <music>
+      <body>
+         <mdiv xml:id="rglvn3t">
+            <score xml:id="s2nvi9h">
+               <scoreDef xml:id="v1u1fypp" meter.count="2" meter.unit="4">
+                  <staffGrp xml:id="x1mjqhed">
+                     <staffDef xml:id="y18dn8eq" n="1" notationtype="tab.guitar" lines="4">
+                        <clef xml:id="fpnw08y" shape="TAB" line="3" />
+                        <tuning xml:id="gl57qsv">
+                           <course xml:id="h7n28e0" n="1" oct="5" pname="e" />
+                           <course xml:id="ier9ydq" n="2" oct="4" pname="a" />
+                           <course xml:id="j1kj43ij" n="3" oct="4" pname="d" />
+                           <course xml:id="k1vlcy4t" n="4" oct="3" pname="g" />
+                        </tuning>
+                     </staffDef>
+                  </staffGrp>
+               </scoreDef>
+               <section xml:id="l1ajc9th">
+                  <measure xml:id="mbfb4ni" n="1">
+                     <staff xml:id="v16cgwdl" n="1">
+                        <layer xml:id="wc5oymh" n="1">
+                           <tabGrp xml:id="t0" dur="8">
+                              <tabDurSym xml:id="ycq4g4e" />
+                              <note xml:id="n0-0" tab.fret="2" tab.course="1" visible="false" />
+                           </tabGrp>
+                           <tabGrp xml:id="t1" dur="8">
+                              <tabDurSym xml:id="b1bzcy6h" />
+                              <note xml:id="n1-0" tab.fret="1" tab.course="2" visible="false" />
+                           </tabGrp>
+                           <tabGrp xml:id="t2" dur="8">
+                              <tabDurSym xml:id="e8fhxa5" />
+                              <note xml:id="n2-0" tab.fret="2" tab.course="3" visible="false" />
+                           </tabGrp>
+                           <tabGrp xml:id="t3" dur="8">
+                              <tabDurSym xml:id="h1yhwrby" />
+                              <note xml:id="n3-0" tab.fret="1" tab.course="4" visible="false" />
+                           </tabGrp>
+                        </layer>
+                     </staff>
+                     <fing xml:id="f0-0" place="within" staff="1" startid="#n0-0" loc="6">
+                        <rend xml:id="k18oce47" fontsize="8.000000pt" fontweight="normal">L2</rend>
+                     </fing>
+                     <fing xml:id="f1-0" place="within" staff="1" startid="#n1-0" loc="4">
+                        <rend xml:id="n1e8o1jz" fontsize="8.000000pt" fontweight="normal">H1</rend>
+                     </fing>
+                     <fing xml:id="f2-0" place="within" staff="1" startid="#n2-0" loc="2">
+                        <rend xml:id="q1i2y5q6" fontsize="8.000000pt" fontweight="normal">L2</rend>
+                     </fing>
+                     <fing xml:id="f3-0" place="within" staff="1" startid="#n3-0" loc="0">
+                        <rend xml:id="ti4n7h8" fontsize="8.000000pt" fontweight="normal">H1</rend>
+                     </fing>
+                  </measure>
+                  <measure xml:id="vs7fa7a" n="2">
+                     <staff xml:id="e7zy8rb" n="1">
+                        <layer xml:id="f1t6ue4v" n="1">
+                           <tabGrp xml:id="t4" dur="8">
+                              <tabDurSym xml:id="hmah1rx" />
+                              <note xml:id="n4-0" tab.fret="2" tab.course="1" visible="false" />
+                              <note xml:id="n4-1" tab.fret="1" tab.course="2" visible="false" />
+                           </tabGrp>
+                           <tabGrp xml:id="t5" dur="8">
+                              <tabDurSym xml:id="l324k4q" />
+                              <note xml:id="n5-0" tab.fret="2" tab.course="3" visible="false" />
+                           </tabGrp>
+                           <tabGrp xml:id="t6" dur="8">
+                              <tabDurSym xml:id="o1eexz9m" />
+                              <note xml:id="n6-0" tab.fret="1" tab.course="4" visible="false" />
+                           </tabGrp>
+                           <rest xml:id="q1l4mpqq" dur="8" />
+                        </layer>
+                     </staff>
+                     <fing xml:id="f4-0" place="within" staff="1" startid="#n4-0" loc="6">
+                        <rend xml:id="slkqhyo" fontsize="8.000000pt" fontweight="normal">L2</rend>
+                     </fing>
+                     <fing xml:id="f4-1" place="within" staff="1" startid="#n4-1" loc="4">
+                        <rend xml:id="vkemj0l" fontsize="8.000000pt" fontweight="normal">H1</rend>
+                     </fing>
+                     <fing xml:id="f5-0" place="within" staff="1" startid="#n5-0" loc="2">
+                        <rend xml:id="y1q53cg0" fontsize="8.000000pt" fontweight="normal">L2</rend>
+                     </fing>
+                     <fing xml:id="f6-0" place="within" staff="1" startid="#n6-0" loc="0">
+                        <rend xml:id="brttblt" fontsize="8.000000pt" fontweight="normal">H1</rend>
+                     </fing>
+                  </measure>
+               </section>
+            </score>
+         </mdiv>
+      </body>
+   </music>
+</mei>
