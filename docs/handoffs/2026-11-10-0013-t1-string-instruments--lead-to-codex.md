@@ -42,3 +42,5 @@ None. Escalate per AGENTS.md §7.
 
 ---
 ## Receiver ack
+
+Acknowledged: implement fretted-only generated TAB selection, per-part string instrument overrides and default tunings, dynamic staff line counts, and re-entrant solver support within the owned files. Preserve imported TAB and octave-clef regressions; classify violin/cello for T3 without rendering finger TAB. No open questions. GBrain consulted: projects/scoreflow-music-reader and projects/scoreflow-music-reader/gotchas-abc-import.
