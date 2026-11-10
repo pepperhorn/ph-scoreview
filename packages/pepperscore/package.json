@@ -50,13 +50,16 @@
     "@tonejs/midi": "^2.0.28",
     "abcjs": "^6.7.1",
     "fflate": "^0.8.3",
+    "jspdf": "^4.2.1",
     "lucide-react": "^0.468.0",
     "smplr": "^1.0.0",
-    "soundfont2": "^0.5.0"
+    "soundfont2": "^0.5.0",
+    "svg2pdf.js": "^2.9.0"
   },
   "devDependencies": {
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "pdf-lib": "^1.17.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "typescript": "^5.9.3",

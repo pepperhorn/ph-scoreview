@@ -4,6 +4,7 @@ import type { VerovioFiles } from '../verovio-protocol';
 import { attributeOf, buildViewMei, scan, scanBaseline } from '../notation/mei-view';
 import { spellBaseline } from '../notation/mei-spelling';
 import { injectTab } from '../notation/mei-tab';
+import { musicFontOptions } from '../music-fonts';
 import { breakLines } from './fit';
 import { MM_PER_UNIT, PAPER_SIZES, pageGeometry } from './paper';
 import type { PageInput, PageOptions, PagesResult } from './engrave';
@@ -79,7 +80,8 @@ self.onmessage = async ({ data }: MessageEvent<{ input: PageInput; opts: PageOpt
       if (!tk!.loadData(text)) throw new Error('Could not engrave the PDF notation.');
     };
     const common = { font: opts.font || 'Bravura', fontFallback: 'Bravura', header: 'none', footer: 'none',
-      svgViewBox: true, scale: 100, smuflTextFont: 'none' };
+      svgAdditionalAttribute: ['staff@n'], svgViewBox: true, scale: 100, smuflTextFont: 'none', ...musicFontOptions(opts.font === 'Petaluma' ? 'Petaluma' : 'Bravura'),
+      spacingStaff: opts.spacingStaff ?? 12, spacingSystem: 12 + Math.ceil((opts.annotationRoom ?? 0) / 9), };
     load(input.data, { ...common, breaks: 'none' });
     let mei = tk.getMEI();
     const view = input.view ?? { breakEvery: 0, hiddenStaves: [], chordSymbols: true };
@@ -114,7 +116,7 @@ self.onmessage = async ({ data }: MessageEvent<{ input: PageInput; opts: PageOpt
     const pageOptions = {
       ...common, breaks: 'line', pageWidth: geometry.pageWidth, pageHeight: geometry.pageHeight,
       pageMarginLeft: geometry.margin, pageMarginRight: geometry.margin,
-      pageMarginTop: geometry.margin, pageMarginBottom: geometry.margin,
+      pageMarginTop: geometry.margin + Math.round((opts.headingMm ?? 0) / MM_PER_UNIT / geometry.scale), pageMarginBottom: geometry.margin + Math.ceil(opts.annotationRoom ?? 0),
       adjustPageWidth: false, adjustPageHeight: false,
     };
     let lines: PagesResult['lines'] = [], plannedMei = '';
@@ -125,7 +127,7 @@ self.onmessage = async ({ data }: MessageEvent<{ input: PageInput; opts: PageOpt
     // per-line reserve before re-planning. Bar measurements always come from the one context pass.
     for (let attempt = 0; ; attempt++) {
       const printable = geometry.pageWidth - 2*geometry.margin;
-      const firstEnd = breakLines(widths, printable-firstOverhead, opts.maxBars)[1] ?? count;
+      const firstEnd = breakLines(widths, Math.max(1, printable-firstOverhead), opts.maxBars)[1] ?? count;
       const starts = [0, ...breakLines(widths.slice(firstEnd), geometry.capacity, opts.maxBars).map(index=>index+firstEnd)];
       lines = starts.map((start,i)=>({start,count:(starts[i+1] ?? count)-start,width:0}));
       plannedMei = buildViewMei(mei, { ...view, breakBefore: starts });

@@ -1,10 +1,13 @@
-// T1 spike: exercise the real dedicated worker through a dynamic import. No UI or PDF composer yet.
+// Exercise the isolated engraving worker and vector PDF composer through dynamic imports.
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+const require = createRequire(new URL('../packages/pepperscore/package.json', import.meta.url));
+const { PDFDocument, PDFName, decodePDFRawStream } = require('pdf-lib');
 import { createServer } from 'vite';
 import { chromium, firefox, webkit } from 'playwright-core';
 import { root } from './serve-dist.mjs';
 
-const server = await createServer({ configFile: false, root, server: { host: '127.0.0.1', port: 0 },
+const server = await createServer({ configFile: false, root, optimizeDeps: { include: ['jspdf', 'svg2pdf.js', 'abcjs', '@tonejs/midi', 'fflate'] }, server: { host: '127.0.0.1', port: 0 },
   plugins: [{ name: 'pdf-spike-page', configureServer(server) {
     server.middlewares.use('/pdf-spike', (_req, res) => { res.setHeader('Content-Type','text/html'); res.end('<!doctype html><title>PDF spike</title>'); });
   } }] });
@@ -18,6 +21,89 @@ try {
   page.on('requestfailed', req => console.log('request failed:', req.url(), req.failure()));
   page.setDefaultTimeout(60000);
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/pdf-spike`);
+  const composition = await page.evaluate(async () => {
+    const { composePdf } = await import('/packages/pepperscore/src/lib/pdf/compose.ts');
+    const { exportScore } = await import('/packages/pepperscore/src/lib/pdf/export.ts');
+    const { parseAbc } = await import('/packages/pepperscore/src/lib/import.ts');
+    const signal = new AbortController().signal;
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 210 297"><text x="12" y="20" font-size="5">PDF fixture</text><text x="23" y="33" font-size="3" font-weight="600" fill="white" stroke="black" stroke-opacity="0.35" stroke-width="0.2" paint-order="stroke">C</text><g class="notehead" fill="#f04a38" stroke="#000000" stroke-width="0.4"><path d="M 20 30 L 25 30 L 25 34 Z"/></g></svg>';
+    const files = [];
+    for (const paper of ['a4','a3','letter','legal']) {
+      const blob = await composePdf([svg,svg], {paper,title:'PDF fixture'}, signal);
+      files.push({paper,bytes:Array.from(new Uint8Array(await blob.arrayBuffer()))});
+    }
+    const abc = 'X:1\nT:Export title\nC:Composer\nM:4/4\nL:1/4\nK:C\n' + Array(80).fill('[CEG] D E F |').join(' ');
+    const score = await parseAbc(abc);
+    const runtime = { module: new URL('/node_modules/verovio/dist/verovio-module.mjs', location.href).href, toolkit: new URL('/node_modules/verovio/dist/verovio.mjs', location.href).href };
+    const blob = await exportScore({ input:{data:score.document.engravingText}, options:{paper:'a4',maxBars:4,files:runtime},score,annotations:{showNames:true,showCounts:true,showChordSymbols:true,inferChordSymbols:true} }, signal);
+    const { scoreForView } = await import('/packages/pepperscore/src/lib/transpose.ts');
+    const { planStaves } = await import('/packages/pepperscore/src/lib/render.ts');
+    const { scanBaseline } = await import('/packages/pepperscore/src/lib/notation/mei-view.ts');
+    const twoParts = await parseAbc('X:1\nT:View snapshot\nM:4/4\nL:1/4\n%%score (one two)\nV:one clef=treble\nV:two clef=bass\nK:C\n[V:one] [CEG]4 |\n[V:two] C,4 |\nw: Hiddenword');
+    const viewScore = scoreForView(twoParts, 'written', 2);
+    const plan = planStaves(scanBaseline(twoParts.document.engravingText),viewScore,new Set([viewScore.parts[1].id]));
+    const viewBlob = await exportScore({input:{data:twoParts.document.engravingText,view:{breakEvery:0,hiddenStaves:plan.hiddenStaves,chordSymbols:true,spelling:plan.spelling}},score:viewScore,options:{paper:'a4',maxBars:4,files:runtime},annotations:{showNames:true,showCounts:true,inferChordSymbols:true,showChordSymbols:true}},signal);
+    const { annotatePage } = await import('/packages/pepperscore/src/lib/pdf/annotations.ts');
+    const tabSvg = new DOMParser().parseFromString('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><g class="system"><g class="measure"><g class="staff" data-n="1"><path d="M 10 20 L 190 20"/><g class="tabGrp" id="imported-tab"><rect x="30" y="20" width="10" height="10"/></g></g></g></g></svg>','image/svg+xml').documentElement;
+    document.body.appendChild(tabSvg);
+    const event = twoParts.parts[0].measures[0].notes[0];
+    annotatePage(tabSvg,twoParts,{showNames:true},undefined,new Map([[event.id,{...event,id:'imported-tab',sourceId:'imported-tab',pitches:[]}]]));
+    const tabAliasWorked = tabSvg.querySelectorAll('.note-label').length === event.pitches.length;
+    tabSvg.remove();
+    let unsupported = false;
+    try { await composePdf([svg.replace('PDF fixture','漢字')],{paper:'a4'},signal); } catch (error) { unsupported = error.message.includes('no glyph'); }
+    const cancelled = new AbortController(); cancelled.abort();
+    let aborted = false;
+    try { await composePdf([svg],{paper:'a4'},cancelled.signal); } catch (error) { aborted = error.name === 'AbortError'; }
+    return {files,tabAliasWorked,viewed:Array.from(new Uint8Array(await viewBlob.arrayBuffer())),exported:Array.from(new Uint8Array(await blob.arrayBuffer())),unsupported,aborted};
+  });
+  const parsePdf = async bytes => {
+    const doc = await PDFDocument.load(Uint8Array.from(bytes));
+    const texts = [], operators = [];
+    for (const page of doc.getPages()) {
+      const fonts = page.node.Resources().lookup(PDFName.of('Font'));
+      const mapping = new Map();
+      for (const key of fonts.keys()) {
+        const font = fonts.lookup(key), unicode = font.lookup(PDFName.of('ToUnicode'));
+        if (unicode) {
+          const descendant = font.lookup(PDFName.of('DescendantFonts')).lookup(0);
+          assert.ok(descendant.lookup(PDFName.of('FontDescriptor')).lookup(PDFName.of('FontFile2')), 'TrueType font is embedded');
+        }
+        if (!unicode) continue;
+        const cmap = new TextDecoder().decode(decodePDFRawStream(unicode).decode());
+        for (const match of cmap.matchAll(/<([0-9a-f]{4})>\s*<([0-9a-f]{4})>/gi)) mapping.set(match[1].toLowerCase(),String.fromCharCode(parseInt(match[2],16)));
+      }
+      const contents = page.node.Contents();
+      const streams = typeof contents.size === 'function' ? Array.from({length:contents.size()},(_,i)=>contents.lookup(i)) : [contents];
+      for (const content of streams) {
+        const stream = new TextDecoder().decode(decodePDFRawStream(content).decode());
+        operators.push(stream);
+        for (const match of stream.matchAll(/<([0-9a-f]+)>\s*Tj/gi)) texts.push((match[1].match(/.{4}/g)||[]).map(code=>mapping.get(code.toLowerCase())||'').join(''));
+      }
+    }
+    return {doc,text:texts.join(' '),operators:operators.join('\n')};
+  };
+  for (const file of composition.files) {
+    const parsed = await parsePdf(file.bytes);
+    assert.equal(parsed.doc.getPageCount(),2);
+    const size = {a4:[210,297],a3:[297,420],letter:[215.9,279.4],legal:[215.9,355.6]}[file.paper];
+    for (const page of parsed.doc.getPages()) {
+      assert.ok(Math.abs(page.getWidth()*25.4/72-size[0])<0.001);
+      assert.ok(Math.abs(page.getHeight()*25.4/72-size[1])<0.001);
+    }
+    assert.ok(parsed.text.includes('PDF fixture'), 'selectable title from embedded font');
+    assert.match(parsed.operators,/0\.94[0-9]* 0\.29[0-9]* 0\.22[0-9]* rg/, 'RGB pitch fill survives composition');
+    assert.match(parsed.operators,/ l/, 'vector paths survive composition');
+  }
+  const exported = await parsePdf(composition.exported);
+  assert.ok(exported.doc.getPageCount()>1);
+  assert.ok(exported.text.includes('Export title') && exported.text.includes('Composer'));
+  assert.ok(exported.text.includes('C') && exported.text.includes('1'), 'shared note names and counts in text layer');
+  const viewed = await parsePdf(composition.viewed);
+  assert.ok(viewed.text.includes('D') && viewed.text.includes('F') && viewed.text.includes('A'), 'annotation pitches follow transposed snapshot');
+  assert.ok(!viewed.text.includes('Hiddenword'), 'hidden part lyrics are excluded');
+  assert.equal(composition.unsupported,true); assert.equal(composition.aborted,true); assert.equal(composition.tabAliasWorked,true);
+  console.log('Vector composition passed: four exact paper sizes, embedded/selectable text, RGB paths, multipage annotated export, unsupported glyph error, cancellation.');
   const result = await page.evaluate(async () => {
     const { engravePages } = await import('/packages/pepperscore/src/lib/pdf/engrave.ts');
     const files = { module: new URL('/node_modules/verovio/dist/verovio-module.mjs', location.href).href,

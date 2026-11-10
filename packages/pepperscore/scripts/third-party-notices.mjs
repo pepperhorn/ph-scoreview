@@ -135,11 +135,16 @@ export function thirdPartyNotices({ title = 'pepperscore', packages, from = pack
     '',
     'Music fonts embedded in Verovio (SIL Open Font License 1.1; text below):',
     ...VEROVIO_FONTS.map(([name, credit]) => `  - ${name}: ${credit}`),
-    '', '');
+    '',
+    'PDF export also embeds TrueType conversions of the upstream Bravura, Petaluma and Petaluma Script OTF faces',
+    '(https://github.com/steinbergmedia/bravura and https://github.com/steinbergmedia/petaluma, redist/otf).',
+    'Converted with otf2ttf 0.2 and renamed PepperScore Music / Hand / Hand Text per the OFL; these retain the upstream OFL copyright notices. Glyph outlines are also embedded',
+    'directly in notation SVG paths.', '', '');
 
   if (poppins) {
     out.push(RULE, `Poppins font (via ${poppins.manifest.name} ${poppins.manifest.version}, SIL Open Font License 1.1)`, RULE, '',
-      'Used for the reader interface. The licence below (with the Poppins copyright notice) also serves as the SIL Open',
+      'Used for the reader interface and embedded PDF text (Regular and SemiBold TrueType faces from',
+      'https://github.com/google/fonts/tree/main/ofl/poppins, SIL Open Font License 1.1). The licence below (with the Poppins copyright notice) also serves as the SIL Open',
       'Font License 1.1 text for the Verovio music fonts listed above.', '', ofl, '', '');
   }
 
