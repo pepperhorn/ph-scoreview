@@ -5,7 +5,7 @@
 - **Ledger:** 0013 · **Spec:** docs/specs/0013-stringed-instrument-tab.md · **Plan:** docs/plans/0013-stringed-instrument-tab.md (T2)
 - **Branch:** orch/0013-t2-fretless-spike · **Worktree:** created by T3
 - **Base commit:** 0fe23ce
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 Decide, with rendered evidence, how PepperScore should show **finger + position** TAB for violin, viola, cello and double bass, and port the finger charts. No reader integration.

@@ -14,12 +14,13 @@ Next ID: 0014
 | 0001 | Composable player skins | in-review (t3; t1 #59, t2 #66 merged) | review 0001-t3-review-r3 | codex/gpt-6.1-sol | orch/0001-t3-drawer-controls | https://github.com/pepperhorn/ph-scoreview/pull/72 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-1eaa3a60 | task `0001-t3-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0001-t3-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-10-0001-t3-drawer-controls--codex-to-lead.md (@a7355cf) | 2026-11-10 |
 | 0002 | PDF export | ready (t1) | ci (webkit rerun) | codex/gpt-6.1-sol | orch/0002-t1-pdf-page-model | https://github.com/pepperhorn/ph-scoreview/pull/71 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-e3689cb4 | task `0002-t1-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0002-t1-impl-r1` | specs/0002-pdf-export.md | plans/0002-pdf-export.md | handoffs/2026-11-10-0002-t1-pdf-page-model--codex-to-lead.md (@0af4a6c) | 2026-11-10 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | dispatched (t3; t1 #68, t2 #69 merged) | child 0003-t3-impl-r1 | codex/gpt-6.1-sol | orch/0003-t3-plugin-slot |  |  | task `0003-t3-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0003-t3-impl-r1` | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-10-0003-t3-plugin-slot--lead-to-codex.md | 2026-11-10 |
-| 0013 | TAB for stringed instruments | ready (t2 spike) | ci (t2 #74); T1 waits on 0001-t3 #72 | codex/gpt-6.1-sol | orch/0013-t2-fretless-spike | https://github.com/pepperhorn/ph-scoreview/pull/74 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-dac5d810 | task `0013-t2-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0013-t2-impl-r1` | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md | handoffs/2026-11-10-0013-t2-fretless-spike--codex-to-lead.md (@044aa8c) | 2026-11-10 |
+| 0013 | TAB for stringed instruments | planned (t1, t3, t4; t2 spike merged #74) | child 0001-t3 review (T1 waits on PR #72) | codex/gpt-6.1-sol |  |  |  |  | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md |  | 2026-11-10 |
 
 ## Done / closed
 
 | K | Title | PR | Merged | Notes |
 |---|---|---|---|---|
+| 0013-t2 | Spike: finger + position TAB for fretless strings (task of 0013) | https://github.com/pepperhorn/ph-scoreview/pull/74 | 2026-11-10 | merged; option D chosen; violin + cello |
 | 0012 | Octave-clef parts draw at the right octave | https://github.com/pepperhorn/ph-scoreview/pull/75 | 2026-11-10 | 3927afd; ABC guide + upstream row 21 updated |
 | 0011 | [quick] Validation harness reliability (S12, S14) | https://github.com/pepperhorn/ph-scoreview/pull/73 | 2026-11-10 | merged; VALIDATION_BUDGET_SCALE; startVite/listen(0) |
 | 0003-t2 | Add, change and remove parts (task of 0003) | https://github.com/pepperhorn/ph-scoreview/pull/69 | 2026-11-10 | merged; 0003 continues with T3 |
@@ -64,6 +65,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-10 0013-t2 ready→merged — CI green on 044aa8c, merged PR #74 per human
 2026-11-10 0002-t1 in-review→ready — r3 approve on 0af4a6c (60-case independent probe, full first lines, max 0.990); webkit note-name flake on push run, rerun started; S19 logged
 2026-11-10 0001-t3 changes-requested→in-review — switcher gate fix pushed a7355cf (skin.mjs on port 0 confirmed); review r3
 2026-11-10 0012 in-review→closed — r1 approve on a373096 (AC1–AC4 rendered by reviewer), CI green, merged PR #75 (3927afd); guide, spec AC1 wording, upstream row 21 updated; S17, S18 logged
