@@ -5,7 +5,7 @@ import type { PaperId } from './paper';
 
 /** A snapshot of source notation and the same view plan used by the reader. */
 export type PageInput = { data: string; view?: ViewSpec };
-export type PageOptions = { paper: PaperId; maxBars: number; font?: string; files?: VerovioFiles };
+export type PageOptions = { paper: PaperId; maxBars: number; font?: string; files?: VerovioFiles; spacingStaff?: number; annotationRoom?: number; headingMm?: number };
 export type LineInfo = { start: number; count: number; width: number };
 export type PagesResult = { pages: string[]; lines: LineInfo[]; shrunk: boolean };
 

@@ -155,7 +155,7 @@ function parseXml(text: string): XMLDocument {
  * Bounding box of an element in the outer SVG's user (viewBox) coordinates. `rootInverse` is the outer SVG's inverted
  * screen matrix, when the caller measures many elements of one SVG without layout changes in between.
  */
-function box(element: Element, svg: SVGSVGElement, rootInverse?: DOMMatrix | null): DOMRect {
+export function annotationBox(element: Element, svg: SVGSVGElement, rootInverse?: DOMMatrix | null): DOMRect {
   try {
     const graphics = element as SVGGraphicsElement;
     const rect = graphics.getBBox();
@@ -261,6 +261,44 @@ function annotation(layer: Element, className: string, x: number, y: number, lab
   text.setAttribute('x', x.toFixed(1)); text.setAttribute('y', y.toFixed(1)); text.setAttribute('text-anchor', 'middle');
   text.setAttribute('class', `annotation ${className}`); text.textContent = label; layer.appendChild(text);
 }
+
+export type AnnotationSettings = { showNames?: boolean; showCounts?: boolean; subdivisions?: boolean; showChordSymbols?: boolean; inferChordSymbols?: boolean; scale?: AnnotationScale };
+export function annotationLayout(parts: Part[], settings: AnnotationSettings) {
+  const { showNames, showCounts, subdivisions, showChordSymbols, inferChordSymbols } = settings;
+  const sizeOf = (value: number | undefined) => value && Number.isFinite(value) && value > 0 ? value : 1;
+  const nameScale = sizeOf(settings.scale?.names), chordScale = sizeOf(settings.scale?.chordSymbols);
+  const beatScale = sizeOf(settings.scale?.counts), offbeatScale = sizeOf(settings.scale?.subdivisions);
+  const countScale = subdivisions ? Math.max(beatScale, offbeatScale) : beatScale;
+  const annotated = parts.filter(part => part.clef !== 'percussion' || showCounts);
+  let nameRows = 0;
+  if (showNames) { nameRows = 1; for (const part of annotated) for (const measure of part.measures) for (const note of measure.notes) nameRows = Math.max(nameRows, note.pitches.length); }
+  const laneRows = nameRows + (showCounts ? 1 : 0);
+  const nameRow = LANE_ROW * nameScale, countRow = LANE_ROW * countScale;
+  const lanesHeight = nameRows * nameRow + (showCounts ? countRow : 0);
+  const laneHeight = laneRows ? LANE_GAP + lanesHeight + 4 : 0;
+  const inferredRoom = showChordSymbols && inferChordSymbols ? Math.max(1, Math.round(2 + (chordScale - 1) * 17 / 9)) : 0;
+  const spacingStaff = Math.min(48, 12 + Math.ceil(laneHeight / 9) + inferredRoom);
+  const harmSize = showChordSymbols && chordScale !== 1 ? Math.round(chordScale * 100) : undefined;
+  return { nameScale, chordScale, beatScale, offbeatScale, countScale, nameRows, laneRows, nameRow, countRow, lanesHeight, laneHeight, spacingStaff, harmSize };
+}
+
+/** Shared screen/PDF drawing. Coordinates are outer SVG units, independent of its pixel size. */
+export function drawEventAnnotations(layer: Element, score: Score, part: Part, measure: Part['measures'][number], event: ScoreNote,
+  x: number, band: { top: number; laneTop: number }, settings: AnnotationSettings, layout: ReturnType<typeof annotationLayout>): void {
+  const { showNames, showCounts, subdivisions, showChordSymbols, inferChordSymbols } = settings;
+  const { nameScale, beatScale, offbeatScale, countScale, nameRows, nameRow, countRow } = layout;
+  const labelled = part.clef !== 'percussion';
+  if (showNames && labelled) [...event.pitches].sort((a, b) => b.midi - a.midi).forEach((pitch, row) => annotation(layer, 'note-label', x, band.laneTop + nameRow * (row + 1) - 4 * nameScale, pitch.step));
+  if (showCounts) {
+    const label = beatLabel(event.start, !!subdivisions);
+    annotation(layer, (offbeatScale !== 1 || beatScale !== 1) && /\D/.test(label) ? 'count-label is-subdivision' : 'count-label', x, band.laneTop + nameRows * nameRow + countRow - 4 * countScale, label);
+  }
+
+  if (showChordSymbols && inferChordSymbols && !event.chordSymbol && labelled) {
+    // Inferred names follow the view's key like the engraved chord symbols.
+    const chord = inferChordSymbol(event.pitches); if (chord) annotation(layer, 'chord-symbol', x, band.top - 20, score.pitchView ? spellChordSymbol(chord, measureKey(part, measure, score)) : chord);
+  }
+}
 function sourceIds(score: Score, event: ScoreNote): string[] {
   const mapped = score.document?.identity?.noteIdToSourceId?.[event.id];
   return [event.sourceId, mapped, event.id, ...event.pitches.map(p => p.sourceId)].filter((id): id is string => !!id);
@@ -269,7 +307,7 @@ function sourceIds(score: Score, event: ScoreNote): string[] {
  * Resolve the rendered event for a model note; a chord wins over any one of its noteheads. A note whose notation
  * staff is hidden (TAB view) resolves to its generated TAB event (`${id}-tab`, notation/mei-tab.ts).
  */
-function findNote(byId: Map<string, Element>, score: Score, event: ScoreNote): Element | undefined {
+export function findAnnotationNote(byId: Map<string, Element>, score: Score, event: ScoreNote): Element | undefined {
   for (const id of sourceIds(score, event)) {
     const target = byId.get(id) ?? byId.get(`${id}-tab`);
     if (!target) continue;
@@ -282,7 +320,7 @@ function findNote(byId: Map<string, Element>, score: Score, event: ScoreNote): E
 const SVG_ELEMENTS = new Set(['svg', 'g', 'defs', 'symbol', 'use', 'path', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'text', 'tspan', 'desc', 'title', 'style', 'clippath', 'mask', 'lineargradient', 'radialgradient', 'stop', 'pattern', 'marker', 'metadata']);
 const SAFE_URL = /url\(\s*['"]?(?!#)/i;
 /** Allowlist sanitizer: only static SVG drawing elements, local references and inert styles survive. */
-function sanitizeSvg(doc: XMLDocument): SVGSVGElement {
+export function sanitizeSvg(doc: XMLDocument): SVGSVGElement {
   if (doc.documentElement.namespaceURI !== SVG || doc.documentElement.localName !== 'svg') throw new Error('Verovio returned invalid SVG.');
   for (const element of Array.from(doc.querySelectorAll('*'))) {
     if (!element.isConnected && !doc.contains(element)) continue;
@@ -308,6 +346,35 @@ const yieldTask = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 type StaffBand = { top: number; bottom: number; center: number; laneTop: number; lines: boolean;
   /** A six-line TAB staff (its lines are drawn in segments around the fret numbers). */
   tab?: boolean };
+/** Staff bands and below-staff annotation lanes shared by reader systems and PDF systems. */
+export function annotationBands(system: Element, boxOf: (element: Element) => DOMRect, tabStaves: ReadonlySet<string>, withLanes: boolean): Map<string, StaffBand> {
+  const bands = new Map<string, StaffBand>();
+  const measureElements = Array.from(system.querySelectorAll('g.measure'));
+  for (const staff of Array.from(measureElements[0]?.querySelectorAll(':scope > g.staff') || [])) {
+    const n = staff.getAttribute('data-n'); if (!n) continue;
+    const tab = tabStaves.has(n);
+    const lines = Array.from(staff.querySelectorAll(':scope > path')).slice(0, tab ? Infinity : 5).map(line => boxOf(line));
+    const rect = lines.length ? null : boxOf(staff);
+    const top = lines.length ? Math.min(...lines.map(line => line.y)) : rect!.y;
+    const bottom = lines.length ? Math.max(...lines.map(line => line.y + line.height)) : rect!.y + rect!.height;
+    bands.set(n, { top, bottom, center: (top + bottom) / 2, laneTop: bottom, lines: lines.length > 1, tab });
+  }
+  // The lane goes below the staff and anything hanging under it: low notes, lyrics and below-staff directions.
+  if (withLanes) {
+    const ordered = [...bands.entries()].sort((a, b) => a[1].top - b[1].top);
+    const controls = Array.from(system.querySelectorAll('g.measure > g.dynam, g.measure > g.hairpin, g.measure > g.dir, g.measure > g.pedal')).map(control => boxOf(control));
+    ordered.forEach(([n, band], index) => {
+      const nextTop = ordered[index + 1]?.[1].top ?? Infinity;
+      let lowest = band.bottom;
+      // Staff content includes ledger-line notes, stems, articulations and lyrics.
+      for (const staff of Array.from(system.querySelectorAll(`g.staff[data-n="${CSS.escape(n)}"]`))) lowest = Math.max(lowest, boxOf(staff).bottom);
+      for (const rect of controls) if (rect.height && rect.top >= band.bottom - 2 && rect.top < band.bottom + (nextTop - band.bottom) / 2) lowest = Math.max(lowest, rect.bottom);
+      band.laneTop = lowest + LANE_GAP;
+    });
+  }
+  return bands;
+}
+
 /** One system block: drawn (`svg`) or a placeholder holding the size from layout data. */
 type Slot = {
   index: number;
@@ -358,11 +425,7 @@ export async function renderScore(
   const measureTotal = info.measureIds.length || count;
   // A chunked score is long or wide: Endless keeps one system only when that is still a small document.
   const endlessSingle = mode === 'landscape' && count <= ENDLESS_SINGLE_SYSTEM_LIMIT && !(info.chunked && score.parts.length * count > EAGER_STAFF_MEASURES);
-  // Text add-on scales (1 = regular). The count row holds on-beat and, with subdivisions, off-beat labels.
-  const sizeOf = (value: number | undefined) => value && Number.isFinite(value) && value > 0 ? value : 1;
-  const nameScale = sizeOf(options.annotationScale?.names), chordScale = sizeOf(options.annotationScale?.chordSymbols);
-  const beatScale = sizeOf(options.annotationScale?.counts), offbeatScale = sizeOf(options.annotationScale?.subdivisions);
-  const countScale = subdivisions ? Math.max(beatScale, offbeatScale) : beatScale;
+  const { nameScale, chordScale, beatScale, offbeatScale } = annotationLayout(score.parts, { subdivisions, scale: options.annotationScale });
   // Label sizes never change the bar layout or stave scale (the default zoom fits bars by width): only the lanes grow.
   const minimumBar = Math.max(portraitMinimumBarWidth(score), lyricBarWidth(info.lyricDensity));
   const barFloor = Math.max(190, minimumBar);
@@ -380,20 +443,8 @@ export async function renderScore(
   /** The staff a part is read from in this view: its notation staff, or its TAB staff in TAB view. */
   const displayStaff = (part: Part) => tabPlan.display.get(part.id) ?? staffOf.get(part.id) ?? '';
 
-  // Annotation lanes sit under each staff (below lyrics); reserve room for them in the engraving.
-  const annotated = visibleParts.filter(part => part.clef !== 'percussion' || showCounts);
-  let nameRows = 0;
-  if (showNames) { nameRows = 1; for (const part of annotated) for (const measure of part.measures) for (const note of measure.notes) nameRows = Math.max(nameRows, note.pitches.length); }
-  const laneRows = nameRows + (showCounts ? 1 : 0);
-  // Row heights scale with their labels; at the regular size each row is LANE_ROW.
-  const nameRow = LANE_ROW * nameScale, countRow = LANE_ROW * countScale;
-  const lanesHeight = nameRows * nameRow + (showCounts ? countRow : 0);
-  const laneHeight = laneRows ? LANE_GAP + lanesHeight + 4 : 0;
-  // Inferred chord symbols sit above the staff: keep room for their height (2 spacing units at the regular size).
-  const inferredRoom = showChordSymbols && inferChordSymbols ? Math.max(1, Math.round(2 + (chordScale - 1) * 17 / 9)) : 0;
-  const spacingStaff = Math.min(48, 12 + Math.ceil(laneHeight / 9) + inferredRoom);
-  // Source chord symbols: Verovio scales and spaces them (omitted at the regular size, so the view is unchanged).
-  const harmSize = showChordSymbols && chordScale !== 1 ? Math.round(chordScale * 100) : undefined;
+  const annotationMetrics = annotationLayout(visibleParts, { showNames, showCounts, subdivisions, showChordSymbols, inferChordSymbols, scale: options.annotationScale });
+  const { laneRows, lanesHeight, spacingStaff, harmSize } = annotationMetrics;
 
   // `natural`: one unbroken system at its natural width (Endless, and a Vertical score shorter than a full line).
   const verovioOptions = (pageWidth: number, natural = false): Record<string, unknown> => ({
@@ -604,31 +655,9 @@ export async function renderScore(
     // Nothing below changes layout until the annotation layer is appended, so the root matrix is read once.
     let inverse: DOMMatrix | null = null;
     try { inverse = svg.getScreenCTM()?.inverse() ?? null; } catch { /* not rendered */ }
-    const boxOf = (element: Element) => box(element, svg, inverse);
-    // Staff bands from the first measure of the system, keyed by staff number.
+    const boxOf = (element: Element) => annotationBox(element, svg, inverse);
     const measureElements = Array.from(svg.querySelectorAll('g.measure'));
-    for (const staff of Array.from(measureElements[0]?.querySelectorAll(':scope > g.staff') || [])) {
-      const n = staff.getAttribute('data-n'); if (!n) continue;
-      const tab = tabStaves.has(n);
-      const lines = Array.from(staff.querySelectorAll(':scope > path')).slice(0, tab ? Infinity : 5).map(line => boxOf(line));
-      const rect = lines.length ? null : boxOf(staff);
-      const top = lines.length ? Math.min(...lines.map(line => line.y)) : rect!.y;
-      const bottom = lines.length ? Math.max(...lines.map(line => line.y + line.height)) : rect!.y + rect!.height;
-      slot.bands.set(n, { top, bottom, center: (top + bottom) / 2, laneTop: bottom, lines: lines.length > 1, tab });
-    }
-    // The lane goes below the staff and anything hanging under it: low notes, lyrics and below-staff directions.
-    if (laneRows) {
-      const ordered = [...slot.bands.entries()].sort((a, b) => a[1].top - b[1].top);
-      const controls = Array.from(svg.querySelectorAll('g.measure > g.dynam, g.measure > g.hairpin, g.measure > g.dir, g.measure > g.pedal')).map(control => boxOf(control));
-      ordered.forEach(([n, band], index) => {
-        const nextTop = ordered[index + 1]?.[1].top ?? Infinity;
-        let lowest = band.bottom;
-        // Staff content includes ledger-line notes, stems, articulations and lyrics.
-        for (const staff of Array.from(svg.querySelectorAll(`g.staff[data-n="${CSS.escape(n)}"]`))) lowest = Math.max(lowest, boxOf(staff).bottom);
-        for (const rect of controls) if (rect.height && rect.top >= band.bottom - 2 && rect.top < band.bottom + (nextTop - band.bottom) / 2) lowest = Math.max(lowest, rect.bottom);
-        band.laneTop = lowest + LANE_GAP;
-      });
-    }
+    slot.bands = annotationBands(svg, boxOf, tabStaves, !!laneRows);
     const byId = new Map<string, Element>();
     for (const element of Array.from(svg.querySelectorAll('[id]'))) byId.set(element.id, element);
     const svgMeasureByIndex = new Map<number, Element>();
@@ -654,24 +683,16 @@ export async function renderScore(
         if (!measure) continue;
         for (const event of measure.notes) {
           const alias = tabAlias.get(event.id);
-          const element = findNote(byId, score, event) ?? (alias ? findNote(byId, score, alias) : undefined);
+          const element = findAnnotationNote(byId, score, event) ?? (alias ? findAnnotationNote(byId, score, alias) : undefined);
           if (!element || !svgMeasure.contains(element)) continue;
           const anchor = element.querySelector('.notehead') || element;
           const rect = boxOf(anchor); const x = rect.x + rect.width / 2; const y = rect.y + rect.height / 2;
           element.classList.add('reader-note'); element.setAttribute('data-note-id', event.id);
           notes.push({ element, event, partIndex, measure: measure.index, x, y });
           if (!band) continue;
-          const labelled = part.clef !== 'percussion';
-          if (showNames && labelled) [...event.pitches].sort((a, b) => b.midi - a.midi).forEach((pitch, row) => annotation(layer, 'note-label', x, band.laneTop + nameRow * (row + 1) - 4 * nameScale, pitch.step));
-          if (showCounts) {
-            const label = beatLabel(event.start, subdivisions);
-            annotation(layer, (offbeatScale !== 1 || beatScale !== 1) && /\D/.test(label) ? 'count-label is-subdivision' : 'count-label', x, band.laneTop + nameRows * nameRow + countRow - 4 * countScale, label);
-          }
+          drawEventAnnotations(layer, score, part, measure, event, x, band,
+            { showNames, showCounts, subdivisions, showChordSymbols, inferChordSymbols }, annotationMetrics);
           if (laneRows) laneBottom = Math.max(laneBottom, band.laneTop + lanesHeight + 2);
-          if (showChordSymbols && inferChordSymbols && !event.chordSymbol && labelled) {
-            // Inferred names follow the view's key like the engraved chord symbols.
-            const chord = inferChordSymbol(event.pitches); if (chord) annotation(layer, 'chord-symbol', x, band.top - 20, score.pitchView ? spellChordSymbol(chord, measureKey(part, measure, score)) : chord);
-          }
         }
       }
     }

@@ -42,3 +42,5 @@ None. Escalate per AGENTS.md §7.
 
 ---
 ## Receiver ack
+
+Acknowledged 2026-11-10: implement T2 only: vector composition at exact paper dimensions, embedded Poppins, shared reader annotation drawing and exportScore snapshot entry. Own only the listed PDF additions, render annotation extraction, package dependency/lock files, notices, validation/pdf.mjs and task handoffs. Preserve UI, editor, ledger and all protected files. Verify parsed PDFs and reader regression suites; return a committed handoff and draft PR. GBrain consulted: projects/scoreflow-music-reader and projects/scoreflow-music-reader/gotchas-abc-import. No open questions.
