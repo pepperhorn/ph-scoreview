@@ -29,3 +29,7 @@ npm run test -w pepperscore && npm run check && npm run build && npm run test:ta
 
 ---
 ## Receiver ack
+
+Acknowledged 2026-11-11 (Codex). I will map bare Bass/Acoustic Bass/Electric Bass to bass guitar while preserving explicit double-bass and vocal names, assign ukulele the existing nylon-guitar sound, and add a development-only mismatched-tuning warning. I will change only the owned name/classifier/warning code, its tests, and my 0016 handoffs; run the requested checks; push the task branch and open a draft PR. No open questions.
+
+GBrain lookup: `default:projects/scoreflow-music-reader` provides historical reader context; the current dispatch handoff is authoritative for these name rules.
