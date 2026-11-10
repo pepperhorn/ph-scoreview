@@ -7,7 +7,7 @@
 - **Branch:** orch/0012-octave-clef
 - **Worktree:** /home/shaun/.t3/worktrees/ph-vexflow-view/t3-ad0cfc0f
 - **Base commit:** 0fe23ce (dispatch base); receiver ack 05244bf
-- **PR:** draft opened after this handoff commit; URL supplied in the implementation return message.
+- **PR:** https://github.com/pepperhorn/ph-scoreview/pull/75 (draft)
 - **Status:** open
 - **Outcome:** partial — implementation complete; broader browser validation has failures/incomplete gates listed below. Lead review required.
 
