@@ -128,3 +128,41 @@ describe('chromatic cello/bass ranking', () => {
     expect(solveStringPitch(CELLO, 69, { step: 'A', alter: 0 })).toEqual(solveStringPitch(CELLO, 69));
   });
 });
+
+describe('r2 conventional position and unhinted spelling defaults', () => {
+  it.each([
+    [38, 4, 1], [40, 4, 3], // D2, E2
+    [45, 3, 1], [47, 3, 3], // A2, B2
+    [52, 2, 1], [53, 2, 2], // E3, F3
+    [59, 1, 1], [60, 1, 2], // B3, C4
+  ])('keeps cello MIDI %i in first position', (midi, string, finger) => {
+    expect(solveStringPitch(CELLO, midi)).toEqual({ string, position: 1, finger, modifier: '' });
+  });
+  it('keeps a two-octave C major scale in first position across open strings', () => {
+    const pitches = [36,38,40,41,43,45,47,48,50,52,53,55,57,59,60];
+    const notes = pitches.map(midi => solveStringPitch(CELLO, midi)!);
+    expect(notes.map(n => n.position)).toEqual([0,1,1,1,0,1,1,1,0,1,1,1,0,1,1]);
+    expect(notes.filter(n => n.finger !== 0).every(n => n.position === 1 && n.modifier === '')).toBe(true);
+    notes.forEach((note, i) => expect(fingeringPitch(CELLO, note)).toBe(pitches[i]));
+  });
+  it.each([CELLO, DOUBLE_BASS])('prefers first to half on every $id string, keeping half for open+1', chart => {
+    chart.openMidi.forEach((open, index) => {
+      for (const [offset, position, finger] of [[1,0.5,1],[2,1,1],[3,1,2],[4,1,3]] as const) {
+        // Inspect this string's candidates as another string may be open.
+        const candidate = fingeringCandidates(chart, open + offset).find(n => n.string === index + 1);
+        expect(candidate).toEqual({ string: index + 1, position, finger, modifier: '' });
+      }
+    });
+    expect(solveStringPitch(chart, chart.openMidi[3] + 1)).toEqual({ string: 4, position: 0.5, finger: 1, modifier: '' });
+  });
+  it.each([
+    [61, 4, 'D'], // C#4 / Db4
+    [68, 3, 'A'], // G#4 / Ab4
+    [75, 2, 'E'], // D#5 / Eb5
+  ] as const)('defaults violin MIDI %i to high 3 but respects a flat hint', (midi, string, flatStep) => {
+    const result = solveStringPitch(VIOLIN, midi);
+    expect(result).toEqual({ string, position: 1, finger: 3, modifier: 'H' });
+    expect(fingeringPitch(VIOLIN, result!)).toBe(midi);
+    expect(solveStringPitch(VIOLIN, midi, { step: flatStep, alter: -1 })).toEqual({ string, position: 1, finger: 4, modifier: 'L' });
+  });
+});

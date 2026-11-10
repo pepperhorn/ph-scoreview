@@ -32,9 +32,11 @@ export function fingeringPitch(chart: StringChart, note: StringFingering): numbe
 }
 
 /** Exact-pitch choices, opens first. Cello/bass prefer plain fingers anywhere
- * over extensions, then lower positions. Violin/viola prefer lower positions,
- * then plain fingers. Within a string/position, modified ties prefer H for a
- * matching sharp spelling, otherwise L (the conventional low-2 default).
+ * over extensions, then I before half position, then higher positions.
+ * Violin/viola prefer lower positions, then plain fingers. Modified ties use
+ * the matching spelling: raised (including double sharps) → H, otherwise L.
+ * Without a valid hint, C#/D#/G# prefer H (high 3 rather than low 4);
+ * other pitch classes prefer L, preserving low 2 and the flat-note default.
  * No octave fold, phrase continuity, double-stop or ringing-string solve.
  */
 export function fingeringCandidates(chart: StringChart, midi: number, spelling?: PitchSpelling): StringFingering[] {
@@ -55,11 +57,12 @@ export function fingeringCandidates(chart: StringChart, midi: number, spelling?:
   });
   const chromatic = chart.id === 'cello' || chart.id === 'double-bass';
   const matching = spelling && ((STEP_PC[spelling.step] + spelling.alter + 12) % 12 === midi % 12);
-  const preferred = matching && spelling.alter > 0 ? 'H' : 'L';
+  const preferred = (matching ? spelling.alter > 0 : [1, 3, 8].includes(midi % 12)) ? 'H' : 'L';
   const modified = (note: StringFingering) => Number(note.modifier !== '');
+  const positionRank = (note: StringFingering) => chromatic && note.position === 0.5 ? 1.25 : note.position;
   return candidates.sort((a, b) => Number(b.finger === 0) - Number(a.finger === 0)
     || (chromatic ? modified(a) - modified(b) : 0)
-    || a.position - b.position || modified(a) - modified(b)
+    || positionRank(a) - positionRank(b) || modified(a) - modified(b)
     || a.string - b.string
     || Number(a.modifier !== preferred) - Number(b.modifier !== preferred)
     || a.finger - b.finger);

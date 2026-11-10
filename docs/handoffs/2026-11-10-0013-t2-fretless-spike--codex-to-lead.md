@@ -169,3 +169,95 @@ exit 0
 ```
 
 No additional full browser validation is claimed by this revision. The previous full-validation limitations remain historical; r1 requested only package tests and type checks. Cross-family re-review and T3 integration are the lead's next steps. For GBrain (lead to promote): accepted D/violin+cello scope; spelling-aware modified-finger ranking; cello plain-before-extension rule; bounded `<fing>` placement/knockout findings. GBrain read refreshed `[default:projects/scoreflow-music-reader]`; the updated repo spec and r1 review supplied the task-specific decisions.
+
+
+## Review r2 response — final fix round
+
+- Review: https://github.com/pepperhorn/ph-scoreview/pull/74#pullrequestreview-5837609229 (reviewed `32f3608fc3f6e9a9f902262c0eccac9d011de9ee`). R1 fixes were confirmed; this section supersedes the earlier half-position/unhinted-default descriptions.
+- Code changes are limited to `solver.ts` and `solver.test.ts`. This return handoff is the only changed doc. No changes to charts, integration, validation or other owned tasks.
+- **F4:** cello and provisional bass still prefer opens and plain fingers first, then use position rank `I < half < I½ < II < …` (`0.5` maps to rank `1.25`). D2/E2, A2/B2, E3/F3 and B3/C4 now use I. Half remains available for open+1 (including cello C#2). Tests cover all four strings of both chromatic charts, plus a two-octave cello C-major scale with only open/I results and no half/I flip-flop.
+- **Unhinted violin:** C#/D#/G# pitch classes now prefer H when modified choices tie, yielding C#4/G#4/D#5 as high 3 instead of low 4. Other unhinted classes keep L, preserving C5/F4/Bb3 low 2 and Bb5 low 4. Matching spelling hints still win: Db4/Ab4/Eb5 explicitly choose low 4. Double sharps use the raised/H branch; double flats use L. T3 should still pass spelling with key-signature/gestural alterations (`accid.ges`), not only explicit written accidentals.
+- Added 14 cases, bringing solver coverage to **50 tests**; all previous spelling and plain-before-extension regressions remain.
+- Human scope remains D, violin+cello only. Provisional bass is tested for consistent solver policy but remains unintegrated and excluded from shipping finger TAB.
+
+### Probe evidence copied for lead archival
+
+All 13 variants' input/round-trip MEI, SVG and PNG files were copied from `/home/shaun/.cache/0013-t2-r1-fing-probe/` to **`/tmp/0013-t2-r2-fing-probe/`**, with script/report/log. Every copied file was byte-compared against its source; 55 files verified, plus a SHA-256 manifest. No artifact is committed to the repo. Archive before scratch cleanup. Native `<fing>` result remains unchanged: text round-trips, but bottom-string/double-stop displacement and narrow knockout prevent it replacing D directly.
+
+Key set: `/tmp/0013-t2-r2-fing-probe/within-aligned-offsets.mei`, `/tmp/0013-t2-r2-fing-probe/within-aligned-offsets.svg`, `/tmp/0013-t2-r2-fing-probe/within-aligned-offsets.png`.
+
+All absolute artifact paths:
+
+```text
+/tmp/0013-t2-r2-fing-probe/above-group-roundtrip.mei
+/tmp/0013-t2-r2-fing-probe/above-group.mei
+/tmp/0013-t2-r2-fing-probe/above-group.png
+/tmp/0013-t2-r2-fing-probe/above-group.svg
+/tmp/0013-t2-r2-fing-probe/above-note-roundtrip.mei
+/tmp/0013-t2-r2-fing-probe/above-note.mei
+/tmp/0013-t2-r2-fing-probe/above-note.png
+/tmp/0013-t2-r2-fing-probe/above-note.svg
+/tmp/0013-t2-r2-fing-probe/below-note-roundtrip.mei
+/tmp/0013-t2-r2-fing-probe/below-note.mei
+/tmp/0013-t2-r2-fing-probe/below-note.png
+/tmp/0013-t2-r2-fing-probe/below-note.svg
+/tmp/0013-t2-r2-fing-probe/below-offset-hidden-roundtrip.mei
+/tmp/0013-t2-r2-fing-probe/below-offset-hidden.mei
+/tmp/0013-t2-r2-fing-probe/below-offset-hidden.png
+/tmp/0013-t2-r2-fing-probe/below-offset-hidden.svg
+/tmp/0013-t2-r2-fing-probe/default-note-roundtrip.mei
+/tmp/0013-t2-r2-fing-probe/default-note.mei
+/tmp/0013-t2-r2-fing-probe/default-note.png
+/tmp/0013-t2-r2-fing-probe/default-note.svg
+/tmp/0013-t2-r2-fing-probe/hidden-placeholder-roundtrip.mei
+/tmp/0013-t2-r2-fing-probe/hidden-placeholder.mei
+/tmp/0013-t2-r2-fing-probe/hidden-placeholder.png
+/tmp/0013-t2-r2-fing-probe/hidden-placeholder.svg
+/tmp/0013-t2-r2-fing-probe/offset-hidden-roundtrip.mei
+/tmp/0013-t2-r2-fing-probe/offset-hidden.mei
+/tmp/0013-t2-r2-fing-probe/offset-hidden.png
+/tmp/0013-t2-r2-fing-probe/offset-hidden.svg
+/tmp/0013-t2-r2-fing-probe/probe.log
+/tmp/0013-t2-r2-fing-probe/probe.mjs
+/tmp/0013-t2-r2-fing-probe/report.json
+/tmp/0013-t2-r2-fing-probe/sha256.json
+/tmp/0013-t2-r2-fing-probe/within-aligned-offsets-roundtrip.mei
+/tmp/0013-t2-r2-fing-probe/within-aligned-offsets.mei
+/tmp/0013-t2-r2-fing-probe/within-aligned-offsets.png
+/tmp/0013-t2-r2-fing-probe/within-aligned-offsets.svg
+/tmp/0013-t2-r2-fing-probe/within-loc-roundtrip.mei
+/tmp/0013-t2-r2-fing-probe/within-loc.mei
+/tmp/0013-t2-r2-fing-probe/within-loc.png
+/tmp/0013-t2-r2-fing-probe/within-loc.svg
+/tmp/0013-t2-r2-fing-probe/within-note-roundtrip.mei
+/tmp/0013-t2-r2-fing-probe/within-note.mei
+/tmp/0013-t2-r2-fing-probe/within-note.png
+/tmp/0013-t2-r2-fing-probe/within-note.svg
+/tmp/0013-t2-r2-fing-probe/within-offsets-roundtrip.mei
+/tmp/0013-t2-r2-fing-probe/within-offsets.mei
+/tmp/0013-t2-r2-fing-probe/within-offsets.png
+/tmp/0013-t2-r2-fing-probe/within-offsets.svg
+/tmp/0013-t2-r2-fing-probe/within-rend-roundtrip.mei
+/tmp/0013-t2-r2-fing-probe/within-rend.mei
+/tmp/0013-t2-r2-fing-probe/within-rend.png
+/tmp/0013-t2-r2-fing-probe/within-rend.svg
+/tmp/0013-t2-r2-fing-probe/within-small-roundtrip.mei
+/tmp/0013-t2-r2-fing-probe/within-small.mei
+/tmp/0013-t2-r2-fing-probe/within-small.png
+/tmp/0013-t2-r2-fing-probe/within-small.svg
+```
+
+### R2 verification
+
+Ran `npm run test -w pepperscore && npm run check` in the foreground at the repo root, exit **0**:
+
+```text
+Test Files  11 passed (11)
+Tests       212 passed (212), including 50 solver tests
+pepperscore tsc: passed
+pepperscore-editor tsc: passed
+pepperscore-reader astro check + tsc: passed
+Astro Result (22 files): 0 errors, 0 warnings, 0 hints
+```
+
+`git diff --check` passed. Scope audit: only solver, its tests and this return handoff changed from r1. SHA-256 readback verified all 55 copied probe files. No new browser-validation or deployed-reader claim. This completes the requested last fix round; ready for lead review/decision. GBrain project context was refreshed, but the r2 review and user scope are the authority for these changes; no implementer writeback.
