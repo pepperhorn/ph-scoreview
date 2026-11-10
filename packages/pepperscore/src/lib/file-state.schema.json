@@ -92,6 +92,7 @@
           "minimum": 0,
           "maximum": 3
         },
+        "pitchColours": { "type": "boolean" },
         "names": {
           "type": "boolean"
         },

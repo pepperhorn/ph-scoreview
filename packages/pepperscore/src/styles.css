@@ -470,3 +470,26 @@
 .pepperscore .app-shell.has-skin-toolbar .octave-tool-dock.is-above-toolbar,
 .pepperscore .app-shell.has-skin-toolbar .ps-toast,
 .pepperscore .app-shell.has-skin-toolbar .reader-notices{bottom:calc(var(--ps-bottom-toolbar-h,0px) + 12px)}
+
+/* Pitch paint stays on heads; reader marks inherited from event groups take precedence. */
+.pepperscore[data-ps-pitch-colours] .notehead[data-pitch="C"]{fill:var(--ps-pitch-c);stroke:var(--ps-pitch-outline,rgba(0,0,0,.65));stroke-width:18;paint-order:stroke fill}
+.pepperscore[data-ps-pitch-colours] .notehead[data-pitch="C#"]{fill:var(--ps-pitch-c-sharp);stroke:var(--ps-pitch-outline,rgba(0,0,0,.65));stroke-width:18;paint-order:stroke fill}
+.pepperscore[data-ps-pitch-colours] .notehead[data-pitch="D"]{fill:var(--ps-pitch-d);stroke:var(--ps-pitch-outline,rgba(0,0,0,.65));stroke-width:18;paint-order:stroke fill}
+.pepperscore[data-ps-pitch-colours] .notehead[data-pitch="D#"]{fill:var(--ps-pitch-d-sharp);stroke:var(--ps-pitch-outline,rgba(0,0,0,.65));stroke-width:18;paint-order:stroke fill}
+.pepperscore[data-ps-pitch-colours] .notehead[data-pitch="E"]{fill:var(--ps-pitch-e);stroke:var(--ps-pitch-outline,rgba(0,0,0,.65));stroke-width:18;paint-order:stroke fill}
+.pepperscore[data-ps-pitch-colours] .notehead[data-pitch="F"]{fill:var(--ps-pitch-f);stroke:var(--ps-pitch-outline,rgba(0,0,0,.65));stroke-width:18;paint-order:stroke fill}
+.pepperscore[data-ps-pitch-colours] .notehead[data-pitch="F#"]{fill:var(--ps-pitch-f-sharp);stroke:var(--ps-pitch-outline,rgba(0,0,0,.65));stroke-width:18;paint-order:stroke fill}
+.pepperscore[data-ps-pitch-colours] .notehead[data-pitch="G"]{fill:var(--ps-pitch-g);stroke:var(--ps-pitch-outline,rgba(0,0,0,.65));stroke-width:18;paint-order:stroke fill}
+.pepperscore[data-ps-pitch-colours] .notehead[data-pitch="G#"]{fill:var(--ps-pitch-g-sharp);stroke:var(--ps-pitch-outline,rgba(0,0,0,.65));stroke-width:18;paint-order:stroke fill}
+.pepperscore[data-ps-pitch-colours] .notehead[data-pitch="A"]{fill:var(--ps-pitch-a);stroke:var(--ps-pitch-outline,rgba(0,0,0,.65));stroke-width:18;paint-order:stroke fill}
+.pepperscore[data-ps-pitch-colours] .notehead[data-pitch="A#"]{fill:var(--ps-pitch-a-sharp);stroke:var(--ps-pitch-outline,rgba(0,0,0,.65));stroke-width:18;paint-order:stroke fill}
+.pepperscore[data-ps-pitch-colours] .notehead[data-pitch="B"]{fill:var(--ps-pitch-b);stroke:var(--ps-pitch-outline,rgba(0,0,0,.65));stroke-width:18;paint-order:stroke fill}
+.pepperscore[data-ps-pitch-colours] .is-playing .notehead[data-pitch]{fill:inherit;stroke:inherit;stroke-width:inherit}
+.pepperscore[data-ps-pitch-colours] .ps-cursor .notehead[data-pitch]{fill:inherit;stroke:inherit;stroke-width:inherit}
+.pepperscore[data-ps-pitch-colours] .ps-selection .notehead[data-pitch]{fill:inherit;stroke:inherit;stroke-width:inherit}
+.pepperscore[data-ps-pitch-colours] .ps-transposed .notehead[data-pitch]{fill:inherit;stroke:inherit;stroke-width:inherit}
+.pepperscore[data-ps-pitch-colours] .ps-out-of-range .notehead[data-pitch]{fill:inherit;stroke:inherit;stroke-width:inherit}
+.pepperscore .ps-pitch-colour-tile{width:36px;height:36px;flex:none;padding:0;border:0;border-radius:7px;background:var(--ps-pitch-c);opacity:.45;box-shadow:none}
+.pepperscore .ps-pitch-colour-tile[aria-pressed="true"]{opacity:1;box-shadow:0 0 0 2px var(--ps-accent,#345642)}
+.pepperscore .ps-pitch-colour-tile svg{width:100%;height:100%}
+.pepperscore .ps-pitch-colour-tile text{font-family:Poppins,sans-serif;font-weight:600;font-size:22px;fill:var(--ps-pitch-letter,white);stroke:var(--ps-pitch-letter-outline,rgba(0,0,0,.35));stroke-width:3;paint-order:stroke fill}

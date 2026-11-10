@@ -25,6 +25,7 @@ try {
   page.on('requestfailed', req => console.log('request failed:', req.url(), req.failure()));
   page.setDefaultTimeout(60000);
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/pdf-spike`);
+  await page.addStyleTag({content:readFileSync(join(root,'packages/pepperscore/dist/style.css'),'utf8').replace(/@import[^;]+;/g,'')});
   const composition = await page.evaluate(async () => {
     const { composePdf } = await import('/packages/pepperscore/src/lib/pdf/compose.ts');
     const { exportScore } = await import('/packages/pepperscore/src/lib/pdf/export.ts');
@@ -61,6 +62,36 @@ try {
     const rect = element => { const b=annotationBox(element,geometrySvg); return {x:b.x*mm,y:b.y*mm,width:b.width*mm,height:b.height*mm}; };
     const expected = {lines:Array.from(geometrySvg.querySelectorAll('g.staff > path')).slice(0,5).map(rect),head:rect(geometrySvg.querySelector('.notehead')),label:rect(geometrySvg.querySelector('.note-label'))};
     geometrySvg.remove();
+    const { CRF_PITCH_COLOURS } = await import('/packages/pepperscore/src/lib/skin.ts');
+    const { pitchColourStyle } = await import('/packages/pepperscore/src/lib/pitch-colours.ts');
+    const { renderScore } = await import('/packages/pepperscore/src/lib/render.ts');
+    const pitchScore = await parseAbc('X:1\nM:4/4\nL:1/4\nK:C\n[CE] D F G |'); pitchScore.title='';
+    const reader = document.createElement('div');reader.className='pepperscore';reader.setAttribute('data-ps-pitch-colours','');
+    Object.entries(pitchColourStyle(CRF_PITCH_COLOURS)).forEach(([k,v])=>reader.style.setProperty(k,v));
+    const canvas=document.createElement('div');canvas.style.width='1000px';reader.append(canvas);document.body.append(reader);
+    const {setVerovioBaseUrl}=await import('/packages/pepperscore/src/lib/verovio-runtime.ts');setVerovioBaseUrl('/node_modules/verovio/dist/');
+    const screen=await renderScore(canvas,pitchScore,'portrait',false,false,false,4,false,false,700,1);
+    const screenColours=Array.from(canvas.querySelectorAll('.notehead[data-pitch]'),head=>({pitch:head.dataset.pitch,fill:getComputedStyle(head).fill,stroke:getComputedStyle(head).stroke}));
+    screen.dispose();reader.remove();
+    const pitchBlob=await exportScore({input:{data:pitchScore.document.engravingText},score:pitchScore,options:geometryOptions,pitchColours:CRF_PITCH_COLOURS},signal);
+    const pitchPages=await engravePages({data:pitchScore.document.engravingText},geometryOptions,signal);
+    const pitchSvg=new DOMParser().parseFromString(pitchPages.pages[0],'image/svg+xml').documentElement;document.body.append(pitchSvg);
+    const {paintPitchColours}=await import('/packages/pepperscore/src/lib/pdf/annotations.ts');paintPitchColours(pitchSvg,pitchScore,CRF_PITCH_COLOURS);
+    // Reordered model pitches still bind by source identity, not chord index.
+    const {tagPitchColours}=await import('/packages/pepperscore/src/lib/pitch-colours.ts');
+    const firstEvent=pitchScore.parts[0].measures[0].notes[0];
+    const chord=pitchSvg.querySelector('.chord');const before=Array.from(chord.querySelectorAll('.notehead'),h=>h.dataset.pitch);
+    tagPitchColours(chord,{...firstEvent,pitches:[...firstEvent.pitches].reverse()},pitchScore.parts[0]);
+    if(JSON.stringify(before)!==JSON.stringify(Array.from(chord.querySelectorAll('.notehead'),h=>h.dataset.pitch)))throw Error('Chord source identities lost');
+    for(const kind of ['percussion','tab']){
+      const clone=chord.cloneNode(true);clone.querySelectorAll('[data-pitch]').forEach(h=>h.removeAttribute('data-pitch'));
+      tagPitchColours(clone,firstEvent,{clef:kind});if(clone.querySelector('[data-pitch]'))throw Error(kind+' must remain uncoloured');
+    }
+    const pitchRatio=210/pitchSvg.viewBox.baseVal.width;
+    const pitchHeads=Array.from(pitchSvg.querySelectorAll('.notehead[data-pitch]'),head=>{const b=annotationBox(head,pitchSvg);return {pitch:head.dataset.pitch,fill:getComputedStyle(head).fill,stroke:getComputedStyle(head).stroke,box:{x:b.x*pitchRatio,y:b.y*pitchRatio,width:b.width*pitchRatio,height:b.height*pitchRatio}};});
+    pitchSvg.querySelectorAll('.notehead[data-pitch]').forEach(head=>head.style.stroke='none');
+    const noOutline=await composePdf([new XMLSerializer().serializeToString(pitchSvg)],{paper:'a4'},signal);pitchSvg.remove();
+
     const { scoreForView } = await import('/packages/pepperscore/src/lib/transpose.ts');
     const { planStaves } = await import('/packages/pepperscore/src/lib/render.ts');
     const { scanBaseline } = await import('/packages/pepperscore/src/lib/notation/mei-view.ts');
@@ -81,7 +112,7 @@ try {
     const cancelled = new AbortController(); cancelled.abort();
     let aborted = false;
     try { await composePdf([svg],{paper:'a4'},cancelled.signal); } catch (error) { aborted = error.name === 'AbortError'; }
-    return {files,tabLaneWorked,geometry:{bytes:Array.from(new Uint8Array(await geometryBlob.arrayBuffer())),expected},accidentals:Array.from(new Uint8Array(await accidentalBlob.arrayBuffer())),tabAliasWorked,viewed:Array.from(new Uint8Array(await viewBlob.arrayBuffer())),exported:Array.from(new Uint8Array(await blob.arrayBuffer())),unsupported,aborted};
+    return {pitch:{noOutline:Array.from(new Uint8Array(await noOutline.arrayBuffer())),bytes:Array.from(new Uint8Array(await pitchBlob.arrayBuffer())),heads:pitchHeads,screen:screenColours,ratio:pitchRatio},files,tabLaneWorked,geometry:{bytes:Array.from(new Uint8Array(await geometryBlob.arrayBuffer())),expected},accidentals:Array.from(new Uint8Array(await accidentalBlob.arrayBuffer())),tabAliasWorked,viewed:Array.from(new Uint8Array(await viewBlob.arrayBuffer())),exported:Array.from(new Uint8Array(await blob.arrayBuffer())),unsupported,aborted};
   });
   if (process.env.PDF_ARTIFACTS) {
     mkdirSync(process.env.PDF_ARTIFACTS,{recursive:true});
@@ -237,6 +268,8 @@ try {
   assert.ok(Math.abs(nameX-expected.head.x-expected.head.width/2)<0.1,'name remains under its own note');
   // Actually rasterize the exported first page when Poppler is installed. The content-stream
   // geometry above is the portable fallback; it also catches nested transform regressions.
+  assert.notEqual(composition.pitch.ratio,1);
+  assert.deepEqual(composition.pitch.heads.map(({pitch,fill,stroke})=>({pitch,fill,stroke})),composition.pitch.screen,'real reader and PDF page paint match');
   const directory=mkdtempSync(join(tmpdir(),'pepperscore-pdf-r1-'));
   try {
     const input=join(directory,'geometry.pdf');writeFileSync(input,Buffer.from(composition.geometry.bytes));
@@ -252,6 +285,26 @@ try {
       assert.ok(coverage(expected.head)>0.2,'known notehead is present at full size');
       assert.ok(coverage(expected.label)>0.03,'note name is under its own note in the raster');
       assert.ok(expected.label.y>expected.head.y && Math.abs(expected.label.x+expected.label.width/2-expected.head.x-expected.head.width/2)<0.1,'name is centred below its note');
+      const pitchInput=join(directory,'pitch.pdf');writeFileSync(pitchInput,Buffer.from(composition.pitch.bytes));
+      execFileSync('pdftoppm',['-f','1','-singlefile','-r','288',pitchInput,join(directory,'pitch')],{stdio:'pipe'});
+      const data=readFileSync(join(directory,'pitch.ppm'));const h=/^P6\s+(\d+)\s+(\d+)\s+255\s/.exec(data.subarray(0,80).toString());assert.ok(h);
+      const plainInput=join(directory,'plain.pdf');writeFileSync(plainInput,Buffer.from(composition.pitch.noOutline));
+      execFileSync('pdftoppm',['-f','1','-singlefile','-r','288',plainInput,join(directory,'plain')],{stdio:'pipe'});
+      const plainData=readFileSync(join(directory,'plain.ppm'));const plainHeader=/^P6\s+(\d+)\s+(\d+)\s+255\s/.exec(plainData.subarray(0,80).toString());assert.ok(plainHeader);
+      const plain=plainData.subarray(plainHeader[0].length);
+      const w=Number(h[1]),px=data.subarray(h[0].length),factor=288/25.4;
+      for(const head of composition.pitch.heads){
+        const rgb=head.fill.match(/\d+/g).map(Number);let colour=0,dark=0,outline=0;
+        const b=head.box;
+        for(let y=Math.floor((b.y-.3)*factor);y<Math.ceil((b.y+b.height+.3)*factor);y++)for(let x=Math.floor((b.x-.3)*factor);x<Math.ceil((b.x+b.width+.3)*factor);x++){
+          const i=(y*w+x)*3;
+          if(rgb.every((c,k)=>Math.abs(c-px[i+k])<12))colour++;
+          if(px[i]<130&&px[i+1]<130&&px[i+2]<130)dark++;
+          if(plain[i]+plain[i+1]+plain[i+2]-(px[i]+px[i+1]+px[i+2])>60)outline++;
+        }
+        assert.ok(colour>5,`${head.pitch}: raster contains screen colour`);assert.ok(dark>2,`${head.pitch}: raster contains dark outline`);assert.ok(outline>2,`${head.pitch}: outline darkens pixels versus the same real page without outlines`);
+      }
+      console.log('Pitch PDF: real-page reader colours and outlined raster heads match at non-unit scale');
       console.log('Poppler raster: staff width/6.5 mm height, known notehead and aligned note-name ink passed.');
     } else console.log('Poppler unavailable: PDF content-stream transform geometry passed.');
   } finally {rmSync(directory,{recursive:true,force:true});}

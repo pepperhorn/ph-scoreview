@@ -1,3 +1,5 @@
+import { tagPitchColours } from '../pitch-colours';
+import type { PitchPalette } from '../skin';
 import type { Score, ScoreNote } from '../score';
 import { annotationBands, annotationBox, annotationLayout, drawEventAnnotations, findAnnotationNote, type AnnotationSettings } from '../render';
 
@@ -84,7 +86,23 @@ export function materializePaint(svg: SVGSVGElement, page: { width: number; heig
       // dy stays in SVG text units and therefore follows the same Tm scale as the glyph.
       shadow.setAttribute('dy', String((Number(element.getAttribute('dy')) || 0) + 0.5));
     } else shadow.setAttribute('transform', `${element.getAttribute('transform') || ''} translate(0 0.5)`);
-    element.before(outline, shadow);
+    if (element.hasAttribute('data-pitch')) element.before(outline);
+    else element.before(outline, shadow);
     element.style.setProperty('stroke', 'none');
+  }
+}
+
+/** Inline vector paint: export pages have no reader CSS or host variables. */
+export function paintPitchColours(svg: SVGSVGElement, score: Score, palette: PitchPalette, tabStaves: ReadonlySet<string> = new Set()): void {
+  const byId = new Map(Array.from(svg.querySelectorAll('[id]'), element => [element.id, element]));
+  for (const part of score.parts) for (const measure of part.measures) for (const event of measure.notes) {
+    const element = findAnnotationNote(byId, score, event);
+    if (element) tagPitchColours(element, event, part, tabStaves);
+  }
+  for (const head of Array.from(svg.querySelectorAll<SVGElement>('.notehead[data-pitch]'))) {
+    head.style.fill = palette[head.getAttribute('data-pitch') as keyof PitchPalette];
+    head.style.stroke = 'rgba(0,0,0,.65)';
+    head.style.strokeWidth = '18';
+    head.style.paintOrder = 'stroke fill';
   }
 }

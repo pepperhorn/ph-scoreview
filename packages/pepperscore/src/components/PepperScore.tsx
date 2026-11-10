@@ -1,3 +1,5 @@
+import PitchColourTile from './PitchColourTile';
+import { pitchColourStyle } from '../lib/pitch-colours';
 import { BAR_HEADER_ID, drawerExtras, resolveBar, warnUnknownBar } from '../lib/bar-items';
 import SkinBar from './SkinBar';
 import DrawerControls from './DrawerControls';
@@ -128,6 +130,8 @@ export type PepperScoreScrollOptions = {
 export type PepperScoreHandle = {
   /** Start playback (no-op while playing, when the chrome loads no audio, or with a `clock`). */
   play(): Promise<void>;
+  /** Toggle palette noteheads without engraving. */
+  setPitchColours(on: boolean): void;
   /** Stop and rewind (no-op with a `clock`: the host owns time). */
   stop(): void;
   /** Set the absolute transposition in semitones (clamped to -12…12), like `settings.semitones`. */
@@ -281,7 +285,7 @@ function PartName({ label }: { label: { name: string; switched?: string } }) {
 
 export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: preset = 'full', controls, skin, view, height, className, ariaLabel, settings, persist, assetBaseUrl, verovioBaseUrl, soundPack = 'core', soundSources, onReady, onPlay, onStop, onError, clock, audio: withAudio = true, onSeek, onTimeUpdate, onElementClick, onRender, highlights, autoFocus, paintTransition = 'reveal', ref }: PepperScoreProps) {
   const themeKey = skinKey(skin);
-  const themeStyle = useMemo(() => skinStyle(skin), [themeKey]);
+  const themeStyle = useMemo(() => ({ ...skinStyle(skin), ...pitchColourStyle(skin?.pitchColours) }), [themeKey]);
   useEffect(() => {
     try {
       if (process.env.NODE_ENV !== 'production' && rootRef.current) { warnInvalidTheme(rootRef.current, skin); warnUnknownBar(skin); }
@@ -671,7 +675,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     // view) take the host's value for the keys it gives; every other pref keeps what the reader has now (drawer edits).
     const host = hostPrefsRef.current;
     const hostResets: Partial<Prefs> = Object.fromEntries((['zoom', 'semitones', 'scorePitch', 'bpm', 'keyFlip', 'tabView'] as const).filter(key => host[key] !== undefined).map(key => [key, host[key]]));
-    setPrefs(prev => saved ? { ...prev, ...saved.settings, scorePitch: restoredScorePitch(next, switches, saved.settings.scorePitch), zoom } : { ...prev, bpm: clampBpm(Math.round(next.tempo)), zoom: null, semitones: 0, keyFlip: false, tabView: 'notation', scorePitch: 'written', ...hostResets });
+    setPrefs(prev => saved ? { ...prev, ...saved.settings, pitchColours: !!saved.settings.pitchColours, scorePitch: restoredScorePitch(next, switches, saved.settings.scorePitch), zoom } : { ...prev, bpm: clampBpm(Math.round(next.tempo)), zoom: null, semitones: 0, keyFlip: false, tabView: 'notation', scorePitch: 'written', ...hostResets });
     if (!inPlace) viewportRef.current?.scrollTo({ left: 0, top: 0 });
     setDrawer(false);
   };
@@ -1712,7 +1716,10 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   };
   const seekToMeasureRef = useRef(seekToMeasure);
   seekToMeasureRef.current = seekToMeasure;
+  const updatePitchColoursRef = useRef((on: boolean) => update({ pitchColours: on }));
+  updatePitchColoursRef.current = on => update({ pitchColours: on });
   useImperativeHandle(ref, () => ({
+    setPitchColours: on => updatePitchColoursRef.current(!!on),
     play: async () => { if (chrome.audio && !clockRef.current && !busyRef.current) await latestPlayRef.current(); },
     stop: () => { if (!clockRef.current) stopRef.current(true); },
     transpose: semitones => changePitchRef.current({ semitones: clampSemitones(Math.round(Number(semitones) || 0)) }),
@@ -1850,6 +1857,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
         onPointerUp={event => releaseStaveScale(event.currentTarget)} onPointerCancel={event => releaseStaveScale(event.currentTarget)}/>
       <output className="header-stave-scale-value">{staveScalePercent}%</output>
     </label>,
+    pitchColours: skin?.pitchColours ? <PitchColourTile on={!!prefs.pitchColours} toggle={() => update({ pitchColours: !prefs.pitchColours })}/> : null,
     noteNames: <button type="button" className="icon-button skin-note-names skin-annotation-toggle" aria-label="Note names" title="Note names" aria-pressed={prefs.names} onClick={() => update({ names: !prefs.names })}><Type size={18}/></button>,
     counts: <button type="button" className="icon-button skin-counts skin-annotation-toggle" aria-label="Counts" title="Counts" aria-pressed={prefs.counts} onClick={() => update({ counts: !prefs.counts })}><Hash size={18}/></button>,
     chordSymbols: <button type="button" className="icon-button skin-chord-symbols skin-annotation-toggle" aria-label="Chord symbols" title="Chord symbols" aria-pressed={prefs.chordSymbols && prefs.inferChordSymbols} onClick={() => { const on = !(prefs.chordSymbols && prefs.inferChordSymbols); update({ chordSymbols: on, inferChordSymbols: on }); }}><Music2 size={18}/></button>,
@@ -1904,7 +1912,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const inToolbar = activeBar === null && phoneToolbar && Boolean(noBarSwitch || embedOctave);
   const cornerSwitch = inToolbar || activeBar !== null ? null : noBarSwitch ?? embedOctave;
   const cornerPlay = inToolbar ? null : compactPlay;
-  return <div ref={rootRef} className={`pepperscore ${className ?? ''}`.trim()} data-ps-height={heightMode} data-ps-clock={clock ? '' : undefined} data-ps-clickable={onElementClick || octaveOn ? '' : undefined} data-ps-octave-tool={octaveOn ? '' : undefined} style={{ ...themeStyle, ...(heightMode === 'fixed' ? { height } : {}) }}
+  return <div ref={rootRef} className={`pepperscore ${className ?? ''}`.trim()} data-ps-pitch-colours={skin?.pitchColours && prefs.pitchColours ? "" : undefined} data-ps-height={heightMode} data-ps-clock={clock ? '' : undefined} data-ps-clickable={onElementClick || octaveOn ? '' : undefined} data-ps-octave-tool={octaveOn ? '' : undefined} style={{ ...themeStyle, ...(heightMode === 'fixed' ? { height } : {}) }}
     tabIndex={0} role="region" aria-label={ariaLabel || (loaded && score.title ? `Score: ${score.title}` : 'Score reader')} onKeyDown={onRootKeyDown}>
   <main className={`app-shell ${chrome.drawer ? '' : 'no-drawer'} ${toolbarBar.length ? 'has-skin-toolbar' : ''}`}>
     {chrome.openFile && <input ref={fileRef} type="file" accept={SCORE_FILE_ACCEPT} hidden onChange={e => { readFile(e.target.files?.[0]); e.target.value = ''; }}/>}
@@ -2016,7 +2024,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
         <DrawerControls items={drawerExtras(activeBar, activeChrome)} elements={headerElements}/>
 
         <div className="drawer-panel reading-panel"><h3><Settings2 size={17}/> Reading</h3><div className="font-choice"><span>Notation font</span><div className="font-toggle" role="group" aria-label="Notation font"><button className={prefs.notationFont === 'Bravura' ? 'is-selected' : ''} aria-pressed={prefs.notationFont === 'Bravura'} onClick={() => update({ notationFont: 'Bravura' })}>Bravura</button><button className={prefs.notationFont === 'Petaluma' ? 'is-selected' : ''} aria-pressed={prefs.notationFont === 'Petaluma'} onClick={() => update({ notationFont: 'Petaluma' })}>Petaluma</button></div></div><div className="font-choice"><span>Stave text font</span><div className="font-toggle" role="group" aria-label="Stave text font">{(['Sans', 'Serif', 'Mono'] as const).map(font => <button key={font} className={prefs.annotationFont === font ? 'is-selected' : ''} aria-pressed={prefs.annotationFont === font} onClick={() => update({ annotationFont: font })}>{font}</button>)}</div></div><label className="field-label" htmlFor={overhangId}>Overhang <span>{prefs.overlap === 0 ? 'Off' : `${prefs.overlap} ${prefs.mode === 'portrait' ? (prefs.overlap === 1 ? 'system' : 'systems') : (prefs.overlap === 1 ? 'bar' : 'bars')}`}</span></label><input id={overhangId} className="ps-range" type="range" min="0" max="3" step="1" value={prefs.overlap} onChange={e => update({ overlap: Number(e.target.value) })}/>{chrome.tabToggle && tabAvailable && <div className="font-choice tab-view-choice"><span>TAB</span>{tabToggle('drawer')}</div>}{readerParts.length > 4 && <button className="text-action reset-staves" onClick={resetStaves}><RotateCcw size={15}/> Reset score staves</button>}</div>
-        <div className="drawer-panel annotations-panel"><h3><Type size={17}/> Annotations</h3>{annotationRow('Note names', 'names', 'namesSize', () => update({ names: !prefs.names }))}{annotationRow('Chord symbols', 'chordSymbols', 'chordSymbolsSize', () => update({ chordSymbols: !prefs.chordSymbols }))}<label className="ps-switch-row inference-row"><span>Infer chord symbols</span><input type="checkbox" checked={prefs.inferChordSymbols} onChange={e => update({ inferChordSymbols: e.target.checked })}/></label>{annotationRow('Beat counts', 'counts', 'countsSize', () => update({ counts: !prefs.counts }))}{annotationRow('Count subdivisions', 'subdivisions', 'subdivisionsSize', () => update({ subdivisions: !prefs.subdivisions, counts: true }), prefs.counts && prefs.subdivisions)}</div>
+        <div className="drawer-panel annotations-panel"><h3><Type size={17}/> Annotations</h3>{skin?.pitchColours && <PitchColourTile on={!!prefs.pitchColours} toggle={() => update({ pitchColours: !prefs.pitchColours })}/>}{annotationRow('Note names', 'names', 'namesSize', () => update({ names: !prefs.names }))}{annotationRow('Chord symbols', 'chordSymbols', 'chordSymbolsSize', () => update({ chordSymbols: !prefs.chordSymbols }))}<label className="ps-switch-row inference-row"><span>Infer chord symbols</span><input type="checkbox" checked={prefs.inferChordSymbols} onChange={e => update({ inferChordSymbols: e.target.checked })}/></label>{annotationRow('Beat counts', 'counts', 'countsSize', () => update({ counts: !prefs.counts }))}{annotationRow('Count subdivisions', 'subdivisions', 'subdivisionsSize', () => update({ subdivisions: !prefs.subdivisions, counts: true }), prefs.counts && prefs.subdivisions)}</div>
         <div className="drawer-panel pitch-panel"><h3><Settings2 size={17}/> Pitch</h3><div className="pitch-options"><div><span className="pitch-label">Transpose score</span><div className="semitone-control"><button aria-label="Transpose down a semitone" disabled={prefs.semitones <= -12} onClick={() => transposeBy(-1)}><Minus size={16}/></button><output aria-live={drawer ? 'polite' : 'off'}>{prefs.semitones > 0 ? '+' : ''}{prefs.semitones} semitones</output><button aria-label="Transpose up a semitone" disabled={prefs.semitones >= 12} onClick={() => transposeBy(1)}><Plus size={16}/></button><button className="pitch-reset" aria-label="Reset transposition" title="Reset transposition" disabled={prefs.semitones === 0 && !prefs.keyFlip} onClick={() => changePitch({ semitones: 0, keyFlip: false })}><RotateCcw size={15}/></button></div></div><div className="pitch-key"><span className="pitch-label">Key</span><div className="pitch-key-control"><output className="pitch-key-readout" aria-live={drawer ? 'polite' : 'off'}>{readout.text}</output><button className={`pitch-key-flip ${flipTo ? '' : 'is-disabled'}`} aria-label={flipLabel} title={flipLabel} aria-disabled={!flipTo} onClick={flipKey}><span className="pitch-key-flip-icon" aria-hidden="true">⇄</span><span className="pitch-key-flip-label">{flipText}</span></button></div></div>{!forcedConcert && <div><span className="pitch-label">Score view</span><div className="font-toggle pitch-view" role="group" aria-label="Score pitch view"><button className={prefs.scorePitch === 'written' ? 'is-selected' : ''} aria-pressed={prefs.scorePitch === 'written'} onClick={() => changePitch({ scorePitch: 'written' })}>Transposing</button><button className={prefs.scorePitch === 'concert' ? 'is-selected' : ''} aria-pressed={prefs.scorePitch === 'concert'} onClick={() => changePitch({ scorePitch: 'concert' })}>Concert</button></div></div>}</div>{octaveToggle('drawer')}<p className="pitch-hint">{pitchHint(pitchView)}</p></div>
         <div className="drawer-panel abc-panel"><h3><FileMusic size={17}/> ABC notation</h3><p>Paste ABC text here, or use the open button in the header for files and folders.</p><textarea value={abcDraft} onChange={e => setAbcDraft(e.target.value)} spellCheck={false} aria-label="ABC notation"/><button className="primary-action" onClick={() => void readAbc(abcDraft)}>View notation <ChevronRight size={17}/></button><button className="text-action" onClick={loadSample}><FileMusic size={16}/> Open sample score</button>{lastFileInfo && <button className="text-action forget-last-file" title={LAST_FILE_PRIVACY} onClick={forgetLast}><Trash2 size={15}/> Forget last opened file</button>}</div>
       </div>
