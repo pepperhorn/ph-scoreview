@@ -112,6 +112,8 @@ export function scanBaseline(mei: string): BaselineInfo {
 export type ViewSpec = {
   /** Insert a page break before every `breakEvery`-th measure (0: none). Existing sb/pb are always removed. */
   breakEvery: number;
+  /** Explicit zero-based system starts; replaces breakEvery, including when empty. */
+  breakBefore?: number[];
   /** Staff numbers (`@n`) to remove, with their staff-bound control events and spans into removed content. */
   hiddenStaves: string[];
   /** Keep `<harm>` chord symbols. */
@@ -176,6 +178,7 @@ function hiddenContent(mei: string, hidden: Set<string>): { removed: Set<string>
  * of the document's first measure (a chunk of a long score): breaks fall where they fall in the whole score.
  */
 export function buildViewMei(mei: string, spec: ViewSpec, measureLimit = Infinity, breakOffset = 0): string {
+  const breakBefore = spec.breakBefore === undefined ? undefined : new Set(spec.breakBefore);
   const hidden = new Set(spec.hiddenStaves);
   const { removed, emptyGroups } = hidden.size ? hiddenContent(mei, hidden) : { removed: new Set<string>(), emptyGroups: new Set<number>() };
   const refersToRemoved = (value: string | null) => removed.size > 0 && tokensOf(value).some(token => removed.has(reference(token)));
@@ -232,8 +235,9 @@ export function buildViewMei(mei: string, spec: ViewSpec, measureLimit = Infinit
     }
     if (name === 'staffDef' || name === 'staffGrp') rewritten = withoutAttribute(withoutAttribute(rewritten, 'label'), 'label.abbr');
     if (name === 'measure') {
-      if (spec.breakEvery > 0 && measureIndex > 0 && (measureIndex + breakOffset) % spec.breakEvery === 0) {
-        if (wrapperStart >= 0) out.splice(wrapperStart, 0, '<pb/>'); else out.push('<pb/>');
+      if (measureIndex > 0 && (breakBefore ? breakBefore.has(measureIndex + breakOffset) : spec.breakEvery > 0 && (measureIndex + breakOffset) % spec.breakEvery === 0)) {
+        const marker = breakBefore ? '<sb/>' : '<pb/>';
+        if (wrapperStart >= 0) out.splice(wrapperStart, 0, marker); else out.push(marker);
       }
       measureIndex++;
     }
