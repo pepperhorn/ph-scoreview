@@ -83,7 +83,7 @@ export type PepperScoreSettings = Partial<{
   tabView: TabView;
   /** TAB identity by onReady part id; "none" suppresses TAB. Does not change playback. */
   tabInstruments: TabInstruments;
-  /** Open-string MIDI in physical bottom-to-top string order (re-entrant allowed). Overrides every generated part; omitted uses instrument defaults. */
+  /** Open-string MIDI in physical bottom-to-top string order (re-entrant allowed). Overrides generated parts with the same string count; other parts keep instrument defaults. */
   tabTuning: number[];
   /** Capo fret 0-12 of generated TAB; frets are relative to it. */
   capo: number;

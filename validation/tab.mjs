@@ -44,7 +44,7 @@ try {
   await page.goto(`${baseUrl}/validation/performance.html`);
   // The first import makes Vite optimize new dependencies and reload the page: import until it is stable.
   for (let attempt = 0; ; attempt++) {
-    try { await page.evaluate(() => import('/validation/tab-harness.ts')); await delay(1500); await page.evaluate(() => import('/validation/tab-harness.ts')); break; }
+    try { await page.evaluate(async () => { await import('/validation/tab-harness.ts'); await import('/validation/instrument-switch-harness.ts'); }); await delay(1500); await page.evaluate(() => import('/validation/instrument-switch-harness.ts')); break; }
     catch (error) { if (attempt > 5) throw error; await page.waitForLoadState('load'); }
   }
   const call = (name, ...args) => page.evaluate(async ([name, args]) => (await import('/validation/tab-harness.ts'))[name](...args), [name, args]);
@@ -243,11 +243,12 @@ try {
   within(fractionalCapo.tabNotes.map(note => pitchOf(note, TUNING, 3)), basePitches, 1, 'Capo 2.5 is a capo at 3');
   for (const tuning of [[35, 40, 45, 50, 55, 59, 64], [28, 33, 38, 43]]) {
     const strings = await call('engraveTab', NOTATION, { view: 'tab', tuning });
-    assert.equal(strings.staffLines['101'], tuning.length, `${tuning.length} strings: the TAB staffDef has ${tuning.length} lines`);
-    assert.equal(strings.drawnLines['101'], tuning.length, `${tuning.length} strings: ${tuning.length} lines are drawn (${strings.drawnLines['101']})`);
-    assert.ok(strings.tabNotes.every(note => note.course >= 1 && note.course <= tuning.length), `${tuning.length} strings: every course is a string`);
+    const count = TUNING.length; // Other string counts leave the guitar identity's six strings unchanged.
+    assert.equal(strings.staffLines['101'], count, `${tuning.length} strings: the TAB staffDef has ${tuning.length} lines`);
+    assert.equal(strings.drawnLines['101'], count, `${tuning.length} strings: ${tuning.length} lines are drawn (${strings.drawnLines['101']})`);
+    assert.ok(strings.tabNotes.every(note => note.course >= 1 && note.course <= count), `${tuning.length} strings: every course is a string`);
   }
-  console.log('TAB: fractional capo and 4- and 7-string tunings passed');
+  console.log('TAB: fractional capo and mismatched tuning counts preserve instrument defaults passed');
 
   // 11. Voices: a note held in voice 2 keeps its string while voice 1 moves (events are fingered in time order).
   const voices = await call('engraveTab', VOICES, { view: 'tab' });
@@ -306,6 +307,34 @@ try {
   assert.deepEqual(restored.bothHidden.saved, { 'P1-1': false, 'P2-1': false }, 'A TAB part is saved with its guitar\'s visibility');
   assert.deepEqual(restored.tabHidden.saved, { 'P1-1': true, 'P2-1': true }, 'A shown guitar saves its TAB part shown');
   console.log('TAB: staff count without mapped parts and hidden TAB parts passed');
+  // Host settings through PepperScore itself, using an ID returned by its onReady callback.
+  const liveCall = (name, ...args) => page.evaluate(async ([name, args]) =>
+    (await import('/validation/instrument-switch-harness.ts'))[name](...args), [name, args]);
+  const ready = (await liveCall('mountReader', NOTATION)).ready;
+  const id = ready.parts[0].id;
+  assert.ok(id, 'PepperScore onReady reports the part id used by tabInstruments');
+  await liveCall('mountLive', NOTATION, { settings: { tabView: 'both', tabInstruments: { [id]: 'none' } } });
+  assert.equal(await page.locator('.instrument-switch-live .tab-view-toggle').count(), 0, 'Host none hides the TAB controls');
+  assert.equal(await page.locator('.instrument-switch-live g.tabGrp').count(), 0, 'Host none generates no TAB');
+  await liveCall('mountLive', NOTATION, { settings: { tabView: 'both', tabInstruments: { [id]: 'bass5' }, tabTuning: TUNING } });
+  assert.ok(await page.locator('.instrument-switch-live .tab-view-toggle').count() > 0, 'Host bass5 offers TAB');
+  const lineCount = await page.locator('.instrument-switch-live g.staff[data-n="101"]').first().evaluate(staff =>
+    new Set([...staff.querySelectorAll(':scope > path')].flatMap(path => {
+      const match = /^M[-\d.]+ ([-\d.]+) L[-\d.]+ ([-\d.]+)/.exec(path.getAttribute('d') || '');
+      return match && match[1] === match[2] ? [match[1]] : [];
+    })).size);
+  assert.equal(lineCount, 5, 'Host bass5 draws five physical string lines despite six-note tabTuning');
+  const before = await page.evaluate(() => window.__psDraws);
+  await page.getByRole('button', { name: 'Track mixer', exact: true }).click();
+  await page.getByRole('button', { name: 'Voice for Guitar', exact: true }).first().click();
+  const picker = page.locator('.instrument-picker-panel');
+  await picker.getByRole('group', { name: 'Instrument or sound', exact: true }).getByRole('button', { name: 'Instrument', exact: true }).click();
+  await picker.getByRole('button', { name: 'Trumpet', exact: true }).click();
+  await page.waitForFunction(count => window.__psDraws > count, before, { timeout: 30000 });
+  assert.equal(await page.locator('.instrument-switch-live .tab-view-toggle').count(), 0, 'Switching to trumpet drops host bass5 override');
+  assert.equal(await page.locator('.instrument-switch-live g.tabGrp').count(), 0, 'Trumpet generates no bass TAB');
+  await liveCall('unmountLive');
+  console.log('TAB: PepperScore onReady ids, host none/bass5, tuning count and reader instrument switch passed');
   assert.deepEqual(errors, [], 'No page errors');
 } finally {
   await browser?.close();

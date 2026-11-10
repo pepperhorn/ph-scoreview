@@ -51,9 +51,6 @@ export function linkTabParts(score: Score): Score {
   return score;
 }
 
-const guitarSound = (part: Part) => (part.gmProgram !== undefined && part.gmProgram >= 25 && part.gmProgram <= 32) || part.instrument === 'guitar';
-/** A guitar part: GM programs 25-32 (1-based; nylon to guitar harmonics), the guitar sound, or "guitar" in its name. */
-export const isGuitarPart = (part: Part) => !part.tab && part.clef !== 'percussion' && (guitarSound(part) || (/guitar/i.test(part.name) && !/bass/i.test(part.name)));
 /** Parts an instrument switch rewrote as another instrument (instrument-view.ts; an octave move alone keeps the instrument). */
 const switchedParts = (score: Score) => new Set(Object.entries(score.instrumentView?.staves ?? {}).filter(([, staff]) => staff.clef).map(([id]) => id));
 /**
@@ -132,9 +129,10 @@ export function planTab(score: Score, staffOf: Map<string, string>, view: TabVie
       if (!n || hiddenIds.has(part.id)) continue;
       const instrument = instrumentFor(score, part, switchedParts(score).has(part.id));
       const configured = (score as TabScore).tabSettings;
-      // A supplied global tuning applies to every generated part. Legacy standard tuning means auto.
+      // A custom tuning applies only to identities with the same physical string count. Legacy standard means auto.
       const explicit = configured?.tuning ?? (options.tuning.join() !== STANDARD_TUNING.join() ? options.tuning : undefined);
-      tunings[n] = explicit ?? (instrument ? [...STRING_INSTRUMENTS[instrument].tuning] : options.tuning);
+      const defaults = instrument ? [...STRING_INSTRUMENTS[instrument].tuning] : options.tuning;
+      tunings[n] = explicit?.length === defaults.length ? explicit : defaults;
       const partner = partnerOf.get(part.id);
       const partnerN = partner && staffOf.get(partner.id);
       let tabN: string;

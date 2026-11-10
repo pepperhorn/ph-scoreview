@@ -10,7 +10,7 @@
 - **PR:** https://github.com/pepperhorn/ph-scoreview/pull/77
 - **Implementation commits:** 55956df (receiver ack), fc4e8e3 (implementation and return handoff); this follow-up records the PR URL.
 - **Status:** closed
-- **Outcome:** done — implementation, targeted acceptance checks and the full required verification chain passed.
+- **Outcome:** done — review r1 addressed; requested unit/check/build/TAB/fret/bake/instrument-switch checks passed, and reader passed on the requested scaled rerun. The earlier full aggregate run is retained below as historical evidence.
 
 ## Goal
 Generate TAB for fretted string parts with instrument defaults, physical string counts and re-entrant fingering. Remove the first-pitched-part fallback. Keep violin/cello classified for T3 without rendering finger TAB; viola/double bass remain notation only.
@@ -41,10 +41,11 @@ npm run test:manifest && npm run test:validation
 
 ## Decisions made
 - New public host setting: `settings.tabInstruments: Record<onReady part id, TabInstrument | 'none'>`. IDs: guitar, bass4, bass5, ukulele-soprano, ukulele-tenor, ukulele-baritone, ukulele-bass, violin, viola, cello, double-bass. Exact part IDs only; it changes TAB identity, not playback. Invalid keys/values are ignored. This is host configuration, not a saved per-file preference.
-- Default tuning is resolved independently for every generated staff. Explicit `settings.tabTuning` overrides **every generated part**, including an explicit standard guitar tuning on bass/ukulele. Existing nonstandard saved/global tunings retain that global override behavior. Legacy implicit standard-guitar preference values mean instrument defaults. Imported authored TAB retains its original tuning until the existing stale-TAB regeneration path applies.
+- Default tuning is resolved independently for every generated staff. Per the r1 lead decision, explicit `settings.tabTuning` and nonstandard saved/global tunings apply **only when their length matches the part identity's default string count**. All other parts keep their defaults. Six-note standard/Drop D affects guitars while bass/ukulele stay four strings; a four-note tuning affects four-string identities, not guitar or bass5. Legacy implicit standard-guitar preferences still mean instrument defaults. Authored imported TAB retains its tuning until the existing stale-TAB regeneration path applies.
 - Render metadata is attached to a shallow score view (`withTabSettings`), preserving protected render.ts and public render signatures. `TabSpec.tunings` carries worker staff-specific tunings; the existing global tuning remains a fallback.
 - String order is physical bottom to top, not sorted MIDI pitch. Re-entrant tuning enables distinct-string permutations; ordinary monotonic guitar/bass enumeration is preserved. Existing fret/span/capo limits and costs are unchanged.
-- Explicit names identify ukulele sizes and fretless strings before generic GM sounds. GM 33 Acoustic Bass qualifies as bass4 despite the old sound model's double-bass classification; an explicit Double/Upright/Contrabass name remains unsupported fretless bass.
+- GM programs are authoritative: 25–40 permit names to refine fretted string identity; 41/42/43/44 classify violin/viola/cello/contrabass exactly. Other programs never acquire TAB from their approximate playback icon or a misleading name. GM 45–52 harp/ensembles and 106–108 banjo/shamisen/koto no longer inherit violin/guitar TAB identities. Without a program, explicit string names are used; bass guitar/electric/acoustic/fretless/e-bass matches have word boundaries, while plain Bass/Basso and bass winds do not qualify.
+- Host `tabInstruments` is an initial TAB identity override: an actual reader instrument switch drops it and the source name, using the new GM identity. An octave-only edit keeps the override. Explicit host overrides may identify an otherwise unrecognized source part before an instrument switch.
 - Authored imported TAB remains available for otherwise unidentified parts; generating new TAB still uses the fretted classification in ordinary scores. No new finger-TAB staff is produced in this task.
 
 ## For the ABC guide
@@ -59,12 +60,12 @@ Lead should compare becreative src/lib/guitar-tunings.ts and chordl instruments.
 Do not sort re-entrant pitches. No existing fret/span/capo limit changed. No sibling repository was edited.
 
 ## Proposed README “String TAB” text (lead/T4)
-Generated fret-number TAB is available for guitar, four-/five-string bass guitar and soprano/tenor/baritone/bass ukulele. Parts are detected from their names and GM guitar/bass programs. Bass defaults to four strings; unqualified Ukulele means soprano re-entrant GCEA. No generated guitar TAB is added to piano, flute or other non-string parts. Violin/cello await finger-TAB integration; viola/double bass await approved charts.
+Generated fret-number TAB is available for guitar, four-/five-string bass guitar and soprano/tenor/baritone/bass ukulele. GM programs take precedence: programs 25–40 identify fretted strings, with explicit names refining ukulele sizes and bass identities. When no program is supplied, explicit string-instrument names are used. Names such as Bassoon, Bass Clarinet and choir Bass do not enable TAB. Bass defaults to four strings; unqualified Ukulele means soprano re-entrant GCEA. Piano, flute, harp and string-ensemble sounds get no generated TAB. Exact GM 41/42/43/44 or explicit names without a program identify the fretless families; violin/cello await T3, while viola/double bass await approved charts.
 
-Use `settings.tabInstruments: { '<onReady-part-id>': 'bass5' }` (or a ukulele identity above) to override TAB identity for a part; `'none'` disables it. This setting does not change the playback sound; ukulele scores can use nylon guitar GM 25. Omit `tabTuning` for per-instrument defaults, or supply 4–8 open-string MIDI pitches in physical string order to override every generated staff. Re-entrant order is preserved. Frets remain relative to the capo. Notation/TAB/Both controls appear only when the score can show TAB.
+Use `settings.tabInstruments: { '<onReady-part-id>': 'bass5' }` (or a ukulele identity above) to override a part's initial TAB identity; `'none'` disables it. An actual reader instrument switch replaces that host override; an octave-only edit retains it. This setting does not change playback sound; ukulele scores can use nylon guitar GM 25. Omit `tabTuning` for instrument defaults, or supply 4–8 open-string MIDI pitches in physical string order. A supplied or saved tuning applies only to generated parts with the same string count: six-note Drop D affects guitar, leaving bass and ukulele at their defaults; a four-note tuning affects four-string bass/ukulele, leaving guitar and five-string bass unchanged. Re-entrant order is preserved. Frets remain relative to the capo. Notation/TAB/Both controls appear only when the score can show TAB.
 
 ## Open questions / follow-ups
-No blocking questions. The lead explicitly extended ownership of validation/reader.mjs for piano-TAB-dependent assertions. The stale desktop tab-order assertion is fixed and full validation passes. Lead owns review/merge, T3 finger-TAB integration, T4 docs and GBrain promotion. Preserve physical-string ordering when integrating the fretless charts (those charts run high to low).
+No blocking questions. The lead explicitly extended ownership of validation/reader.mjs for piano-TAB-dependent assertions. The stale desktop tab-order assertion is fixed. Prior full validation passed; current r1 verification is recorded below. Lead owns review/merge, T3 finger-TAB integration, T4 docs and GBrain promotion. Preserve physical-string ordering when integrating the fretless charts (those charts run high to low).
 
 ## Reader assertion changes (lead-authorized follow-up)
 - validation/reader.mjs:115: removed only `'tab'` from the piano sample's expected desktop header tab order, matching AC1.
@@ -73,9 +74,49 @@ No blocking questions. The lead explicitly extended ownership of validation/read
 
 
 ## For GBrain (lead to promote)
-Generated TAB now resolves per-part fretted defaults and supports re-entrant physical courses. Host TAB identity overrides use exact onReady IDs, independently of audio instrument switches. Old implicit standard-guitar prefs mean auto defaults; explicit host tabTuning remains a global override.
+Generated TAB now resolves per-part fretted defaults and supports re-entrant physical courses. Host TAB identity overrides use exact onReady IDs and are dropped after actual instrument switches. GM programs gate detection; approximate sound icons never create string TAB identities. Implicit standard-guitar prefs mean auto defaults; explicit and saved tunings affect matching string counts only.
 
-## Verification output
+## Review r1 resolution and current verification
+Review: https://github.com/pepperhorn/ph-scoreview/pull/77#pullrequestreview-5838160914 (reviewed 27b2220).
+
+1. Blocking bass detection: GM program gates all name/icon inference. Bass guitar/electric/acoustic/fretless/e-bass names use word boundaries; plain Bass/Basso never identify a fretted part without a program. Tests cover Bassoon 71, Bass Clarinet 72, Bass Trombone 58, Bass Flute 74, choir Bass/Basso 53, and ABC `V:B nm="Bass"` with zero-based MIDI program 52.
+2. Tuning scope: explicit and saved tunings apply only to identities with the same string count. Tests cover standard six-string and Drop D in mixed guitar/bass/ukulele scores, four-string overrides, and a bass5 host override. Proposed README text above now states this policy.
+3. Fretless candidates: exact GM 41–44 only; GM 45–52 harp/ensembles do not inherit violin from a sound icon. The same authoritative-GM rule excludes 106–108 from guitar inference. Explicit names work without a program; explicit host identities remain available.
+4. Host override is dropped on actual reader instrument switches; octave-only moves retain it. Unit tests and the browser trumpet switch cover this.
+5. Removed unused guitarSound/isGuitarPart.
+6. Browser regression mounts PepperScore using the existing read-only instrument-switch harness. It reads the real onReady part ID, proves host none hides controls/engraving, proves bass5 draws five physical lines even with six-note tabTuning, and uses the actual Instrument picker to switch to trumpet and remove bass TAB. No harness file was edited.
+
+R1 files changed: lib/tab/string-instruments.ts, lib/tab/string-instruments.test.ts, lib/tab/tab-parts.ts, lib/prefs.ts (tuning documentation), validation/tab.mjs, and this return handoff. No reader.mjs assertion changed in r1; its prior single piano assertion fix remains.
+
+Foreground verification:
+```bash
+npm run test -w pepperscore && npm run check && npm run build && npm run test:tab && npm run test:fret-assign && npm run test:tab-bake && npm run test:instrument-switch && npm run test:reader
+```
+- Library tests: 14 files / 234 tests passed.
+- check: 0 errors, 0 warnings, 0 hints.
+- build: passed; demo dist/worker/Verovio parity passed.
+- TAB browser: passed, including the new onReady/host override/tuning-count/instrument-switch regression.
+- fret-assign: 2822 checks plus re-entrant checks passed; 2000 events in 7.8 ms (best of 5).
+- tab-bake: all 784 checks passed.
+- instrument-switch: all passed.
+- The combined foreground process then ended with signal 143 during reader (no assertion failure); reader had passed header and core checks. Ran the reader alone at the default budget: failed its fixed frame-sampling timing gate at reader.mjs:1025: `Twelve-staff playback: sampled playback frames (33)`, exit 1. Host load average observed during retry was 25.64 / 17.29 / 12.02.
+- Requested load retry: `VALIDATION_BUDGET_SCALE=2 npm run test:reader`, foreground, **exit 0**. reader.mjs does not consume this variable for its fixed sampling assertion; the retry passed without weakening the test. Both failures/interruption and the successful retry are recorded here.
+
+Actual final reader retry tail:
+```text
+chromium: system paging, overhang and page-jump playback follow passed
+chromium: silent playback fallback passed
+chromium: TimGM6mb fallback shares one soundfont download passed
+chromium: ID-less MusicXML with a multi-measure rest intro passed
+chromium: open dialog passed
+chromium: score link passed
+chromium: stave focus passed
+chromium: options drawer layout and annotation sizes passed
+chromium: endless with scrollbars passed
+Process exit code: 0
+```
+
+## Historical verification before review r1
 Lead-authorized follow-up ran this exact unmodified chain in the foreground:
 ```bash
 npm run check && npm run build && npm run test:manifest && npm run test:validation

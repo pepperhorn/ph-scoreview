@@ -25,25 +25,40 @@ export function withTabSettings(score: Score, instruments?: TabInstruments, tuni
   return { ...score, tabSettings: { instruments, tuning } };
 }
 
-/** Explicit identity/name wins over a generic GM sound, especially acoustic bass (GM 33). */
+const namedFretted = (name: string): TabInstrument | undefined => {
+  if (/\b(?:ukulele|ukelele)\b/i.test(name)) {
+    if (/\bbaritone\b/i.test(name)) return 'ukulele-baritone';
+    if (/\bbass\b/i.test(name)) return 'ukulele-bass';
+    return /\btenor\b/i.test(name) ? 'ukulele-tenor' : 'ukulele-soprano';
+  }
+  if (/\b(?:double[ -]?bass|contrabass|upright bass)\b/i.test(name)) return 'double-bass';
+  if (/\b(?:bass[ -]?guitar|(?:electric|acoustic|fretless)[ -]+bass|e-bass)\b/i.test(name)) return 'bass4';
+  if (/\bguitar\b/i.test(name)) return 'guitar';
+};
+
+/** Programs are authoritative; names only refine fretted strings or identify a part without a program. */
 export function stringInstrument(part: Part, override?: TabInstrument | 'none', switched = false): TabInstrument | undefined {
   if (part.tab || part.clef === 'percussion') return;
-  if (override === 'none') return;
-  if (validTabInstrument(override)) return override;
-  const name = switched ? '' : part.name;
-  if (/ukulele|ukelele/i.test(name)) {
-    if (/baritone/i.test(name)) return 'ukulele-baritone';
-    if (/bass/i.test(name)) return 'ukulele-bass';
-    return /tenor/i.test(name) ? 'ukulele-tenor' : 'ukulele-soprano';
+  // A reader instrument switch replaces the host's initial TAB identity, as well as its source name.
+  if (!switched) {
+    if (override === 'none') return;
+    if (validTabInstrument(override)) return override;
   }
-  if (/double[ -]?bass|contrabass|upright bass/i.test(name) || (part.instrument === 'double-bass' && (switched || part.gmProgram === undefined || part.gmProgram < 33 || part.gmProgram > 40))) return 'double-bass';
-  if (/viola/i.test(name) || part.instrument === 'viola') return 'viola';
-  if (/violin|fiddle/i.test(name) || part.instrument === 'violin') return 'violin';
-  if (/cello/i.test(name) || part.instrument === 'cello') return 'cello';
-  if (/bass/i.test(name) || part.instrument === 'bassguitar') return 'bass4';
-  if (/guitar/i.test(name) || part.instrument === 'guitar') return 'guitar';
-  if (part.gmProgram !== undefined && part.gmProgram >= 33 && part.gmProgram <= 40) return 'bass4';
-  if (part.gmProgram !== undefined && part.gmProgram >= 25 && part.gmProgram <= 32) return 'guitar';
+  const name = switched ? '' : part.name;
+  const gm = part.gmProgram;
+  if (gm !== undefined) {
+    if (gm >= 25 && gm <= 40) return namedFretted(name) ?? (gm <= 32 ? 'guitar' : 'bass4');
+    if (gm === 41) return 'violin';
+    if (gm === 42) return 'viola';
+    if (gm === 43) return 'cello';
+    if (gm === 44) return 'double-bass';
+    return;
+  }
+  const fretted = namedFretted(name);
+  if (fretted) return fretted;
+  if (/\b(?:violin|fiddle)\b/i.test(name)) return 'violin';
+  if (/\bviola\b/i.test(name)) return 'viola';
+  if (/\bcello\b/i.test(name)) return 'cello';
 }
 
 /** Overrides use the exact part id reported by onReady; unknown keys/values are ignored. */
