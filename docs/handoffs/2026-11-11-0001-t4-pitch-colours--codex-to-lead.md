@@ -6,6 +6,7 @@
 - **Spec:** [0001](../specs/0001-composable-player-skins.md), [0002](../specs/0002-pdf-export.md)
 - **Plan:** [0001 T4](../plans/0001-composable-player-skins.md)
 - **Dispatch:** [lead-to-codex](2026-11-11-0001-t4-pitch-colours--lead-to-codex.md)
+- **PR:** https://github.com/pepperhorn/ph-scoreview/pull/81 (draft; CI/reviews not polled)
 - **Branch:** orch/0001-t4-pitch-colours
 - **Worktree:** /home/shaun/.t3/worktrees/ph-vexflow-view/t3-6e1573c8-388b2ff6de2075c9
 - **Base commit:** 843767e (includes required 03d0ac7, verified ancestor); receiver acknowledgement ad1400e
