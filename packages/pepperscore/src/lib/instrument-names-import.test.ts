@@ -13,7 +13,7 @@ for (const [format, load] of [
 ] as const) describe(`${format} contextual instrument names`, () => {
   it.each([
     ['Soprano', 'Alto', 'Tenor', 'Bass'], ['S', 'A', 'T', 'B'],
-    ['Sop.', 'Alt.', 'Ten.', 'Bass'], ['Soprano', 'B'], ['A', 'Bass'], ['Ten.', 'Bass'],
+    ['Sop.', 'Alt.', 'Ten.', 'Bass'], ['Soprano', 'B'], ['Alto', 'Tenor', 'Bass'], ['A', 'T', 'B'],
   ])('resolves a choir (%j) without programs to voice and offers no TAB', async (...names) => {
     const score = await load(names);
     expect(score.parts).toHaveLength(names.length);
@@ -21,6 +21,29 @@ for (const [format, load] of [
     expect(score.parts.every(p => p.gmProgram === undefined)).toBe(true);
     expect(canShowTab(score)).toBe(false);
     expect(score.parts.map(p => stringInstrument(p))).toEqual(names.map(() => undefined));
+  });
+  it.each([['A'], ['A', 'B'], ['S', 'B'], ['A', 'A', 'B'], ['A', 'Bass'], ['Ten.', 'Bass'], ['Soprano', 'Alto', 'Tenor']])('keeps incomplete choir or placeholder names (%j) unchanged', async (...names) => {
+    const score = await load(names);
+    expect(score.parts.map(p => p.instrument)).toEqual(names.map(name => name === 'Bass' ? 'bassguitar' : 'piano'));
+  });
+  it.each([
+    ['Alto 1', 'Tenor 1', 'Trumpet', 'Bass', 'Drums'],
+    ['Alto 1', 'Tenor 2', 'Bass'], ['Soprano', 'Alto 1', 'Bass'],
+    ['Soprano', 'Bass', 'Piano'], ['Soprano', 'Bass', 'Guitar'],
+    ['Soprano', 'Bass', 'Trumpet'], ['Soprano', 'Bass', 'Saxophone'],
+    ['Soprano', 'Bass', 'Drums'],
+  ])('keeps band labels (%j) out of the choir pass', async (...names) => {
+    const score = await load(names);
+    const bass = score.parts.find(p => p.name === 'Bass')!;
+    expect(bass.instrument).toBe('bassguitar');
+    expect(stringInstrument(bass)).toBe('bass4');
+    expect(score.parts.filter(p => p.name !== 'Bass').every(p => p.instrument !== 'microphone')).toBe(true);
+  });
+  it.each([1, 25, 57, 66, 113])('rejects band GM program %i even with an anonymous label', async program => {
+    const score = await load(['Soprano', 'Bass', 'Other'], program);
+    const bass = score.parts.find(p => p.name === 'Bass')!;
+    expect(bass.instrument).toBe('bassguitar');
+    expect(stringInstrument(bass)).toBe('bass4');
   });
   it('keeps a band bass and guitar as fretted instruments', async () => {
     const score = await load(['Guitar', 'Bass']);

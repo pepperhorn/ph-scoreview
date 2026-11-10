@@ -24,7 +24,7 @@ Align name-only bass/ukulele playback and TAB detection, and explain ignored cus
 
 ## Decisions made
 - Reused `guitar`: GM 25 (nylon guitar). `instrumentDetails.program` is zero-based (24), while the instrument model's `gmProgram` is one-based (25). No new instrument id needed. Bass guitar uses existing GM 34.
-- Names containing the word Bass fall back to bass guitar after wind/voice checks (including Bass 1, Bass I, Synth Bass and Bass line). Explicit double-bass and ukulele rules keep precedence. A score-level pass called after ABC and MusicXML import identifies choir context from Soprano/Alto/Tenor, S/A/T or Sop./Alt./Ten. labels (also numbered variants). It assigns microphone to those vocal labels and Bass/B (also numbered variants), only without explicit GM programs. TAB respects the resolved microphone identity. Full-name winds such as Tenor Saxophone do not establish choir context.
+- Names containing the word Bass fall back to bass guitar after wind/voice checks (including Bass 1, Bass I, Synth Bass and Bass line). Explicit double-bass and ukulele rules keep precedence. A score-level pass called after ABC and MusicXML import requires an unresolved Bass/B, plus Soprano/Sop. or at least three distinct SATB roles (letters, full names or abbreviations). It skips scores with numbered vocal labels or drums/percussion, brass, saxophone, guitar or keyboard evidence by name/GM. In a qualifying choir it assigns microphone to unprogrammed vocal labels and Bass/B. TAB respects the resolved microphone identity. Full-name winds such as Tenor Saxophone do not establish choir context.
 - Tuning warning uses the approved inline try/catch around `process.env.NODE_ENV`, plus a type-only declaration, preserving browser-native safety and production elimination. A module-level set limits it to one warning per part id per session. Host `tabTuning` points to `settings.tabInstruments` (bass5 for the five-string/bass4 mismatch); reader-saved tuning points to choosing a matching tuning in the reader.
 
 ## Known gotchas
@@ -35,7 +35,7 @@ For existing ABC and MusicXML files **without an explicit MIDI program**, defaul
 - Bass/Acoustic Bass/Electric Bass/Bass Guitar and other names containing the word Bass (Bass 1, Bass I, Synth Bass, Bass line, Jazz Bass, Bass (8vb)) → bass guitar + bass4 TAB, instead of double bass/no TAB. The reviewed r1 piano regression for the broader names is fixed.
 - Double Bass/Contrabass/Upright Bass/String Bass → double bass, no generated TAB.
 - Bass Clarinet/Trombone/Flute → the respective wind sound instead of double bass; Bass Sax/Saxophone → existing alto-sax approximation, no TAB. Bassoon remains non-TAB.
-- Vocal/choir/SATB labels → voice. In a score with Soprano/Alto/Tenor, S/A/T or Sop./Alt./Ten., Bass/B becomes microphone with no TAB; known upper vocal labels also use microphone. A band with Guitar + Bass remains fretted.
+- Vocal/choir/SATB labels → voice. Bass/B becomes microphone with no TAB only when Soprano/Sop. is present or at least three distinct SATB roles establish choir context. A Bass/B candidate must exist; lone A, A+B and A+Bass keep their prior sounds. Numbered labels (Alto 1/Tenor 2) and any drums/percussion, brass, saxophone, guitar or keyboard evidence by name/GM disable the pass. In qualifying choirs the unprogrammed upper vocal labels also use microphone. Bands retain bass guitar and bass4 TAB.
 - Ukulele sizes → nylon guitar playback instead of piano, with independent ukulele TAB tuning.
 - Explicit MIDI programs retain precedence in both formats. Existing saved per-part sound choices continue to override import defaults when restored (review r1 notes); new defaults affect fresh imports without those saved overrides.
 - For five-string bass set `settings.tabInstruments: { '<part-id>': 'bass5' }` alongside five-note host `tabTuning`. A mismatched count keeps instrument defaults and emits a development-only diagnostic once per part id/session, with advice for host settings versus reader tuning as appropriate.
@@ -82,7 +82,7 @@ No implementation blockers. Lead to update the ABC guide on merge and promote th
 ## Review r1 — 5850219867
 Review: https://github.com/pepperhorn/ph-scoreview/pull/80#pullrequestreview-5850219867
 
-Lead-authorized scope expansion implemented the score-level choir pass in `lib/tab/string-instruments.ts`, with call sites only in `lib/import.ts` and `lib/notation/musicxml-source.ts`. Broader bass fallback, contextual choir identity and once-per-session source-specific warnings are all covered by tests. No remaining review findings or open questions.
+Lead-authorized scope expansion implemented the score-level choir pass in `lib/tab/string-instruments.ts`, with call sites only in `lib/import.ts` and `lib/notation/musicxml-source.ts`. Broader bass fallback, contextual choir identity and once-per-session source-specific warnings are all covered by tests. The r1 requests were addressed in that revision; the stricter r2 decision below supersedes its choir threshold. See the r2 follow-up for the component-level warning-source limitation.
 
 All requested r1 commands ran in the foreground and exited 0 against the code in this revision:
 
@@ -100,3 +100,33 @@ git diff --check: passed
 Tests cover numbered/synth/line bass names, bass saxophone exclusion, full and abbreviated choir labels on ABC/MusicXML plus the worker reader, explicit-program precedence, Guitar+Bass bands, tenor-sax exclusion, repeated render/chunk warning suppression and source-specific advice. Initial two-part-choir test failures exposed the upper voice retaining piano; fixed before the final green run.
 
 Scope audit from reviewed head `df68cd0`: only owned classifier/warning/tests, the newly authorized two import call sites, and this return handoff. No render/component/PDF/prefs/file-state/dependency/ledger changes. Logs: `/tmp/0016-r1-{unit,check,build,tab,switch,document}.log`.
+
+
+## Review r2 — final fix round
+Review: https://github.com/pepperhorn/ph-scoreview/pull/80#pullrequestreview-5850373028
+Reviewed base: `bda592305fbf8f3017b58a5eda57499cba394d94`.
+
+The lead narrowed choir inference after CI parser-diff caught placeholder A and A+B changing to voice. The pass now requires an unprogrammed Bass/B and either Soprano/Sop. or at least three distinct SATB role labels. Instrumental names/GM families and numbered vocal labels prevent any choir inference. This intentionally changes the r1 A+Bass and Ten.+Bass tests: these are no longer choirs and Bass remains bass guitar. Lone A and A+B retain piano defaults. Full-word SATB and S/A/T/B remain voices without TAB; big-band Alto 1/Tenor 1/Trumpet/Bass/Drums retains bass guitar and bass4 TAB. Explicit programs remain authoritative.
+
+Scope: classifier, import regression tests and this return handoff only. The parser comparison harness and reference parser were not changed.
+
+Follow-up for lead (reviewer r2 finding 3, out of scope): real PepperScore currently passes saved reader tunings through configured.tabSettings.tuning too, so planTab cannot reliably distinguish host versus reader source. Its direct unit tests cover both branches, but proving/correcting real-component advice requires separate components/** ownership and provenance plumbing. No component changes made in this task.
+
+Final r2 verification: all requested commands ran in the foreground and exited 0.
+
+```text
+npm run test -w pepperscore: 16 files, 365 tests passed
+npm run check: 0 errors, 0 warnings, 0 hints
+npm run build: Complete; demo/library dist check passed
+npm run test:tab: pipeline and reader switch checks passed (chromium)
+npm run test:instrument-switch: full suite passed
+npm run test:document: import, worker, navigation and channel regressions passed
+npm run test:parser-diff: Streaming MusicXML reader matches the DOM importer
+  ok case timewise with xmlns and comments
+  ok case note IDs: native, duplicate, xml:id, empty, self-closing
+git diff --check: passed
+```
+
+Tests include lone A, A+B, S+B, duplicate A+A+B, A+Bass, no-bass SAT upper voices, numbered labels, the requested big band, word/letter SATB, the three-role threshold, named instrumental exclusions and anonymous parts with keyboard/guitar/brass/sax/percussion GM programs. The final package/type/build checks were repeated after the last label-lookup adjustment and two extra distinct-role regressions. No review-harness changes. Last authorized fix round complete; ready for lead disposition.
+
+Logs `/tmp/0016-r2-{unit,check,build,tab,switch,document,parser-diff}.log`.

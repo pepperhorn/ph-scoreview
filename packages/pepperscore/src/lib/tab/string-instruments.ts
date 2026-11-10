@@ -80,16 +80,25 @@ export function instrumentFor(score: TabScore, part: Part, switched = false) {
 }
 
 
-/** Resolve ambiguous vocal labels once all imported parts are known; explicit source programs always win. */
+/** Resolve Bass/B only in a credible choir; placeholder letters and band labels keep their imported sounds. */
 export function resolveChoirNames(score: Score): Score {
-  const upperVoice = (name: string) => /^(?:soprano|alto|tenor|sop\.?|alt\.?|ten\.?|[sat])(?:\s+(?:[ivx]+|\d+))?$/i.test(name.trim());
-  const bassVoice = (name: string) => /^(?:bass|b)(?:\s+(?:[ivx]+|\d+))?$/i.test(name.trim());
-  if (!score.parts.some(part => upperVoice(part.name))) return score;
+  const roles: Record<string, string> = { soprano: 's', sop: 's', s: 's', alto: 'a', alt: 'a', a: 'a', tenor: 't', ten: 't', t: 't', bass: 'b', b: 'b' };
+  const label = (part: Part) => part.name.trim().toLowerCase().replace(/\.$/, '');
+  const role = (part: Part) => Object.hasOwn(roles, label(part)) ? roles[label(part)] : undefined;
+  if (!score.parts.some(part => role(part) === 'b' && part.gmProgram === undefined)) return score;
+  const bandPart = (part: Part) => {
+    const gm = part.gmProgram;
+    return part.clef === 'percussion' || part.instrument === 'drum-kit'
+      || /\b(?:drums?|percussion|brass|trumpets?|trombones?|tubas?|horns?|cornets?|flugelhorns?|sax(?:ophones?)?|guitars?|piano|keyboards?|organ|harpsichord|clavinet|celesta)\b/i.test(part.name)
+      || /^(?:soprano|sop\.?|alto|alt\.?|tenor|ten\.?|bass|[satb])\s*(?:\d+|\s+[ivx]+)\b/i.test(part.name.trim())
+      || (gm !== undefined && ((gm >= 1 && gm <= 32) || (gm >= 57 && gm <= 68) || (gm >= 113 && gm <= 120)));
+  };
+  if (score.parts.some(bandPart)) return score;
+  const distinctRoles = new Set(score.parts.map(role).filter(Boolean));
+  const soprano = score.parts.some(part => /^(?:soprano|sop)$/.test(label(part)));
+  if (!soprano && distinctRoles.size < 3) return score;
   for (const part of score.parts) {
-    if (part.gmProgram !== undefined || part.tab || part.clef === 'percussion') continue;
-    if (upperVoice(part.name) || bassVoice(part.name)) {
-      part.instrument = 'microphone';
-    }
+    if (part.gmProgram === undefined && !part.tab && role(part)) part.instrument = 'microphone';
   }
   return score;
 }
