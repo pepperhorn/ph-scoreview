@@ -132,3 +132,4 @@ The repo docs are the **source of truth** for this project. GBrain is the **memo
 ## Project notes (outside the managed block)
 
 - **ABC authoring guide** (`docs/guides/abc-authoring.md`) is a living ledger for apps that send ABC. Any PR that changes ABC import behaviour must say so in its return handoff ("For the ABC guide"), and the lead updates the guide's Rules and Change log when merging.
+- **Quick-lane merges (human, 2026-11-11):** an approved `[quick]` PR merges on green regardless of line count, unless it touches dependencies, CI/infra, public APIs, schema/migrations or auth. Larger feature PRs still follow §5a (the human has so far approved them on approve + green when asked).
