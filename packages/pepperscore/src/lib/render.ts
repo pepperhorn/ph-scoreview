@@ -346,6 +346,35 @@ const yieldTask = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 type StaffBand = { top: number; bottom: number; center: number; laneTop: number; lines: boolean;
   /** A six-line TAB staff (its lines are drawn in segments around the fret numbers). */
   tab?: boolean };
+/** Staff bands and below-staff annotation lanes shared by reader systems and PDF systems. */
+export function annotationBands(system: Element, boxOf: (element: Element) => DOMRect, tabStaves: ReadonlySet<string>, withLanes: boolean): Map<string, StaffBand> {
+  const bands = new Map<string, StaffBand>();
+  const measureElements = Array.from(system.querySelectorAll('g.measure'));
+  for (const staff of Array.from(measureElements[0]?.querySelectorAll(':scope > g.staff') || [])) {
+    const n = staff.getAttribute('data-n'); if (!n) continue;
+    const tab = tabStaves.has(n);
+    const lines = Array.from(staff.querySelectorAll(':scope > path')).slice(0, tab ? Infinity : 5).map(line => boxOf(line));
+    const rect = lines.length ? null : boxOf(staff);
+    const top = lines.length ? Math.min(...lines.map(line => line.y)) : rect!.y;
+    const bottom = lines.length ? Math.max(...lines.map(line => line.y + line.height)) : rect!.y + rect!.height;
+    bands.set(n, { top, bottom, center: (top + bottom) / 2, laneTop: bottom, lines: lines.length > 1, tab });
+  }
+  // The lane goes below the staff and anything hanging under it: low notes, lyrics and below-staff directions.
+  if (withLanes) {
+    const ordered = [...bands.entries()].sort((a, b) => a[1].top - b[1].top);
+    const controls = Array.from(system.querySelectorAll('g.measure > g.dynam, g.measure > g.hairpin, g.measure > g.dir, g.measure > g.pedal')).map(control => boxOf(control));
+    ordered.forEach(([n, band], index) => {
+      const nextTop = ordered[index + 1]?.[1].top ?? Infinity;
+      let lowest = band.bottom;
+      // Staff content includes ledger-line notes, stems, articulations and lyrics.
+      for (const staff of Array.from(system.querySelectorAll(`g.staff[data-n="${CSS.escape(n)}"]`))) lowest = Math.max(lowest, boxOf(staff).bottom);
+      for (const rect of controls) if (rect.height && rect.top >= band.bottom - 2 && rect.top < band.bottom + (nextTop - band.bottom) / 2) lowest = Math.max(lowest, rect.bottom);
+      band.laneTop = lowest + LANE_GAP;
+    });
+  }
+  return bands;
+}
+
 /** One system block: drawn (`svg`) or a placeholder holding the size from layout data. */
 type Slot = {
   index: number;
@@ -627,30 +656,8 @@ export async function renderScore(
     let inverse: DOMMatrix | null = null;
     try { inverse = svg.getScreenCTM()?.inverse() ?? null; } catch { /* not rendered */ }
     const boxOf = (element: Element) => annotationBox(element, svg, inverse);
-    // Staff bands from the first measure of the system, keyed by staff number.
     const measureElements = Array.from(svg.querySelectorAll('g.measure'));
-    for (const staff of Array.from(measureElements[0]?.querySelectorAll(':scope > g.staff') || [])) {
-      const n = staff.getAttribute('data-n'); if (!n) continue;
-      const tab = tabStaves.has(n);
-      const lines = Array.from(staff.querySelectorAll(':scope > path')).slice(0, tab ? Infinity : 5).map(line => boxOf(line));
-      const rect = lines.length ? null : boxOf(staff);
-      const top = lines.length ? Math.min(...lines.map(line => line.y)) : rect!.y;
-      const bottom = lines.length ? Math.max(...lines.map(line => line.y + line.height)) : rect!.y + rect!.height;
-      slot.bands.set(n, { top, bottom, center: (top + bottom) / 2, laneTop: bottom, lines: lines.length > 1, tab });
-    }
-    // The lane goes below the staff and anything hanging under it: low notes, lyrics and below-staff directions.
-    if (laneRows) {
-      const ordered = [...slot.bands.entries()].sort((a, b) => a[1].top - b[1].top);
-      const controls = Array.from(svg.querySelectorAll('g.measure > g.dynam, g.measure > g.hairpin, g.measure > g.dir, g.measure > g.pedal')).map(control => boxOf(control));
-      ordered.forEach(([n, band], index) => {
-        const nextTop = ordered[index + 1]?.[1].top ?? Infinity;
-        let lowest = band.bottom;
-        // Staff content includes ledger-line notes, stems, articulations and lyrics.
-        for (const staff of Array.from(svg.querySelectorAll(`g.staff[data-n="${CSS.escape(n)}"]`))) lowest = Math.max(lowest, boxOf(staff).bottom);
-        for (const rect of controls) if (rect.height && rect.top >= band.bottom - 2 && rect.top < band.bottom + (nextTop - band.bottom) / 2) lowest = Math.max(lowest, rect.bottom);
-        band.laneTop = lowest + LANE_GAP;
-      });
-    }
+    slot.bands = annotationBands(svg, boxOf, tabStaves, !!laneRows);
     const byId = new Map<string, Element>();
     for (const element of Array.from(svg.querySelectorAll('[id]'))) byId.set(element.id, element);
     const svgMeasureByIndex = new Map<number, Element>();

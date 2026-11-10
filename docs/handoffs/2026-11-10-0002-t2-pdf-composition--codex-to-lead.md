@@ -106,3 +106,44 @@ Lead acknowledges the return through the ledger; implementer has not edited it.
 - **Outcome:** composition implemented; AC8a screen parity remains dependent on the unimplemented screen pitch-colour feature.
 - **What changed:** exact vector PDF composition, snapshot export, shared annotations, embedded fonts, parser-based validation and notices.
 - **Verification:** see above.
+
+## Review r1 corrections (review 5838232005)
+
+Review: https://github.com/pepperhorn/ph-scoreview/pull/78#pullrequestreview-5838232005
+
+The first implementation's file parser did not verify physical drawing placement and missed the blockers. This round adds independent PDF graphics/text state inspection and Poppler raster checks against actual exported bytes.
+
+- Flatten nested SVG viewports into browser-resolved parent-space `g` matrices before svg2pdf sees them. The outer paper coordinate system is retained, eliminating Verovio definition-scale's double viewBox scaling.
+- Split Unicode accidentals into embedded music-font runs. Bravura has sharp/flat/natural Unicode glyphs; double accidentals use their equivalent BMP SMuFL glyphs because jsPDF encodes text as UTF-16. Retain missing-glyph validation. The fixture now exports actual F-sharp minor and B-flat inferred chords.
+- Normalize font family/weight/style in inline CSS as well as attributes. Freeze drawing/geometry properties on outline and shadow clones. Keep white fill, embedded Poppins SemiBold, 35% black stroke of width 3 and a 0.5-unit aligned shadow. Emulate a central baseline with measured glyph ascent/descent and centre simple text using the embedded face's advances. Temporary browser font faces are released after composition.
+- Extract `annotationBands` from `render.ts` without changing its placement algorithm; screen and PDF now call the same builder, including all six TAB lines, ordered next-staff limits, below-staff controls and the shared lane gap. A six-line TAB plus below-staff direction fixture checks the lane position.
+- Replace the weak metadata/page-number-satisfied assertion with the complete `G E C / 1 / C chord / D 2 / E 3 / F 4` sequence. Correct the metadata comment: long lines shrink rather than wrap.
+- Decode each PDF text run using its actual selected font's ToUnicode map. Assert that used text resources are embedded; identify SemiBold from the embedded TrueType name table, not jsPDF's generic `/Poppins` alias. Check outline/fill matrices, shadow offset, baseline offset, horizontal centre, opacity, stroke width and white fill.
+- Geometry validation checks a full first system against the 12 mm content margins and 6.5 mm stave height, known notehead curves, and the corresponding note-name origin. When `pdftoppm` is installed it also rasterizes the actual exported first page at 144 dpi and checks staff, notehead and label ink. The content-stream checks remain the portable fallback. `PDF_ARTIFACTS=<directory>` retains PDF fixtures and their source test data for review; `PDF_COMPOSITION_ONLY=1` runs the focused composition checks while developing.
+
+Verification for this round is recorded below before the correction commit is pushed.
+
+### r1 verification output
+```text
+npm run check: exit 0 (Astro 0 errors, 0 warnings, 0 hints)
+npm run build: exit 0; demo dist/runtime/notices check passed
+PDF_ARTIFACTS=/tmp/scoreview-r1 npm run test:pdf: exit 0
+  fit.test.ts: 6 passed
+  Poppler raster: staff width/6.5 mm height, known notehead and aligned note-name ink passed.
+  Vector composition: exact dimensions, embedded/selectable text, F♯m/B♭ runs,
+  house-style font/matrices/alpha, shared TAB lane, cancellation and missing-glyph error passed.
+  PDF page model spike passed (chromium): A4 4 lines; A3 4; 2 pages for 80 bars.
+npm run test:reader: exit 0 (all scenarios, including annotation sizes and Endless scrollbars)
+npm run test:layout: exit 0 (chromium)
+npm run test:manifest: exit 0 (128 local packs, 16 icons; complete/core packs)
+npm run test:pack: exit 0 (fresh Vite, Astro client-only and Astro SSR hosts; Node import)
+PDF_COMPOSITION_ONLY=1 PDF_ARTIFACTS=/tmp/scoreview-r1 npm run test:pdf: exit 0
+  Final inline-CSS fixture renders white text over a coloured dot.
+  Re-parsing/rasterizing those same final PDF bytes with the stricter known-notehead
+  width/height assertions also passed (0.15 mm tolerance).
+```
+All commands ran in the foreground at normal timing limits. No timing gate failed, so no `VALIDATION_BUDGET_SCALE=2` rerun was needed. A negative-control probe deliberately scaled a real PDF page to 1/11 size; the new validator rejected it with `PDF contains full-size horizontal staff paths`.
+
+The exported geometry, house-style and F♯m/B♭ PDFs were also rasterized to PNG and visually inspected in this worktree. Local review artifacts: `/tmp/scoreview-r1/{geometry,house,accidentals}.{pdf,png}`. They are reproducible test outputs, not committed source assets. The tests always check decoded graphics/text state and run Poppler ink checks when available.
+
+No protected files or dependencies changed in r1. AC8a's screen pitch-colour integration gate remains as accepted by the reviewer; the three-pass support it needs is now covered here. For GBrain (lead to promote): page dimensions and selectable text alone cannot prove PDF layout; assert actual transformed geometry and rendered ink, including nested SVG viewports and inline-CSS text styles.

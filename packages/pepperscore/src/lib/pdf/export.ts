@@ -32,7 +32,7 @@ export async function exportScore(request: ExportRequest, signal: AbortSignal): 
       annotatePage(svg, score, settings, request.options.font, request.tabAliases);
       if (!index) {
         const ratio = svg.viewBox.baseVal.width / PAPER_SIZES[request.options.paper].width;
-        // Metadata stays in the reserved heading band, wrapping long lines within the page.
+        // Metadata stays in the reserved heading band, shrinking long lines to fit the page.
         let y = 15;
         for (const line of metadata) {
           const node = document.createElementNS('http://www.w3.org/2000/svg', 'text');
