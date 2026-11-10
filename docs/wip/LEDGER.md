@@ -13,8 +13,7 @@ Next ID: 0014
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 0001 | Composable player skins | changes-requested (t3; t1 #59, t2 #66 merged) | child 0001-t3-impl-r1-fix2 | codex/gpt-6.1-sol | orch/0001-t3-drawer-controls | https://github.com/pepperhorn/ph-scoreview/pull/72 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-1eaa3a60 | task `0001-t3-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0001-t3-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-10-0001-t3-drawer-controls--codex-to-lead.md (@429caad) | 2026-11-10 |
 | 0002 | PDF export | in-review (t1) | review 0002-t1-review-r3 | codex/gpt-6.1-sol | orch/0002-t1-pdf-page-model | https://github.com/pepperhorn/ph-scoreview/pull/71 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-e3689cb4 | task `0002-t1-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0002-t1-impl-r1` | specs/0002-pdf-export.md | plans/0002-pdf-export.md | handoffs/2026-11-10-0002-t1-pdf-page-model--codex-to-lead.md (@0af4a6c) | 2026-11-10 |
-| 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t3; t1 #68, t2 #69 merged) | child 0011-impl-r1 (T3 owns validation/editor.mjs, which 0011 is changing; dispatch T3 when #73 merges) | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
-| 0011 | [quick] Validation harness reliability: ephemeral ports, load-aware timing gates (S12, S14) | in-review | review 0011-review-r1 | codex/gpt-6.1-sol | orch/0011-validation-harness | https://github.com/pepperhorn/ph-scoreview/pull/73 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-c5df7858 | task `0011-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0011-impl-r1` |  |  | handoffs/2026-11-10-0011-validation-harness-reliability--codex-to-lead.md (@24165c4) | 2026-11-10 |
+| 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t3; t1 #68, t2 #69 merged) | lead: dispatch T3 (0011 merged) | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0012 | Octave-clef parts draw at the right octave (ABC + MusicXML) | in-review | review 0012-review-r1 | codex/gpt-6.1-sol | orch/0012-octave-clef | https://github.com/pepperhorn/ph-scoreview/pull/75 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-ad0cfc0f | task `0012-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0012-impl-r1` | specs/0012-octave-clef-display.md | plans/0012-octave-clef-display.md | handoffs/2026-11-10-0012-octave-clef--codex-to-lead.md (@a373096) | 2026-11-10 |
 | 0013 | TAB for stringed instruments | ready (t2 spike) | ci | codex/gpt-6.1-sol | orch/0013-t2-fretless-spike | https://github.com/pepperhorn/ph-scoreview/pull/74 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-dac5d810 | task `0013-t2-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0013-t2-impl-r1` | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md | handoffs/2026-11-10-0013-t2-fretless-spike--codex-to-lead.md (@044aa8c) | 2026-11-10 |
 
@@ -22,6 +21,7 @@ Next ID: 0014
 
 | K | Title | PR | Merged | Notes |
 |---|---|---|---|---|
+| 0011 | [quick] Validation harness reliability (S12, S14) | https://github.com/pepperhorn/ph-scoreview/pull/73 | 2026-11-10 | merged; VALIDATION_BUDGET_SCALE; startVite/listen(0) |
 | 0003-t2 | Add, change and remove parts (task of 0003) | https://github.com/pepperhorn/ph-scoreview/pull/69 | 2026-11-10 | merged; 0003 continues with T3 |
 | 0010 | [quick] README ABC section: sync with 0008 | https://github.com/pepperhorn/ph-scoreview/pull/70 | 2026-11-10 | merged; docs only |
 | 0008 | [quick] ABC: a V: line before X: keeps its clef (S5) | https://github.com/pepperhorn/ph-scoreview/pull/67 | 2026-11-10 | 8c19b8f; ABC guide updated; README sync → 0010 |
@@ -50,15 +50,18 @@ Next ID: 0014
 | S9 | test | Assert which layer carries the fallback mid-bar keySig in the older held-note test (it passes even if the fallback always goes to layer 1) | `packages/pepperscore/src/lib/notation/document-keysig.test.ts` (PR #63 test) | XS | low | PR #65 review | new |
 | S10 | risk | Reader (webkit) CI flake: "1280px: a user stave scale is restored instead of the default" failed on README-only PR #64, passed on its twin run | CI run 42699660294 job 129440692432; `validation/reader.mjs` | S | medium: flaky CI blocks merges | PR #64 CI | new |
 | S11 | fix | Details field keeps showing untidied text when the tidied value equals the saved one (e.g. `jazz,jazz`) | `packages/pepperscore-editor/src/ui/DetailsPanel.tsx` | XS | low | PR #68 review | new |
-| S12 | risk | Editor browser validation is load-sensitive: redraw <800 ms (`validation/editor.mjs:518`) and null click target in custom layout (`:354`) fail under parallel worktrees | PR #68 and #65 local runs | S | medium: false failures slow every task | PR #68 review | accepted → 0011 |
+| S12 | risk | Editor browser validation is load-sensitive: redraw <800 ms (`validation/editor.mjs:518`) and null click target in custom layout (`:354`) fail under parallel worktrees | PR #68 and #65 local runs | S | medium: false failures slow every task | PR #68 review | done (0011, PR #73) |
 | S13 | risk | `validation/skin.mjs` binds a hard-coded port 5211, so parallel worktrees collide | 0003-t1 return handoff | XS | medium: parallel tasks | 0003-t1 return | accepted → 0001-t3 (skin.mjs port) |
-| S14 | risk | Browser validation harnesses bind fixed ports (e.g. `validation/transpose.mjs:137` → 43991) and silently attach to another worktree's server; parser-diff also fetch-flakes | 0002-t1 return handoff | S | high while tasks run in parallel | 0002-t1 return | accepted → 0011 |
+| S14 | risk | Browser validation harnesses bind fixed ports (e.g. `validation/transpose.mjs:137` → 43991) and silently attach to another worktree's server; parser-diff also fetch-flakes | 0002-t1 return handoff | S | high while tasks run in parallel | 0002-t1 return | done (0011, PR #73) |
+| S15 | fix | `VALIDATION_BUDGET_SCALE=` (empty) throws; hint should suggest a value; `startVite` could retry once on bind race | `validation/lib/budgets.mjs:4,10`, `validation/lib/ports.mjs:20` | XS | low | PR #73 review | new |
+| S16 | risk | `validation/editor.mjs:494` momentum-scroll assertion is load-sensitive and not covered by the budget scale | PR #73 review | S | medium | PR #73 review | new |
 | S1 | fix | Emit a mid-bar `<keySig>` only in layer 1; Verovio draws one per layer | `packages/pepperscore/src/lib/notation/document.ts:249` (probe: 2 layers → 3 keySig groups) | S | low today (ABC overlays are separate parts); matters for MIDI/multi-layer | PR #60 review r2 | done (0005, PR #63) |
 
 Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-10 0011 in-review→closed — r1 approve on 24165c4, CI green, merged PR #73 per human; S15, S16 logged; 0003 T3 unblocked
 2026-11-10 — human: merge #71, #73, #74, #75 on approve + green
 2026-11-10 0013-t2 in-review→ready — r3 approve on 044aa8c (5,800-candidate round trip); asking human to merge
 2026-11-10 0013-t2 changes-requested→in-review — fixes pushed 044aa8c (212 tests); <fing> probe archived under assets/…/fing-probe; review r3

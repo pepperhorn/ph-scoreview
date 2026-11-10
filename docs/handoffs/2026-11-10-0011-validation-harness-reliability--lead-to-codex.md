@@ -5,7 +5,7 @@
 - **Ledger:** 0011 (suggestions S12, S14; S13 is fixed for skin.mjs in PR #72)
 - **Branch:** orch/0011-validation-harness · **Worktree:** created by T3
 - **Base commit:** 31b29b5
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 One concern: browser/server validation must not give false failures when several worktrees run suites at once.
