@@ -7,7 +7,7 @@
 - **PR:** <url once opened>
 - **Base commit:** 13d48eb (T2 merged as PR #66)
 - **Port (if running a server):** 5213
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 1. Plan T3 / AC2a: with a skin that omits them, `stop`, `viewToggle`, `bars`, `zoom`, `mixer` and `openFile` work from a new drawer "Playback and view" panel (`drawerExtras`); with no skin, no new drawer rows.
