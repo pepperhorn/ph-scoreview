@@ -112,7 +112,7 @@ try {
         if (focused.id !== order.at(-1)) order.push(focused.id);
       }
       // The key flip is aria-disabled (not disabled) on the C major sample, so it stays in the tab order with its explanation.
-      assert.deepEqual(order, ['stop', 'play', 'openFile', 'mode', 'tab', 'bpm', 'transpose', 'keyFlip', 'bars', 'staveScale', 'mixer'], 'Desktop tab order follows the header registry');
+      assert.deepEqual(order, ['stop', 'play', 'openFile', 'mode', 'bpm', 'transpose', 'keyFlip', 'bars', 'staveScale', 'mixer'], 'Desktop tab order follows the header registry');
     }
     assert.deepEqual(hydrateErrors, []);
     await hydrateContext.close();
