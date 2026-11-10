@@ -77,3 +77,54 @@ it('rejects invalid or noncanonical fixed fingerings', () => {
     expect(fingeringPitch(CELLO, { ...good, ...delta })).toBeNull();
   }
 });
+
+// r1: distinguish conventional low fingers from their enharmonic high fingers.
+describe('spelling-aware violin ranking', () => {
+  it.each([
+    [72, 2, 2], // C5 on A
+    [65, 3, 2], // F4 on D
+    [58, 4, 2], // Bb3 on G
+    [82, 1, 4], // Bb5 on E
+  ])('defaults MIDI %i to low finger on string %i', (midi, string, finger) => {
+    expect(solveStringPitch(VIOLIN, midi)).toEqual({ string, position: 1, finger, modifier: 'L' });
+  });
+  it.each([
+    [72, { step: 'C', alter: 0 }, 2, 2, 'L'],
+    [65, { step: 'F', alter: 0 }, 3, 2, 'L'],
+    [58, { step: 'B', alter: -1 }, 4, 2, 'L'],
+    [58, { step: 'A', alter: 1 }, 4, 1, 'H'],
+    [82, { step: 'B', alter: -1 }, 1, 4, 'L'],
+    [82, { step: 'A', alter: 1 }, 1, 3, 'H'],
+    [72, { step: 'B', alter: 1 }, 2, 1, 'H'],
+    [65, { step: 'E', alter: 1 }, 3, 1, 'H'],
+  ] as const)('uses spelling %o / %o', (midi, spelling, string, finger, modifier) => {
+    const result = solveStringPitch(VIOLIN, midi, spelling);
+    expect(result).toEqual({ string, position: 1, finger, modifier });
+    expect(fingeringPitch(VIOLIN, result!)).toBe(midi);
+    expect(fingeringCandidates(VIOLIN, midi, spelling)[0]).toEqual(result);
+  });
+  it('ignores a mismatched spelling and keeps opens and plain fingers first', () => {
+    expect(solveStringPitch(VIOLIN, 58, { step: 'C', alter: 1 })).toEqual(solveStringPitch(VIOLIN, 58));
+    expect(solveStringPitch(VIOLIN, 76, { step: 'F', alter: -1 })).toEqual({ string: 1, position: 0, finger: 0, modifier: '' });
+    expect(solveStringPitch(VIOLIN, 80, { step: 'G', alter: 1 })).toEqual({ string: 1, position: 1, finger: 2, modifier: '' });
+  });
+});
+
+describe('chromatic cello/bass ranking', () => {
+  it.each([
+    [41, 4, 1, 4], // F2
+    [42, 4, 1.5, 4], // F#2
+    [62, 1, 1, 4], // D4
+    [65, 1, 3, 4], // F4
+  ])('prefers plain cello MIDI %i over a lower extension', (midi, string, position, finger) => {
+    expect(solveStringPitch(CELLO, midi)).toEqual({ string, position, finger, modifier: '' });
+  });
+  it('prefers a plain bass finger even with a sharp spelling; keeps open strings first', () => {
+    expect(solveStringPitch(DOUBLE_BASS, 48, { step: 'B', alter: 1 })).toEqual({ string: 1, position: 1, finger: 4, modifier: '' });
+    expect(solveStringPitch(DOUBLE_BASS, 33)).toEqual({ string: 3, position: 0, finger: 0, modifier: '' });
+  });
+  it('retains modifiers when the chart has no plain candidate', () => {
+    expect(solveStringPitch(CELLO, 69)).toEqual({ string: 1, position: 4.5, finger: 4, modifier: 'H' });
+    expect(solveStringPitch(CELLO, 69, { step: 'A', alter: 0 })).toEqual(solveStringPitch(CELLO, 69));
+  });
+});

@@ -1,6 +1,12 @@
 import type { StringChart } from './charts';
 
 export type FingerModifier = '' | 'L' | 'H';
+/** Written pitch class; a mismatched hint is ignored, never changes MIDI. */
+export interface PitchSpelling {
+  step: 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G';
+  alter: -2 | -1 | 0 | 1 | 2;
+}
+const STEP_PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 export interface StringFingering {
   /** 1 = highest string; position 0 denotes an open string, no hand position. */
   string: number;
@@ -16,7 +22,7 @@ const SHIFTS: Record<FingerModifier, number> = { '': 0, L: -1, H: 1 };
 export function fingeringPitch(chart: StringChart, note: StringFingering): number | null {
   if (!Number.isInteger(note.string) || !Number.isInteger(note.finger)) return null;
   const open = chart.openMidi[note.string - 1];
-  if (open === undefined || !(note.modifier in SHIFTS)) return null;
+  if (open === undefined || !Object.hasOwn(SHIFTS, note.modifier)) return null;
   if (note.finger === 0) return note.position === 0 && note.modifier === '' ? open : null;
   if (note.finger < 1 || note.finger > 4) return null;
   const base = chart.fingers[note.string - 1]?.[note.position]?.[note.finger - 1];
@@ -25,11 +31,13 @@ export function fingeringPitch(chart: StringChart, note: StringFingering): numbe
   return pitch > open && pitch <= 127 ? pitch : null;
 }
 
-/** All exact-pitch choices: opens first, then lower position, then unmodified,
- * then highest string and lower finger; L wins a final L/H tie. No octave fold.
- * Pitch-only spike: no phrase continuity, double-stop or ringing-string solve.
+/** Exact-pitch choices, opens first. Cello/bass prefer plain fingers anywhere
+ * over extensions, then lower positions. Violin/viola prefer lower positions,
+ * then plain fingers. Within a string/position, modified ties prefer H for a
+ * matching sharp spelling, otherwise L (the conventional low-2 default).
+ * No octave fold, phrase continuity, double-stop or ringing-string solve.
  */
-export function fingeringCandidates(chart: StringChart, midi: number): StringFingering[] {
+export function fingeringCandidates(chart: StringChart, midi: number, spelling?: PitchSpelling): StringFingering[] {
   if (!Number.isInteger(midi) || midi < 0 || midi > 127) return [];
   const candidates: StringFingering[] = [];
   chart.openMidi.forEach((open, index) => {
@@ -45,12 +53,20 @@ export function fingeringCandidates(chart: StringChart, midi: number): StringFin
       });
     }
   });
-  return candidates.sort((a, b) => a.position - b.position
-    || Number(a.modifier !== '') - Number(b.modifier !== '')
-    || a.string - b.string || a.finger - b.finger || a.modifier.localeCompare(b.modifier));
+  const chromatic = chart.id === 'cello' || chart.id === 'double-bass';
+  const matching = spelling && ((STEP_PC[spelling.step] + spelling.alter + 12) % 12 === midi % 12);
+  const preferred = matching && spelling.alter > 0 ? 'H' : 'L';
+  const modified = (note: StringFingering) => Number(note.modifier !== '');
+  return candidates.sort((a, b) => Number(b.finger === 0) - Number(a.finger === 0)
+    || (chromatic ? modified(a) - modified(b) : 0)
+    || a.position - b.position || modified(a) - modified(b)
+    || a.string - b.string
+    || Number(a.modifier !== preferred) - Number(b.modifier !== preferred)
+    || a.finger - b.finger);
+
 }
 
 /** Null means outside the supported chart range, never silently transposed. */
-export function solveStringPitch(chart: StringChart, midi: number): StringFingering | null {
-  return fingeringCandidates(chart, midi)[0] ?? null;
+export function solveStringPitch(chart: StringChart, midi: number, spelling?: PitchSpelling): StringFingering | null {
+  return fingeringCandidates(chart, midi, spelling)[0] ?? null;
 }

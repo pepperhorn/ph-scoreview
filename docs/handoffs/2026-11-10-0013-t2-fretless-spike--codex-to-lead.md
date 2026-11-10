@@ -120,3 +120,52 @@ npm run test:validation (one full retry): stopped during audio browser launch
 These broad validation failures are outside the new, unintegrated chart/solver modules. No claim that the remainder of `test:validation` passed. Browser reinstall was attempted with `PLAYWRIGHT_SKIP_BROWSER_GC=1` to avoid removing other worktrees' browser versions. The lead should run full validation in its stable environment before merge. Raw output: `tests.log`, `check.log`, `build.log`, `manifest.log`, `strings-final.log`, `strings-check.log`, `validation.log`, `audio-retry.log`, `validation-retry.log`, `browser-install.log` in scratch. Evidence hashes: `evidence-sha256.json`.
 
 Code commit: `a3edc575ae2abb3d86051716f86541b7a94c4ff2`; acknowledgement: `31ab4bf`. This handoff's commit is the final PR head.
+
+## Review r1 response — supersedes the open decisions and ranking policy above
+
+- Review: https://github.com/pepperhorn/ph-scoreview/pull/74#pullrequestreview-5835806559 (reviewed `1d8a451f3dd89b72a9de7766fbb3d63f5b075b22`).
+- Human decision, confirmed in updated `origin/main:docs/specs/0013-stringed-instrument-tab.md`: **D accepted; violin and cello only ship**. Viola and double bass remain notation-only pending approved charts. Their existing provisional chart data remains unchanged and unintegrated in this spike.
+- Code ownership for this revision: **only `solver.ts` and `solver.test.ts`**. This handoff is the only changed doc; scratch artifacts stay outside Git. No chart, reader, settings or validation edits.
+
+### Solver corrections (F1–F3)
+
+- `solveStringPitch(chart, midi, spelling?)` and `fingeringCandidates(chart, midi, spelling?)` accept optional `{step: 'A'|'B'|'C'|'D'|'E'|'F'|'G', alter: -2|-1|0|1|2}`. The hint must match the input MIDI pitch class; a mismatched hint is ignored, never changes the pitch.
+- Violin/viola retain open-first, lower-position-first, then plain-finger ranking. **Within a string and position**, matching raised/sharp spellings prefer H on the lower finger; flat/natural spellings and missing hints prefer L on the upper finger. C5, F4 and Bb3 default to finger 2 L; Bb5 defaults to finger 4 L. A#3 resolves to G-string I finger 1 H while Bb3 resolves to G-string I finger 2 L. Tests also cover B#4/C5 and E#4/F4.
+- Cello/provisional bass rank **plain fingers ahead of modified fingers across positions**, retaining opens first. Cello F2 → C-string I finger 4; F#2 → C-string I½ finger 4; D4 → A-string I finger 4; F4 → A-string III finger 4. Modifiers remain available where no plain chart candidate exists (e.g. cello MIDI 69).
+- Removed the misleading final L/H tie comment; spelling preference now actually runs before finger-number tie-breaking. Used `Object.hasOwn` for the reverse lookup modifier guard (review nit).
+- Added 19 cases: solver test total **36**. Includes exact pitch round-trips after spelling hints, candidate API parity, mismatched hints, open/plain priority and provisional bass policy.
+
+### Native MEI `<fing>` probe (within the requested one-hour timebox)
+
+**Result: native labels render, but this probe does not reproduce D reliably without SVG text substitution. Keep D as accepted.** This is a bounded negative result for pinned Verovio `6.3.0-425dd7b`, not a claim that every possible MEI encoding has been ruled out.
+
+Scratch directory: `/home/shaun/.cache/0013-t2-r1-fing-probe/` (the previous `/tmp/0013-t2-fretless-spike/` no longer exists; original evidence was archived on main by the lead).
+
+- Reproduce: `node /home/shaun/.cache/0013-t2-r1-fing-probe/probe.mjs "$PWD"` from this worktree. No server and **no SVG substitution** in the probe. Input `.mei`, native `.svg`, `-roundtrip.mei`, scale-2 Chromium `.png`, `report.json` geometry, and `probe.log` are all in scratch.
+- Tested 13 variants across all four strings, dense eighth notes, a double stop and a rest: note and tabGrp anchors; default/above/below/within placement; visible/hidden numeric placeholders; direct font attributes vs nested `<rend fontsize="8pt">`; fixed/course-specific `vo`; and per-course `loc`.
+- `<fing startid="#note-id" staff="1">L2</fing>` renders and retains text through `getMEI()`. Above/below placement produces a separate lane, not inline text. Default large glyphs stack. Direct `fontsize` on `<fing>` did not reduce glyphs in the rendered result; nested `<rend>` did.
+- `place="within"` with smaller nested text still puts different strings on the same baseline and stacks double-stop labels. `loc` survives round-trip but made no geometric difference to the tested rendering.
+- The closest variant (`within-aligned-offsets`) uses hidden numeric placeholders, smaller text and `vo=(4-course)*2-3`. Its first three single-note baselines are within 16–17 SVG units of their placeholders, but course 4 is **810 units** away and the lower double-stop label **346 units** away. Collision handling still moves labels. The native line cutout remains sized for the hidden one-digit placeholder, so it also cuts through the wider L/H glyphs. This is insufficient for a drop-in D implementation; further per-note geometry/knockout work would recreate much of the renderer complexity D already owns.
+
+Key PNGs (local scratch paths):
+
+- `/home/shaun/.cache/0013-t2-r1-fing-probe/above-note.png` — native above-staff lane.
+- `/home/shaun/.cache/0013-t2-r1-fing-probe/within-rend.png` — smaller text still stacks/misplaces courses.
+- **`/home/shaun/.cache/0013-t2-r1-fing-probe/within-aligned-offsets.png`** — closest attempted inline variant; shows bottom-string/double-stop failures and absent wider knockout.
+
+### Verification / remaining gates
+
+Ran in the foreground from the repository root on this revision:
+
+```text
+npm run test -w pepperscore && npm run check
+Test Files  11 passed (11)
+Tests       198 passed (198), including 36 solver cases
+pepperscore tsc: passed
+pepperscore-editor tsc: passed
+pepperscore-reader astro check + tsc: passed
+Astro Result (22 files): 0 errors, 0 warnings, 0 hints
+exit 0
+```
+
+No additional full browser validation is claimed by this revision. The previous full-validation limitations remain historical; r1 requested only package tests and type checks. Cross-family re-review and T3 integration are the lead's next steps. For GBrain (lead to promote): accepted D/violin+cello scope; spelling-aware modified-finger ranking; cello plain-before-extension rule; bounded `<fing>` placement/knockout findings. GBrain read refreshed `[default:projects/scoreflow-music-reader]`; the updated repo spec and r1 review supplied the task-specific decisions.
