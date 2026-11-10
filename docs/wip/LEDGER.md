@@ -12,7 +12,7 @@ Next ID: 0014
 | K | Title | Status | Waiting on | Owner (provider/model) | Branch | PR | Worktree | T3 task/thread | Spec | Plan | Latest handoff | Updated |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 0001 | Composable player skins | in-review (t3; t1 #59, t2 #66 merged) | review 0001-t3-review-r3 | codex/gpt-6.1-sol | orch/0001-t3-drawer-controls | https://github.com/pepperhorn/ph-scoreview/pull/72 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-1eaa3a60 | task `0001-t3-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0001-t3-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-10-0001-t3-drawer-controls--codex-to-lead.md (@a7355cf) | 2026-11-10 |
-| 0002 | PDF export | in-review (t1) | review 0002-t1-review-r3 | codex/gpt-6.1-sol | orch/0002-t1-pdf-page-model | https://github.com/pepperhorn/ph-scoreview/pull/71 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-e3689cb4 | task `0002-t1-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0002-t1-impl-r1` | specs/0002-pdf-export.md | plans/0002-pdf-export.md | handoffs/2026-11-10-0002-t1-pdf-page-model--codex-to-lead.md (@0af4a6c) | 2026-11-10 |
+| 0002 | PDF export | ready (t1) | ci (webkit rerun) | codex/gpt-6.1-sol | orch/0002-t1-pdf-page-model | https://github.com/pepperhorn/ph-scoreview/pull/71 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-e3689cb4 | task `0002-t1-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0002-t1-impl-r1` | specs/0002-pdf-export.md | plans/0002-pdf-export.md | handoffs/2026-11-10-0002-t1-pdf-page-model--codex-to-lead.md (@0af4a6c) | 2026-11-10 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | dispatched (t3; t1 #68, t2 #69 merged) | child 0003-t3-impl-r1 | codex/gpt-6.1-sol | orch/0003-t3-plugin-slot |  |  | task `0003-t3-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0003-t3-impl-r1` | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-10-0003-t3-plugin-slot--lead-to-codex.md | 2026-11-10 |
 | 0013 | TAB for stringed instruments | ready (t2 spike) | ci (t2 #74); T1 waits on 0001-t3 #72 | codex/gpt-6.1-sol | orch/0013-t2-fretless-spike | https://github.com/pepperhorn/ph-scoreview/pull/74 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-dac5d810 | task `0013-t2-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0013-t2-impl-r1` | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md | handoffs/2026-11-10-0013-t2-fretless-spike--codex-to-lead.md (@044aa8c) | 2026-11-10 |
 
@@ -57,12 +57,14 @@ Next ID: 0014
 | S16 | risk | `validation/editor.mjs:494` momentum-scroll assertion is load-sensitive and not covered by the budget scale | PR #73 review | S | medium | PR #73 review | new |
 | S17 | fix | MusicXML octave-clef pre-pass doesn't re-check a mid-part clef change; notes after it can draw an octave off (playback fine) | `packages/pepperscore/src/lib/notation/musicxml-octave-clef.ts:39-53` | S | low | PR #75 review | new |
 | S18 | test | Instrument-switch validation covers only the ABC guitar; add a MusicXML-source leg | `validation/instrument-switch.mjs` | XS | low | PR #75 review | new |
+| S19 | risk | Reader (webkit) flake: "Extra large note names keep clear of the count row" (gap −1.7 → −3.5) failed on PDF-only PR #71's push run, passed on its PR run | CI run 42740873297; `validation/reader.mjs` | S | medium (blocks merges) | PR #71 CI | new |
 | S1 | fix | Emit a mid-bar `<keySig>` only in layer 1; Verovio draws one per layer | `packages/pepperscore/src/lib/notation/document.ts:249` (probe: 2 layers → 3 keySig groups) | S | low today (ABC overlays are separate parts); matters for MIDI/multi-layer | PR #60 review r2 | done (0005, PR #63) |
 
 Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-10 0002-t1 in-review→ready — r3 approve on 0af4a6c (60-case independent probe, full first lines, max 0.990); webkit note-name flake on push run, rerun started; S19 logged
 2026-11-10 0001-t3 changes-requested→in-review — switcher gate fix pushed a7355cf (skin.mjs on port 0 confirmed); review r3
 2026-11-10 0012 in-review→closed — r1 approve on a373096 (AC1–AC4 rendered by reviewer), CI green, merged PR #75 (3927afd); guide, spec AC1 wording, upstream row 21 updated; S17, S18 logged
 2026-11-10 0003-t3 planned→dispatched — plugin slot and control targets
