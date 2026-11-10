@@ -227,8 +227,11 @@ export function applyInstrumentView(score: Score, switches: Record<string, PartS
 
     // Rewrite as the target: written pitch and key in the written view, sounding pitch in the concert view.
     const written = view === 'written';
+    const clef = written && target.id === 'guitar' ? 'treble8vb' : target.clef;
+    // MEI octave-clef pitches are sounding; the Score remains the target's written-pitch model.
+    const engravingOctave = clef === 'treble8vb' ? -1 : 0;
     const shown: ModelTransposition = written ? target.transposition : { semitones: 0, diatonic: 0 };
-    staves[part.id] = { shift: [shown.diatonic + own.diatonic, shown.semitones + own.chromatic], clef: target.clef, octaves };
+    staves[part.id] = { shift: [shown.diatonic + own.diatonic + engravingOctave * 7, shown.semitones + own.chromatic + engravingOctave * 12], clef, octaves };
     const measures = part.measures.map(measure => {
       // The view's key is the source's shown key; at concert pitch it is the sounding key unless the part is written.
       const source = sourceInterval(part, measure);
@@ -258,7 +261,7 @@ export function applyInstrumentView(score: Score, switches: Record<string, PartS
     // key-relative line spelling (notation/respell.ts), so note names match the engraved noteheads.
     const [steps, semis] = staves[part.id].shift;
     if (steps || semis || score.pitchView?.interval || score.pitchView?.semitones || score.pitchView?.flip) respellLines(measures);
-    return { ...part, instrument: target.id, gmProgram: target.gmProgram, gmSoundfont: gmProgramForNumber(target.gmProgram)?.soundfont, clef: target.clef,
+    return { ...part, instrument: target.id, gmProgram: target.gmProgram, gmSoundfont: gmProgramForNumber(target.gmProgram)?.soundfont, clef,
       pitchBasis: 'written' as const, transposition: written ? partTransposition(target.transposition) : undefined,
       key: measures[0]?.key ?? part.key, keyMode: measures[0]?.keyMode ?? part.keyMode, measures };
   });

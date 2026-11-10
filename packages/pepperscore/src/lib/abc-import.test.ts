@@ -78,20 +78,20 @@ describe('ABC engraving fidelity', () => {
     expect(scoreToMei(score)).toContain('right="rptend"');
   });
 
-  it('draws the guitar octave clef and written G4 while sounding G3', async () => {
+  it('draws the guitar octave clef with sounding G3 encoded under clef.dis', async () => {
     const score = await load('e-guitar');
     const part = score.parts[0], note = part.measures[0].notes[0];
     expect(part.clef).toBe('treble-8');
     expect(part.pitchBasis).toBe('written');
-    expect(part.transposition).toEqual({ semitones: -12, diatonic: -7 });
-    expect(note.pitches[0]).toMatchObject({ octave: 4, midi: 67 });
+    expect(part.transposition).toEqual({ semitones: 0, diatonic: 0 });
+    expect(note.pitches[0]).toMatchObject({ octave: 3, midi: 55 });
     expect(soundingMidi(part, part.measures[0], note.pitches[0], 0)).toBe(55);
     expect(scoreToMei(score)).toContain('clef.shape="G" clef.line="2" clef.dis="8" clef.dis.place="below"');
-    expect(scoreToMei(score)).toContain(`xml:id="${generatedPitchId(note, 0)}" pname="g" oct="4"`);
+    expect(scoreToMei(score)).toContain(`xml:id="${generatedPitchId(note, 0)}" pname="g" oct="3"`);
   });
 
   it.each([
-    ['treble+8', 'G', 2, 'above', 3], ['bass-8', 'F', 4, 'below', 5],
+    ['treble+8', 'G', 2, 'above', 4], ['bass-8', 'F', 4, 'below', 4],
     ['alto', 'C', 3, undefined, 4], ['tenor', 'C', 4, undefined, 4],
   ])('retains %s', async (clef, shape, line, place, octave) => {
     const score = await abc('G4 |]', `K:C clef=${clef}`);
@@ -109,11 +109,11 @@ describe('ABC engraving fidelity', () => {
       const tag = mei.match(new RegExp(`<note\\b[^>]*xml:id="${generatedPitchId(note, i)}"[^>]*>`))?.[0];
       expect(tag).toBeDefined();
       expect(tag).toContain(`pname="${pitch.step.toLowerCase()}"`);
-      expect(tag).toContain(`oct="${pitch.octave}"`);
+      expect(tag).toContain(`oct="${pitch.octave - (part.clef === 'treble8vb' ? 1 : 0)}"`);
     }
   };
 
-  it.each(['treble-8', 'treble+8', 'bass-8'])('keeps %s written octaves in switched and concert engraving', async clef => {
+  it.each(['treble-8', 'treble+8', 'bass-8'])('keeps %s sounding octaves in switched and concert engraving', async clef => {
     const score = await abc('G, C D E |]', `K:C clef=${clef}`);
     const source = score.parts[0];
     for (const target of ['alto-saxophone', 'flute', 'guitar'] as InstrumentId[]) for (const view of ['written', 'concert'] as const) {
@@ -133,9 +133,9 @@ describe('ABC engraving fidelity', () => {
   it('records octave-clef changes per measure without changing sounding pitches', async () => {
     const score = await abc('G,4 | [K:C clef=treble]G4 | [K:C clef=treble+8]G4 |]', 'K:C clef=treble-8');
     const part = score.parts[0];
-    expect(part.measures.map(m => m.transposition)).toEqual([{ semitones: -12, diatonic: -7 }, { semitones: 0, diatonic: 0 }, { semitones: 12, diatonic: 7 }]);
+    expect(part.measures.map(m => m.transposition)).toEqual([{ semitones: 0, diatonic: 0 }, { semitones: 0, diatonic: 0 }, { semitones: 0, diatonic: 0 }]);
     expect(part.measures.map(m => soundingMidi(part, m, m.notes[0].pitches[0], 0))).toEqual([55, 67, 67]);
-    expect(part.measures.map(m => m.notes[0].pitches[0].octave)).toEqual([4, 4, 3]);
+    expect(part.measures.map(m => m.notes[0].pitches[0].octave)).toEqual([3, 4, 4]);
   });
 
   it('carries a tied alteration across a bar without changing later untied notes', async () => {
@@ -376,8 +376,7 @@ describe('ABC parts and instruments', () => {
   it.each(['treble', 'treble-8', 'treble+8'])('composes %s with instrument intervals through switches and concert view', async clef => {
     const source = await abc('A4 |]', `V:1 clef=${clef} transpose=-9\nK:A`);
     const part = source.parts[0];
-    const octave = clef === 'treble-8' ? -12 : clef === 'treble+8' ? 12 : 0;
-    expect(part.transposition?.semitones).toBe(-9 + octave);
+    expect(part.transposition?.semitones).toBe(-9);
     expect(part.measures[0].transposition).toEqual(part.transposition);
     for (const view of ['written', 'concert'] as const) for (const target of ['flute', 'guitar', 'alto-saxophone'] as const) {
       const switched = applyInstrumentView(scoreForView(source, view, 0), { [part.id]: { instrument: target, level: 'advanced', autoRange: false, octaves: {} } }, view).score;
@@ -385,7 +384,7 @@ describe('ABC parts and instruments', () => {
       expect(soundingMidi(shown, measure, note.pitches[0], 0)).toBe(60);
       const mei = respellMei(scoreToMei(source), spellingSpecFor(switched, new Map([[part.id, '1']])));
       const tag = mei.match(new RegExp(`<note[^>]*xml:id="${generatedPitchId(note, 0)}"[^>]*>`))?.[0];
-      expect(tag).toContain(`oct="${note.pitches[0].octave}"`);
+      expect(tag).toContain(`oct="${note.pitches[0].octave - (shown.clef === 'treble8vb' ? 1 : 0)}"`);
       expect(tag).toContain(`pname="${note.pitches[0].step.toLowerCase()}"`);
     }
   });
@@ -394,7 +393,7 @@ describe('ABC parts and instruments', () => {
     const score = await abc('A4 | [K:A clef=treble-8] A4 | [K:A clef=treble+8] A4 |]', 'V:1 transpose=-9\nK:A');
     const part = score.parts[0];
     expect(part.measures.map(m => m.transposition)).toEqual([
-      { semitones: -9, diatonic: -5 }, { semitones: -21, diatonic: -12 }, { semitones: 3, diatonic: 2 },
+      { semitones: -9, diatonic: -5 }, { semitones: -9, diatonic: -5 }, { semitones: -9, diatonic: -5 },
     ]);
     expect(part.measures.map(m => soundingMidi(part, m, m.notes[0].pitches[0], 0))).toEqual([60, 60, 60]);
   });
@@ -654,13 +653,13 @@ describe('ABC body-only voice and file-header directive scoping', () => {
 });
 
 describe('ABC file-header voice declarations', () => {
-  it.each(['bass', 'treble-8'])('preserves a pre-X: %s clef and its octave transposition', async clef => {
+  it.each(['bass', 'treble-8'])('preserves a pre-X: %s clef and sounding octaves', async clef => {
     const header = `V:1 name="Solo" clef=${clef}\n`;
     const tune = 'X:1\nM:4/4\nL:1/4\nK:C\nC4 |]';
     const score = await parseAbc(header + tune);
     const control = await parseAbc(tune.replace('X:1\n', `X:1\n${header}`));
     expect(score.parts).toEqual(control.parts);
-    expect(score.parts[0]).toMatchObject({ name: 'Solo', clef, transposition: { semitones: clef === 'treble-8' ? -12 : 0 } });
+    expect(score.parts[0]).toMatchObject({ name: 'Solo', clef, transposition: { semitones: 0 } });
     expect(score.parts[0].measures[0].clef).toBe(clef);
     expect(scoreToMei(score)).toBe(scoreToMei(control));
     expect(soundingMidi(score.parts[0], score.parts[0].measures[0], score.parts[0].measures[0].notes[0].pitches[0], 0)).toBe(60);
@@ -669,7 +668,7 @@ describe('ABC file-header voice declarations', () => {
   it('lets tune-header properties override file-header properties for the same id', async () => {
     const score = await parseAbc('V:1 name="Old" clef=bass transpose=-9\n%%MIDI program 42\nX:1\nM:4/4\nL:1/4\nV:1 name="Solo" clef=treble-8 transpose=0\n%%MIDI program 73\nK:C\nC4 |]');
     expect(score.parts).toHaveLength(1);
-    expect(score.parts[0]).toMatchObject({ name: 'Solo', clef: 'treble-8', gmProgram: 74, transposition: { semitones: -12 } });
+    expect(score.parts[0]).toMatchObject({ name: 'Solo', clef: 'treble-8', gmProgram: 74, transposition: { semitones: 0 } });
   });
 
   it('inherits unspecified file-header properties while keeping V: transpose ahead of MIDI', async () => {

@@ -40,3 +40,5 @@ None. Escalate per AGENTS.md §7.
 
 ---
 ## Receiver ack
+
+Acknowledged: implement AC1–AC6 within T1 owned files, retaining stable generated pitch IDs and sounding playback. Normalize octave-clef MEI and the MusicXML engraving copy, preserve octave displacement through instrument views, verify guitar TAB against all three fixtures and bass parity, and update only the assigned README sections. Leave TAB selection/tunings, solver, protected code, ledger and other docs untouched. Return the upstream draft and ABC guide note for the lead. No open questions.

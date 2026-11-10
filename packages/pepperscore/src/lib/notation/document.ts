@@ -211,6 +211,7 @@ function layerXml(segments: Segment[], beats: number, percussion = false, keyCha
 }
 
 const meiClef = (clef: string) => {
+  if (clef === 'treble8vb') clef = 'treble-8';
   const base = clef.replace(/[+-]8$/, '');
   const shape = base === 'bass' ? 'F' : base === 'alto' || base === 'tenor' ? 'C' : base === 'percussion' ? 'perc' : 'G';
   const line = base === 'bass' || base === 'tenor' ? 4 : base === 'alto' || base === 'percussion' ? 3 : 2;
@@ -242,7 +243,10 @@ export function scoreToMei(score: Score): string {
       for (let sourceMeasure = 0; sourceMeasure <= measureIndex; sourceMeasure++) {
         const source = part.measures[sourceMeasure]; if (!source) continue;
         const nominal = source.nominalBeats || score.beats * 4 / score.beatType;
-        for (const note of source.notes) {
+        for (const sourceNote of source.notes) {
+          // Instrument views keep written Score pitches; their MEI octave clef needs sounding octaves.
+          const note = (measure?.clef ?? part.clef) === 'treble8vb'
+            ? { ...sourceNote, pitches: sourceNote.pitches.map(p => ({ ...p, octave: p.octave - 1 })) } : sourceNote;
           const absolute = sourceMeasure * nominal + note.start;
           const measureStart = measureIndex * nominal;
           const overlapStart = Math.max(absolute, measureStart);

@@ -305,7 +305,7 @@ The header appears when any of `transport`, `viewToggle`, `openFile`, `mixer`, `
 | `capo` | `0`–`12` | `0` | Capo fret of generated TAB. Frets are relative to it. |
 
 - **A score with a TAB staff** (MusicXML `<clef><sign>TAB</sign>` with `<staff-details>`, as MuseScore and Guitar Pro export) shows that staff in the TAB and Both views. The reader treats it as a view of its notation part: it is played once, has no note-name or count lanes, and the part controls and mixer list the instrument once.
-- **Any other score** gets TAB generated from its pitches: for every guitar part (General MIDI programs 25–32, the guitar sound, or "guitar" in the part name), or else for the first pitched part's top staff. A fingering solver picks strings and frets for the whole passage (open strings, few position shifts, playable stretches). Notes out of range are moved by an octave. Chord notes that cannot all be fretted lose doubled notes first, then inner voices. MusicXML `<technical><string>`/`<fret>` on a note is kept as a fixed fingering.
+- **Any other score** gets TAB generated from its sounding pitches (including ABC octave clefs and MusicXML octave transposition): for every guitar part (General MIDI programs 25–32, the guitar sound, or "guitar" in the part name), or else for the first pitched part's top staff. A fingering solver picks strings and frets for the whole passage (open strings, few position shifts, playable stretches). Notes out of range are moved by an octave. Chord notes that cannot all be fretted lose doubled notes first, then inner voices. MusicXML `<technical><string>`/`<fret>` on a note is kept as a fixed fingering.
 - **Transposed views** regenerate TAB from the transposed pitches. An imported TAB staff is hidden then, because its frets no longer match.
 - Tied continuations keep their rhythm on the TAB staff but show no fret.
 - **Baked fingerings.** The repository's `npm run tab:bake` (`scripts/tab-bake.mjs`, see the root README) writes the solver's string/fret onto a score's notes ahead of time, and can add a TAB staff. The reader keeps those fingerings as they are.
@@ -535,7 +535,7 @@ ABC is parsed with abcjs and engraved through PepperScore's score model. Chord s
 #### Clefs
 
 - `clef=treble|bass|alto|tenor|treble-8|treble+8|bass-8|perc` on `V:` (or `K:`).
-- Octave clefs: ABC note letters are the **sounding** pitch (ABC 2.1); the clef draws them an octave higher. Guitar: `clef=treble-8`, and `G,` sounds G3 and is drawn as G4. Don't also add `transpose=-12`; the clef already does it.
+- Octave clefs: ABC note letters are the **sounding** pitch (ABC 2.1); `-8` draws them an octave higher and `+8` an octave lower. Guitar: `clef=treble-8`, and `G,` sounds G3 and is drawn as G4 on the second staff line, with the clef’s "8" retained when switching to guitar. TAB and playback use G3. Don't also add `transpose=-12`; the letters already specify sounding pitch.
 
 #### Instruments and sound
 

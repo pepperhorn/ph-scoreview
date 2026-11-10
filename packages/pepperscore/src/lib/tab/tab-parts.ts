@@ -145,7 +145,7 @@ export function planTab(score: Score, staffOf: Map<string, string>, view: TabVie
   const switched: Record<string, number> = {};
   for (const part of score.parts) {
     const n = staffOf.get(part.id);
-    if (n && generate.includes(n) && score.instrumentView?.staves[part.id]?.clef) switched[n] = part.transposition?.semitones ?? 0;
+    if (n && generate.includes(n) && score.instrumentView?.staves[part.id]?.clef) switched[n] = (part.transposition?.semitones ?? 0) + (score.instrumentView?.staves[part.id]?.clef === 'treble8vb' ? 12 : 0);
   }
   if (generate.length || Object.keys(retarget).length || Object.keys(refret).length) {
     plan.spec = { generate, retarget, tuning: options.tuning, capo: options.capo, fixed: !options.stale, ...(sounding.length ? { sounding } : {}), ...(Object.keys(switched).length ? { switched } : {}), ...(unfixed.length && !options.stale ? { unfixed } : {}), ...(Object.keys(refret).length ? { refret } : {}) };
