@@ -36,13 +36,23 @@ const namedFretted = (name: string): TabInstrument | undefined => {
   if (/\bguitar\b/i.test(name)) return 'guitar';
 };
 
-/** Programs are authoritative; names only refine fretted strings or identify a part without a program. */
+/** Switched target ids are exact; source programs gate name-based classification before a switch. */
 export function stringInstrument(part: Part, override?: TabInstrument | 'none', switched = false): TabInstrument | undefined {
   if (part.tab || part.clef === 'percussion') return;
   // A reader instrument switch replaces the host's initial TAB identity, as well as its source name.
   if (!switched) {
     if (override === 'none') return;
     if (validTabInstrument(override)) return override;
+  } else {
+    // Target ids are authoritative after a switch: Double Bass shares GM 33 with acoustic bass guitar.
+    switch (part.instrument) {
+      case 'bassguitar': return 'bass4';
+      case 'guitar':
+      case 'double-bass':
+      case 'violin':
+      case 'viola':
+      case 'cello': return part.instrument;
+    }
   }
   const name = switched ? '' : part.name;
   const gm = part.gmProgram;

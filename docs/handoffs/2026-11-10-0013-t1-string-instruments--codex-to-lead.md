@@ -10,7 +10,7 @@
 - **PR:** https://github.com/pepperhorn/ph-scoreview/pull/77
 - **Implementation commits:** 55956df (receiver ack), fc4e8e3 (implementation and return handoff); this follow-up records the PR URL.
 - **Status:** closed
-- **Outcome:** done — review r1 addressed; requested unit/check/build/TAB/fret/bake/instrument-switch checks passed, and reader passed on the requested scaled rerun. The earlier full aggregate run is retained below as historical evidence.
+- **Outcome:** done — review r2 addressed; all requested unit/check/build/TAB/instrument-switch/reader checks passed in one foreground chain at default budgets.
 
 ## Goal
 Generate TAB for fretted string parts with instrument defaults, physical string counts and re-entrant fingering. Remove the first-pitched-part fallback. Keep violin/cello classified for T3 without rendering finger TAB; viola/double bass remain notation only.
@@ -45,7 +45,7 @@ npm run test:manifest && npm run test:validation
 - Render metadata is attached to a shallow score view (`withTabSettings`), preserving protected render.ts and public render signatures. `TabSpec.tunings` carries worker staff-specific tunings; the existing global tuning remains a fallback.
 - String order is physical bottom to top, not sorted MIDI pitch. Re-entrant tuning enables distinct-string permutations; ordinary monotonic guitar/bass enumeration is preserved. Existing fret/span/capo limits and costs are unchanged.
 - GM programs are authoritative: 25–40 permit names to refine fretted string identity; 41/42/43/44 classify violin/viola/cello/contrabass exactly. Other programs never acquire TAB from their approximate playback icon or a misleading name. GM 45–52 harp/ensembles and 106–108 banjo/shamisen/koto no longer inherit violin/guitar TAB identities. Without a program, explicit string names are used; bass guitar/electric/acoustic/fretless/e-bass matches have word boundaries, while plain Bass/Basso and bass winds do not qualify.
-- Host `tabInstruments` is an initial TAB identity override: an actual reader instrument switch drops it and the source name, using the new GM identity. An octave-only edit keeps the override. Explicit host overrides may identify an otherwise unrecognized source part before an instrument switch.
+- Host `tabInstruments` is an initial TAB identity override: an actual reader instrument switch drops it and the source name, using the exact target instrument id before any GM fallback. An octave-only edit keeps the override. Explicit host overrides may identify an otherwise unrecognized source part before an instrument switch.
 - Authored imported TAB remains available for otherwise unidentified parts; generating new TAB still uses the fretted classification in ordinary scores. No new finger-TAB staff is produced in this task.
 
 ## For the ABC guide
@@ -76,7 +76,46 @@ No blocking questions. The lead explicitly extended ownership of validation/read
 ## For GBrain (lead to promote)
 Generated TAB now resolves per-part fretted defaults and supports re-entrant physical courses. Host TAB identity overrides use exact onReady IDs and are dropped after actual instrument switches. GM programs gate detection; approximate sound icons never create string TAB identities. Implicit standard-guitar prefs mean auto defaults; explicit and saved tunings affect matching string counts only.
 
-## Review r1 resolution and current verification
+## Review r2 resolution and current verification
+Review: https://github.com/pepperhorn/ph-scoreview/pull/77#pullrequestreview-5839098642 (reviewed ea515d5). The reviewer confirmed all r1 items resolved.
+
+- Fixed the switched Double Bass regression: when `switched`, `stringInstrument` first uses the exact target `part.instrument` id. Double Bass maps to the unsupported fretless `double-bass` identity even though its target playback program is GM 33; Bass Guitar maps to bass4; Guitar maps to guitar. Violin/viola/cello map to their corresponding fretless identities.
+- Source/imported GM detection is unchanged: an unswitched Acoustic Bass GM 33 still gets bass4. Host overrides remain ignored after an actual instrument switch.
+- Added six parameterized Piano switch tests: double-bass, bassguitar, guitar, violin, viola, cello. Each asserts the classifier identity, toggle availability, generated staff selection, and tuning (or absence of a TAB spec). The source deliberately carries a host bass5 override to verify target precedence.
+- R2 files changed: lib/tab/string-instruments.ts, lib/tab/string-instruments.test.ts and this return handoff. No other files or acceptance criteria changed.
+
+Foreground verification, exact chain:
+```bash
+npm run test -w pepperscore && npm run check && npm run build && npm run test:tab && npm run test:instrument-switch && npm run test:reader
+```
+**Exit code 0** at default budgets, with no failures, interruptions or scaled reruns in r2.
+- Library: 14 files / 240 tests passed (15 string-instrument tests).
+- check: 0 errors, 0 warnings, 0 hints.
+- build: demo library/worker/Verovio parity and notices check passed.
+- TAB: all existing pipeline and reader browser cases passed, including PepperScore onReady ids/none/bass5/tuning-count/trumpet-switch coverage.
+- instrument-switch: playback, picker, saved host settings, octave tools and chunked rendering passed.
+- reader: all checks passed.
+
+Actual final verification tail:
+```text
+chromium: header first paint matches the server render (no hydration reflow) passed
+chromium: reader import, engraving, layout, annotations, fonts, mixer, persistence and playback passed
+chromium: four-bar Vertical default, compact readable floor, Endless default and user-zoom restore passed
+chromium: stave scale reflow, quiet zoom commits, anchoring and per-score memory passed
+chromium: rotation re-fits default zoom, keeps user zoom and keeps tall stacks reachable passed
+chromium: system paging, overhang and page-jump playback follow passed
+chromium: silent playback fallback passed
+chromium: TimGM6mb fallback shares one soundfont download passed
+chromium: ID-less MusicXML with a multi-measure rest intro passed
+chromium: open dialog passed
+chromium: score link passed
+chromium: stave focus passed
+chromium: options drawer layout and annotation sizes passed
+chromium: endless with scrollbars passed
+Process exit code: 0
+```
+
+## Review r1 resolution and historical verification
 Review: https://github.com/pepperhorn/ph-scoreview/pull/77#pullrequestreview-5838160914 (reviewed 27b2220).
 
 1. Blocking bass detection: GM program gates all name/icon inference. Bass guitar/electric/acoustic/fretless/e-bass names use word boundaries; plain Bass/Basso never identify a fretted part without a program. Tests cover Bassoon 71, Bass Clarinet 72, Bass Trombone 58, Bass Flute 74, choir Bass/Basso 53, and ABC `V:B nm="Bass"` with zero-based MIDI program 52.

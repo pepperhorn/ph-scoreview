@@ -86,6 +86,25 @@ describe('string instrument TAB', () => {
     expect(stringInstrument(source.parts[0], 'bass5', false)).toBe('bass5');
     expect(stringInstrument(source.parts[0], 'none', true)).toBe('guitar');
   });
+  it.each([
+    ['double-bass', 'double-bass', false],
+    ['bassguitar', 'bass4', true],
+    ['guitar', 'guitar', true],
+    ['violin', 'violin', false],
+    ['viola', 'viola', false],
+    ['cello', 'cello', false],
+  ] as const)('switches Piano to %s using the target id before GM inference', (target, identity, available) => {
+    const source = withTabSettings(score([part('Piano', 1)]), { Piano: 'bass5' });
+    const view = applyInstrumentView(source, {
+      Piano: { instrument: target, level: 'intermediate', autoRange: true, octaves: {} },
+    }, 'written').score;
+    expect(stringInstrument(view.parts[0], 'bass5', true)).toBe(identity);
+    expect(canShowTab(view)).toBe(available);
+    const plan = planTab(view, new Map([['Piano', '1']]), 'both', options);
+    expect(plan.added).toEqual(available ? ['101'] : []);
+    if (available) expect(plan.spec!.tunings!['1']).toEqual([...STRING_INSTRUMENTS[identity].tuning]);
+    else expect(plan.spec).toBeUndefined();
+  });
   it('draws per-staff course counts and tuning without adding TAB inside a piano brace', () => {
     const source = score([part('Piano'), part('Guitar'), part('Bass Guitar')]);
     const plan = planTab(source, new Map([['Piano','1'],['Guitar','3'],['Bass Guitar','4']]), 'both', options);
