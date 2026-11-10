@@ -7,7 +7,7 @@
 - **PR:** <url once opened>
 - **Base commit:** b8fb939 (T1 merged as PR #68)
 - **Port (if running a server):** 5232
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 Editor users can add a part, change an empty part's instrument, and remove an empty part from a new Parts popover, per plan task T2 (spec gap 1), with the commands `addPart`, `setPartInstrument`, `removePart`, `canEditPart`, `canAddPart`.
