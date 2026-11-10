@@ -11,8 +11,8 @@ Next ID: 0016
 
 | K | Title | Status | Waiting on | Owner (provider/model) | Branch | PR | Worktree | T3 task/thread | Spec | Plan | Latest handoff | Updated |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 0001 | Composable player skins | planned (t4, t5; t1 #59, t2 #66, t3 #72 merged) | child 0002-t2 (T4 shares render.ts with #78) | codex/gpt-6.1-sol |  |  |  |  | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md |  | 2026-11-10 |
-| 0002 | PDF export | ready (t2; t1 merged #71) | ci | codex/gpt-6.1-sol | orch/0002-t2-pdf-composition | https://github.com/pepperhorn/ph-scoreview/pull/78 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-4829b32d-6df260c4995f3118 | task `0002-t2-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0002-t2-impl-r1` | specs/0002-pdf-export.md | plans/0002-pdf-export.md | handoffs/2026-11-10-0002-t2-pdf-composition--codex-to-lead.md (@7c40488) | 2026-11-10 |
+| 0001 | Composable player skins | dispatched (t4; t1 #59, t2 #66, t3 #72 merged) | lead: delegate | codex/gpt-6.1-sol | orch/0001-t4-pitch-colours |  |  |  | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-11-0001-t4-pitch-colours--lead-to-codex.md | 2026-11-10 |
+| 0002 | PDF export | planned (t3, t4; t1 #71, t2 #78 merged) | human: merge-on-green OK for 0002 T3/T4? (dispatch T3 after 0001-T4: both own PepperScore.tsx, chrome/bar-items, styles) | codex/gpt-6.1-sol |  |  |  |  | specs/0002-pdf-export.md | plans/0002-pdf-export.md |  | 2026-11-10 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | human: P1–P3 (editor distribution, private repo name, BeCreative licence) before T4 | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0013 | TAB for stringed instruments | planned (t3, t4; t1 #77, t2 #74 merged) | child 0002-t2 (T3 touches render paths incl. lib/pdf and render.ts; dispatch after #78 and 0001-T4 ordering) | codex/gpt-6.1-sol |  |  |  |  | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md |  | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
@@ -21,6 +21,7 @@ Next ID: 0016
 
 | K | Title | PR | Merged | Notes |
 |---|---|---|---|---|
+| 0002-t2 | PDF composition (task of 0002) | https://github.com/pepperhorn/ph-scoreview/pull/78 | 2026-11-11 | 03d0ac7; AC8a parity moved into 0001-T4 |
 | 0013-t1 | String instruments, TAB part selection and tunings (task of 0013) | https://github.com/pepperhorn/ph-scoreview/pull/77 | 2026-11-11 | d248d7b; settings.tabInstruments; README text proposed for T4 |
 | 0014 | [quick] findTarget ignores the plugin's own overlay (S20) | https://github.com/pepperhorn/ph-scoreview/pull/79 | 2026-11-11 | merged |
 | 0003-t3 | Plugin slot and control targets (task of 0003) | https://github.com/pepperhorn/ph-scoreview/pull/76 | 2026-11-10 | merged; public EditorHost API |
@@ -75,6 +76,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-11 0002-t2 ready→merged — CI green on 7c40488, merged PR #78 (03d0ac7). 0001-t4 dispatched incl. 0002 AC8a PDF parity
 2026-11-11 0002-t2 in-review→ready — r3 approve on 7c40488 (outline within 1 px of screen at 600 dpi); waiting on chromium CI; S22 (Firefox export 10× scale, for T4), S23 logged
 2026-11-11 0002-t2 changes-requested→in-review — stroke-width fix pushed 7c40488; review r3 (last)
 2026-11-11 0013-t1 in-review→merged — r3 approve on 5bf0068 (55-case switch probe), CI green, merged PR #77 (d248d7b), 240 pkg tests on main. 0001-T4 and 0013-T3 both wait on #78 (render.ts/lib/pdf); 0001-T4 goes first (AC8a), then 0013-T3

@@ -6,7 +6,7 @@
 - **Branch:** orch/0002-t2-pdf-composition · **Worktree:** created by T3
 - **Base commit:** 6d0d41a (T1 merged as PR #71)
 - **Port (if running a server):** 5222
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 Turn T1's engraved pages into a real vector PDF: `composePdf` (jsPDF + svg2pdf.js, `compress: true`) and `exportScore` (the only entry point the UI will import), with the reader's annotation overlay (note names, counts, inferred chords, pitch colours) drawn by the same code as the screen, fonts embedded, exact page sizes. Plan task T2 (AC4 real files, AC7, AC8, AC8a).
