@@ -5,7 +5,7 @@
 > Waiting on: `child <taskId>` · `review <taskId>` · `ci` · `human: <why>` · `lead: <next action>`. Set it on every status change. A row needs the lead when it starts with `lead`, or when it's empty and Status is dispatched, in-review, changes-requested, ready, or merged. The lead's Stop hook won't let the lead end its turn while any row needs it.
 > Type: normal items have a spec and plan. Quick items have the title prefix `[quick]` (no spec or plan, a short handoff). PRs adopted by `orch-sweep` have the prefix `[pr]`.
 
-Next ID: 0014
+Next ID: 0015
 
 ## Active
 
@@ -13,13 +13,15 @@ Next ID: 0014
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 0001 | Composable player skins | planned (t4, t5; t1 #59, t2 #66, t3 #72 merged) | child 0002-t2 and 0013-t1 (T4 shares render.ts, PepperScore.tsx, prefs) | codex/gpt-6.1-sol |  |  |  |  | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md |  | 2026-11-10 |
 | 0002 | PDF export | in-review (t2; t1 merged #71) | review 0002-t2-review-r1 | codex/gpt-6.1-sol | orch/0002-t2-pdf-composition | https://github.com/pepperhorn/ph-scoreview/pull/78 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-4829b32d-6df260c4995f3118 | task `0002-t2-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0002-t2-impl-r1` | specs/0002-pdf-export.md | plans/0002-pdf-export.md | handoffs/2026-11-10-0002-t2-pdf-composition--codex-to-lead.md (@92b0d8c) | 2026-11-10 |
-| 0003 | Teaching layer (part 1: goal picker and setup tour) | ready (t3; t1 #68, t2 #69 merged) | human: approve merge of PR #76 (public API, >50 lines) | codex/gpt-6.1-sol | orch/0003-t3-plugin-slot | https://github.com/pepperhorn/ph-scoreview/pull/76 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-0a103941-dc4ee81564903b48 | task `0003-t3-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0003-t3-impl-r1` | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-10-0003-t3-plugin-slot--codex-to-lead.md (@fc14847) | 2026-11-10 |
+| 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | human: P1–P3 (editor distribution, private repo name, BeCreative licence) before T4 | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0013 | TAB for stringed instruments | in-review (t1; t2 spike #74 merged) | review 0013-t1-review-r1 | codex/gpt-6.1-sol | orch/0013-t1-string-instruments | https://github.com/pepperhorn/ph-scoreview/pull/77 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-5fdad52b-93573c8f57e66b60 | task `0013-t1-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0013-t1-impl-r1` | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md | handoffs/2026-11-10-0013-t1-string-instruments--codex-to-lead.md (@27b2220) | 2026-11-10 |
+| 0014 | [quick] findTarget ignores the plugin's own overlay (S20) | dispatched | lead: delegate | codex/gpt-6.1-sol | orch/0014-plugin-findtarget-overlay |  |  |  |  |  | handoffs/2026-11-10-0014-plugin-findtarget-overlay--lead-to-codex.md | 2026-11-10 |
 
 ## Done / closed
 
 | K | Title | PR | Merged | Notes |
 |---|---|---|---|---|
+| 0003-t3 | Plugin slot and control targets (task of 0003) | https://github.com/pepperhorn/ph-scoreview/pull/76 | 2026-11-10 | merged; public EditorHost API |
 | 0001-t3 | Drawer controls, phone toolbar, skin bar follow-ups (task of 0001) | https://github.com/pepperhorn/ph-scoreview/pull/72 | 2026-11-10 | 9205fc6 |
 | 0002-t1 | PDF page model and per-line break spike (task of 0002) | https://github.com/pepperhorn/ph-scoreview/pull/71 | 2026-11-10 | 6d0d41a; plan stands |
 | 0013-t2 | Spike: finger + position TAB for fretless strings (task of 0013) | https://github.com/pepperhorn/ph-scoreview/pull/74 | 2026-11-10 | merged; option D chosen; violin + cello |
@@ -61,13 +63,14 @@ Next ID: 0014
 | S17 | fix | MusicXML octave-clef pre-pass doesn't re-check a mid-part clef change; notes after it can draw an octave off (playback fine) | `packages/pepperscore/src/lib/notation/musicxml-octave-clef.ts:39-53` | S | low | PR #75 review | new |
 | S18 | test | Instrument-switch validation covers only the ABC guitar; add a MusicXML-source leg | `validation/instrument-switch.mjs` | XS | low | PR #75 review | new |
 | S19 | risk | Reader (webkit) flake: "Extra large note names keep clear of the count row" (gap −1.7 → −3.5) failed on PDF-only PR #71's push run, passed on its PR run | CI run 42740873297; `validation/reader.mjs` | S | medium (blocks merges) | PR #71 CI | new |
-| S20 | fix | `findTarget` returns null when the plugin's own overlay (e.g. a spotlight backdrop) covers the target centre; use `elementsFromPoint` and ignore hits inside `[data-ps-plugin]` — needed before 0003 T4 | `packages/pepperscore-editor/src/plugin/host.ts:33` | XS | high for T4 | PR #76 review r2 | new |
+| S20 | fix | `findTarget` returns null when the plugin's own overlay (e.g. a spotlight backdrop) covers the target centre; use `elementsFromPoint` and ignore hits inside `[data-ps-plugin]` — needed before 0003 T4 | `packages/pepperscore-editor/src/plugin/host.ts:33` | XS | high for T4 | PR #76 review r2 | accepted → 0014 |
 | S1 | fix | Emit a mid-bar `<keySig>` only in layer 1; Verovio draws one per layer | `packages/pepperscore/src/lib/notation/document.ts:249` (probe: 2 layers → 3 keySig groups) | S | low today (ABC overlays are separate parts); matters for MIDI/multi-layer | PR #60 review r2 | done (0005, PR #63) |
 
 Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-10 0003-t3 ready→merged — human OK, CI green, merged PR #76. 0014 (S20) dispatched. Human: don't mirror new tunings to becreative/chordl yet (memory updated)
 2026-11-10 0003-t3 in-review→ready — r2 approve on fc14847 (95/96 target probes; the 1 is the empty phone composer after the revert); asked human to merge; S20 logged
 2026-11-10 0002-t2 dispatched→in-review — PR #78 @92b0d8c (1029+/44-; full validation green); AC8a screen-colour parity deferred as an integration gate on 0001-T4 + 0002-T3; review r1
 2026-11-10 0013-t1 dispatched→in-review — PR #77 @27b2220, full validation green; review r1

@@ -6,7 +6,7 @@
 - **Branch:** orch/0003-t3-plugin-slot · **Worktree:** created by T3
 - **Base commit:** 8127cec (T1 #68, T2 #69 and 0011 #73 merged)
 - **Port (if running a server):** 5233
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 The editor accepts `plugins` that render overlays with an `EditorHost` (document, subscribe, undoable dispatch, findTarget/revealTarget, openPopover, shell, editable, origin), and every control a tour needs carries `data-ps-target`. Plan task T3 exactly (API shape, TDD checklist, key isolation, stub plugin under `?stubPlugin=1`).
