@@ -7,7 +7,7 @@
 - **PR:** <url once opened>
 - **Base commit:** 13d48eb (0001 T2 merged as PR #66)
 - **Port (if running a server):** 5221
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 Prove per-line fitting for PDF export before any UI: paper sizes as data, a greedy `breakLines`, `ViewSpec.breakBefore` in `mei-view.ts`, and a dedicated Verovio worker `engravePages` that lays out at real page size. Plan task T1 (AC4 dimensions-as-data, AC5 layout half, AC6). **This is a spike:** if Verovio doesn't honour the breaks at page size, or bar measurement is unreliable, stop and report in the return handoff — that decides whether the rest of the plan stands.
