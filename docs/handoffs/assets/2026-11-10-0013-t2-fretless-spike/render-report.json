@@ -1,0 +1,51 @@
+{
+  "version": "6.3.0-425dd7b",
+  "reports": [
+    {
+      "name": "violin-A-literal-tab",
+      "error": "[object WebAssembly.Exception]"
+    },
+    {
+      "name": "violin-B-numeric-tab",
+      "pages": 1,
+      "log": "",
+      "svgBytes": 27345
+    },
+    {
+      "name": "violin-C-annotation-lane",
+      "pages": 1,
+      "log": "",
+      "svgBytes": 17769
+    },
+    {
+      "name": "violin-D-svg-finger-text",
+      "pages": 1,
+      "log": "",
+      "svgBytes": 27511
+    },
+    {
+      "name": "cello-A-literal-tab",
+      "pages": 1,
+      "log": "",
+      "svgBytes": 26172
+    },
+    {
+      "name": "cello-B-numeric-tab",
+      "pages": 1,
+      "log": "",
+      "svgBytes": 26131
+    },
+    {
+      "name": "cello-C-annotation-lane",
+      "pages": 1,
+      "log": "",
+      "svgBytes": 17141
+    },
+    {
+      "name": "cello-D-svg-finger-text",
+      "pages": 1,
+      "log": "",
+      "svgBytes": 27117
+    }
+  ]
+}
