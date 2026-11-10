@@ -21,7 +21,7 @@ Guitar-style octave-clef parts are drawn an octave high on both import paths, an
 TAB part selection and new instrument tunings (that's 0013); imported TAB staves; the fingering solver.
 
 ## Acceptance criteria
-- [ ] AC1 — `e-guitar.abc` and `e-guitar.musicxml` draw G3 on the 2nd line of a treble-8 staff; bar 1 ends on G4 on the 2nd space; same as `e2-guitar-sounding.musicxml` (compare rendered SVG note positions).
+- [ ] AC1 — `e-guitar.abc` and `e-guitar.musicxml` draw G3 on the 2nd line of a treble-8 staff; bar 1 ends on sounding G4 (drawn as written G5, above the staff); same as `e2-guitar-sounding.musicxml` (compare rendered SVG note positions).
 - [ ] AC2 — Generated TAB for all three guitar cases is `0-2 | 0-5 | 3 | 0-2-3`, chords `5/4/3` and `4/2/3`; playback G3…G4.
 - [ ] AC3 — `settings.instrument: 'guitar'` on `e-guitar.abc` keeps the treble-8 clef and note positions; switching to alto sax / flute and back stays correct; concert view correct.
 - [ ] AC4 — `h-bass-sounding.musicxml` unchanged (bass-8 clef, correct position); a MuseScore-style bass export (written + octave transpose) draws correctly too.

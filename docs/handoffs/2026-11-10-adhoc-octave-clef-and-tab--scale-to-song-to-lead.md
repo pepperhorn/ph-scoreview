@@ -6,7 +6,7 @@
 - **Spec / plan:** none yet. This document is the problem statement.
 - **Branch / worktree / PR:** none
 - **Base commit:** `4b57e63` (main)
-- **Status:** acked
+- **Status:** closed (0012 merged; 0013 in progress)
 - **Follows:** `docs/handoffs/2026-11-09-adhoc-abc-import-fidelity--scale-to-song-to-lead.md`. Everything in that report re-tested OK on 2026-11-10 (main `1a903eb`), **except** the octave-clef item, which is still wrong and is detailed here.
 
 ## Goal

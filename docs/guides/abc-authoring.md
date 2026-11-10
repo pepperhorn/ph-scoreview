@@ -26,7 +26,7 @@
 
 ### Clefs
 - `clef=treble|bass|alto|tenor|treble-8|treble+8|bass-8|perc` on `V:` (or `K:`).
-- Octave clefs: ABC note letters are the **sounding** pitch (ABC 2.1); the clef draws them an octave higher. Guitar: `clef=treble-8`, and `G,` sounds G3 and is drawn as G4 (second line). Writing `G` gives sounding G4, drawn G5. Don't also add `transpose=-12`; the clef already does it.
+- Octave clefs: ABC note letters are the **sounding** pitch (ABC 2.1); the clef draws them an octave higher (`treble-8`, `bass-8`) or lower (`treble+8`). Guitar: `clef=treble-8`, and `G,` sounds G3 and is drawn as G4 on the second line; generated TAB uses the sounding pitch (`G,` = open G string). Don't add `transpose=-12`; the clef already does it. An explicit `transpose=` (instrument interval) still applies on top.
 
 ### Instruments and sound
 - `name="…"` selects the instrument from its name (e.g. "Flute", "Cello", "Alto Saxophone") when no `%%MIDI program` is given. A name never implies transposition.
@@ -105,12 +105,12 @@ G, A, B, C | D4 |]
 ## Known limits (don't rely on these)
 - Lyrics, decorations, tuplet engraving, multi-tune files: outside the parity guarantee.
 - `score=` on `V:` is ignored.
-- **Octave clefs currently draw an octave high** (e.g. `clef=treble-8`: `G,` sounds G3 correctly but is drawn at the G4-above-the-staff position, and generated TAB is an octave high). Being fixed in ledger 0012. Until then, avoid `treble-8` in ABC; for guitar use MusicXML at sounding pitch with `<clef-octave-change>-1` and no `<transpose>`.
 - `M:`, `L:`, `Q:`, `C:` before `X:` are ignored (ABC 2.1 file-header defaults aren't applied).
 - Saved per-part reader settings reset for piano ABC scores first shown before 2026-11-10 (grand-staff regrouping).
 
 ## Change log
 <!-- Newest first: YYYY-MM-DD — ledger item / PR — what changed for ABC authors -->
+- 2026-11-10 — 0012 / PR #75 — octave clefs now draw at the right octave (guitar `G,` on the second line) and generated TAB uses sounding pitch; the instrument switch keeps the "8". Known limit removed.
 - 2026-11-10 — known limit added (scale-to-song report) — octave clefs draw an octave high; fix tracked as 0012.
 - 2026-11-10 — 0008 / PR #67 — `V:` lines before `X:` now keep clef, name and transposition as defaults (tune-header `V:` overrides per property); `%%score`/`%%staves` grouping is kept.
 - 2026-11-10 — 0007 / PR #64 — the npm package README now carries the full ABC authoring rules and templates (no behaviour change).

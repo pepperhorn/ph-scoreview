@@ -6,7 +6,7 @@
 - **Branch:** orch/0012-octave-clef · **Worktree:** created by T3
 - **Base commit:** 0fe23ce
 - **Port (if running a server):** 5320
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 Guitar-style octave-clef parts (ABC `clef=treble-8`, and MusicXML written pitch + `<clef-octave-change>-1` + `<transpose><octave-change>-1`) draw like `e2-guitar-sounding.musicxml`, play at sounding pitch, generate TAB from sounding pitch, and keep the "8" through the instrument switch. Spec AC1–AC6.
