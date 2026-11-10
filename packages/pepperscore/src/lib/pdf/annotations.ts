@@ -1,5 +1,4 @@
-import { tagPitchColours } from '../pitch-colours';
-import type { PitchPalette } from '../skin';
+import { tagPitchColours, type PitchColourPaint } from '../pitch-colours';
 import type { Score, ScoreNote } from '../score';
 import { annotationBands, annotationBox, annotationLayout, drawEventAnnotations, findAnnotationNote, type AnnotationSettings } from '../render';
 
@@ -43,11 +42,28 @@ export function annotatePage(svg: SVGSVGElement, score: Score, settings: Annotat
 
 /** svg2pdf ignores paint-order: retain identical text geometry in each explicit pass. */
 export function materializePaint(svg: SVGSVGElement, page: { width: number; height: number }, textWidth: (element: SVGElement, size: number) => number): void {
+  for (const use of Array.from(svg.querySelectorAll<SVGUseElement>('.notehead[data-pitch] use'))) {
+    const href = use.getAttribute('href') || use.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+    const glyph = href?.startsWith('#') ? svg.querySelector(`[id="${CSS.escape(href.slice(1))}"]`) : null;
+    if (!glyph) throw new Error('Could not resolve the PDF pitch glyph.');
+    const group = document.createElementNS(svg.namespaceURI, 'g');
+    group.setAttribute('transform', `${use.getAttribute('transform') || ''} translate(${use.x.baseVal.value} ${use.y.baseVal.value})`);
+    const path = glyph.cloneNode(true) as SVGElement;
+    path.removeAttribute('id');
+    path.querySelectorAll('[id]').forEach(child => child.removeAttribute('id'));
+    group.append(path); use.replaceWith(group);
+  }
   for (const element of Array.from(svg.querySelectorAll<SVGGraphicsElement>('text, .notehead'))) {
     const computed = getComputedStyle(element);
     // Freeze inherited/computed drawing properties before cloning, including inline CSS.
     for (const property of ['fill', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-opacity', 'font-family', 'font-size', 'font-weight', 'font-style', 'text-anchor', 'dominant-baseline']) {
       element.style.setProperty(property, computed.getPropertyValue(property));
+    }
+    const glyphPaths = element.hasAttribute('data-pitch') ? Array.from(element.querySelectorAll<SVGElement>('path')) : [];
+    // Verovio styles paths with currentColor. Freeze paint on the leaves too, so
+    // those rules cannot turn an inlined coloured outline back to black.
+    for (const path of glyphPaths) for (const property of ['fill', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-opacity']) {
+      path.style.setProperty(property, element.style.getPropertyValue(property));
     }
     if (element.localName === 'text' && !element.children.length && computed.textAnchor === 'middle') {
       // Use the embedded face's advances, rather than svg2pdf's rounded browser measurement.
@@ -80,6 +96,7 @@ export function materializePaint(svg: SVGSVGElement, page: { width: number; heig
     outline.removeAttribute('id');
     for (const child of Array.from(outline.querySelectorAll('[id]'))) child.removeAttribute('id');
     outline.style.setProperty('fill', 'none');
+    if (glyphPaths.length) outline.querySelectorAll<SVGElement>('path').forEach(path => path.style.setProperty('fill', 'none'));
     const shadow = outline.cloneNode(true) as SVGElement;
     shadow.style.setProperty('stroke', '#000000'); shadow.style.setProperty('stroke-opacity', '0.15');
     if (element.localName === 'text') {
@@ -89,20 +106,24 @@ export function materializePaint(svg: SVGSVGElement, page: { width: number; heig
     if (element.hasAttribute('data-pitch')) element.before(outline);
     else element.before(outline, shadow);
     element.style.setProperty('stroke', 'none');
+    if (element.hasAttribute('data-pitch')) {
+      element.style.setProperty('stroke-width', '0');
+      for (const path of glyphPaths) { path.style.setProperty('stroke', 'none'); path.style.setProperty('stroke-width', '0'); }
+    }
   }
 }
 
 /** Inline vector paint: export pages have no reader CSS or host variables. */
-export function paintPitchColours(svg: SVGSVGElement, score: Score, palette: PitchPalette, tabStaves: ReadonlySet<string> = new Set()): void {
+export function paintPitchColours(svg: SVGSVGElement, score: Score, paint: PitchColourPaint, tabStaves: ReadonlySet<string> = new Set()): void {
   const byId = new Map(Array.from(svg.querySelectorAll('[id]'), element => [element.id, element]));
   for (const part of score.parts) for (const measure of part.measures) for (const event of measure.notes) {
     const element = findAnnotationNote(byId, score, event);
     if (element) tagPitchColours(element, event, part, tabStaves);
   }
   for (const head of Array.from(svg.querySelectorAll<SVGElement>('.notehead[data-pitch]'))) {
-    head.style.fill = palette[head.getAttribute('data-pitch') as keyof PitchPalette];
-    head.style.stroke = 'rgba(0,0,0,.65)';
-    head.style.strokeWidth = '18';
+    head.style.fill = paint.palette[head.getAttribute('data-pitch') as keyof typeof paint.palette];
+    head.style.stroke = paint.outline;
+    head.style.strokeWidth = paint.strokeWidth;
     head.style.paintOrder = 'stroke fill';
   }
 }

@@ -2,7 +2,7 @@ import { sanitizeSvg } from '../render';
 import { PAPER_SIZES } from './paper';
 import type { Score, ScoreNote } from '../score';
 import { annotationLayout, type AnnotationSettings } from '../render';
-import type { PitchPalette } from '../skin';
+import type { PitchColourPaint } from '../pitch-colours';
 import { annotatePage, paintPitchColours } from './annotations';
 import { composePdf } from './compose';
 import { engravePages, type PageInput, type PageOptions } from './engrave';
@@ -11,7 +11,7 @@ import { engravePages, type PageInput, type PageOptions } from './engrave';
  * input.view is its planStaves view (including hidden staves, spelling and TAB).
  * No reader channel or live DOM is used. T3 imports only this module, dynamically.
  */
-export type ExportRequest = { input: PageInput; options: PageOptions; score: Score; annotations?: AnnotationSettings; pitchColours?: PitchPalette; visiblePartIds?: string[]; tabAliases?: ReadonlyMap<string, ScoreNote>; tabStaves?: ReadonlySet<string> };
+export type ExportRequest = { input: PageInput; options: PageOptions; score: Score; annotations?: AnnotationSettings; pitchColours?: PitchColourPaint; visiblePartIds?: string[]; tabAliases?: ReadonlyMap<string, ScoreNote>; tabStaves?: ReadonlySet<string> };
 export async function exportScore(request: ExportRequest, signal: AbortSignal): Promise<Blob> {
   signal.throwIfAborted();
   const score = request.visiblePartIds ? { ...request.score, parts: request.score.parts.filter(part => request.visiblePartIds!.includes(part.id)) } : request.score;

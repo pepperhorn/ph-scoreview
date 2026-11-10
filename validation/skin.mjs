@@ -693,6 +693,7 @@ async function assertLegacyPhoneChrome(browser, server) {
     await page.goto(url);await page.locator('.notehead[data-pitch]').first().waitFor();
     const tile=page.locator('.skin-bar .ps-pitch-colour-tile');
     assert.equal(await tile.getAttribute('aria-pressed'),'false');
+    assert.deepEqual(await tile.locator('text').evaluate(el=>[getComputedStyle(el).fontSize,el.getAttribute('y'),getComputedStyle(el).dominantBaseline]),['20px','18','central'],'tile C uses the centred house style');
     await page.evaluate(()=>{window.pitchSvg=document.querySelector('.score-system svg');});
     await tile.click();assert.equal(await tile.getAttribute('aria-pressed'),'true');
     const colours=await page.evaluate(()=>Array.from(document.querySelector('.chord').querySelectorAll('.notehead')).map(e=>[e.dataset.pitch,getComputedStyle(e).fill,getComputedStyle(e).stroke]));

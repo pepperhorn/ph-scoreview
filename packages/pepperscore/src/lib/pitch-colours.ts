@@ -16,3 +16,21 @@ export function tagPitchColours(element: Element, event: ScoreNote, part: Pick<P
     if (pitch && !pitch.unpitched) head.setAttribute('data-pitch', pitchClassOf(pitch.midi));
   });
 }
+
+/** Save-time drawing snapshot, resolved in the same root as the screen's noteheads. */
+export type PitchColourPaint = { palette: PitchPalette; outline: string; strokeWidth: string };
+export function resolvePitchColours(root: HTMLElement): PitchColourPaint {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.style.cssText = 'position:absolute;width:0;height:0;visibility:hidden;pointer-events:none';
+  for (const pitch of PITCH_CLASSES) {
+    const head = document.createElementNS(svg.namespaceURI, 'g');
+    head.setAttribute('class', 'notehead'); head.setAttribute('data-pitch', pitch); svg.append(head);
+  }
+  root.append(svg);
+  try {
+    const heads = Array.from(svg.children);
+    const palette = Object.fromEntries(heads.map(head => [head.getAttribute('data-pitch'), getComputedStyle(head).fill])) as PitchPalette;
+    const style = getComputedStyle(heads[0]);
+    return { palette, outline: style.stroke, strokeWidth: style.strokeWidth };
+  } finally { svg.remove(); }
+}
