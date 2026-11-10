@@ -12,7 +12,7 @@ Next ID: 0016
 | K | Title | Status | Waiting on | Owner (provider/model) | Branch | PR | Worktree | T3 task/thread | Spec | Plan | Latest handoff | Updated |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 0001 | Composable player skins | planned (t4, t5; t1 #59, t2 #66, t3 #72 merged) | child 0002-t2 (T4 shares render.ts with #78) | codex/gpt-6.1-sol |  |  |  |  | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md |  | 2026-11-10 |
-| 0002 | PDF export | changes-requested (t2; t1 merged #71) | child 0002-t2-impl-r1-fix2 | codex/gpt-6.1-sol | orch/0002-t2-pdf-composition | https://github.com/pepperhorn/ph-scoreview/pull/78 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-4829b32d-6df260c4995f3118 | task `0002-t2-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0002-t2-impl-r1` | specs/0002-pdf-export.md | plans/0002-pdf-export.md | handoffs/2026-11-10-0002-t2-pdf-composition--codex-to-lead.md (@6bac927) | 2026-11-10 |
+| 0002 | PDF export | in-review (t2; t1 merged #71) | review 0002-t2-review-r3 | codex/gpt-6.1-sol | orch/0002-t2-pdf-composition | https://github.com/pepperhorn/ph-scoreview/pull/78 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-4829b32d-6df260c4995f3118 | task `0002-t2-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0002-t2-impl-r1` | specs/0002-pdf-export.md | plans/0002-pdf-export.md | handoffs/2026-11-10-0002-t2-pdf-composition--codex-to-lead.md (@7c40488) | 2026-11-10 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | human: P1–P3 (editor distribution, private repo name, BeCreative licence) before T4 | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0013 | TAB for stringed instruments | planned (t3, t4; t1 #77, t2 #74 merged) | child 0002-t2 (T3 touches render paths incl. lib/pdf and render.ts; dispatch after #78 and 0001-T4 ordering) | codex/gpt-6.1-sol |  |  |  |  | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md |  | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
@@ -73,6 +73,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-11 0002-t2 changes-requested→in-review — stroke-width fix pushed 7c40488; review r3 (last)
 2026-11-11 0013-t1 in-review→merged — r3 approve on 5bf0068 (55-case switch probe), CI green, merged PR #77 (d248d7b), 240 pkg tests on main. 0001-T4 and 0013-T3 both wait on #78 (render.ts/lib/pdf); 0001-T4 goes first (AC8a), then 0013-T3
 2026-11-11 0015 new→specced (draft) — PDF overlay templates; human: shared typesafe PepperHorn stamp schema v1 first, anchor-to-edge paper fit, all zone types incl. watermark and licence marks; handoff to pepperhorn-platform lead (copied into its docs/handoffs, not committed there)
 2026-11-11 0014 ready→closed — CI green on 3eef105, merged PR #79
