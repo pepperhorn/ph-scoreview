@@ -16,7 +16,7 @@ Next ID: 0014
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t3; t1 #68, t2 #69 merged) | child 0011-impl-r1 (T3 owns validation/editor.mjs, which 0011 is changing; dispatch T3 when #73 merges) | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0011 | [quick] Validation harness reliability: ephemeral ports, load-aware timing gates (S12, S14) | in-review | review 0011-review-r1 | codex/gpt-6.1-sol | orch/0011-validation-harness | https://github.com/pepperhorn/ph-scoreview/pull/73 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-c5df7858 | task `0011-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0011-impl-r1` |  |  | handoffs/2026-11-10-0011-validation-harness-reliability--codex-to-lead.md (@24165c4) | 2026-11-10 |
 | 0012 | Octave-clef parts draw at the right octave (ABC + MusicXML) | in-review | review 0012-review-r1 | codex/gpt-6.1-sol | orch/0012-octave-clef | https://github.com/pepperhorn/ph-scoreview/pull/75 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-ad0cfc0f | task `0012-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0012-impl-r1` | specs/0012-octave-clef-display.md | plans/0012-octave-clef-display.md | handoffs/2026-11-10-0012-octave-clef--codex-to-lead.md (@a373096) | 2026-11-10 |
-| 0013 | TAB for stringed instruments | ready (t2 spike) | human: approve merge of PR #74 (>50 lines) | codex/gpt-6.1-sol | orch/0013-t2-fretless-spike | https://github.com/pepperhorn/ph-scoreview/pull/74 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-dac5d810 | task `0013-t2-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0013-t2-impl-r1` | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md | handoffs/2026-11-10-0013-t2-fretless-spike--codex-to-lead.md (@044aa8c) | 2026-11-10 |
+| 0013 | TAB for stringed instruments | ready (t2 spike) | ci | codex/gpt-6.1-sol | orch/0013-t2-fretless-spike | https://github.com/pepperhorn/ph-scoreview/pull/74 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-dac5d810 | task `0013-t2-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3Ae5873edd-876a-4a1d-b891-229891827778%3Adelegate-task%3A0013-t2-impl-r1` | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md | handoffs/2026-11-10-0013-t2-fretless-spike--codex-to-lead.md (@044aa8c) | 2026-11-10 |
 
 ## Done / closed
 
@@ -59,6 +59,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-10 — human: merge #71, #73, #74, #75 on approve + green
 2026-11-10 0013-t2 in-review→ready — r3 approve on 044aa8c (5,800-candidate round trip); asking human to merge
 2026-11-10 0013-t2 changes-requested→in-review — fixes pushed 044aa8c (212 tests); <fing> probe archived under assets/…/fing-probe; review r3
 2026-11-10 0013-t2 in-review→changes-requested — r2 on 32f3608: r1 fixed; new: cello/bass half position outranks first (D2 → half 2); violin unhinted C#/G#/D# → low 4; reviewer agrees SVG substitution over <fing>; last fix round
