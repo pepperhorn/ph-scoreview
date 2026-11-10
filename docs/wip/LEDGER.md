@@ -14,7 +14,7 @@ Next ID: 0014
 | 0001 | Composable player skins | planned (t4, t5; t1 #59, t2 #66, t3 #72 merged) | child 0002-t2 and 0013-t1 (T4 shares render.ts, PepperScore.tsx, prefs) | codex/gpt-6.1-sol |  |  |  |  | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md |  | 2026-11-10 |
 | 0002 | PDF export | dispatched (t2; t1 merged #71) | child 0002-t2-impl-r1 | codex/gpt-6.1-sol | orch/0002-t2-pdf-composition |  |  | task `0002-t2-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0002-t2-impl-r1` | specs/0002-pdf-export.md | plans/0002-pdf-export.md | handoffs/2026-11-10-0002-t2-pdf-composition--lead-to-codex.md | 2026-11-10 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | in-review (t3; t1 #68, t2 #69 merged) | review 0003-t3-review-r1 | codex/gpt-6.1-sol | orch/0003-t3-plugin-slot | https://github.com/pepperhorn/ph-scoreview/pull/76 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-0a103941-dc4ee81564903b48 | task `0003-t3-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0003-t3-impl-r1` | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-10-0003-t3-plugin-slot--codex-to-lead.md (@d575ff3) | 2026-11-10 |
-| 0013 | TAB for stringed instruments | dispatched (t1; t2 spike #74 merged) | child 0013-t1-impl-r1 | codex/gpt-6.1-sol | orch/0013-t1-string-instruments |  |  | task `0013-t1-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0013-t1-impl-r1` | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md | handoffs/2026-11-10-0013-t1-string-instruments--lead-to-codex.md | 2026-11-10 |
+| 0013 | TAB for stringed instruments | dispatched (t1; t2 spike #74 merged) | child 0013-t1-impl-r1-fix1 | codex/gpt-6.1-sol | orch/0013-t1-string-instruments | https://github.com/pepperhorn/ph-scoreview/pull/77 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-5fdad52b-93573c8f57e66b60 | task `0013-t1-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0013-t1-impl-r1` | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md | handoffs/2026-11-10-0013-t1-string-instruments--codex-to-lead.md (@b570210) | 2026-11-10 |
 
 ## Done / closed
 
@@ -67,6 +67,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-10 0013-t1 — PR #77 @b570210 (230 pkg tests); full validation blocked by reader.mjs:115 expecting a TAB control on the piano sample; lead granted reader.mjs for that expectation (AC1)
 2026-11-10 0003-t3 dispatched→in-review — PR #76 @d575ff3; review r1
 2026-11-10 0001-t3 in-review→merged — r3 approve on a7355cf (390px main reader byte-identical), CI green, merged PR #72 per human. 0013-t1 dispatched. 0001-t4 held until 0002-t2 and 0013-t1 (shared render.ts/PepperScore.tsx/prefs)
 2026-11-10 0002-t1 ready→merged — webkit rerun green, merged PR #71 (6d0d41a) per human. 0002-t2 dispatched (adds jspdf + svg2pdf.js, approved in spec)
