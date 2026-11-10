@@ -8,7 +8,7 @@
 - **Worktree:** /home/shaun/.t3/worktrees/ph-vexflow-view/t3-0a103941-dc4ee81564903b48
 - **Base commit:** 8127cec (dispatch base, ancestor verified)
 - **Implementation commit:** 13a8306
-- **PR:** pending creation after this handoff is committed
+- **PR:** https://github.com/pepperhorn/ph-scoreview/pull/76
 - **Port:** 5233 reserved; no persistent server started
 - **Status:** closed
 
