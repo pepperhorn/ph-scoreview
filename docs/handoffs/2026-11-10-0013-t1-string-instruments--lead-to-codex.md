@@ -6,7 +6,7 @@
 - **Branch:** orch/0013-t1-string-instruments · **Worktree:** created by T3
 - **Base commit:** 9205fc6 (0012 #75, 0013-t2 #74, 0001-t3 #72 merged)
 - **Port (if running a server):** 5331
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 Generated TAB goes only to stringed parts, with the right string count and default tuning per instrument, and never inside a non-string grand-staff brace. Spec AC1, AC2, AC5. Fretless parts (violin, cello) are detected and marked as "finger TAB" candidates but get **no** TAB staff yet (T3 adds it); viola and double bass get none.
