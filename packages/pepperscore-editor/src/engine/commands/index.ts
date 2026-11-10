@@ -5,3 +5,4 @@ export * from './beams';
 export * from './directions';
 export * from './cursor';
 export * from './layouts';
+export * from './parts';

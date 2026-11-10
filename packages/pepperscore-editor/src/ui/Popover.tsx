@@ -8,6 +8,7 @@ import { Icon, Kbd } from './icons';
 import { FIFTHS, keyName } from './key-names';
 import { describeKey, KEYMAP, type PopoverName } from './keymap';
 import { placePopover, type Rect } from './placement';
+import { PartsPanel } from './PartsPanel';
 import { DetailsPanel } from './DetailsPanel';
 import { TempoFields } from './TempoFields';
 import { relativeRect } from './useCanvasGeometry';
@@ -38,7 +39,7 @@ export const ENDINGS: { value: string; label: string; numbers: number[] | null }
 ];
 const TIME_UNITS = [1, 2, 4, 8, 16] as const;
 export const POPOVER_TITLES: Record<PopoverName, string> = {
-  key: 'Key signature', time: 'Time signature', clef: 'Clef', dynamic: 'Dynamic', jump: 'Jump', ending: 'Ending', tempo: 'Tempo', details: 'Score details',
+  key: 'Key signature', time: 'Time signature', clef: 'Clef', dynamic: 'Dynamic', jump: 'Jump', ending: 'Ending', tempo: 'Tempo', details: 'Score details', parts: 'Parts',
 };
 
 type Props = { name: PopoverName; store: EditorStore; onClose(): void };
@@ -117,7 +118,7 @@ export function Popover({ name, store, onClose, anchor, viewport, stage }: Props
     >
       <span ref={arrow} className="ps-popover-arrow" aria-hidden="true" />
       <header className="ps-popover-head">
-        <div className="ps-popover-titles"><span className="ps-eyebrow">{name === 'details' ? 'About the piece' : name === 'dynamic' ? 'At the cursor' : `From bar ${index + 1}`}</span><h3 className="ps-popover-title">{POPOVER_TITLES[name]}</h3></div>
+        <div className="ps-popover-titles"><span className="ps-eyebrow">{name === 'parts' ? 'Who plays' : name === 'details' ? 'About the piece' : name === 'dynamic' ? 'At the cursor' : `From bar ${index + 1}`}</span><h3 className="ps-popover-title">{POPOVER_TITLES[name]}</h3></div>
         <button type="button" className="ps-btn ps-icon-btn ps-popover-close" aria-label="Close" onClick={onClose}><Icon name="close" size={14} /></button>
       </header>
       <div className="ps-popover-body"><PopoverBody name={name} store={store} onClose={onClose} /></div>
@@ -145,6 +146,8 @@ export function PopoverBody({ name, store, onClose }: Props) {
   const g = document.global.measures[index];
 
   switch (name) {
+    case 'parts':
+      return <PartsPanel store={store} />;
     case 'details':
       return <DetailsPanel store={store} />;
     case 'key': {

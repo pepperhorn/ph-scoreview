@@ -91,6 +91,7 @@ export const TopBar = memo(function TopBar({ playing, licence, onPlay, onSave, o
         <MetaText field="composer" placeholder="Composer" className="ps-score-composer" />
       </div>
       <button type="button" className="ps-btn ps-btn-ghost ps-btn-details" aria-label="Score details" data-ps-popover-for="details" disabled={!editable} onClick={() => togglePopover('details')}>Details</button>
+      <button type="button" className="ps-btn ps-btn-ghost ps-btn-parts" aria-label="Parts" data-ps-popover-for="parts" disabled={!editable} onClick={() => togglePopover('parts')}>Parts</button>
       <div className="ps-chips" aria-label="Score settings">
         {chip('key', 'Key signature', 'Key', keyName(key.fifths, key.mode ?? 'major'))}
         {chip('time', 'Time signature', 'Time', `${time.count}/${time.unit}`)}

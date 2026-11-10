@@ -59,6 +59,7 @@ export function PhoneMenu({ licence, onSave, onExport, onOpen, onNew, onClose }:
         <input className="ps-open-input" type="file" accept={OPEN_ACCEPT} hidden disabled={!editable} onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; onClose(); if (file) onOpen(file); }} />
       </label>
       <button type="button" role="menuitem" className="ps-btn ps-pmenu-item ps-btn-details" data-ps-popover-for="details" disabled={!editable} onClick={choose(() => togglePopover('details'))}>Score details</button>
+      <button type="button" role="menuitem" className="ps-btn ps-pmenu-item ps-btn-parts" data-ps-popover-for="parts" disabled={!editable} onClick={choose(() => togglePopover('parts'))}>Parts</button>
       <button type="button" role="menuitem" className="ps-btn ps-pmenu-item ps-btn-new" disabled={!editable} onClick={choose(onNew)}><Icon name="plus" size={16} />New score</button>
       <span className={`ps-licence ps-pmenu-licence ${licence.editable ? '' : 'is-viewer'}`.trim()}>
         <span className="ps-licence-dot" />

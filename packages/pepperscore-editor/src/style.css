@@ -475,3 +475,20 @@
 .ps-editor .ps-pstrip.ps-popover-details .ps-pstrip-apply { grid-column: 3; grid-row: 1; }
 .ps-editor .ps-pstrip.ps-popover-details .ps-details-input { width: 100%; }
 .ps-editor .ps-pstrip.ps-popover-details textarea.ps-details-input { height: auto; }
+
+/* Parts: the shared form wraps within the popover and the phone's scrolling strip. */
+.ps-editor .ps-parts-panel { display: flex; flex-direction: column; gap: 12px; width: 100%; min-width: 0; font-family: var(--ps-sans); }
+.ps-editor .ps-parts-count { margin: 0; font-size: 12px; color: var(--ps-ink-3); }
+.ps-editor :is(.ps-parts-row, .ps-parts-add) { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 6px 8px; }
+.ps-editor .ps-parts-row { padding-bottom: 10px; border-bottom: 1px solid #f0f0ec; }
+.ps-editor .ps-parts-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ps-editor .ps-parts-name { font-size: 12px; font-weight: 500; }
+.ps-editor .ps-parts-field .ps-select { width: 100%; min-width: 0; font-family: var(--ps-sans); }
+.ps-editor .ps-parts-reason { grid-column: 1 / -1; margin: 0; font-size: 11px; line-height: 1.4; color: var(--ps-ink-3); }
+.ps-editor .ps-parts-add-button { align-self: end; }
+.ps-editor .ps-popover-parts { width: min(360px, calc(100% - 24px)); max-height: calc(100% - 24px); overflow-y: auto; }
+.ps-editor .ps-popover-parts .ps-popover-title { font: 500 17px var(--ps-sans); }
+.ps-editor .ps-pstrip.ps-popover-parts { height: auto; display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: start; max-height: 50dvh; overflow-y: auto; }
+.ps-editor .ps-pstrip.ps-popover-parts .ps-pstrip-label { grid-column: 2; grid-row: 1; max-width: none; align-self: center; font: 500 13px var(--ps-sans); }
+.ps-editor .ps-pstrip.ps-popover-parts .ps-pstrip-fields { grid-column: 1 / -1; grid-row: 2; width: 100%; min-width: 0; padding: 0 4px 8px; }
+.ps-editor .ps-pstrip.ps-popover-parts .ps-pstrip-apply { grid-column: 3; grid-row: 1; }
