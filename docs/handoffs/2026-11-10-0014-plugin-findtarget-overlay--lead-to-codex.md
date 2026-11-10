@@ -24,3 +24,6 @@ npm run test:editor && npm run build && npm run test:editor-browser && npm run t
 
 ---
 ## Receiver ack
+I will use the centre hit stack to ignore plugin-owned overlays while preserving non-plugin occlusion, clipping and visibility checks. I will change only the owned host, tests, browser validation, optional stub plugin and 0014 handoffs, then run the specified verification and open a draft PR. No open questions. Base 08e0102 is an ancestor of the clean starting HEAD 113540a.
+
+GBrain checked: `default:projects/scoreflow-music-reader` and `default:projects/scoreflow-music-reader/gotchas-abc-import` (build before browser suites; validation uses free ports). No GBrain writes as implementer.
