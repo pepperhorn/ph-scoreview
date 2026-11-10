@@ -51,7 +51,7 @@ None about implementation or scope. Lead owns other-family review and merge.
 Lead to acknowledge through the ledger on main.
 
 ## Return
-- **Outcome:** done; review r1 fixes and the lead's empty-bar decision are implemented. All seven commands requested for this review round passed; initial submission results remain below as history.
+- **Outcome:** done; r2's no-skin phone regression is fixed, with all r1 fixes preserved. All six r2 verification commands passed, with reader passing on its requested isolated retry. Earlier submission/r1 results remain below as history.
 - **Commits:** receiver ack `7501683`; implementation `6079501`.
 - **What changed:** drawer panel/resolver, single file input outside header, renderable header suppression, phone playback toolbar and ephemeral Vite port; unit and browser regression checks.
 - **Verification output:** setup, check (0 errors/warnings/hints), build, skin (5 skin + 7 bar/drawer unit tests and browser checks), embed, layout, standalone reader and manifest passed. Full validation and remainder results are recorded below.
@@ -130,3 +130,28 @@ Skin drawer: omitted actions, single refs, mode/bars/zoom/stop/mixer/file choose
 - **Scope audit:** compared with reviewed head `2a185b515166f1aec2acb818691055170b4255ec`, only `PepperScore.tsx`, `lib/chrome.ts`, `lib/bar-items.test.ts`, `styles.css`, `validation/skin.mjs`, and this owned return handoff changed. `git diff --check` passed.
 - **For T5:** document the new lead decision that an unshowable skin bar restores the preset's default controls. On minimal, omitted actions still require their control groups to be available (the becreative bar enables Stop via transport; the other five can be enabled through `controls`).
 - **Follow-up:** other-family re-review on the pushed head. No merge, release, watching or polling.
+
+## Review r2 response — 5835878229
+- **Request:** [review](https://github.com/pepperhorn/ph-scoreview/pull/72#pullrequestreview-5835878229). R1 is confirmed; this round addresses only the no-skin full-preset phone regression.
+- **Cause and fix:** r1 left the reusable `embedSwitch` node available for bar composition, but the no-bar toolbar treated node existence as visibility. `noBarSwitch` now applies `embedSwitchShown` once and is used consistently for toolbar eligibility, toolbar contents and corner rendering. Full without a showable bar therefore mounts neither the toolbar nor its dead switcher. Minimal's existing allowed switcher/menu remains intact. No r1 geometry, fallback-resolution, CSS or playback code changed.
+- **Regression proof:** before the fix, the new browser test failed against reviewed head `429caadb983c9ef34403143b4e757cb198a1f265`: `390px touch=false no skin: full has no bottom toolbar`, actual 1, expected 0.
+- **Coverage:** full without a skin and full with `bar: ['pdf']` have zero `.ps-embed-toolbar` and `.instrument-switch` elements at 390px, 850px and wide touch mode. Each context also checks that an explicitly enabled minimal no-skin switcher still opens/closes its menu. The real `/` reader page at 390px retains the main baseline's absence of embed toolbar/switcher, normal header playback and Options tab. This baseline is supported by the review's main comparison and inspection of `main`'s original `embedSwitchShown` gate; no new pixel-comparison claim is made.
+- **Scope:** only `components/PepperScore.tsx`, `validation/skin.mjs` and this owned return handoff. No unrelated suggestions or scope expansion.
+- **Code commit:** `a818a0f199ce396f40051057d21f403409057f56` (handoff-only commit follows).
+- **Verification:** repo-root foreground commands ran sequentially, with no browser/build overlap. Check: 0 errors/warnings/hints. Build, skin (5 skin + 7 bar/drawer unit tests and browser checks), embed and layout passed on their first fixed-code runs. Reader first failed `validation/reader.mjs:1025`, `Twelve-staff playback: sampled playback frames (66)`. The requested isolated `npm run test:reader` rerun passed fully, including paging/playback follow, drawer layout and Endless scrollbars. No thresholds changed. A load average of 25.66 was observed after the failure; r2 also reports this gate failing on the previous head, but no baseline reproduction or causal proof is claimed this round.
+
+```text
+npm run check: exit 0
+npm run build: exit 0
+npm run test:skin: exit 0
+npm run test:embed: exit 0
+npm run test:layout: exit 0
+npm run test:reader: exit 1 (twelve-staff sampled frames: 66)
+isolated npm run test:reader retry: exit 0
+Skin r2: no-skin/PDF full chrome at 390/850px and wide touch has no embed toolbar or switcher; minimal menu and 390px main reader defaults preserved
+Skin phone r1: full/minimal 320/390/580px item-centre hit tests and playback; wrapped dock/toast offsets passed
+```
+
+- **Scope audit:** `git diff --stat 429caad...HEAD` contains only the two owned source/validation files plus this return handoff. `git diff --check` passed.
+- **Follow-up:** pushed head needs other-family re-review. No merge, watch, polling, or unrelated fixes.
+- **GBrain:** `projects/scoreflow-music-reader` consulted for historical context; this review and repo docs govern the fix. Lead may promote the lesson that a reusable JSX node's existence does not establish that a control is allowed in a specific chrome location.
