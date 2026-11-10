@@ -77,11 +77,13 @@ try {
     const pitchPages=await engravePages({data:pitchScore.document.engravingText},geometryOptions,signal);
     const pitchSvg=new DOMParser().parseFromString(pitchPages.pages[0],'image/svg+xml').documentElement;document.body.append(pitchSvg);
     const {paintPitchColours}=await import('/packages/pepperscore/src/lib/pdf/annotations.ts');paintPitchColours(pitchSvg,pitchScore,CRF_PITCH_COLOURS);
-    // Reordered model pitches still bind by source identity, not chord index.
+    // ABC has no per-pitch source ids and preserves source order. Explicit identities,
+    // when supplied (e.g. MusicXML/MEI), must win over array order.
     const {tagPitchColours}=await import('/packages/pepperscore/src/lib/pitch-colours.ts');
     const firstEvent=pitchScore.parts[0].measures[0].notes[0];
     const chord=pitchSvg.querySelector('.chord');const before=Array.from(chord.querySelectorAll('.notehead'),h=>h.dataset.pitch);
-    tagPitchColours(chord,{...firstEvent,pitches:[...firstEvent.pitches].reverse()},pitchScore.parts[0]);
+    const identified=firstEvent.pitches.map((pitch,index)=>({...pitch,sourceId:chord.querySelectorAll('.notehead')[index].closest('.note').id}));
+    tagPitchColours(chord,{...firstEvent,pitches:identified.reverse()},pitchScore.parts[0]);
     if(JSON.stringify(before)!==JSON.stringify(Array.from(chord.querySelectorAll('.notehead'),h=>h.dataset.pitch)))throw Error('Chord source identities lost');
     for(const kind of ['percussion','tab']){
       const clone=chord.cloneNode(true);clone.querySelectorAll('[data-pitch]').forEach(h=>h.removeAttribute('data-pitch'));
