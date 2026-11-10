@@ -1895,8 +1895,9 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const secondaryControls = renderControls('secondary');
 
   /** On phones and tablets the switcher and the play button move to a bottom toolbar, within thumb reach. */
-  const inToolbar = activeBar === null && phoneToolbar && Boolean(embedSwitch || embedOctave);
-  const cornerSwitch = inToolbar || activeBar !== null ? null : (embedSwitchShown ? embedSwitch : null) ?? embedOctave;
+  const noBarSwitch = embedSwitchShown ? embedSwitch : null;
+  const inToolbar = activeBar === null && phoneToolbar && Boolean(noBarSwitch || embedOctave);
+  const cornerSwitch = inToolbar || activeBar !== null ? null : noBarSwitch ?? embedOctave;
   const cornerPlay = inToolbar ? null : compactPlay;
   return <div ref={rootRef} className={`pepperscore ${className ?? ''}`.trim()} data-ps-height={heightMode} data-ps-clock={clock ? '' : undefined} data-ps-clickable={onElementClick || octaveOn ? '' : undefined} data-ps-octave-tool={octaveOn ? '' : undefined} style={{ ...themeStyle, ...(heightMode === 'fixed' ? { height } : {}) }}
     tabIndex={0} role="region" aria-label={ariaLabel || (loaded && score.title ? `Score: ${score.title}` : 'Score reader')} onKeyDown={onRootKeyDown}>
@@ -1995,7 +1996,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     {toolbarBar.length > 0 && <div ref={bottomToolbarRef} className="ps-embed-toolbar skin-playback-toolbar" role="toolbar" aria-label="Playback controls">
       {toolbarBar.map(id => <div key={id} data-bar-item={id} className={`header-control header-control-${BAR_HEADER_ID[id]}`}>{headerElements[BAR_HEADER_ID[id]]}</div>)}
     </div>}
-    {inToolbar && <div className="ps-embed-toolbar" role="toolbar" aria-label="Score controls">{embedSwitch ?? embedOctave}{compactPlay}</div>}
+    {inToolbar && <div className="ps-embed-toolbar" role="toolbar" aria-label="Score controls">{noBarSwitch ?? embedOctave}{compactPlay}</div>}
     {octaveOn && <div className={`octave-tool-dock ${inToolbar || toolbarBar.length ? 'is-above-toolbar' : ''}`}>
       <OctaveTool selection={octaveSelectionInfo} canReset={octaveCanReset} onUp={() => stepSelection(12)} onDown={() => stepSelection(-12)}
         onPhrase={() => setOctaveSelection(current => current && selectOctavePhrase(score, current))} onReset={resetOctaves} onDone={() => setOctaveToolOn(false)}/>

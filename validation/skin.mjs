@@ -116,6 +116,7 @@ assert.ok(!hostCode.includes('Invalid theme colour'), 'a production host elimina
 const server = await serveDist({ mounts: { '/native-dist/': `${root}/packages/pepperscore/dist` } });
 const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
 try {
+  await assertLegacyPhoneChrome(browser, server);
   // Run the plain dev host before the dependency-only build initialises Vite build-mode state.
   await assertDevelopmentWarning(browser);
   await assertNativeHost(browser, server);
@@ -628,4 +629,44 @@ async function assertNativeHost(browser, server) {
     } finally { await page.close(); }
   }
   console.log('Skin native ESM: unchanged dist mounts with/without skin and no process global; explicit development/production shims gate diagnostics');
+}
+
+
+/** AC1: visibility, rather than a constructed JSX node, owns the legacy toolbar. */
+async function assertLegacyPhoneChrome(browser, server) {
+  for (const { width, hasTouch } of [{ width: 390, hasTouch: false }, { width: 850, hasTouch: false }, { width: 1280, hasTouch: true }]) {
+    const context = await browser.newContext({ viewport: { width, height: 844 }, hasTouch });
+    try {
+      const page = await context.newPage();
+      await page.goto(`${server.url}/embed-skin`);
+      await page.waitForFunction(() => window.__skin && document.querySelector('.skin-reader .score-system svg') && !document.querySelector('.skin-reader .score-loading'));
+      for (const skin of [undefined, { bar: ['pdf'] }]) {
+        await page.evaluate(skin => window.__skin.setSkin(skin), skin);
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        const full = page.locator('.skin-reader');
+        const label = `${width}px touch=${hasTouch} ${skin ? 'PDF fallback' : 'no skin'}`;
+        assert.equal(await full.locator('.ps-embed-toolbar').count(), 0, `${label}: full has no bottom toolbar`);
+        assert.equal(await full.locator('.instrument-switch').count(), 0, `${label}: full has no compact switcher`);
+        assert.equal(await full.locator('.topbar:not(.skin-topbar) .play-button').count(), 1, `${label}: full keeps normal transport`);
+      }
+      // The same gate must retain the existing minimal phone toolbar and working menu.
+      await page.evaluate(() => { window.__skin.setSkin(undefined); window.__skin.setControls({ instrumentSwitch: true }); });
+      const minimal = page.locator('.skin-minimal');
+      const button = minimal.locator('.ps-embed-toolbar .instrument-switch');
+      await button.waitFor({ state: 'visible' });
+      await button.click();
+      await minimal.locator('.instrument-menu').waitFor({ state: 'visible' });
+      await page.keyboard.press('Escape');
+      assert.equal(await button.getAttribute('aria-expanded'), 'false', 'minimal menu still opens and closes');
+      if (width === 390) {
+        await page.goto(server.url);
+        await page.waitForFunction(() => document.querySelector('.score-system svg') && !document.querySelector('.score-loading'));
+        assert.equal(await page.locator('.pepperscore .ps-embed-toolbar').count(), 0, "390px main reader retains main's absence of an embed toolbar");
+        assert.equal(await page.locator('.pepperscore .instrument-switch').count(), 0, "390px main reader retains main's absence of a compact switcher");
+        assert.equal(await page.locator('.pepperscore .topbar .play-button').count(), 1, '390px main reader retains header playback');
+        assert.equal(await page.locator('.pepperscore .drawer-handle').isVisible(), true, '390px main reader retains its Options tab');
+      }
+    } finally { await context.close(); }
+  }
+  console.log('Skin r2: no-skin/PDF full chrome at 390/850px and wide touch has no embed toolbar or switcher; minimal menu and 390px main reader defaults preserved');
 }
