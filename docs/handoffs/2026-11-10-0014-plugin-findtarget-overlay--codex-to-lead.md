@@ -3,6 +3,7 @@
 - **Date:** 2026-11-10
 - **Type:** return
 - **Ledger:** 0014 (quick; no separate spec or plan)
+- **PR:** https://github.com/pepperhorn/ph-scoreview/pull/79 (draft)
 - **Branch:** orch/0014-plugin-findtarget-overlay
 - **Worktree:** /home/shaun/.t3/worktrees/ph-vexflow-view/t3-8dc218da-ada745620e3260de
 - **Base commit:** 113540a (includes required 08e0102)
