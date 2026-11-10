@@ -15,7 +15,7 @@ Next ID: 0015
 | 0002 | PDF export | changes-requested (t2; t1 merged #71) | child 0002-t2-impl-r1-fix1 | codex/gpt-6.1-sol | orch/0002-t2-pdf-composition | https://github.com/pepperhorn/ph-scoreview/pull/78 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-4829b32d-6df260c4995f3118 | task `0002-t2-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0002-t2-impl-r1` | specs/0002-pdf-export.md | plans/0002-pdf-export.md | handoffs/2026-11-10-0002-t2-pdf-composition--codex-to-lead.md (@92b0d8c) | 2026-11-10 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | human: P1–P3 (editor distribution, private repo name, BeCreative licence) before T4 | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0013 | TAB for stringed instruments | in-review (t1; t2 spike #74 merged) | review 0013-t1-review-r2 | codex/gpt-6.1-sol | orch/0013-t1-string-instruments | https://github.com/pepperhorn/ph-scoreview/pull/77 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-5fdad52b-93573c8f57e66b60 | task `0013-t1-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0013-t1-impl-r1` | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md | handoffs/2026-11-10-0013-t1-string-instruments--codex-to-lead.md (@ea515d5) | 2026-11-10 |
-| 0014 | [quick] findTarget ignores the plugin's own overlay (S20) | dispatched | child 0014-impl-r1 | codex/gpt-6.1-sol | orch/0014-plugin-findtarget-overlay |  |  | task `0014-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0014-impl-r1` |  |  | handoffs/2026-11-10-0014-plugin-findtarget-overlay--lead-to-codex.md | 2026-11-10 |
+| 0014 | [quick] findTarget ignores the plugin's own overlay (S20) | in-review | review 0014-review-r1 | codex/gpt-6.1-sol | orch/0014-plugin-findtarget-overlay | https://github.com/pepperhorn/ph-scoreview/pull/79 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-8dc218da-ada745620e3260de | task `0014-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0014-impl-r1` |  |  | handoffs/2026-11-10-0014-plugin-findtarget-overlay--codex-to-lead.md (@3eef105) | 2026-11-10 |
 
 ## Done / closed
 
@@ -70,6 +70,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-10 0014 dispatched→in-review — PR #79 @3eef105 (full validation green); review r1
 2026-11-10 0013-t1 changes-requested→in-review — fixes pushed ea515d5; review r2
 2026-11-10 0002-t2 in-review→changes-requested — r1 rendered real PDFs: notation at ~1/11 size (nested SVG scale doubled), ♯/♭ chords abort export, three-pass note text off-style; lane placement copied not shared; AC8a deferral accepted once note text is fixed
 2026-11-10 0013-t1 in-review→changes-requested — r1: /bass/ matched bassoon/bass clarinet/choir bass; lead: tabTuning applies only to parts whose string count matches its length; GM 45–52 (harp, ensembles) not fretless candidates
