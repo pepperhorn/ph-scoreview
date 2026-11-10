@@ -19,7 +19,7 @@ const engravedColours = new Set(['.pepperscore .note-label', '.pepperscore .coun
 const stylesheetFiles = ['packages/pepperscore/src/styles.css', 'packages/pepperscore/src/components/open-score-dialog.css'];
 const knownVariables = new Set([
   ...THEME_TOKENS.map(tokenVariable),
-  '--ps-cursor', '--ps-selection', '--ps-transposed', '--ps-out-of-range',
+  '--ps-bottom-toolbar-h', '--ps-cursor', '--ps-selection', '--ps-transposed', '--ps-out-of-range',
   '--ps-note-name-scale', '--ps-count-scale', '--ps-subdivision-scale', '--ps-chord-symbol-scale',
 ]);
 for (const file of stylesheetFiles) postcss.parse(readFileSync(`${root}/${file}`, 'utf8')).walkRules(rule => {
@@ -116,6 +116,7 @@ assert.ok(!hostCode.includes('Invalid theme colour'), 'a production host elimina
 const server = await serveDist({ mounts: { '/native-dist/': `${root}/packages/pepperscore/dist` } });
 const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
 try {
+  await assertLegacyPhoneChrome(browser, server);
   // Run the plain dev host before the dependency-only build initialises Vite build-mode state.
   await assertDevelopmentWarning(browser);
   await assertNativeHost(browser, server);
@@ -403,7 +404,81 @@ try {
   await page.reload();
   await page.waitForFunction(() => document.querySelector('.skin-reader .skin-chord-symbols')?.getAttribute('aria-pressed') === 'true');
   for (const selector of ['.skin-note-names', '.skin-counts', '.skin-chord-symbols']) assert.equal(await page.locator('.skin-reader ' + selector).getAttribute('aria-pressed'), 'true', 'prefs survive reload');
+  // A visible item can still be covered by the drawer tab: prove pointer reachability.
+  const hitItems = async (root, label) => {
+    await root.locator('.skin-playback-toolbar').scrollIntoViewIfNeeded();
+    const hits = await root.locator('.skin-playback-toolbar [data-bar-item]').evaluateAll(items => items.map(item => {
+      const r = item.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      return { id: item.dataset.barItem, reachable: Boolean(hit && item.contains(hit)) };
+    }));
+    assert.ok(hits.length > 0 && hits.every(item => item.reachable), `${label}: ${JSON.stringify(hits)}`);
+  };
+  for (const width of [320, 390, 580]) {
+    await page.setViewportSize({ width, height: 844 });
+    for (const selector of ['.skin-reader', '.skin-minimal']) {
+      const root = page.locator(selector);
+      await root.locator('.skin-playback-toolbar .play-button').waitFor({ state: 'visible' });
+      await hitItems(root, `${width}px ${selector}`);
+      const play = root.locator('.skin-playback-toolbar .play-button');
+      await play.click();
+      await root.getByRole('button', { name: 'Pause playback', exact: true }).waitFor();
+      await root.locator('.reader-note.is-playing').first().waitFor();
+      await play.click();
+      await root.getByRole('button', { name: 'Play score', exact: true }).waitFor();
+    }
+  }
+  // Exercise a genuinely wrapped five-action toolbar, plus its floating UI.
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.evaluate(() => {
+    window.__skin.setControls({ octaveTool: true, openFile: true });
+    window.__skin.setSkin({ bar: ['play', 'stop', 'tempo', 'transpose', 'keyFlip', 'instrumentSwitch', 'options', 'octaveTool'] });
+  });
+  for (const selector of ['.skin-reader', '.skin-minimal']) {
+    const root = page.locator(selector);
+    await hitItems(root, `wrapped ${selector}`);
+    assert.ok(await root.locator('.skin-playback-toolbar').evaluate(el => el.getBoundingClientRect().height > 65), 'toolbar wraps to multiple rows');
+    // Enabling the existing octave entry closes its options drawer.
+    await root.locator('.drawer-handle').click();
+    await root.locator('.octave-tool-entry-drawer button').click();
+    await root.locator('.bottom-drawer').evaluate(el => Promise.all(el.getAnimations().map(animation => animation.finished)));
+    await root.locator('.octave-tool-dock').waitFor({ state: 'visible' });
+    const assertAbove = async selector => {
+      assert.ok(await root.evaluate((el, selector) => {
+        const toolbar = el.querySelector('.skin-playback-toolbar').getBoundingClientRect();
+        const floating = el.querySelector(selector).getBoundingClientRect();
+        return floating.bottom <= toolbar.top - 8;
+      }, selector), `${selector} clears the actual wrapped toolbar`);
+    };
+    await assertAbove('.octave-tool-dock');
+    await hitItems(root, `octave dock ${selector}`);
+    // Drawer availability can change without changing a fixed-height root or toolbar size.
+    await page.evaluate(() => window.__skin.setControls({ octaveTool: true, openFile: true, drawer: false }));
+    await page.waitForFunction(selector => {
+      const el = document.querySelector(selector), toolbar = el.querySelector('.skin-playback-toolbar');
+      return el.querySelector('.app-shell.no-drawer') && Math.abs(parseFloat(el.style.getPropertyValue('--ps-bottom-toolbar-h')) - (el.getBoundingClientRect().bottom - toolbar.getBoundingClientRect().top)) < 1;
+    }, selector);
+    await assertAbove('.octave-tool-dock');
+    // Trigger an actual error toast without changing the loaded score.
+    await root.locator('input[type=file]').setInputFiles({ name: 'broken.musicxml', mimeType: 'application/xml', buffer: Buffer.from('<score-partwise><part') });
+    await root.locator('.ps-toast').waitFor({ state: 'visible' });
+    await assertAbove('.ps-toast');
+    await hitItems(root, `toast ${selector}`);
+    await root.locator('.ps-toast-dismiss').click();
+    await root.getByRole('button', { name: 'Done', exact: true }).click();
+    await page.evaluate(() => window.__skin.setControls({ octaveTool: true, openFile: true }));
+  }
+  await page.evaluate(bar => { window.__skin.setControls({}); window.__skin.setSkin({ bar }); }, expectedBar);
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator('.skin-reader .skin-playback-toolbar .play-button').waitFor({ state: 'visible' });
+  assert.equal(await page.locator('.skin-reader .topbar .play-button').count(), 0, 'phone play is mounted only in the bottom toolbar');
+  assert.equal(await page.locator('.skin-reader .topbar .instrument-switch').isVisible(), true, 'occasional instrument control stays in the header');
+  assert.equal(await page.locator('.skin-reader .skin-playback-toolbar .bpm-control').isVisible(), true, 'tempo accompanies playback');
+  assert.ok(await page.locator('.skin-reader').evaluate(root => {
+    const toolbar = root.querySelector('.skin-playback-toolbar').getBoundingClientRect();
+    const viewport = root.querySelector('.score-viewport').getBoundingClientRect();
+    return toolbar.top >= viewport.bottom - 1 && toolbar.width <= root.clientWidth;
+  }), 'phone playback toolbar sits below the score without clipping');
   await page.locator('.skin-reader .header-more-toggle').click();
   await page.locator('.skin-reader .skin-options').waitFor({ state: 'visible' });
   assert.ok(await page.locator('.skin-reader').evaluate(el => el.scrollWidth <= el.clientWidth), '390px bar does not clip');
@@ -413,6 +488,7 @@ try {
   await page.evaluate(() => window.__skin.setSkin({ bar: ['counts', 'future-control', 'play', 'counts'] }));
   await page.waitForFunction(() => document.querySelectorAll('.skin-reader [data-bar-item]').length === 2);
   assert.deepEqual(await page.locator('.skin-reader [data-bar-item]').evaluateAll(nodes => nodes.map(el => el.dataset.barItem)), ['counts', 'play']);
+  await page.setViewportSize({ width: 640, height: 900 });
   await page.evaluate(() => window.__skin.setSkin({ bar: ['play', 'tempo', 'noteNames', 'counts', 'instrumentSwitch'] }));
   await page.locator('.skin-reader .header-more-toggle').click();
   await page.locator('.skin-reader .instrument-switch').click();
@@ -426,14 +502,54 @@ try {
     assert.deepEqual(await page.locator(`${root} [data-bar-item]`).evaluateAll(nodes => nodes.map(el => el.dataset.barItem)), ['counts'], 'explicit false wins');
     assert.equal(await page.locator(`${root} .bottom-drawer`).count(), 0);
   }
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.evaluate(() => { window.__skin.setControls({}); window.__skin.setSkin({ bar: ['options'] }); });
+  const extras = page.locator('.skin-reader .playback-view-panel');
+  await page.locator('.skin-reader .skin-options').click();
+  await extras.waitFor({ state: 'visible' });
+  assert.deepEqual(await extras.locator('[data-drawer-control]').evaluateAll(nodes => nodes.map(el => el.dataset.drawerControl)), ['stop', 'viewToggle', 'bars', 'zoom', 'mixer', 'openFile']);
+  assert.equal(await page.locator('.skin-reader input[type=file]').count(), 1, 'one input even when Open is omitted from the bar');
+  assert.equal(await page.locator('.skin-reader .header-stave-scale-input').count(), 1, 'one zoom ref');
+  await extras.getByRole('button', { name: 'Endless view', exact: true }).click();
+  await page.locator('.skin-reader .ps-landscape').waitFor();
+  assert.equal(await extras.getByLabel('Bars per line', { exact: true }).isDisabled(), true);
+  await extras.getByRole('button', { name: 'Vertical view', exact: true }).click();
+  await extras.getByLabel('Bars per line', { exact: true }).selectOption('2');
+  assert.equal(await extras.getByLabel('Bars per line', { exact: true }).inputValue(), '2');
+  const zoomSlider = extras.getByRole('slider', { name: 'Stave scale', exact: true });
+  const oldZoom = await zoomSlider.inputValue();
+  await zoomSlider.focus();
+  await page.keyboard.press('ArrowRight');
+  assert.notEqual(await zoomSlider.inputValue(), oldZoom, 'drawer zoom updates the scale');
+  await extras.getByRole('button', { name: 'Stop playback', exact: true }).click();
+  await extras.getByRole('button', { name: 'Track mixer', exact: true }).click();
+  await page.locator('.skin-reader .mixer-panel').waitFor({ state: 'visible' });
+  await page.locator('.skin-reader').getByRole('button', { name: 'Close track mixer', exact: true }).click();
+  await page.locator('.skin-reader .skin-options').click();
+  await extras.getByRole('button', { name: 'Open score file', exact: true }).click();
+  const chooser = page.waitForEvent('filechooser');
+  await page.locator('.skin-reader').getByRole('button', { name: /browse/i }).click();
+  await chooser;
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => window.__skin.setSkin({ bar: ['pdf'] }));
+  await page.waitForFunction(() => document.querySelector('.skin-reader .topbar:not(.skin-topbar)') && document.querySelector('.skin-minimal .ps-compact-play'));
+  assert.equal(await page.locator('.skin-reader .playback-view-panel').count(), 0, 'unshowable bars restore the default drawer too');
+  await page.evaluate(() => window.__skin.setControls({ instrumentSwitch: true }));
+  await page.locator('.skin-minimal .ps-corner-controls .instrument-switch').waitFor({ state: 'visible' });
+  assert.equal(await page.locator('.skin-minimal .ps-compact-play').isVisible(), true, 'empty-bar fallback also retains explicitly enabled default controls');
+  await page.evaluate(() => window.__skin.setControls({}));
+  await page.evaluate(() => window.__skin.setSkin(undefined));
+  await page.waitForFunction(() => !document.querySelector('.skin-reader .playback-view-panel'));
   assert.deepEqual(errors, []);
+  console.log('Skin phone r1: full/minimal 320/390/580px item-centre hit tests and playback; wrapped dock/toast offsets passed');
+  console.log('Skin drawer: omitted actions, single refs, mode/bars/zoom/stop/mixer/file chooser, empty-bar preset fallback and no-skin restoration passed');
   console.log('Skin bar: ordered full/minimal bars, instrument selection, drawer sync, derived chords, persisted toggles, 390px More and unknown/duplicate ids passed');
 } finally { await browser.close(); await server.close(); }
 
 async function assertDevelopmentWarning(browser) {
   const host = await createServer({
     configFile: false, root, logLevel: 'error', mode: 'development',
-    server: { host: '0.0.0.0', port: 5212, strictPort: true },
+    server: { host: '0.0.0.0', port: 0 },
     optimizeDeps: { include: ['react', 'react-dom/client', 'pepperscore'], force: true },
     plugins: [{ name: 'skin-warning-consumer', configureServer(server) {
       server.middlewares.use(async (request, response, next) => {
@@ -453,7 +569,7 @@ async function assertDevelopmentWarning(browser) {
     const page = await browser.newPage();
     const barDiagnostic = page.waitForEvent('console', { predicate: event => event.type() === 'warning' && event.text().includes('Unknown bar item: future-control'), timeout: 30000 });
     const diagnostic = page.waitForEvent('console', { predicate: event => event.type() === 'warning' && event.text().includes('Invalid theme colour for accent'), timeout: 30000 });
-    await page.goto('http://127.0.0.1:5212/skin-warning-host.html');
+    await page.goto(`http://127.0.0.1:${host.httpServer.address().port}/skin-warning-host.html`);
     assert.equal(await page.evaluate(() => typeof process), 'undefined', 'plain development host has no process shim');
     assert.match((await diagnostic).text(), /var\(--bad-brand\)/, 'the real built package warns in a development host');
     assert.match((await barDiagnostic).text(), /Unknown bar item/);
@@ -513,4 +629,44 @@ async function assertNativeHost(browser, server) {
     } finally { await page.close(); }
   }
   console.log('Skin native ESM: unchanged dist mounts with/without skin and no process global; explicit development/production shims gate diagnostics');
+}
+
+
+/** AC1: visibility, rather than a constructed JSX node, owns the legacy toolbar. */
+async function assertLegacyPhoneChrome(browser, server) {
+  for (const { width, hasTouch } of [{ width: 390, hasTouch: false }, { width: 850, hasTouch: false }, { width: 1280, hasTouch: true }]) {
+    const context = await browser.newContext({ viewport: { width, height: 844 }, hasTouch });
+    try {
+      const page = await context.newPage();
+      await page.goto(`${server.url}/embed-skin`);
+      await page.waitForFunction(() => window.__skin && document.querySelector('.skin-reader .score-system svg') && !document.querySelector('.skin-reader .score-loading'));
+      for (const skin of [undefined, { bar: ['pdf'] }]) {
+        await page.evaluate(skin => window.__skin.setSkin(skin), skin);
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        const full = page.locator('.skin-reader');
+        const label = `${width}px touch=${hasTouch} ${skin ? 'PDF fallback' : 'no skin'}`;
+        assert.equal(await full.locator('.ps-embed-toolbar').count(), 0, `${label}: full has no bottom toolbar`);
+        assert.equal(await full.locator('.instrument-switch').count(), 0, `${label}: full has no compact switcher`);
+        assert.equal(await full.locator('.topbar:not(.skin-topbar) .play-button').count(), 1, `${label}: full keeps normal transport`);
+      }
+      // The same gate must retain the existing minimal phone toolbar and working menu.
+      await page.evaluate(() => { window.__skin.setSkin(undefined); window.__skin.setControls({ instrumentSwitch: true }); });
+      const minimal = page.locator('.skin-minimal');
+      const button = minimal.locator('.ps-embed-toolbar .instrument-switch');
+      await button.waitFor({ state: 'visible' });
+      await button.click();
+      await minimal.locator('.instrument-menu').waitFor({ state: 'visible' });
+      await page.keyboard.press('Escape');
+      assert.equal(await button.getAttribute('aria-expanded'), 'false', 'minimal menu still opens and closes');
+      if (width === 390) {
+        await page.goto(server.url);
+        await page.waitForFunction(() => document.querySelector('.score-system svg') && !document.querySelector('.score-loading'));
+        assert.equal(await page.locator('.pepperscore .ps-embed-toolbar').count(), 0, "390px main reader retains main's absence of an embed toolbar");
+        assert.equal(await page.locator('.pepperscore .instrument-switch').count(), 0, "390px main reader retains main's absence of a compact switcher");
+        assert.equal(await page.locator('.pepperscore .topbar .play-button').count(), 1, '390px main reader retains header playback');
+        assert.equal(await page.locator('.pepperscore .drawer-handle').isVisible(), true, '390px main reader retains its Options tab');
+      }
+    } finally { await context.close(); }
+  }
+  console.log('Skin r2: no-skin/PDF full chrome at 390/850px and wide touch has no embed toolbar or switcher; minimal menu and 390px main reader defaults preserved');
 }

@@ -1,4 +1,4 @@
-import type { ChromePreset, PepperScoreControls } from './chrome';
+import type { ChromePreset, PepperScoreControls, ResolvedChrome } from './chrome';
 import type { HeaderControlId } from './header-controls';
 import { BAR_ITEM_IDS, type BarItemId, type PepperScoreSkin } from './skin.ts';
 
@@ -27,4 +27,11 @@ export function warnUnknownBar(skin?: PepperScoreSkin) {
   for (const id of new Set(skin?.bar ?? [])) {
     if (!BAR_ITEM_IDS.includes(id)) console.warn(`[pepperscore] Unknown bar item: ${id}`);
   }
+}
+
+/** Only the six missing drawer actions; null preserves the legacy drawer exactly. */
+export function drawerExtras(bar: BarItemId[] | null, chrome: ResolvedChrome): BarItemId[] {
+  if (bar === null) return [];
+  return (['stop', 'viewToggle', 'bars', 'zoom', 'mixer', 'openFile'] as const)
+    .filter(id => chrome[BAR_CONTROL_GROUP[id]!] && !bar.includes(id));
 }

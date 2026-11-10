@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveBar, BAR_HEADER_ID, BAR_CONTROL_GROUP } from './bar-items';
+import { drawerExtras, resolveBar, BAR_HEADER_ID, BAR_CONTROL_GROUP } from './bar-items';
 import { resolveChrome } from './chrome';
 import { BAR_ITEM_IDS } from './skin';
 
@@ -28,11 +28,30 @@ describe('skin bar resolution', () => {
     expect(resolveChrome('minimal', {}, ['play']).transport).toBe(true);
     expect(resolveChrome('minimal', { transport: false }, ['play']).transport).toBe(false);
     expect(resolveChrome('minimal', {}, []).header).toBe(false);
-    expect(resolveChrome('minimal', {}, []).compactPlay).toBe(false);
+    expect(resolveChrome('minimal', {}, []).compactPlay).toBe(true);
   });
   it('does not raise any flags or audio on none', () => {
     expect(resolveChrome('none', {}, ['play', 'options'])).toEqual(resolveChrome('none'));
     expect(resolveChrome('full')).toMatchObject({ header: true, drawer: true, compactPlay: false });
     expect(resolveChrome('minimal')).toMatchObject({ header: false, compactPlay: true });
+  });
+});
+
+describe('drawer extras and renderable chrome', () => {
+  it('preserves the legacy drawer and excludes bar actions and disabled groups', () => {
+    expect(drawerExtras(null, resolveChrome('full'))).toEqual([]);
+    expect(drawerExtras([], resolveChrome('full'))).toEqual(['stop', 'viewToggle', 'bars', 'zoom', 'mixer', 'openFile']);
+    expect(drawerExtras(['stop', 'zoom'], resolveChrome('full', { mixer: false, openFile: false }))).toEqual(['viewToggle', 'bars']);
+    expect(drawerExtras(['options'], resolveChrome('minimal', {}, ['options']))).toEqual([]);
+    expect(drawerExtras([], resolveChrome('full', { transport: false, viewToggle: false, zoom: false, mixer: false, openFile: false }))).toEqual([]);
+  });
+  it('restores preset chrome when no bar items can be shown', () => {
+    for (const bar of [['pdf'], ['pitchColours'], ['instrumentSwitch']] as const) {
+      expect(resolveChrome('minimal', {}, [...bar], [])).toMatchObject({ header: false, compactPlay: true });
+      expect(resolveChrome('full', {}, [...bar], [])).toEqual(resolveChrome('full'));
+    }
+    expect(resolveChrome('minimal', {}, ['pdf'])).toEqual(resolveChrome('minimal'));
+    expect(resolveChrome('full', {}, ['pdf'])).toEqual(resolveChrome('full'));
+    expect(resolveChrome('minimal', {}, ['play'], ['play']).header).toBe(true);
   });
 });
