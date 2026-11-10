@@ -103,9 +103,11 @@ self.onmessage = async ({ data }: MessageEvent<{ input: PageInput; opts: PageOpt
     const measured = measureSvg(naturalSvg);
     if (measured.bars.length !== count) throw new Error('PDF spike: contextual measure count differs.');
     const naturalHeight = dimensions(naturalSvg)[1];
-    // Keep the full first measure (including its prefix); additionally reserve room per line
-    // for a repeated clef/key/meter. Mid-line changes remain in the complete bar widths.
+    // Bar 0 already contains the opening clef/key/meter: reserve no opening prefix again
+    // on line 0. Later lines need the repeated prefix. Contextual changes stay in their bars.
+    // signatureWidth is the widest single signature; the natural preflight absorbs any sum.
     let overhead = 120 + measured.signatureWidth;
+    let firstOverhead = 0;
     let geometry = pageGeometry(opts.paper, naturalHeight, overhead);
     const widths = measured.bars.map(bar => Math.max(1, bar.right - bar.left));
     if (widths.some(width => !Number.isFinite(width))) throw new Error('PDF spike: missing contextual bar extents.');
@@ -122,24 +124,30 @@ self.onmessage = async ({ data }: MessageEvent<{ input: PageInput; opts: PageOpt
     // end. Observe that extra width in unstretched planned systems and increase the shared
     // per-line reserve before re-planning. Bar measurements always come from the one context pass.
     for (let attempt = 0; ; attempt++) {
-      const starts = breakLines(widths, geometry.capacity, opts.maxBars);
+      const printable = geometry.pageWidth - 2*geometry.margin;
+      const firstEnd = breakLines(widths, printable-firstOverhead, opts.maxBars)[1] ?? count;
+      const starts = [0, ...breakLines(widths.slice(firstEnd), geometry.capacity, opts.maxBars).map(index=>index+firstEnd)];
       lines = starts.map((start,i)=>({start,count:(starts[i+1] ?? count)-start,width:0}));
       plannedMei = buildViewMei(mei, { ...view, breakBefore: starts });
       load(plannedMei, { ...pageOptions, breaks: 'encoded', noJustification: true, svgBoundingBoxes: true });
       const naturalLines = Array.from({length:tk.getPageCount()},(_,i)=>measureSvg(tk!.renderToSVG(i+1)).systems).flat();
       if (naturalLines.length !== lines.length) throw new Error('PDF spike: natural system count differs.');
-      let needed = overhead, overflow = false;
+      let needed = overhead, neededFirst = firstOverhead, overflow = false;
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         line.width = naturalLines[i].right - Math.min(0,naturalLines[i].left);
         const content = widths.slice(line.start,line.start+line.count).reduce((a,b)=>a+b,0);
-        needed = Math.max(needed,line.width-content+2);
         // A genuinely oversize bar has its own line, per breakLines' contract.
-        if (line.count > 1 && line.width > geometry.pageWidth-2*geometry.margin+2) overflow = true;
+        if (line.count > 1 && line.width > printable+2) {
+          overflow = true;
+          if (i === 0) neededFirst = Math.max(neededFirst,line.width-content+2);
+          else needed = Math.max(needed,line.width-content+2);
+        }
       }
       if (!overflow) break;
-      if (attempt >= count || needed <= overhead) throw new Error('PDF spike: could not fit natural system widths.');
+      if (attempt >= count || (needed <= overhead && neededFirst <= firstOverhead)) throw new Error('PDF spike: could not fit natural system widths.');
       overhead = needed;
+      firstOverhead = neededFirst;
       geometry = pageGeometry(opts.paper,naturalHeight,overhead);
     }
     load(plannedMei, pageOptions);

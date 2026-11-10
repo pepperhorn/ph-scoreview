@@ -60,10 +60,13 @@ try {
     const notes = (n, dur, acc) => Array.from({ length: n }, (_, j) => `<note pname="${P[(j*3)%7]}" oct="${4 + (j%2)}" dur="${dur}"${acc ? ` accid="${['s','f','n','ss'][j%4]}"` : ''}/>`).join('');
     const mrestTop = `${head}<scoreDef meter.count="4" meter.unit="4"><staffGrp><staffDef n="1" lines="5" clef.shape="G" clef.line="2"/><staffDef n="2" lines="5" clef.shape="F" clef.line="4"/></staffGrp></scoreDef><section>${Array.from({length:24},(_,i)=>`<measure n="${i+1}"><staff n="1"><layer n="1"><mRest/></layer></staff><staff n="2"><layer n="1">${notes(16,16,true)}</layer></staff></measure>`).join('')}</section></score></mdiv></body></music></mei>`;
     const keyChanges = `${head}<scoreDef meter.count="4" meter.unit="4" key.sig="7s"><staffGrp><staffDef n="1" lines="5" clef.shape="G" clef.line="2"/></staffGrp></scoreDef><section>${Array.from({length:24},(_,i)=>`${i>0&&i%2===0?`<scoreDef key.sig="${i%4?'7f':'7s'}"/>`:''}<measure n="${i+1}"><staff n="1"><layer n="1">${notes(8,8)}</layer></staff></measure>`).join('')}</section></score></mdiv></body></music></mei>`;
+    // r2: identical bars must not lose a bar on line 0 by counting its opening prefix twice.
+    const uniformNotes = Array.from({length:8},(_,j)=>`<note pname="${P[(j*3)%7]}" oct="${4+(j%2)}" dur="8" accid="${['s','f','n'][j%3]}"/>`).join('');
+    const uniform = `${head}<scoreDef meter.count="4" meter.unit="4"><staffGrp><staffDef n="1" lines="5" clef.shape="G" clef.line="2"/></staffGrp></scoreDef><section>${Array.from({length:16},(_,i)=>`<measure n="${i+1}"><staff n="1"><layer n="1">${uniformNotes}</layer></staff></measure>`).join('')}</section></score></mdiv></body></music></mei>`;
     const regressions = [];
     try {
-      for (const [name,source] of [['mrestTop',mrestTop],['alternatingKeys',keyChanges]]) {
-        for (const paper of ['a4','a3']) for (const maxBars of [4,12]) {
+      for (const [name,source] of [['mrestTop',mrestTop],['alternatingKeys',keyChanges],['uniform',uniform]]) {
+        for (const paper of (name==='uniform' ? ['a4','a3','letter'] : ['a4','a3'])) for (const maxBars of (name==='uniform' ? [4] : [4,12])) {
           const rendered = await run(source,paper,maxBars);
           const geometry = pageGeometry(paper,1);
           toolkit.resetOptions(); toolkit.setOptions({breaks:'none',header:'none',footer:'none',xmlIdChecksum:true,font:'Bravura',fontFallback:'Bravura',smuflTextFont:'none'});
@@ -105,6 +108,10 @@ try {
   for (const test of result.regressions) {
     assert.ok(test.fills.length===test.counts.length && test.fills.every(fill=>fill<=1.001), `${test.name} ${test.paper}/${test.maxBars}: every natural line fits (${test.fills})`);
   }
+  for (const test of result.regressions.filter(test=>test.name==='uniform')) {
+    assert.deepEqual(test.counts,[4,4,4,4],`uniform ${test.paper}/4: the opening prefix is counted once`);
+  }
+  assert.ok(result.regressions.find(test=>test.name==='uniform' && test.paper==='a3').counts.length <= result.regressions.find(test=>test.name==='uniform' && test.paper==='a4').counts.length, 'uniform: A3 never adds lines');
   for (const name of ['mrestTop','alternatingKeys']) for (const maxBars of [4,12]) {
     const a4 = result.regressions.find(test=>test.name===name && test.paper==='a4' && test.maxBars===maxBars);
     const a3 = result.regressions.find(test=>test.name===name && test.paper==='a3' && test.maxBars===maxBars);

@@ -38,7 +38,7 @@ Do not overlap build with browser tests. Timing failures should be rerun alone. 
 GBrain consulted read-only: `projects/scoreflow-music-reader`, `projects/scoreflow-music-reader/gotchas-abc-import`. Repository spec and plan are authoritative; implementer writes no GBrain pages.
 
 - **Fixed stave size:** 6.5 mm across the five-line staff (about 1.625 mm per space). This is a readable sheet-music default, independent of screen zoom and paper. Existing `STAFF_UNITS = 72` establishes conversion to Verovio layout units. Margins are fixed at 12 mm. T2 should map each returned SVG to the exact physical dimensions in `PAPER_SIZES`; integer Verovio layout units are rounded.
-- **Measurement (r1):** one continuous, unjustified `breaks: none` pass measures complete barline-to-barline extents and staff bounding boxes across every visible staff. Key, meter and clef changes remain in their contextual bars; no first-note prefix is subtracted. Reserve a repeated-system prefix, then preflight planned lines in `breaks: encoded` mode with justification disabled. `line` mode still width-fits systems even with that flag; it is used only for final pagination. If repeated/cautionary signatures require more room, increase the shared reserve and re-plan from the original contextual bar widths. Reject unresolved multi-bar overflow before final justification. A truly oversize single bar retains the standalone contract. Nested text boxes can have local transforms, so their raw x coordinates are not mixed into staff extents.
+- **Measurement (r1):** one continuous, unjustified `breaks: none` pass measures complete barline-to-barline extents and staff bounding boxes across every visible staff. Key, meter and clef changes remain in their contextual bars; no first-note prefix is subtracted. Bar 0 retains its opening prefix and line 0 has no duplicate opening reserve (r2); later lines reserve a repeated-system prefix. Then preflight planned lines in `breaks: encoded` mode with justification disabled. `line` mode still width-fits systems even with that flag; it is used only for final pagination. If repeated/cautionary signatures require more room, increase the affected first-line or later-line reserve and re-plan from the original contextual bar widths. Reject unresolved multi-bar overflow before final justification. A truly oversize single bar retains the standalone contract. Nested text boxes can have local transforms, so their raw x coordinates are not mixed into staff extents.
 - **Break mode:** `encoded` honours both sb and pb but does not paginate sb-only scores automatically; the 80-bar fixture caught all 20 systems overflowing a single page. Final rendering uses Verovio `breaks: 'line'`, preserving encoded sb while allowing automatic page breaks at real page height. The worker checks actual measure counts per system against its plan and rejects mismatches.
 - **Shrink fallback:** Verovio exposes a document-wide scale, not a per-system scale. When the natural tallest system exceeds content height, enlarge layout dimensions to shrink the whole document and report `shrunk: true`, as permitted by T1. Physical margins remain fixed. Normal scores retain 6.5 mm staves.
 - **Empty score:** explicitly return one blank SVG page and no lines, avoiding Verovio's zero-size empty layout.
@@ -129,6 +129,46 @@ Layout validation passed (chromium)
 Slice keys: a leading key replaces the carried key; a mid-measure change keeps it passed
 chromium: whole 8 systems, chunked 8 systems
 chromium: chunked engraving matches the whole engraving across chunk boundaries passed (17.9 s)
+
+> pepperscore-monorepo@0.0.0 test:manifest
+> node scripts/verify-gm-manifest.mjs && node validation/sound-packs.mjs
+
+GM manifest: 128 local packs, 16 icons and playable voices verified.
+Sound packs: complete pack.json, generated core (19 FluidR3 sounds) and versions passed
+```
+
+## Review r2 revision
+- **Request:** [review 5834551450](https://github.com/pepperhorn/ph-scoreview/pull/71#pullrequestreview-5834551450); remove the duplicate opening clef/key/meter charge while retaining the r1 natural-width protection.
+- **Change:** keep bar 0's full contextual extent. Plan the first line against the rounded printable width with no extra opening-prefix reserve; plan the remainder with the repeated-system reserve. The encoded preflight remains mandatory for every planned line. A real overflow on the first line can increase a separate first-line reserve for boundary/cautionary material; a later-line overflow does not charge that reserve to the first line.
+- **Regression:** 16 identical bars, each containing eight eighth notes with `s/f/n` accidentals. Expect `[4,4,4,4]` on A4, A3 and Letter at ceiling 4. Independently verify every natural width against the printable width for these three cases and retain all eight r1 fixture combinations. A3 ≤ A4 is asserted for the uniform score too.
+- **Compatibility/scope:** no changes to `mei-view.ts`, `breakLines`, public entry types, dependencies, frontend files, or ledger. Only worker, PDF validation, and this return handoff change in r2.
+- **Verification:** the exact requested foreground sequence passed from the repo root: `npm run check && npm run build && npm run test:pdf && npm run test:document && npm run test:layout && npm run test:chunks && npm run test:manifest`. All 6 PDF unit tests and 11 independent natural-fit cases passed; all three uniform cases returned `[4,4,4,4]`. The dense A4 `[4,1,4,4]`, A3 line-count invariant, 80-bar pagination, hidden-staff, tall-shrink and cancellation checks still pass. Document reference/import/channel checks, layout, chunks and manifest pass. Aggregate remains skipped as instructed in the prior round.
+
+### R2 uniform-score evidence
+
+| Paper | Planned counts | Maximum natural fill |
+|---|---|---:|
+| a4 | `[4, 4, 4, 4]` | 0.9716 |
+| a3 | `[4, 4, 4, 4]` | 0.6618 |
+| letter | `[4, 4, 4, 4]` | 0.9414 |
+
+All 11 independent natural-fit checks (8 r1 + 3 uniform) pass in the focused PDF validation, with no change to the encoded overflow check or final system-membership check.
+
+R2 negative control: substituting the r2-reviewed `70b782c` worker makes the new A4 uniform assertion fail with actual `[3,4,4,4,1]` versus expected `[4,4,4,4]`. The corrected worker was restored before running the final requested sequence. No ownership or public-interface expansion was needed.
+
+R2 verification tail:
+```text
+> pepperscore-monorepo@0.0.0 test:layout
+> node validation/layout.mjs
+
+Layout validation passed (chromium)
+
+> pepperscore-monorepo@0.0.0 test:chunks
+> node validation/chunks.mjs
+
+Slice keys: a leading key replaces the carried key; a mid-measure change keeps it passed
+chromium: whole 8 systems, chunked 8 systems
+chromium: chunked engraving matches the whole engraving across chunk boundaries passed (39.8 s)
 
 > pepperscore-monorepo@0.0.0 test:manifest
 > node scripts/verify-gm-manifest.mjs && node validation/sound-packs.mjs
