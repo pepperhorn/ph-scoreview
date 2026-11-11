@@ -19,7 +19,7 @@ const devSource = {
   hooks: {
     'astro:config:setup': ({ command, updateConfig }) => {
       if (command !== 'dev') { updateConfig({ vite: { resolve: { tsconfigPaths: false } } }); return; }
-      updateConfig({ vite: { plugins: [runtimeFilesDev()], resolve: { alias: [{ find: /^pepperscore$/, replacement: `${librarySource}index.ts` }, { find: /^pepperscore\/instruments$/, replacement: `${librarySource}instruments.ts` }, { find: /^pepperscore\/style\.css$/, replacement: `${librarySource}styles.css` }, { find: /^pepperscore-editor$/, replacement: `${editorSource}index.ts` }, { find: /^pepperscore-editor\/style\.css$/, replacement: `${editorSource}style.css` }] } } });
+      updateConfig({ vite: { plugins: [runtimeFilesDev()], resolve: { alias: [{ find: /^pepperscore$/, replacement: `${librarySource}index.ts` }, { find: /^pepperscore\/instruments$/, replacement: `${librarySource}instruments.ts` }, { find: /^pepperscore\/style\.css$/, replacement: `${librarySource}styles.css` }, { find: /^@pepperhorn\/pepperscore-editor$/, replacement: `${editorSource}index.ts` }, { find: /^@pepperhorn\/pepperscore-editor\/style\.css$/, replacement: `${editorSource}style.css` }] } } });
     },
   },
 };

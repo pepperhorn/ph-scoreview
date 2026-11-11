@@ -1,14 +1,55 @@
 {
-  "name": "pepperscore-editor",
+  "name": "@pepperhorn/pepperscore-editor",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "exports": {
-    ".": { "types": "./src/index.ts", "import": "./src/index.ts" },
-    "./style.css": "./src/style.css"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./style.css": "./dist/style.css"
   },
-  "scripts": { "test": "vitest run", "check": "tsc --noEmit -p ." },
-  "peerDependencies": { "react": ">=19", "react-dom": ">=19", "pepperscore": "*" },
-  "dependencies": { "@fontsource/poppins": "^5.3.0", "immer": "^10.1.1", "zustand": "^5.0.0", "zod": "^4.0.0", "nanoid": "^3.3.0" },
-  "devDependencies": { "vitest": "^3.0.0", "typescript": "^5.9.3", "@types/react": "^19.2.0", "verovio": "6.3.0" }
+  "scripts": {
+    "test": "vitest run",
+    "check": "tsc --noEmit -p .",
+    "build": "vite build && tsc -p tsconfig.build.json",
+    "prepack": "npm run build"
+  },
+  "peerDependencies": {
+    "react": ">=19",
+    "react-dom": ">=19",
+    "pepperscore": ">=0.5.0"
+  },
+  "dependencies": {
+    "@fontsource/poppins": "^5.3.0",
+    "immer": "^10.1.1",
+    "zustand": "^5.0.0",
+    "zod": "^4.0.0",
+    "nanoid": "^3.3.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.0.0",
+    "typescript": "^5.9.3",
+    "@types/react": "^19.2.0",
+    "verovio": "6.3.0"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pepperhorn/ph-scoreview.git",
+    "directory": "packages/pepperscore-editor"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "types": "./dist/index.d.ts",
+  "module": "./dist/index.js",
+  "sideEffects": [
+    "*.css"
+  ]
 }

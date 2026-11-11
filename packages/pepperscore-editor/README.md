@@ -1,4 +1,4 @@
-# pepperscore-editor
+# @pepperhorn/pepperscore-editor
 
 A keyboard-first score editor for React, built on the [pepperscore](../pepperscore) viewer. It edits a typed
 document model, compiles it to MusicXML for engraving and playback, imports MusicXML, and saves its own
@@ -8,9 +8,9 @@ document model, compiles it to MusicXML for engraving and playback, imports Musi
 
 ```tsx
 import { useRef } from 'react';
-import { PepperScoreEditor, type PepperScoreEditorHandle } from 'pepperscore-editor';
+import { PepperScoreEditor, type PepperScoreEditorHandle } from '@pepperhorn/pepperscore-editor';
 import 'pepperscore/style.css';
-import 'pepperscore-editor/style.css';
+import '@pepperhorn/pepperscore-editor/style.css';
 
 export function App() {
   const ref = useRef<PepperScoreEditorHandle>(null);
@@ -339,3 +339,48 @@ Overlays are wrapped in `[data-ps-plugin="<id>"]`. Their keys bypass editor shor
 listeners and subscriptions: release them in effect cleanup. Opening another file or starting a new score unmounts
 the old session and its overlays. API versions other than 1 are not mounted. The `/editor?stubPlugin=1` demo includes
 a validation stub; it is outside the editor package. Coaching logic and scripts belong in separate packages.
+
+## Install from GitHub Packages
+
+Requires React 19+, React DOM 19+ and `pepperscore >=0.5.0`. Put the following in your
+consumer's `.npmrc`; keep the token in the environment, never in git:
+
+```ini
+@pepperhorn:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
+```
+
+Set `NODE_AUTH_TOKEN` to a GitHub token with `read:packages` and access to the private
+package, then run:
+
+```sh
+npm install @pepperhorn/pepperscore-editor pepperscore@^0.5.0 react@^19 react-dom@^19
+```
+
+The package exports ESM JavaScript, TypeScript declarations and `./style.css`.
+Import both stylesheets as shown above. The registry and restricted publish access
+are configured in package metadata; the publisher must confirm private visibility
+and repository access in GitHub Packages. Publishing is a separate human action.
+
+## Licence signing (repository tools)
+
+Run these tools from a checkout of this repository, not from the installed package.
+Only the key holder runs key generation. Use a private directory outside the repo:
+
+```sh
+node packages/pepperscore-editor/scripts/licence-keygen.mjs /secure/private/editor-signing.jwk
+node packages/pepperscore-editor/scripts/licence-sign.mjs /secure/private/editor-signing.jwk becreative 2028-01-01 4
+```
+
+Key generation writes the private Ed25519 JWK once (mode `0600`, refuses overwrite)
+and prints only the public JWK. Signing prints a licence string for the subject,
+expiry date (exclusive, midnight UTC) and positive integer stave cap. Keep the private
+JWK outside git, logs and transcripts. A signed licence contains no private key.
+The payload JSON bytes `{ sub, exp, maxStaves }` are signed with Ed25519 and encoded
+as `base64url(payload).base64url(signature)` for `verifyLicence`.
+
+**TODO (owner rotation):** replace `DEFAULT_LICENCE_PUBLIC_KEY_JWK` and re-sign the
+reader demo licence after the owner supplies the new public JWK and demo key.
+The current key remains unchanged by this packaging task. `licenceKey="dev"` is
+accepted only when running source in a development build; the distributed build
+requires a signed licence.

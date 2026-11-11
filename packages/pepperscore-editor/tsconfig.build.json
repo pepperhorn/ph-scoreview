@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false, "declaration": true, "emitDeclarationOnly": true,
+    "outDir": "dist", "rootDir": "src", "paths": {}, "types": ["vite/client"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["src/**/*.test.ts", "src/test-helpers.ts"]
+}

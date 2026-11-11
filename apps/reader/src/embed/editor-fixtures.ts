@@ -1,4 +1,4 @@
-import { createDocument, INSTRUMENTS, newId, type Document, type Event, type Pitch } from 'pepperscore-editor';
+import { createDocument, INSTRUMENTS, newId, type Document, type Event, type Pitch } from '@pepperhorn/pepperscore-editor';
 
 type Base = Event['duration']['base'];
 const pitch = (name: string): Pitch => ({ step: name[0] as Pitch['step'], octave: Number(name.slice(1)), alter: 0 });

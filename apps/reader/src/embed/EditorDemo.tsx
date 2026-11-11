@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { compileToMusicXml, PepperScoreEditor, renderCounts, type Document, type PepperScoreEditorHandle } from 'pepperscore-editor';
+import { compileToMusicXml, PepperScoreEditor, renderCounts, type Document, type PepperScoreEditorHandle } from '@pepperhorn/pepperscore-editor';
 import { editorStubPlugin } from './EditorStubPlugin';
 import ensemble from '../../../../validation/fixtures/ensemble.musicxml?raw';
 import { tenorPianoDocument } from './editor-fixtures';
