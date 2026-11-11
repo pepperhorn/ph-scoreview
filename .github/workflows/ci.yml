@@ -54,8 +54,7 @@ jobs:
     if: github.event_name != 'push'
     name: Reader (${{ matrix.browser }})
     runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
-    # 30 -> 40: the PDF step below (about 5-10 min per engine, with a 30-part score) joins the 20 min of existing step budgets.
-    timeout-minutes: 40
+    timeout-minutes: 30
     # The Playwright image carries the browsers and every system library they need. Installing those libraries with
     # apt on the runner (`--with-deps`, ~120 MB for WebKit or Firefox) has crawled at ~50 kB/s from the runner's mirror
     # and run into the job timeout. Keep the tag on the lockfile's playwright-core version.

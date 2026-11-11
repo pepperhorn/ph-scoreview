@@ -8,7 +8,7 @@
 
 ### Fixed
 
-- PDF export is verified in Safari/WebKit as well as Chromium and Firefox. The README documents a WebKit-only limit: after a failed download of the dialog's lazy chunk, Reload page does not recover until the page is opened in a new tab.
+- PDF export is verified in Safari/WebKit as well as Chromium and Firefox. In WebKit a failed download of the dialog's lazy chunk stayed failed until the tab was closed, because WebKit keeps the failed `modulepreload` Vite adds; the dialog now retries once through a cache-busted address, so reopening it or reloading recovers.
 
 ## 0.5.0 - 2026-11-11
 

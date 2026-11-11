@@ -21,7 +21,7 @@ async function prepareSnapshot({ score, prefs: saved, hiddenPartIds, channel, pi
       scale: { names: ANNOTATION_SCALE[saved.namesSize], chordSymbols: ANNOTATION_SCALE[saved.chordSymbolsSize], counts: ANNOTATION_SCALE[saved.countsSize], subdivisions: ANNOTATION_SCALE[saved.subdivisionsSize] } } };
 }
 /** Engraving runs in a worker, then each page is drawn in turn: say which. */
-const buildingText = (progress: ExportProgress | null) => progress && progress.pages ? `Building PDF… page ${progress.page} of ${progress.pages}` : 'Building PDF…';
+const buildingText = (progress: ExportProgress | null) => progress && progress.pages ? `Building PDF… ${progress.phase === 'composing' ? 'drawing' : 'preparing'} page ${progress.page} of ${progress.pages}` : 'Building PDF…';
 export default function PdfOverlay({ paper, onPaper, snapshot, revision, font, verovioBaseUrl, onClose }: {
   paper: Prefs['pdfPaper']; onPaper: (paper: Prefs['pdfPaper']) => void;
   snapshot: () => PdfCapture; revision: unknown; font: string; verovioBaseUrl?: string; onClose: () => void;

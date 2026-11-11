@@ -30,6 +30,13 @@ catch (error) {
 const server = await createServer({ configFile: false, root, optimizeDeps: { include: ['jspdf', 'svg2pdf.js', 'abcjs', '@tonejs/midi', 'fflate'] }, server: { host: '127.0.0.1', port: 0 },
   plugins: [{ name: 'pdf-spike-page', configureServer(server) {
     server.middlewares.use('/pdf-spike', (_req, res) => { res.setHeader('Content-Type','text/html'); res.end('<!doctype html><title>PDF spike</title>'); });
+    // The shipped Verovio runtime, byte for byte. Vite's dev transform of the 7 MB module is a harness cost
+    // (a multi-second WebKit stall while a worker imports it) that no user pays, so timing tests use this.
+    server.middlewares.use('/verovio-runtime', (req, res, next) => {
+      const file = join(root, 'packages/pepperscore/dist/verovio', decodeURIComponent((req.url || '').split('?')[0]).replace(/^\/+/, ''));
+      if (!/^[\w.-]+\.mjs$/.test(file.split('/').pop() || '') || !file.startsWith(join(root, 'packages/pepperscore/dist/verovio'))) return next();
+      res.setHeader('Content-Type', 'text/javascript'); res.end(readFileSync(file));
+    });
   } }] });
 await server.listen();
 const engine = process.env.BROWSER || 'chromium';
@@ -686,6 +693,38 @@ async function assertPdfOverlay(browser) {
     await page.waitForFunction(() => window.__pdfWorkers.filter(w => /engrave/.test(w.url)).every(w => w.terminated));
     assert.equal(unexpectedDownloads, 0, 'cancelled Save never downloads');
     page.off('download', onDownload);
+    // A real Cancel click while the first page of a many-staff score is being drawn: the dialog closes promptly,
+    // nothing downloads, the worker, offscreen host and fonts are released, and the overlay then works again.
+    const voices = Array.from({length:24},(_,i)=>`v${i+1}`);
+    const largeAbc = ['X:1','T:Large overlay','M:4/4','L:1/8',`%%score ${voices.join(' ')}`,...voices.map(v=>`V:${v} clef=treble`),'K:C',
+      ...voices.map(v=>`[V:${v}] ${Array(8).fill('CDEF GABc').join(' | ')} |`)].join('\n');
+    await page.evaluate(abc => window.__skin.setAbc(abc), largeAbc);
+    await page.waitForFunction(() => document.querySelector('.skin-reader h1')?.textContent.includes('Large overlay') && !document.querySelector('.skin-reader .score-loading'));
+    const fontsBefore = await page.evaluate(() => document.fonts.size);
+    const workersBefore = await page.evaluate(() => window.__pdfWorkers.length);
+    let midDownloads = 0; const onMidDownload = () => midDownloads++;
+    page.on('download', onMidDownload);
+    await full.locator('.pdf-trigger').click();
+    await dialog.getByRole('button', {name:'Save',exact:true}).click();
+    await dialog.getByText(/drawing page 1 of/).waitFor({timeout:180000});
+    const cancelClicked = Date.now();
+    await dialog.getByRole('button', {name:'Cancel',exact:true}).click();
+    await dialog.waitFor({state:'detached'});
+    const cancelLatency = Date.now() - cancelClicked;
+    assertTiming(cancelLatency < 750 * budgetScale + 500, `Cancel click closes the dialog promptly mid-page: ${cancelLatency} ms`);
+    await page.waitForFunction(() => window.__pdfWorkers.filter(w => /engrave/.test(w.url)).every(w => w.terminated));
+    await page.waitForTimeout(500);
+    const released = await page.evaluate(() => ({ hosts: Array.from(document.body.children).filter(element => element.style.left === '-100000px').length, fonts: document.fonts.size }));
+    assert.deepEqual(released, { hosts: 0, fonts: fontsBefore }, 'cancelled mid-page export released its offscreen host and fonts');
+    assert.ok(await page.evaluate(count => window.__pdfWorkers.length > count, workersBefore), 'the cancelled export did start a worker');
+    assert.equal(midDownloads, 0, 'a cancelled mid-page export never downloads');
+    page.off('download', onMidDownload);
+    await page.evaluate(() => window.__skin.setAbc('X:1\nT:After cancel\nM:4/4\nL:1/4\nK:C\nC D E F |'));
+    await page.waitForFunction(() => document.querySelector('.skin-reader h1')?.textContent.includes('After cancel') && !document.querySelector('.skin-reader .score-loading'));
+    await full.locator('.pdf-trigger').click();
+    const afterCancelDownload = page.waitForEvent('download');
+    await dialog.getByRole('button', {name:'Save',exact:true}).click();
+    assert.equal((await afterCancelDownload).suggestedFilename(), 'after-cancel.pdf', 'the overlay reopens and exports after a mid-page cancel');
     // A real font fetch failure is retryable without resetting the overlay.
     await page.evaluate(() => { window.__pdfFailFonts = true; });
     await full.locator('.pdf-trigger').click();
@@ -766,41 +805,37 @@ async function assertPdfOverlay(browser) {
     const chunkPage = await browser.newPage();
     chunkPage.setDefaultTimeout(60000);
     try {
+      // The skin update that adds the PDF bar item re-renders the header: click only once exactly one trigger remains.
+      const openOverlay = async () => {
+        await chunkPage.locator('.skin-reader .score-system svg').first().waitFor();
+        await chunkPage.evaluate(() => window.__skin.setSkin({bar:['pdf']}));
+        await chunkPage.waitForFunction(() => document.querySelectorAll('.skin-reader .pdf-trigger').length === 1);
+        await chunkPage.locator('.skin-reader .pdf-trigger').click();
+      };
       await chunkPage.goto(`${host.url}/embed-skin`);
-      await chunkPage.locator('.skin-reader .score-system svg').first().waitFor();
-      await chunkPage.evaluate(() => window.__skin.setSkin({bar:['pdf']}));
-      await chunkPage.route('**/*PdfOverlay*.js', route => route.abort());
-      await chunkPage.locator('.skin-reader .pdf-trigger').click();
+      // S34. Fail the lazy chunk, whatever its query string: the retry through a cache-busted address fails too.
+      await chunkPage.route(/PdfOverlay/, route => route.abort());
+      await openOverlay();
       const failedDialog = chunkPage.locator('.skin-reader').getByRole('dialog',{name:'Export PDF'});
       await failedDialog.getByRole('alert').waitFor();
-      await chunkPage.unroute('**/*PdfOverlay*.js');
+      await chunkPage.unroute(/PdfOverlay/);
+      // Reload page recovers in every engine. WebKit keeps a failed modulepreload in its per-process memory cache
+      // and answers the plain import from it without asking the server again, so the loader retries once through
+      // a cache-busted address (lib/lazy-import.ts); without that, this reload left WebKit on the error.
       await Promise.all([chunkPage.waitForEvent('load'), failedDialog.getByRole('button',{name:'Reload page',exact:true}).click()]);
-      await chunkPage.locator('.skin-reader .score-system svg').first().waitFor();
-      await chunkPage.evaluate(() => window.__skin.setSkin({bar:['pdf']}));
+      await openOverlay();
+      await failedDialog.getByLabel('Paper size').waitFor();
+      await failedDialog.getByRole('button',{name:'Cancel',exact:true}).click();
+      // The same page recovers without a reload too: fail, clear the fault, close and reopen.
+      await chunkPage.goto(`${host.url}/embed-skin`);
+      await chunkPage.route(/PdfOverlay/, route => route.abort());
+      await openOverlay();
+      await failedDialog.getByRole('alert').waitFor();
+      await chunkPage.unroute(/PdfOverlay/);
+      await failedDialog.getByRole('button',{name:'Cancel',exact:true}).click();
       await chunkPage.locator('.skin-reader .pdf-trigger').click();
-      if (engine !== 'webkit') {
-        await failedDialog.getByLabel('Paper size').waitFor();
-        await failedDialog.getByRole('button',{name:'Cancel',exact:true}).click();
-      } else {
-        // S34. WebKit keeps the failed <link rel="modulepreload"> that Vite adds for the lazy chunk in its per-process
-        // memory cache. Reloads, same-URL navigations and in-page retries are answered from that failure without
-        // asking the server again (reproduced with route.abort, a 503 and a dropped socket, so it is the engine, not
-        // the injection); only a new web process loads the chunk. A user's recovery there is a fresh tab, so that is
-        // what is asserted: the dialog must stay actionable (an alert and a Reload button, never a stuck "Loading…")...
-        await failedDialog.getByRole('alert').waitFor();
-        await failedDialog.getByRole('button',{name:'Reload page',exact:true}).waitFor();
-        await failedDialog.getByRole('button',{name:'Cancel',exact:true}).click();
-        // ...and the same score opens the overlay normally in a new tab, with the fault gone.
-        const freshPage = await browser.newPage();
-        freshPage.setDefaultTimeout(60000);
-        try {
-          await freshPage.goto(`${host.url}/embed-skin`);
-          await freshPage.locator('.skin-reader .score-system svg').first().waitFor();
-          await freshPage.evaluate(() => window.__skin.setSkin({bar:['pdf']}));
-          await freshPage.locator('.skin-reader .pdf-trigger').click();
-          await freshPage.locator('.skin-reader').getByRole('dialog',{name:'Export PDF'}).getByLabel('Paper size').waitFor();
-        } finally { await freshPage.close(); }
-      }
+      await failedDialog.getByLabel('Paper size').waitFor();
+      await failedDialog.getByRole('button',{name:'Cancel',exact:true}).click();
     } finally { await chunkPage.close(); }
     const sandboxPage = await browser.newPage();
     sandboxPage.setDefaultTimeout(60000);
@@ -824,18 +859,18 @@ async function assertPdfOverlay(browser) {
 /**
  * AC10: the large-score fixture (validation/synthetic.mjs `orchestral`, the generator behind validation/large-score.mjs:
  * 30 parts, one system per page) exports while the page stays responsive, and Cancel stops it promptly and cleanly.
- * Composition runs on the main thread (svg2pdf needs a DOM), so it must be sliced. "Responsive" is measured as the longest
- * gap between 10 ms timer ticks (works in every engine) and, where the engine reports them, long tasks.
+ * Composition runs on the main thread (svg2pdf needs a DOM), so it must be sliced. "Responsive" is the longest gap
+ * between 10 ms timer ticks over the WHOLE export, engraving included, in every engine (long tasks only where reported).
+ * Verovio is loaded from the shipped runtime file, as in production.
  * The full 150-bar score is minutes of engraving; PDF_LARGE_MEASURES overrides the default bar count for a manual run.
  */
 async function assertLargeScoreExport(page) {
-  const xml = orchestral(30, LARGE_MEASURES);
-  const result = await page.evaluate(async ({ xml, cancelMs }) => {
+  const result = await page.evaluate(async ({ xml, shortXml, cancelMs }) => {
     const { parseMusicXml } = await import('/packages/pepperscore/src/lib/import.ts');
     const { exportScore } = await import('/packages/pepperscore/src/lib/pdf/export.ts');
-    const files = { module: new URL('/node_modules/verovio/dist/verovio-module.mjs', location.href).href, toolkit: new URL('/node_modules/verovio/dist/verovio.mjs', location.href).href };
-    const score = parseMusicXml(xml);
-    const request = { input: { data: score.document.engravingText }, options: { paper: 'a4', maxBars: 4, files }, score, annotations: { showNames: true, showCounts: true } };
+    const files = { module: new URL('/verovio-runtime/verovio-module.mjs', location.href).href, toolkit: new URL('/verovio-runtime/verovio.mjs', location.href).href };
+    const requestFor = text => { const score = parseMusicXml(text); return { input: { data: score.document.engravingText }, options: { paper: 'a4', maxBars: 4, files }, score, annotations: { showNames: true, showCounts: true } }; };
+    const request = requestFor(xml), shortRequest = requestFor(shortXml);
     const workers = [];
     const NativeWorker = window.Worker;
     window.Worker = class extends NativeWorker {
@@ -850,38 +885,54 @@ async function assertLargeScoreExport(page) {
       let observer; try { observer = new PerformanceObserver(list => list.getEntries().forEach(entry => longTasks.push(entry.duration))); observer.observe({ entryTypes: ['longtask'] }); } catch { /* engine without long-task entries */ }
       return { stop() { clearInterval(beat); observer?.takeRecords().forEach(entry => longTasks.push(entry.duration)); observer?.disconnect(); return { maxGap, phaseGaps, longest: Math.max(0, ...longTasks), longTasks: observer ? longTasks.length : null }; } };
     };
-    const hosts = () => Array.from(document.body.children).filter(element => element.style.left === '-100000px').length;
-    const fonts = document.fonts.size;
+    const leaks = () => ({ hosts: Array.from(document.body.children).filter(element => element.style.left === '-100000px').length,
+      fonts: document.fonts.size - fontsBefore, workers: workers.filter(worker => !worker.terminated).length });
+    const fontsBefore = document.fonts.size;
+    // 1. A complete export, timed end to end.
+    window.__phase = 'start';
     const full = monitor(), progress = [];
     const started = performance.now();
     const blob = await exportScore({ ...request, onProgress: update => { window.__phase = update.phase; progress.push(update); } }, new AbortController().signal);
     const exportMs = performance.now() - started;
     const responsive = full.stop();
     const bytes = new Uint8Array(await blob.arrayBuffer());
-    // Cancel while composing pages (after the worker has finished engraving).
-    const controller = new AbortController();
-    const cancelProgress = [];
-    let abortedAt = 0;
-    const cancelled = exportScore({ ...request, onProgress: update => { cancelProgress.push(update); if (update.phase === 'composing' && !abortedAt) { abortedAt = performance.now(); controller.abort(); } } }, controller.signal)
-      .then(() => ({ outcome: 'completed' }), error => ({ outcome: error.name, latency: performance.now() - abortedAt }));
-    const cancelResult = await cancelled;
-    await new Promise(resolve => setTimeout(resolve, 100));
-    return { exportMs, responsive, pdfHeader: String.fromCharCode(...bytes.subarray(0, 5)), progress, cancelResult, cancelProgress, abortedAt, cancelMs,
-      leaked: { hosts: hosts(), fonts: document.fonts.size - fonts, workers: workers.filter(worker => !worker.terminated).length }, workerCount: workers.length };
-  }, { xml, cancelMs: LARGE_CANCEL_MS });
+    const afterFull = leaks();
+    // Cancels are requested from an independent task (a timer), never from inside the export's own callbacks,
+    // and measured from the request to the rejection.
+    const cancelAfter = async (delay, when) => {
+      const controller = new AbortController(), seen = [];
+      let requestedAt = 0;
+      const arm = () => setTimeout(() => { requestedAt = performance.now(); controller.abort(); }, delay);
+      let armed = false;
+      const outcome = await exportScore({ ...shortRequest, onProgress: update => { seen.push(update); if (!armed && when(update)) { armed = true; arm(); } } }, controller.signal)
+        .then(() => ({ outcome: 'completed' }), error => ({ outcome: error.name }));
+      if (!armed) { armed = true; arm(); await new Promise(resolve => setTimeout(resolve, delay + 20)); }
+      const settled = performance.now();
+      await new Promise(resolve => setTimeout(resolve, 100));
+      return { ...outcome, latency: settled - requestedAt, requested: requestedAt > 0, seen, leaks: leaks() };
+    };
+    // 2. While the engraving worker starts up.
+    const startup = await cancelAfter(30, update => update.phase === 'engraving');
+    // 3. While the first page is being drawn: the timer fires a moment after page 1 starts and the page takes seconds.
+    const midPage = await cancelAfter(150, update => update.phase === 'composing' && update.page === 1);
+    // 4. Between pages (the per-page check): the request lands during page 2's preparation or drawing.
+    const betweenPages = await cancelAfter(0, update => update.phase === 'composing' && update.page === 2);
+    return { exportMs, responsive, pdfHeader: String.fromCharCode(...bytes.subarray(0, 5)), progress, afterFull, startup, midPage, betweenPages, workerCount: workers.length };
+  }, { xml: orchestral(30, LARGE_MEASURES), shortXml: orchestral(30, 8), cancelMs: LARGE_CANCEL_MS });
   const pages = result.progress.filter(update => update.phase === 'composing').length;
-  console.log(`PDF large score (${engine}, 30 parts x ${LARGE_MEASURES} bars): export ${Math.round(result.exportMs)} ms, ${pages} pages, longest timer gap ${Math.round(result.responsive.maxGap)} ms, longest per phase ${JSON.stringify(Object.fromEntries(Object.entries(result.responsive.phaseGaps).map(([k, v]) => [k, Math.round(v)])))}, longest long task ${result.responsive.longTasks === null ? 'n/a' : Math.round(result.responsive.longest) + ' ms'}; cancel latency ${Math.round(result.cancelResult.latency)} ms`);
+  const rounded = Object.fromEntries(Object.entries(result.responsive.phaseGaps).map(([key, value]) => [key, Math.round(value)]));
+  console.log(`PDF large score (${engine}, 30 parts x ${LARGE_MEASURES} bars): export ${Math.round(result.exportMs)} ms, ${pages} pages, longest timer gap ${Math.round(result.responsive.maxGap)} ms ${JSON.stringify(rounded)}, longest long task ${result.responsive.longTasks === null ? 'n/a' : Math.round(result.responsive.longest) + ' ms'}; cancel latency startup ${Math.round(result.startup.latency)} / mid-page ${Math.round(result.midPage.latency)} / between pages ${Math.round(result.betweenPages.latency)} ms`);
   assert.equal(result.pdfHeader, '%PDF-', 'large export produces a PDF');
   assert.ok(pages >= 2, 'large fixture spans several pages');
   assert.ok(result.progress[0].phase === 'engraving' && result.progress.at(-1).page === result.progress.at(-1).pages, 'progress runs from engraving to the last page');
-  // Our code is the annotating and composing phases. Engraving is the Verovio worker, whose start-up and WASM work
-  // stall the page's timers for seconds in WebKit under CPU load (reported, not gated: the same engine-specific
-  // reason large-score.mjs only gates long tasks on Chromium).
-  const ours = Math.max(result.responsive.phaseGaps.annotating || 0, result.responsive.phaseGaps.composing || 0);
-  assertTiming(ours < LARGE_MAX_BLOCK_MS, `large export keeps the page responsive: longest annotating/composing block ${Math.round(ours)} ms >= ${LARGE_MAX_BLOCK_MS} ms`);
-  if (engine === 'chromium') assertTiming(result.responsive.maxGap < LARGE_MAX_BLOCK_MS, `large export keeps the page responsive while engraving: ${Math.round(result.responsive.maxGap)} ms >= ${LARGE_MAX_BLOCK_MS} ms`);
-  assert.equal(result.cancelResult.outcome, 'AbortError', 'cancelling during composition rejects with AbortError');
-  assertTiming(result.cancelResult.latency < result.cancelMs, `cancel stops composition promptly: ${Math.round(result.cancelResult.latency)} ms >= ${result.cancelMs} ms`);
-  assert.deepEqual(result.leaked, { hosts: 0, fonts: 0, workers: 0 }, 'cancelled and completed exports leave no offscreen host, font face or worker behind');
-  assert.ok(result.cancelProgress.filter(update => update.phase === 'composing').length < pages, 'cancelled export stopped before composing every page');
+  assertTiming(result.responsive.maxGap < LARGE_MAX_BLOCK_MS, `large export keeps the page responsive end to end: longest main-thread block ${Math.round(result.responsive.maxGap)} ms >= ${LARGE_MAX_BLOCK_MS} ms ${JSON.stringify(rounded)}`);
+  assert.deepEqual(result.afterFull, { hosts: 0, fonts: 0, workers: 0 }, 'a completed export leaves no offscreen host, font face or worker behind');
+  for (const [name, cancel] of [['startup', result.startup], ['mid-page', result.midPage], ['between pages', result.betweenPages]]) {
+    assert.ok(cancel.requested, `${name}: the cancel was requested`);
+    assert.equal(cancel.outcome, 'AbortError', `${name}: cancelling rejects with AbortError`);
+    assertTiming(cancel.latency < LARGE_CANCEL_MS, `${name}: cancel stops the export promptly: ${Math.round(cancel.latency)} ms >= ${LARGE_CANCEL_MS} ms`);
+    assert.deepEqual(cancel.leaks, { hosts: 0, fonts: 0, workers: 0 }, `${name}: a cancelled export leaves no offscreen host, font face or worker behind`);
+  }
+  // The mid-page cancel really lands inside page 1: page 2 never starts, and a page takes far longer than the gate.
+  assert.ok(!result.midPage.seen.some(update => update.phase === 'composing' && update.page > 1), 'mid-page cancel stops inside the first page');
 }

@@ -26,6 +26,7 @@ export async function composePdf(pages: string[], opts: ComposeOptions, signal: 
   try {
     for (const [index, page] of pages.entries()) {
       await tick();
+      opts.onProgress?.({ phase: 'composing', page: index + 1, pages: pages.length });
       const doc = new DOMParser().parseFromString(page, 'image/svg+xml');
       if (doc.querySelector('parsererror') || doc.documentElement.localName !== 'svg') throw new Error('Invalid PDF SVG page.');
       const svg = sanitizeSvg(doc);
@@ -62,7 +63,6 @@ export async function composePdf(pages: string[], opts: ComposeOptions, signal: 
       host.replaceChildren();
       pdf.setFont('Poppins', 'normal'); pdf.setFontSize(8); pdf.setTextColor(0);
       pdf.text(String(index + 1), size.width / 2, size.height - 5, { align: 'center' });
-      opts.onProgress?.({ phase: 'composing', page: index + 1, pages: pages.length });
     }
     signal.throwIfAborted();
     return pdf.output('blob');
