@@ -24,3 +24,14 @@ CI on the PR is the real check.
 
 ---
 ## Receiver ack
+
+Acknowledged: raise only the chromium validate job timeout from 30 to 45 minutes
+and its Validation suite step timeout from 15 to 25 minutes. I own
+`.github/workflows/ci.yml` and the two 0019 handoffs. No test changes or optional
+timing instrumentation are needed. I will validate the workflow, commit a return
+handoff, push my branch, and open a draft PR; CI completion remains for the lead
+because the task explicitly prohibits watching or polling the PR. No open questions.
+
+GBrain searched: `projects/scoreflow-music-reader` and
+`projects/scoreflow-music-reader/gotchas-abc-import`; the dispatch handoff supplies
+the current timeout requirements.
