@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,9 +11,12 @@ const run = (args, cwd = root) => execFileSync(npm, args, { cwd, encoding: 'utf8
 const work = mkdtempSync(join(tmpdir(), 'editor-pack-'));
 try {
   for (const pkg of ['pepperscore', '@pepperhorn/pepperscore-editor']) run(['run', 'build', '-w', pkg]);
-  const pack = pkg => JSON.parse(run(['pack', '--json', '--ignore-scripts', '--pack-destination', work, '-w', pkg]))[0];
+  const pack = pkg => JSON.parse(run(['pack', '--json', ...(pkg === 'pepperscore' ? ['--ignore-scripts'] : []), '--pack-destination', work, '-w', pkg]))[0];
   const viewer = pack('pepperscore');
   const editor = pack('@pepperhorn/pepperscore-editor');
+  const css = readFileSync(join(root, 'packages/pepperscore-editor/dist/style.css'), 'utf8');
+  assert.doesNotMatch(css, /data:font|url\([^)]*;base64,/i, 'editor CSS must not embed font data');
+  assert.ok(Buffer.byteLength(css) < 100_000, 'editor CSS must stay below 100 KB');
   const files = editor.files.map(file => file.path);
   for (const expected of ['dist/index.js', 'dist/index.d.ts', 'dist/style.css', 'README.md', 'package.json']) assert.ok(files.includes(expected), expected);
   assert.ok(files.every(path => path.startsWith('dist/') || ['README.md', 'package.json'].includes(path)), 'only dist, README and manifest ship');
@@ -33,5 +36,5 @@ console.log(PepperScoreEditor, props, plugins, await verifyLicence('dev'));
   execFileSync(process.execPath, ['--input-type=module', '-e', "import assert from 'node:assert/strict'; import { PepperScoreEditor, verifyLicence } from '@pepperhorn/pepperscore-editor'; assert.ok(PepperScoreEditor); assert.equal(await verifyLicence('dev'), null);"], { cwd: app, stdio: 'inherit' });
   writeFileSync(join(app, 'index.html'), '<script type="module" src="/consumer.ts"></script>');
   run(['exec', '--', 'vite', 'build'], app);
-  console.log(`Editor pack: ${files.length} allowed files; fresh consumer ESM import, declarations, CSS and Vite build passed; production dev licence rejected.`);
+  console.log(`Editor pack: ${files.length} allowed files; CSS ${Buffer.byteLength(css)} bytes without embedded fonts; clean pack JSON; fresh consumer ESM import, declarations, CSS and Vite build passed; production dev licence rejected.`);
 } finally { rmSync(work, { recursive: true, force: true }); }

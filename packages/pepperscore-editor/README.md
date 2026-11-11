@@ -362,6 +362,33 @@ Import both stylesheets as shown above. The registry and restricted publish acce
 are configured in package metadata; the publisher must confirm private visibility
 and repository access in GitHub Packages. Publishing is a separate human action.
 
+## Fonts (optional consumer imports)
+
+The editor stylesheet does not load Poppins. To use the intended UI font, install
+`@fontsource/poppins` in your host and import the required weights from your app's
+JavaScript or page entry, alongside the editor stylesheet:
+
+```ts
+import '@fontsource/poppins/400.css';
+import '@fontsource/poppins/500.css';
+import '@fontsource/poppins/600.css';
+import '@fontsource/poppins/700.css';
+```
+
+These are optional consumer imports: a host may provide Poppins another way or use
+the editor's fallback fonts. Host bundlers emit font files as separate assets and
+can load the subsets selected by `unicode-range`; the editor CSS contains no
+embedded font data.
+
+## Maintainer build and pack
+
+From the repository root, run `npm run build` before packing or publishing. It
+builds `pepperscore` first (the editor's declaration build requires its `dist`
+types), then the editor and reader. For an editor-only rebuild, first run
+`npm run build -w pepperscore`, then `npm run build -w @pepperhorn/pepperscore-editor`.
+Packing does not build automatically; this keeps `npm pack --json` output valid JSON.
+Publishing remains a separate human action after login.
+
 ## Licence signing (repository tools)
 
 Run these tools from a checkout of this repository, not from the installed package.

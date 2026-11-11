@@ -11,7 +11,7 @@
 - **Base commit:** 9602bd55a53997ffcf6c845f6c99a4e962ce54f0
 
 ## Goal and outcome
-**Outcome:** implementation complete; full baseline validation is not green. Draft PR for review, not ready to merge.
+**Outcome:** r1 fixes and requested verification complete; draft PR awaits review and CI. See the r1 section below; original-run results are retained as history.
 
 Prepare @pepperhorn/pepperscore-editor for restricted GitHub Packages distribution, with a working external consumer and repository-only licence tools. Publishing and owner key rotation remain separate actions.
 
@@ -39,7 +39,7 @@ Prepare @pepperhorn/pepperscore-editor for restricted GitHub Packages distributi
 ## Known gotchas / open questions
 GBrain consulted: projects/scoreflow-music-reader (project context; no packaging-specific guidance returned). Implementer did not write GBrain.
 
-No implementation questions remain. Validation failures below remain for lead/reviewer assessment; none is established as pre-existing. **Owner rotation TODO:** README explicitly marks replacement of DEFAULT_LICENCE_PUBLIC_KEY_JWK and re-signing the demo after the owner supplies public material. Neither was changed. Registry access: restricted does not prove live private visibility or access grants: the publisher must confirm those in GitHub Packages. CLI tools intentionally stay in the checkout and are excluded from the tarball.
+No implementation questions remain. Original local validation failures below were assessed by the Claude review on 2d281ad as host-load sensitivity; that review also records green CI on the original head. Current r1 checks are recorded separately below. **Owner rotation TODO:** README explicitly marks replacement of DEFAULT_LICENCE_PUBLIC_KEY_JWK and re-signing the demo after the owner supplies public material. Neither was changed. Registry access: restricted does not prove live private visibility or access grants: the publisher must confirm those in GitHub Packages. CLI tools intentionally stay in the checkout and are excluded from the tarball.
 
 ## Verify with
     npm ci && npx playwright-core install chromium
@@ -51,7 +51,7 @@ No implementation questions remain. Validation failures below remain for lead/re
 ## Follow-ups / for GBrain (lead to promote)
 Owner supplies rotated public JWK and demo licence, then issues BeCreative's licence. Human logs in and publishes separately, confirms private package visibility/access, and can begin 0003 T4 in pepperscore-pt after release. Source dev accepts dev; the built tarball rejects it (pack consumer assertion).
 
-## Verification output
+## Original implementation verification output (2d281ad)
 
 ```text
 npm ci && npx playwright-core install chromium: exit 0
@@ -100,3 +100,39 @@ No validation scripts, thresholds, viewer sources or tests were altered to bypas
 Final desktop editor retry also exited 1 with unchanged default budget:
 
     AssertionError [ERR_ASSERTION]: every change-to-redraw time is under 800 ms (got 1032, 442, 299, 67, 49, 312, 686, 496, 451) Loaded host? Re-run with VALIDATION_BUDGET_SCALE greater than 1 (current 1); CI budgets remain the baseline.
+
+## Fix round r1 — 2026-11-12
+
+- **PR:** https://github.com/pepperhorn/ph-scoreview/pull/93
+- **Review addressed:** Claude changes-requested on 2d281ad3610256a341195764d929a4e4bcb2802c (read through the GitHub reviews API).
+- **Scope:** editor stylesheet, package manifest and README; reader editor page font imports; pack check; this return handoff. No dependency versions, lockfile, public signatures, viewer stylesheet, CI or signing keys changed.
+- **Decision:** consumers load Poppins through optional app/page-entry imports. Removed the four fontsource CSS imports from editor CSS and added them explicitly to the reader's editor page. Unlike library-mode CSS asset embedding, the reader app emits separate font assets. The README explains installing/importing fontsource or providing a font another way. This keeps plain Node ESM imports working without adding CSS side-effect imports to the editor JS bundle.
+- **Pack/build:** removed prepack; packing now uses already-built output. README requires the root build before packing/publishing and explains that pepperscore dist types must exist before an editor-only build. The pack check builds both first, uses ordinary npm pack --json for the editor (no --ignore-scripts), and parses its output.
+- **Regression guard:** pack check rejects data:font and base64 URLs in editor CSS, and requires fewer than 100,000 bytes.
+- **Measurements:** editor dist/style.css is 41,023 bytes, down from about 702 KB. Reader editor.CQQxvsBp.css is 42,278 bytes with no embedded font data, back near the review's 46.8 KB baseline.
+- **Outcome:** all r1-requested checks passed with default budgets. Full test:validation was not rerun for this round.
+
+### r1 verification output
+
+```text
+npm run check && npm run build: exit 0
+Astro Result (23 files): 0 errors, 0 warnings, 0 hints
+Demo build uses the library dist (worker chunks and Verovio files match) and ships its notices
+npm run test:editor: exit 0
+Test Files 28 passed (28); Tests 295 passed (295)
+npm run test:editor-browser: exit 0
+Editor shell, layouts, entry, undo, cursor follow, popovers, export/save/reopen, staff cap and read-only pass
+render ms: 194, 152, 254, 141, 232, 307, 253, 220
+npm run test:editor-phone: exit 0
+Phone header, entry, toolbar, playback, cursor follow, layouts and instrument swap pass
+npm run test:pack:editor: exit 0
+Editor pack: 85 allowed files; CSS 41023 bytes without embedded fonts; clean pack JSON; fresh consumer ESM import, declarations, CSS and Vite build passed; production dev licence rejected.
+```
+
+### r1 follow-ups (intentionally deferred)
+
+- NodeNext declaration compatibility for both packages, including extensionless relative specifiers and the stylesheet declaration import under noUncheckedSideEffectImports.
+- Add test:pack:editor to CI in a separately owned CI task.
+- Consumer development licences: built dist rejects licenceKey="dev" even under a consumer dev server. Lead/owner to supply a short-lived signed development/test licence for pepperscore-pt and BeCreative after rotation; no key material was generated or changed here.
+
+GBrain rechecked: projects/scoreflow-music-reader; no additional packaging-specific guidance returned. No implementer write-back.
