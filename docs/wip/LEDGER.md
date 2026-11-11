@@ -17,12 +17,12 @@ Next ID: 0022
 | 0013 | TAB for stringed instruments | planned (t4 docs; t1 #77, t2 #74, t3 #84 merged) | child 0017-impl-r1-fix2 (#85 writes the String TAB README; T4 = remaining docs after it merges) | codex/gpt-6.1-sol |  |  |  |  | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md |  | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
 | 0017 | Release pepperscore 0.5.0 (CHANGELOG, version) | ready (on hold) | child 0002-t3-impl-r1-fix2 (human: release waits for the PDF button #83) | codex/gpt-6.1-sol | orch/0017-release-0-5-0 | https://github.com/pepperhorn/ph-scoreview/pull/85 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-5de38d86-837e74894e3847b8 | task `0017-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0017-impl-r1` |  |  | handoffs/2026-11-11-0017-release-0-5-0--codex-to-lead.md (@6733f80) | 2026-11-11 |
-| 0021 | [quick] Cut CI minutes: docs-only skip, one run per PR push, reader only on PRs | in-review | review 0021-review-r1 | codex/gpt-6.1-sol | orch/0021-ci-minutes | https://github.com/pepperhorn/ph-scoreview/pull/88 |  | task `0021-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0021-impl-r1` |  |  | handoffs/2026-11-11-0021-ci-minutes--codex-to-lead.md (@e2e9911) | 2026-11-11 |
 
 ## Done / closed
 
 | K | Title | PR | Merged | Notes |
 |---|---|---|---|---|
+| 0021 | [quick] Cut CI minutes (docs skip, one run per PR, reader PR-only, validate in Playwright image) | https://github.com/pepperhorn/ph-scoreview/pull/88 | 2026-11-11 | merged; PR run: one run, validate 19.5 min |
 | 0020 | [quick] PDF export in Firefox: notation at the right size (S22) | https://github.com/pepperhorn/ph-scoreview/pull/87 | 2026-11-11 | merged; chromium rasters unchanged |
 | 0019 | [quick] CI validation timeout 15 → 25 min, job 30 → 45 (S28) | https://github.com/pepperhorn/ph-scoreview/pull/86 | 2026-11-11 | merged with human OK |
 | 0013-t3 | Violin and cello finger + position TAB (task of 0013) | https://github.com/pepperhorn/ph-scoreview/pull/84 | 2026-11-11 | merged; option D |
@@ -93,6 +93,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-11 0021 in-review→closed — r1 approve, single green PR run, merged PR #88; this docs-only push is the check that no CI run starts
 2026-11-11 0002-t3 changes-requested→in-review — fixes pushed 3a454d0; review r2
 2026-11-11 0020 in-review→closed — r1 approve (firefox = chromium rasters; chromium unchanged), CI green (single PR run + push run, pre-0021), merged PR #87; reviewer installed webkit apt deps on the dev machine via sudo; S31, S32 logged
 2026-11-11 0021 dispatched→in-review — PR #88 @e2e9911 (push main only, paths-ignore, PR-number concurrency, reader PR-only, validate in Playwright container); review r1

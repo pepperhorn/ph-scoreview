@@ -5,7 +5,7 @@
 - **Ledger:** 0021
 - **Branch:** `orch/0021-ci-minutes` · **Worktree:** created by T3
 - **Base commit:** d95911e
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 ph-scoreview CI is the main reason for our GitHub Actions bill. This month so far (1–11 Nov), the account has used 11,568 Linux minutes and been billed $54.41 after the free quota ran out on 8 Nov. ph-scoreview is $33.80 of that, and it was $31.10 in October. Since 9 Nov the account has used 2,400–3,600 minutes a day, which is about $15/day.
