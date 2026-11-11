@@ -22,7 +22,7 @@ export default function SkinTest() {
   useEffect(() => { if (new URLSearchParams(window.location.search).has('bar')) setSkin(barSkin); }, []);
   if (typeof window !== 'undefined') window.__skin = { setSkin, setControls, tokens: THEME_TOKENS, bars: BAR_ITEM_IDS, renders: window.__skin?.renders ?? 0 };
   return <div className="skin-host" style={{ '--accent-ink': '#235abc', '--accent-ring': '#377be8', '--accent-wash': '#e0ecff', '--accent-wash-strong': '#bbd4ff' } as React.CSSProperties}>
-    <PepperScore className="skin-reader" skin={skin} controls={controls} abc={'X:1\nT:Skin fixture\nM:4/4\nL:1/4\nK:C\n[CEG] [CEG] [CEG] [CEG] | [FAC] [FAC] [FAC] [FAC] |'} persist={typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('bar') ? 'skin-bar-test' : false} audio={false} height="650px" onRender={() => { window.__skin.renders++; }} />
+    <PepperScore className="skin-reader" skin={skin} controls={controls} abc={'X:1\nT:Skin fixture\nM:4/4\nL:1/4\nK:C\n[CEG] [CEG] [CEG] [CEG] | [FAC] [FAC] [FAC] [FAC] |'} persist={typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('pdf') ? 'pdf-overlay-test' : new URLSearchParams(window.location.search).has('bar') ? 'skin-bar-test' : false} audio={false} height="650px" onRender={() => { window.__skin.renders++; }} />
     <PepperScore className="skin-minimal" chrome="minimal" skin={skin} controls={controls} persist={false} audio={false} abc={'X:1\nK:C\nC D E F |'} />
     <PepperScore className="skin-none" chrome="none" skin={skin} controls={controls} persist={false} abc={'X:1\nK:C\nC D E F |'} />
   </div>;

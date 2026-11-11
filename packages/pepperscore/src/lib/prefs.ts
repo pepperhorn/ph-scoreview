@@ -41,8 +41,8 @@ export const ANNOTATION_SIZE_PREF_KEYS = Object.values(ANNOTATION_SIZE_PREFS) as
 export type PepperScoreAnnotationSizes = Partial<Record<AnnotationKey, AnnotationSize>>;
 
 /** Reader settings; `zoom` is the score's explicit stave scale, or null for the device default (see stave-scale.ts). */
-export type Prefs = FileSettings & { zoom: number | null };
-export const defaults: Prefs = { mode: 'portrait', notationFont: 'Bravura', barsPerLine: 'auto', overlap: 1, names: false, pitchColours: false, chordSymbols: false, inferChordSymbols: false, counts: false, subdivisions: false, annotationFont: 'Sans', namesSize: 'rg', chordSymbolsSize: 'rg', countsSize: 'rg', subdivisionsSize: 'rg', bpm: 96, zoom: null, semitones: 0, scorePitch: 'written', keyFlip: false, tabView: 'notation', tabTuning: [...STANDARD_TAB_TUNING], capo: 0 };
+export type Prefs = FileSettings & { zoom: number | null; pdfPaper: 'a4' | 'a3' | 'letter' | 'legal' };
+export const defaults: Prefs = { pdfPaper: 'a4', mode: 'portrait', notationFont: 'Bravura', barsPerLine: 'auto', overlap: 1, names: false, pitchColours: false, chordSymbols: false, inferChordSymbols: false, counts: false, subdivisions: false, annotationFont: 'Sans', namesSize: 'rg', chordSymbolsSize: 'rg', countsSize: 'rg', subdivisionsSize: 'rg', bpm: 96, zoom: null, semitones: 0, scorePitch: 'written', keyFlip: false, tabView: 'notation', tabTuning: [...STANDARD_TAB_TUNING], capo: 0 };
 
 /** Saved global prefs, repaired. Zoom is per score (score-db), so a legacy global zoom is ignored. */
 export function sanitizeSavedPrefs(raw: unknown): Prefs {
@@ -53,6 +53,7 @@ export function sanitizeSavedPrefs(raw: unknown): Prefs {
   if (!Number.isInteger(next.semitones)) next.semitones = 0;
   next.semitones = Math.max(-12, Math.min(12, next.semitones));
   if (!['written', 'concert'].includes(next.scorePitch)) next.scorePitch = 'written';
+  if (!['a4', 'a3', 'letter', 'legal'].includes(next.pdfPaper)) next.pdfPaper = 'a4';
   if (typeof next.pitchColours !== 'boolean') next.pitchColours = false;
   if (typeof next.keyFlip !== 'boolean') next.keyFlip = false;
   if (!['Sans', 'Serif', 'Mono'].includes(next.annotationFont)) next.annotationFont = 'Sans';

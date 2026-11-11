@@ -13,7 +13,7 @@ export const BAR_CONTROL_GROUP: Record<BarItemId, keyof PepperScoreControls | nu
   play: 'transport', stop: 'transport', tempo: 'transport', transpose: 'transport', keyFlip: 'transport', bars: 'transport',
   viewToggle: 'viewToggle', tab: 'tabToggle', zoom: 'zoom', mixer: 'mixer', openFile: 'openFile',
   instrumentSwitch: 'instrumentSwitch', octaveTool: 'octaveTool', options: 'drawer',
-  noteNames: null, counts: null, chordSymbols: null, pitchColours: null, pdf: null,
+  noteNames: null, counts: null, chordSymbols: null, pitchColours: null, pdf: 'pdf',
 };
 
 /** Null retains the legacy header. An empty array explicitly requests no bar. */
@@ -31,7 +31,7 @@ export function warnUnknownBar(skin?: PepperScoreSkin) {
 
 /** Only the six missing drawer actions; null preserves the legacy drawer exactly. */
 export function drawerExtras(bar: BarItemId[] | null, chrome: ResolvedChrome): BarItemId[] {
-  if (bar === null) return [];
-  return (['stop', 'viewToggle', 'bars', 'zoom', 'mixer', 'openFile'] as const)
+  if (bar === null) return chrome.pdf ? ['pdf'] : [];
+  return (['stop', 'viewToggle', 'bars', 'zoom', 'mixer', 'openFile', 'pdf'] as const)
     .filter(id => chrome[BAR_CONTROL_GROUP[id]!] && !bar.includes(id));
 }

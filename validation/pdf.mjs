@@ -9,7 +9,7 @@ const require = createRequire(new URL('../packages/pepperscore/package.json', im
 const { PDFDocument, PDFName, decodePDFRawStream } = require('pdf-lib');
 import { createServer } from 'vite';
 import { chromium, firefox, webkit } from 'playwright-core';
-import { root } from './serve-dist.mjs';
+import { root, serveDist } from './serve-dist.mjs';
 
 // Raster parity is a required gate, including on CI. Fail before starting Vite/browser.
 try { execFileSync('pdftoppm', ['-v'], { stdio: 'pipe' }); }
@@ -28,6 +28,7 @@ await server.listen();
 const engine = process.env.BROWSER || 'chromium';
 const browser = await ({ chromium, firefox, webkit }[engine]).launch({ headless: true, ...(engine === 'chromium' ? { args: ['--no-sandbox'] } : {}) });
 try {
+  await assertPdfOverlay(browser);
   const page = await browser.newPage();
   page.on('console', msg => console.log('browser:', msg.text()));
   page.on('pageerror', error => console.log('browser error:', error.message));
@@ -511,4 +512,64 @@ function outlineProfile(image,box,fill) {
   const histogram=new Map();for(const c of colours){const key=c.join(',');histogram.set(key,(histogram.get(key)||0)+1);}
   const mode=[...histogram].sort((a,b)=>b[1]-a[1])[0]?.[0].split(',').map(Number)||[];
   return {rows:widths.length,ratio:median(widths),colour:mode};
+}
+
+
+async function assertPdfOverlay(browser) {
+  const host = await serveDist();
+  const page = await browser.newPage({ viewport: { width: 1000, height: 850 }, acceptDownloads: true });
+  try {
+    await page.goto(`${host.url}/embed-skin?pdf`);
+    const full = page.locator('.skin-reader'), minimal = page.locator('.skin-minimal');
+    await full.locator('.score-system svg').first().waitFor();
+    await page.evaluate(() => window.__skin.setControls({ pdf: false }));
+    assert.equal(await full.locator('.pdf-trigger').count(), 0);
+    assert.ok(!host.requests.some(path => /export-|engrave[.-]|jspdf|svg2pdf|Poppins.*ttf/.test(path)), 'disabled/unused PDF loads no PDF chunks');
+    await page.evaluate(() => window.__skin.setControls({ pdf: true }));
+    await minimal.locator('.pdf-trigger').waitFor();
+    await page.evaluate(() => window.__skin.setSkin({ bar: ['pdf', 'play', 'options'] }));
+    const before = await full.locator('.score-viewport').evaluate(el => ({ scroll: el.scrollTop, svg: el.querySelector('svg')?.outerHTML }));
+    const workers = []; page.on('worker', worker => workers.push(worker));
+    await full.locator('.pdf-trigger').click();
+    const dialog = full.getByRole('dialog', { name: 'Export PDF' });
+    await dialog.waitFor();
+    assert.equal(await dialog.getByLabel('Paper size').inputValue(), 'a4');
+    assert.equal(await dialog.getByLabel('Bars per line').inputValue(), '4');
+    assert.match(await dialog.getByRole('status').innerText(), /Checking fit/);
+    await dialog.getByRole('button', { name: 'Save', exact: true }).focus();
+    await page.keyboard.press('Tab');
+    assert.equal(await dialog.getByLabel('Paper size').evaluate(el => el === document.activeElement), true, 'focus wraps');
+    await dialog.getByLabel('Paper size').selectOption('a3');
+    await dialog.getByLabel('Bars per line').fill('2');
+    await page.waitForFunction(() => !document.querySelector('.pdf-fit')?.textContent.includes('Checking'));
+    assert.match(await dialog.getByRole('status').innerText(), /fewer than 2 bars on A3/);
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await full.locator('.pdf-trigger').click();
+    assert.equal(await dialog.getByLabel('Paper size').inputValue(), 'a3');
+    assert.equal(await dialog.getByLabel('Bars per line').inputValue(), '4');
+    const downloadPromise = page.waitForEvent('download');
+    await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+    const download = await downloadPromise;
+    assert.equal(download.suggestedFilename(), 'skin-fixture.pdf');
+    const bytes = readFileSync(await download.path());
+    const pdf = await PDFDocument.load(bytes);
+    assert.ok(Math.abs(pdf.getPage(0).getWidth() * 25.4 / 72 - 297) < .001, 'remembered A3 used in actual bytes');
+    assert.equal(await dialog.count(), 0);
+    const after = await full.locator('.score-viewport').evaluate(el => ({ scroll: el.scrollTop, svg: el.querySelector('svg')?.outerHTML }));
+    assert.deepEqual(after, before, 'export leaves engraving and scroll intact');
+    assert.ok(workers.some(worker => /engrave/.test(worker.url())), 'separate PDF worker emitted and reached');
+    await page.setViewportSize({ width: 390, height: 850 });
+    await full.locator('.pdf-trigger').click();
+    const box = await dialog.boundingBox(), rootBox = await full.boundingBox();
+    assert.ok(box.x >= rootBox.x && box.x + box.width <= rootBox.x + rootBox.width + 1, 'phone overlay contained');
+    await page.keyboard.press('Escape');
+    assert.equal(await dialog.count(), 0);
+    await page.reload();
+    await full.locator('.score-system svg').first().waitFor();
+    await page.evaluate(() => { window.__skin.setSkin({bar:['pdf']}); window.__skin.setControls({pdf:true}); });
+    await full.locator('.pdf-trigger').click();
+    assert.equal(await dialog.getByLabel('Paper size').inputValue(), 'a3', 'paper survives reload');
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    console.log('PDF overlay: availability, lazy chunks, defaults, focus trap, fit, remembered paper, local bars, actual download, separate worker, unchanged reader and phone containment passed');
+  } finally { await page.close(); await host.close(); }
 }
