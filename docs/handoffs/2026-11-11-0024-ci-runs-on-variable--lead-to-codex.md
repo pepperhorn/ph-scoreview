@@ -5,7 +5,7 @@
 - **Ledger:** 0024 · **Guide:** docs/guides/self-hosted-runner.md
 - **Branch:** orch/0024-ci-runs-on-variable · **Worktree:** created by T3
 - **Base commit:** see `git log -1` at dispatch
-- **Status:** open
+- **Status:** acked
 
 ## Goal
 Make every job in `.github/workflows/ci.yml` take its runner from the repo variable `CI_RUNS_ON` (a JSON string or array), defaulting to `ubuntu-latest` when it's unset: `runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}`. With the variable unset, behaviour is identical to today. The human then installs the t3box runner (guide) and sets the variable to move CI off billed minutes.
@@ -33,3 +33,16 @@ CI on the PR is the real check. Don't run the full local suite for a workflow-on
 
 ---
 ## Receiver ack
+
+Codex acknowledges item 0024 on branch `orch/0024-ci-runs-on-variable`, based on
+`9602bd5`. I will change both CI jobs to read `CI_RUNS_ON` through `fromJSON`,
+with the exact JSON-string fallback to `ubuntu-latest`, and inspect existing
+container steps for host writes. Triggers, concurrency, reader conditions,
+images, caches and timeouts stay as specified. I own only `ci.yml` and the 0024
+handoffs. I will run the workflow validator, audit the diff, push the branch and
+open a draft PR; hosted CI is the remaining acceptance gate. No local full suite
+or runner installation/variable changes are in scope. No open questions.
+
+GBrain searched: `default:projects/scoreflow-music-reader` and
+`default:projects/scoreflow-music-reader/gotchas-abc-import`; no runner-specific
+constraints were returned. The dispatch brief and runner guide govern this task.
