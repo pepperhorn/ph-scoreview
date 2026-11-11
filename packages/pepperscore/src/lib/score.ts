@@ -114,20 +114,20 @@ export function instrumentForName(name: string): InstrumentId {
     return 'alto-saxophone';
   }
   if (/drum|percussion/.test(n)) return 'drum-kit';
-  if (/\b(?:voices?|vocals?|choir|singers?|satb)\b/.test(n)) return 'microphone';
   if (/\b(?:ukulele|ukelele)\b/.test(n)) return 'guitar';
   if (/\b(?:double[ -]?bass|contrabass|upright bass|string bass)\b/.test(n)) return 'double-bass';
-  if (/\b(?:soprano|alto|tenor|baritone|sop|alt|ten)\b/.test(n)) return 'microphone';
   if (/\b(?:bass[ -]?guitar|(?:electric|acoustic|fretless)[ -]+bass|e-bass)\b/.test(n)) return 'bassguitar';
   if (/guitar/.test(n)) return 'guitar';
-  if (/flute/.test(n)) return 'flute';
+  if (/flute|recorder/.test(n)) return 'flute';
   if (/clarinet/.test(n)) return 'clarinet';
   if (/trumpet/.test(n)) return 'trumpet';
-  if (/trombone/.test(n)) return 'trombone';
+  if (/trombone|horn/.test(n)) return 'trombone';
+  if (/banjo/.test(n)) return 'guitar';
   if (/violin/.test(n)) return 'violin';
   if (/viola/.test(n)) return 'viola';
   if (/cello/.test(n)) return 'cello';
-  if (/voice|vocal|choir|singer/.test(n)) return 'microphone';
+  if (/\b(?:voices?|vocals?|choir|singers?|satb)\b/.test(n)) return 'microphone';
+  if (/^(?:soprano|alto|tenor|baritone|sop|alt|ten)\.?(?:\s+(?:\d+|[ivx]+))?(?:\s+\(?div(?:isi|\.)?\)?)?$/.test(n.trim())) return 'microphone';
   if (/\bbass\b/.test(n)) return 'bassguitar';
   return 'piano';
 }

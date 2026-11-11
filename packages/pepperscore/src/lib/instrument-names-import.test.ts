@@ -44,7 +44,30 @@ for (const [format, load] of [
   it.each(['Bass Voice', 'Choir Bass', 'Bass (Vocal)'])('keeps explicit vocal hint %s even in a band', async name => {
     expect((await load(['Guitar', 'Drums', name])).parts[2].instrument).toBe('microphone');
   });
-  it('uses sax names explicitly for a big band', async () => {
+  it.each([
+    ['Alto Flute', 'flute', undefined, undefined], ['Tenor Trombone', 'trombone', undefined, undefined],
+    ['Baritone Horn', 'trombone', 61, undefined], ['Tenor Horn', 'trombone', 61, undefined],
+    ['Soprano Recorder', 'flute', 75, undefined], ['Tenor Banjo', 'guitar', 106, undefined],
+    ['Baritone Guitar', 'guitar', undefined, 'guitar'], ['Tenor Guitar', 'guitar', undefined, 'guitar'],
+  ] as const)('keeps instrument noun %s and gives Bass no voice context', async (name, instrument, program, tab) => {
+    const score = await load([name, 'Bass']);
+    expect(score.parts[0].instrument).toBe(instrument);
+    expect(score.parts[0].gmProgram).toBe(program);
+    expect(stringInstrument(score.parts[0])).toBe(tab);
+    expect(score.parts[1].instrument).toBe('bassguitar');
+    expect(stringInstrument(score.parts[1])).toBe('bass4');
+  });
+  it.each(['Electric Bass', 'Acoustic Bass', 'Fretless Bass', 'E-Bass', 'Bass Guitar'])('keeps explicit %s and protects ambiguous Bass beside voices', async name => {
+    const score = await load([name, 'Soprano', 'Bass']);
+    expect(score.parts.map(p => p.instrument)).toEqual(['bassguitar', 'microphone', 'bassguitar']);
+    expect(stringInstrument(score.parts[0])).toBe('bass4');
+    expect(stringInstrument(score.parts[2])).toBe('bass4');
+  });
+  it.each(['Alto 2', 'Tenor II', 'Soprano (Choir)', 'Alto divisi', 'Soprano I div.'])('retains voice label %s and choir context', async name => {
+    const score = await load([name, 'Bass']);
+    expect(score.parts.map(p => p.instrument)).toEqual(['microphone', 'microphone']);
+  });
+  it('uses sax names explicitly for a big band' , async () => {
     const score = await load(['Alto Sax 1', 'Tenor Sax 1', 'Trumpet', 'Bass', 'Drums']);
     expect(score.parts.map(p => p.instrument)).toEqual(['alto-saxophone', 'tenor-saxophone', 'trumpet', 'bassguitar', 'drum-kit']);
     expect(stringInstrument(score.parts[3])).toBe('bass4');

@@ -25,16 +25,18 @@ export function withTabSettings(score: Score, instruments?: TabInstruments, tuni
   return { ...score, tabSettings: { instruments, tuning } };
 }
 
+const explicitBassGuitar = (name: string) => /\b(?:bass[ -]?guitar|(?:electric|acoustic|fretless)[ -]+bass|e-bass)\b/i.test(name);
+
 const namedFretted = (name: string): TabInstrument | undefined => {
   if (/sax/i.test(name)) return;
-  if (/\b(?:voice|vocal|choir|singer|satb)\b/i.test(name)) return;
+  if (instrumentForName(name) === 'microphone') return;
   if (/\b(?:ukulele|ukelele)\b/i.test(name)) {
     if (/\bbaritone\b/i.test(name)) return 'ukulele-baritone';
     if (/\bbass\b/i.test(name)) return 'ukulele-bass';
     return /\btenor\b/i.test(name) ? 'ukulele-tenor' : 'ukulele-soprano';
   }
   if (/\b(?:double[ -]?bass|contrabass|upright bass|string bass)\b/i.test(name)) return 'double-bass';
-  if (/\b(?:bass[ -]?guitar|(?:electric|acoustic|fretless)[ -]+bass|e-bass)\b/i.test(name)) return 'bass4';
+  if (explicitBassGuitar(name)) return 'bass4';
   if (/\bguitar\b/i.test(name)) return 'guitar';
   if (/\bbass\b/i.test(name) && instrumentForName(name) === 'bassguitar') return 'bass4';
 };
@@ -88,7 +90,7 @@ export function resolveChoirNames(score: Score): Score {
     const gm = part.gmProgram;
     if (part.clef === 'percussion' || part.instrument === 'drum-kit') return true;
     if (gm !== undefined) return (gm >= 25 && gm <= 32) || (gm >= 34 && gm <= 40);
-    return /guitar|drum|percussion/i.test(part.name);
+    return explicitBassGuitar(part.name) || /guitar|drum|percussion/i.test(part.name);
   });
   const letterChoir = letters.size >= 3 && !guitarOrDrums;
   const voiceContext = letterChoir || score.parts.some(part => instrumentForName(part.name) === 'microphone'
@@ -104,8 +106,16 @@ export function resolveChoirNames(score: Score): Score {
       }
       continue;
     }
+    // These instruments share reader icons with a related instrument, but have their own GM sound.
+    const program = named === 'flute' && /recorder/i.test(part.name) ? 75
+      : named === 'guitar' && /banjo/i.test(part.name) ? 106
+        : named === 'trombone' && /horn/i.test(part.name) ? 61 : undefined;
+    if (program !== undefined) {
+      part.gmProgram = program;
+      part.gmSoundfont = gmProgramForNumber(program)?.soundfont ?? undefined;
+    }
     if (named === 'microphone' || (letterChoir && /^[SATB]$/i.test(part.name.trim()))
-      || (named === 'bassguitar' && voiceContext && !guitarOrDrums)) part.instrument = 'microphone';
+      || (named === 'bassguitar' && !explicitBassGuitar(part.name) && voiceContext && !guitarOrDrums)) part.instrument = 'microphone';
   }
   return score;
 }

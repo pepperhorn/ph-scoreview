@@ -24,7 +24,7 @@ Align name-only bass/ukulele playback and TAB detection, and explain ignored cus
 
 ## Decisions made
 - Reused `guitar`: GM 25 (nylon guitar). `instrumentDetails.program` is zero-based (24), while the instrument model's `gmProgram` is one-based (25). No new instrument id needed. Bass guitar uses existing GM 34.
-- The r3 human naming policy replaces the r1/r2 choir thresholds and band/keyboard/numbered-label heuristics. Named soprano/alto/tenor/baritone parts (including numbered/divisi labels) are voices unless they say Sax. Ambiguous bass uses voice context only without guitar/drum-kit evidence; piano/organ/keys do not block choir context. Letters need at least three distinct S/A/T/B labels. Explicit GM programs win over names and over name-only context evidence. See the current ABC-guide note below.
+- The current r4 interpretation puts explicit instrument nouns before vocal hints and range-word voice labels. Soprano/alto/tenor/baritone identify voices only as range-word labels with optional number/roman numeral/divisi suffix or a vocal hint; Alto Flute and Tenor Guitar keep their instruments. Explicit Electric/Acoustic/Fretless Bass, E-Bass and Bass Guitar always remain bass guitar and count as guitar evidence. The r3 policy otherwise replaces the r1/r2 choir thresholds and band/keyboard/numbered-label heuristics. Ambiguous bass uses voice context only without guitar/drum-kit evidence; piano/organ/keys do not block choir context. Letters need at least three distinct S/A/T/B labels. Explicit GM programs win over names and over name-only context evidence. See the current ABC-guide note below.
 - Soprano Sax uses GM 65 (`soprano_sax`) and the existing alto sax icon/id, matching the registry's existing GM 65→alto-icon mapping. Tenor/baritone sax use their existing ids; default/alto sax uses the alto id. No new public instrument ids or model/range changes.
 - Tuning warning uses the approved inline try/catch around `process.env.NODE_ENV`, plus a type-only declaration, preserving browser-native safety and production elimination. A module-level set limits it to one warning per part id per session. Host `tabTuning` points to `settings.tabInstruments` (bass5 for the five-string/bass4 mismatch); reader-saved tuning points to choosing a matching tuning in the reader.
 
@@ -32,10 +32,10 @@ Align name-only bass/ukulele playback and TAB detection, and explain ignored cus
 GBrain searched: `default:projects/scoreflow-music-reader` (historical project context); current repo dispatch controls name rules. Per implementer role, no GBrain writes.
 
 ## For the ABC guide
-Current human policy (r3), superseding r1/r2 heuristics, for existing ABC/MusicXML files without explicit MIDI programs:
+Current human policy (r3, clarified by r4), superseding r1/r2 heuristics, for existing ABC/MusicXML files without explicit MIDI programs:
 - Names containing Sax/Saxophone always select a saxophone. Soprano/alto/tenor/baritone words choose the corresponding sax sound; word order and numbered suffixes do not matter. Soprano uses exact GM 65 playback with the existing alto sax icon/id; sax parts must say Sax. Alto 1/Tenor 1 **without** Sax now mean voices.
-- Soprano/Alto/Tenor/Baritone without Sax are voices, including Soprano 1/2 and Alto/Bass I/II divisi in choirs. Explicit Voice/Vocal/Choir/Singer hints also mean voice (Bass Voice, Choir Bass, Bass (Vocal)), even in a band. Existing explicit ukulele and double-bass names retain their instrument identities.
-- Names containing the word Bass (Bass, Bass 1, Synth Bass, Bass line, etc.) default to bass guitar + bass4 TAB instead of double bass/no TAB. They become voice/no TAB when other named voice parts establish choir context and there is no guitar/drum-kit evidence. Guitar/drum-kit parts by names or explicit GM programs keep ambiguous Bass as bass guitar: Vocals/Guitar/Bass/Drums is a band. Explicit Bass Guitar is guitar evidence itself. Bass wind names remain winds, and Double Bass/Contrabass/Upright Bass/String Bass remain double bass.
+- Explicit instrument nouns win before voice rules. Alto Flute → flute; Tenor Trombone → trombone; Baritone/Tenor Horn → horn sound (GM 61, existing trombone icon); Soprano Recorder → recorder (GM 75, flute icon); Tenor Banjo → banjo (GM 106, guitar icon, no inferred guitar TAB); Baritone/Tenor Guitar → guitar with TAB. These parts provide no voice context. Soprano/Alto/Tenor/Baritone alone, with number/roman numeral/divisi marker (Alto 2, Tenor II, Soprano I div.), or with vocal hint (Soprano (Choir)) mean voice. Voice/Vocal/Choir/Singer hints mean voice when no instrument noun takes precedence (Bass Voice, Choir Bass, Bass (Vocal)). Existing ukulele and double-bass identities remain intact.
+- Names containing the word Bass (Bass, Bass 1, Synth Bass, Bass line, etc.) default to bass guitar + bass4 TAB instead of double bass/no TAB. They become voice/no TAB when other named voice parts establish choir context and there is no guitar/drum-kit evidence. Guitar/drum-kit parts by names or explicit GM programs keep ambiguous Bass as bass guitar: Vocals/Guitar/Bass/Drums is a band. Electric Bass, Acoustic Bass, Fretless Bass, E-Bass and Bass Guitar are explicit bass-guitar names: always bass guitar, never inferred voice, and each counts as guitar evidence for other ambiguous Bass parts. Bass wind names remain winds, and Double Bass/Contrabass/Upright Bass/String Bass remain double bass.
 - A score with at least three distinct S/A/T/B letter parts provides letter-choir context (without guitar/drum-kit evidence); those letters become voices. Otherwise single letters imply no instrument: lone A, A+B and Soprano+B keep B at the default. A+Bass has no voice context and Bass stays bass guitar.
 - Piano/organ/keys and divisi numbers no longer disable choir detection. Soprano/Bass/Piano and SATB+piano (with or without piano GM 1) keep the voices and the piano; divisi Bass I/II stay voices. Brass/sax/percussive melodic GM families no longer act as blanket band exclusions.
 - Explicit source GM programs always win, including a name like Soprano with bass-guitar GM 34, or Guitar with piano GM 1. Existing saved per-part sound choices still override import defaults when restored. Ukulele sizes keep nylon guitar playback and independent ukulele TAB tuning.
@@ -128,7 +128,7 @@ npm run test:parser-diff: Streaming MusicXML reader matches the DOM importer
 git diff --check: passed
 ```
 
-Tests include lone A, A+B, S+B, duplicate A+A+B, A+Bass, no-bass SAT upper voices, numbered labels, the requested big band, word/letter SATB, the three-role threshold, named instrumental exclusions and anonymous parts with keyboard/guitar/brass/sax/percussion GM programs. The final package/type/build checks were repeated after the last label-lookup adjustment and two extra distinct-role regressions. No review-harness changes. Last authorized fix round complete; ready for lead disposition.
+Tests include lone A, A+B, S+B, duplicate A+A+B, A+Bass, no-bass SAT upper voices, numbered labels, the requested big band, word/letter SATB, the three-role threshold, named instrumental exclusions and anonymous parts with keyboard/guitar/brass/sax/percussion GM programs. The final package/type/build checks were repeated after the last label-lookup adjustment and two extra distinct-role regressions. No review-harness changes. The r2 fix round completed; later policy clarifications are recorded below.
 
 Logs `/tmp/0016-r2-{unit,check,build,tab,switch,document,parser-diff}.log`.
 
@@ -157,3 +157,76 @@ git diff --check: passed
 Package tests were rerun after ensuring explicit GM also wins over misleading guitar-name context evidence; type checks/build were repeated after that refinement. Regression coverage includes all requested piano/divisi/unnumbered-voice/sax-band/vocal-band/placeholder cases, organ accompaniment, exact soprano sax GM 65, sax word order, direct vocal hints in bands, and explicit-program precedence. Parser reference/harness unchanged. Scope audit from reviewed head: only the four files listed above.
 
 Logs `/tmp/0016-r3-{unit,check,build,tab,switch,document,parser-diff}.log`. Ready for lead review; no PR watching or polling performed.
+
+
+## Review r4 — instrument nouns and explicit bass-guitar evidence
+Review: https://github.com/pepperhorn/ph-scoreview/pull/80#pullrequestreview-5852608085
+Reviewed base: `af36de1499187c0307fd805c44342221be5b47b9`.
+
+Lead clarified that instrument nouns take precedence over voice range words/hints, and range-word voice matching should accept only the voice label plus optional numbering/divisi. All eight requested names are tested directly and across ABC/MusicXML/shared worker-reader imports, with instrument identity, playback program where a shared icon is used, TAB identity, and lack of false voice context for the accompanying Bass. All five explicit bass-guitar names are tested beside Soprano and another ambiguous Bass, proving they stay bass4 and block choir inference for the ambiguous part. Alto Flute+Bass stays flute+bass guitar. Voice labels Alto 2, Tenor II, Soprano (Choir) and divisi variants remain voices.
+
+Scope this round: score.ts instrumentForName only; string-instruments.ts; score/import tests; return handoff. No model/public-id/component/render/PDF/prefs/dependency/ledger/reference-parser changes. Recorder/banjo/horn name-only playback uses existing GM 75/106/61 and registry icons; explicit source programs still win.
+
+Follow-ups retained: S24 warning-source provenance needs separately owned component plumbing. The existing GM 33 Acoustic Bass → double-bass icon mapping can coexist with bass4 TAB; per lead instruction this is a non-blocking icon follow-up, unchanged here.
+
+CI: the lead reports GitHub billing currently blocks job execution. This round relies on local foreground verification, not a claim of green CI.
+
+All seven requested commands ran in the foreground and exited 0 against this revision. Local output (tails pasted with trailing whitespace trimmed):
+
+```text
+$ npm run test -w pepperscore
+   ✓ staff-wide mid-bar key signatures > retains the onset when layer 1 has a held note  336ms
+
+ Test Files  16 passed (16)
+      Tests  490 passed (490)
+   Start at  12:56:18
+   Duration  7.34s (transform 4.59s, setup 0ms, collect 15.99s, tests 14.56s, environment 13ms, prepare 4.61s)
+
+
+$ npm run check
+12:58:49 [check] Getting diagnostics for Astro files in /home/shaun/.t3/worktrees/ph-vexflow-view/t3-f4c5a8a8-bae6c18130633ca8/apps/reader...
+Result (23 files):
+- 0 errors
+- 0 warnings
+- 0 hints
+
+
+$ npm run build
+12:59:52 [build] 10 page(s) built in 6.15s
+12:59:52 [build] Complete!
+Demo build uses the library dist (worker chunks and Verovio files match) and ships its notices
+
+$ npm run test:tab
+TAB: reader switch (piano and guitar, saved view, transposition, phone More panel, drawer at mid width, embeds) on chromium passed
+
+$ npm run test:instrument-switch
+Instrument switch: saved switch vs host settings (same host: the reader's flute; changed host: alto sax) passed
+Instrument switch: octave tool (select, Shift/second-click passage, phrase, 8va/8vb, out of range, auto-fit kept as written, reset, Escape, focus, saved, hidden, embed menu and compact entry) passed
+Instrument switch: chunked reader render moves tied notes across chunk boundaries; caches keyed by the spec passed
+
+$ npm run test:document
+Document import: superseded and failed imports leave no unhandled rejection passed
+Document import: worker MEI view transform matches the DOM reference in 48 cases passed
+Document import: MIDI and ABC percussion engrave as unpitched notes that transposition leaves in place passed
+Document import: MusicXML chunk slices, carried attributes, overlaps and plans passed
+Document import: ID-less MusicXML identity and multi-measure rest expansion passed
+Document import: timewise, MXL source bytes and hash, percussion, voices, ABC adapter and MEI identity passed
+Document review regressions: drum kit program, MEI accidentals/key/meter changes, saved BPM clamp, MXL encoded path and size bound, ABC/MEI navigation engraving passed
+Verovio channels: an out-of-memory failure stays in its channel, other channels retry, closed channels stay closed passed
+
+$ npm run test:parser-diff
+ok   worker import synthetic orchestral 30x12
+ok   worker import synthetic orchestral 30x150 (~5 MB)
+ok   worker import case timewise
+ok   worker import case timewise with xmlns and comments
+ok   worker import case multi-measure rests
+ok   worker import case timewise with internal DTD entities
+ok   worker import case playback marks: articulations, fermata, cue, ornaments, pedals
+Streaming MusicXML reader matches the DOM importer
+$ git diff --check
+(exit 0, no output)
+```
+
+The package suite has 490 passing tests across 16 files. No code changes followed the green run; only this handoff was finalized. GitHub CI is not claimed green; billing remains the lead-reported external gate.
+
+Logs `/tmp/0016-r4-{unit,check,build,tab,switch,document,parser-diff}.log`. Ready for lead review.
