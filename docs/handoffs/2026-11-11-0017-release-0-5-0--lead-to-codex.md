@@ -5,7 +5,7 @@
 - **Ledger:** 0017
 - **Branch:** orch/0017-release-0-5-0 · **Worktree:** created by T3
 - **Base commit:** 9d3c36e
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 Prepare the `pepperscore` 0.5.0 release (human-approved): bump `packages/pepperscore/package.json` (and the matching entry in the root `package-lock.json`) from 0.4.1 to 0.5.0 and add a `## 0.5.0 - 2026-11-11` section to `packages/pepperscore/CHANGELOG.md`, in the existing style (Added / Changed / Fixed), covering everything merged into `packages/pepperscore` since 0.4.1. Publishing is NOT part of this task (the human runs `npm login` and the lead gives the publish command separately).

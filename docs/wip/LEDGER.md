@@ -5,23 +5,24 @@
 > Waiting on: `child <taskId>` · `review <taskId>` · `ci` · `human: <why>` · `lead: <next action>`. Set it on every status change. A row needs the lead when it starts with `lead`, or when it's empty and Status is dispatched, in-review, changes-requested, ready, or merged. The lead's Stop hook won't let the lead end its turn while any row needs it.
 > Type: normal items have a spec and plan. Quick items have the title prefix `[quick]` (no spec or plan, a short handoff). PRs adopted by `orch-sweep` have the prefix `[pr]`.
 
-Next ID: 0022
+Next ID: 0023
 
 ## Active
 
 | K | Title | Status | Waiting on | Owner (provider/model) | Branch | PR | Worktree | T3 task/thread | Spec | Plan | Latest handoff | Updated |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 0001 | Composable player skins | planned (t5; t1–t4 merged) | child 0017-impl-r1-fix3 (T5 docs/changelog/fixture after the 0.5.0 release; shares README/CHANGELOG) | codex/gpt-6.1-sol |  |  |  |  | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md |  | 2026-11-10 |
-| 0002 | PDF export | planned (t4; t1 #71, t2 #78, t3 #83 merged) | child 0017-impl-r1-fix3 (T4 after the 0.5.0 release; shares README/CHANGELOG); human: decide whether S31 Safari outline fix goes into 0.5.0 | codex/gpt-6.1-sol |  |  |  |  | specs/0002-pdf-export.md | plans/0002-pdf-export.md |  | 2026-11-10 |
+| 0001 | Composable player skins | dispatched (t5; t1–t4 merged) | lead: delegate | claudeAgent/claude-sonnet-5-5 | orch/0001-t5-skins-docs |  |  |  | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-11-0001-t5-skins-docs--lead-to-claude.md | 2026-11-10 |
+| 0002 | PDF export | planned (t4; t1 #71, t2 #78, t3 #83 merged) | child 0001-t5 (T4 shares README/CHANGELOG; dispatch after it merges) | codex/gpt-6.1-sol |  |  |  |  | specs/0002-pdf-export.md | plans/0002-pdf-export.md |  | 2026-11-10 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | human: P1–P3 (editor distribution, private repo name, BeCreative licence) before T4 | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
-| 0013 | TAB for stringed instruments | planned (t4 docs; t1 #77, t2 #74, t3 #84 merged) | child 0017-impl-r1-fix2 (#85 writes the String TAB README; T4 = remaining docs after it merges) | codex/gpt-6.1-sol |  |  |  |  | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md |  | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
-| 0017 | Release pepperscore 0.5.0 (CHANGELOG, version) | merged | human: run npm publish for pepperscore 0.5.0 from main 9a3ab8c | codex/gpt-6.1-sol | orch/0017-release-0-5-0 | https://github.com/pepperhorn/ph-scoreview/pull/85 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-5de38d86-837e74894e3847b8 | task `0017-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0017-impl-r1` |  |  | handoffs/2026-11-11-0017-release-0-5-0--codex-to-lead.md (@95e3418) | 2026-11-11 |
+| 0022 | [quick] Safari draws pitch-colour outlines solid black (S31) | dispatched | lead: delegate | codex/gpt-6.1-sol | orch/0022-safari-pitch-outline |  |  |  |  |  | handoffs/2026-11-11-0022-safari-pitch-outline--lead-to-codex.md | 2026-11-11 |
 
 ## Done / closed
 
 | K | Title | PR | Merged | Notes |
 |---|---|---|---|---|
+| 0017 | Release pepperscore 0.5.0 | https://github.com/pepperhorn/ph-scoreview/pull/85 | 2026-11-11 | 9a3ab8c; published to npm 2026-11-11 (human) |
+| 0013 | TAB for stringed instruments | #74, #77, #84 (+ README in #85) | 2026-11-11 | T4 docs covered by the 0.5.0 README; viola/double bass await teacher charts |
 | 0002-t3 | PDF overlay, button and controls.pdf (task of 0002) | https://github.com/pepperhorn/ph-scoreview/pull/83 | 2026-11-11 | merged; +1,497 B gzip initial |
 | 0021 | [quick] Cut CI minutes (docs skip, one run per PR, reader PR-only, validate in Playwright image) | https://github.com/pepperhorn/ph-scoreview/pull/88 | 2026-11-11 | merged; PR run: one run, validate 19.5 min |
 | 0020 | [quick] PDF export in Firefox: notation at the right size (S22) | https://github.com/pepperhorn/ph-scoreview/pull/87 | 2026-11-11 | merged; chromium rasters unchanged |
@@ -86,7 +87,7 @@ Next ID: 0022
 | S28 | ci | CI "Validation suite" step (timeout 15 min) takes ~12 min and times out on busy runs (PR #82 push run, two main runs) | `.github/workflows/ci.yml:41` | XS | high (false reds) | PR #82 review r2 | done (0019, PR #86) |
 | S29 | fix | Fretless position-label pruning happens after Verovio layout, so a removed label can leave a neighbour one row higher than needed | PR #84 review r2 | S | low (cosmetic) | PR #84 review | new |
 | S30 | improvement | Fretless solver: add a position-continuity cost (prefer staying in position) to cut label density and I/II flips | 0013-t3 return handoff; PR #84 reviews | M | medium (readability) | PR #84 | new |
-| S31 | fix | Safari (WebKit) reader draws pitch-colour notehead outlines solid black, ignoring `--ps-pitch-outline` (PDF is correct); `validation/pdf.mjs:511` fails on webkit, main too | PR #87 review | S | medium (Safari users see heavy outlines) | PR #87 review | new |
+| S31 | fix | Safari (WebKit) reader draws pitch-colour notehead outlines solid black, ignoring `--ps-pitch-outline` (PDF is correct); `validation/pdf.mjs:511` fails on webkit, main too | PR #87 review | S | medium (Safari users see heavy outlines) | PR #87 review | accepted → 0022 |
 | S32 | fix | PDF page 1: chord symbol "C" overlaps the tempo mark (all browsers, main too) | PR #87 review | S | low | PR #87 review | new |
 | S33 | fix | PDF dialog: first close returns focus to the reader, not the PDF button; focus from outside the reader can land behind any reader dialog (mixer too) | PR #83 review r2 | S | low | PR #83 review | new |
 | S1 | fix | Emit a mid-bar `<keySig>` only in layer 1; Verovio draws one per layer | `packages/pepperscore/src/lib/notation/document.ts:249` (probe: 2 layers → 3 keySig groups) | S | low today (ABC overlays are separate parts); matters for MIDI/multi-layer | PR #60 review r2 | done (0005, PR #63) |
@@ -95,6 +96,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-11 0017 merged→closed — npm shows pepperscore 0.5.0 (published by human). 0013 closed (T4 docs landed in the 0.5.0 README). 0001-t5 dispatched (route alt: Claude Sonnet; review by Codex). 0022 (S31 Safari outline) dispatched for 0.5.1. 0002-t4 after 0001-t5
 2026-11-11 0017 ready→merged — CI green on 95e3418, merged PR #85 (9a3ab8c); pack dry run reports pepperscore@0.5.0; human to publish
 2026-11-11 0017 changes-requested→ready — 95e3418 merges main and documents PDF export (lead checked the docs-only delta); waiting on CI, then publish
 2026-11-11 0002-t3 in-review→merged — r2 approve on 3a454d0 (Firefox header fits, keys scoped), PR CI green, merged PR #83 per human. 0017: update #85 docs for PDF export; S33 logged
