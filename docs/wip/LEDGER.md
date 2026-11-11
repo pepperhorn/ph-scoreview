@@ -15,7 +15,6 @@ Next ID: 0026
 | 0002 | PDF export | planned (t4; t1 #71, t2 #78, t3 #83 merged) | child 0001-t5 (T4 shares README/CHANGELOG; dispatch after it merges) | codex/gpt-6.1-sol |  |  |  |  | specs/0002-pdf-export.md | plans/0002-pdf-export.md |  | 2026-11-10 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | 0025 (P1 packaging + P3 key rotation); P2 done: repo pepperhorn/pepperscore-pt | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
-| 0022 | [quick] Safari draws pitch-colour outlines solid black (S31) | in-review | review 0022-review-r1 (Claude) + ci | codex/gpt-6.1-sol | orch/0022-safari-pitch-outline | https://github.com/pepperhorn/ph-scoreview/pull/91 |  | task `0022-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A0022-impl-r1` |  |  | handoffs/2026-11-11-0022-safari-pitch-outline--lead-to-codex.md | 2026-11-11 |
 | 0024 | [quick] Self-hosted runner on t3box: ci.yml runs-on from CI_RUNS_ON var | merged | human: install runner on t3box + set CI_RUNS_ON (docs/guides/self-hosted-runner.md) | codex/gpt-6.1-sol | orch/0024-ci-runs-on-variable | https://github.com/pepperhorn/ph-scoreview/pull/89 |  | task `0024-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A9cbab5d4-201b-4809-8342-6c4ce4f87509` |  |  | handoffs/2026-11-11-0024-ci-runs-on-variable--lead-to-codex.md | 2026-11-11 |
 | 0025 | Editor via private GitHub Packages + licence tooling (0003 P1/P3) | in-review | review 0025-review-r1 (Claude) + ci; human: merge OK (package rename) + rotated public JWK/demo key | codex/gpt-6.1-sol | orch/0025-editor-github-packages | https://github.com/pepperhorn/ph-scoreview/pull/93 |  | task `0025-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A659e21e6-7e3f-4cec-809b-062024e53050` | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-11-0025-editor-github-packages--lead-to-codex.md | 2026-11-11 |
 
@@ -23,6 +22,7 @@ Next ID: 0026
 
 | K | Title | PR | Merged | Notes |
 |---|---|---|---|---|
+| 0022 | [quick] Safari pitch-colour outlines (S31) | https://github.com/pepperhorn/ph-scoreview/pull/91 | 2026-11-12 | merged; for 0.5.1; S36 follow-up |
 | 0023 | [quick] Fretless solver position continuity (S30) | https://github.com/pepperhorn/ph-scoreview/pull/92 | 2026-11-12 | merged; cello shifts 84→55; S35 perf follow-up |
 | 0017 | Release pepperscore 0.5.0 | https://github.com/pepperhorn/ph-scoreview/pull/85 | 2026-11-11 | 9a3ab8c; published to npm 2026-11-11 (human) |
 | 0013 | TAB for stringed instruments | #74, #77, #84 (+ README in #85) | 2026-11-11 | T4 docs covered by the 0.5.0 README; viola/double bass await teacher charts |
@@ -90,11 +90,12 @@ Next ID: 0026
 | S28 | ci | CI "Validation suite" step (timeout 15 min) takes ~12 min and times out on busy runs (PR #82 push run, two main runs) | `.github/workflows/ci.yml:41` | XS | high (false reds) | PR #82 review r2 | done (0019, PR #86) |
 | S29 | fix | Fretless position-label pruning happens after Verovio layout, so a removed label can leave a neighbour one row higher than needed | PR #84 review r2 | S | low (cosmetic) | PR #84 review | new |
 | S30 | improvement | Fretless solver: add a position-continuity cost (prefer staying in position) to cut label density and I/II flips | 0013-t3 return handoff; PR #84 reviews | M | medium (readability) | PR #84 | accepted → 0023 |
-| S31 | fix | Safari (WebKit) reader draws pitch-colour notehead outlines solid black, ignoring `--ps-pitch-outline` (PDF is correct); `validation/pdf.mjs:511` fails on webkit, main too | PR #87 review | S | medium (Safari users see heavy outlines) | PR #87 review | accepted → 0022 |
+| S31 | fix | Safari (WebKit) reader draws pitch-colour notehead outlines solid black, ignoring `--ps-pitch-outline` (PDF is correct); `validation/pdf.mjs:511` fails on webkit, main too | PR #87 review | S | medium (Safari users see heavy outlines) | PR #87 review | done → 0022 |
 | S32 | fix | PDF page 1: chord symbol "C" overlaps the tempo mark (all browsers, main too) | PR #87 review | S | low | PR #87 review | new |
 | S33 | fix | PDF dialog: first close returns focus to the reader, not the PDF button; focus from outside the reader can land behind any reader dialog (mixer too) | PR #83 review r2 | S | low | PR #83 review | new |
 | S34 | bug | WebKit: PDF overlay does not recover after an aborted lazy chunk + reload (validation/pdf.mjs:765 waits 60 s for "Paper size"); intermittent duplicate .pdf-trigger after reload | 0022 return handoff (/tmp/0022-baseline.log reproduces before the change) | S | medium (Safari users after a network blip) | 0022 | new |
 | S35 | efficiency | Fretless phrase DP: 2,000 four-note cello chords 0.19 s → 5.2 s (realistic parts <1 s); prune chord states / beam width; also document weights tied to candidate count, and chunked renders see less lookahead | PR #92 review r1 | S | low–medium (pathological scores) | 0023 | new |
+| S36 | bug | WebKit: overlapping reader marks (playing+transposed, chord transposed+note selected) leave a ~1-unit outline in the other mark's colour; scope playing selector to `.reader-note.is-playing .notehead[data-pitch]`, chord case needs a non-selector fix | PR #91 review r1 | S | low (hairline) | 0022 | new |
 | S1 | fix | Emit a mid-bar `<keySig>` only in layer 1; Verovio draws one per layer | `packages/pepperscore/src/lib/notation/document.ts:249` (probe: 2 layers → 3 keySig groups) | S | low today (ABC overlays are separate parts); matters for MIDI/multi-layer | PR #60 review r2 | done (0005, PR #63) |
 
 Last health scan: never
@@ -102,6 +103,7 @@ Last health scan: never
 ## Log
 2026-11-11 human decisions — runner host t3box (0024 dispatched: CI_RUNS_ON variable; human installs runner, tailnet SSH blocks agents); 0003 P1 private GitHub Packages, P2 pepperhorn/pepperscore-pt (created), P3 rotate key now → 0025 dispatched
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-12 0022 in-review→closed — Claude r1 approve on e57d4aa, CI green, merged PR #91 (quick lane); S36 logged
 2026-11-12 0023 ready→closed — CI green on a1107a5, merged PR #92 (quick lane)
 2026-11-12 0001-t5 in-review→ready — Codex r2 approve on 07f9f2c; human OK merge on green
 2026-11-11 0001-t5 changes-requested→in-review — r1 fixes 07f9f2c (accentHover color-mix, hover + 390px hit-test assertions with negative controls); Codex review r2
