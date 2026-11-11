@@ -43,7 +43,7 @@ The prior release's version commit is `4cd4352` (merged by PR #58 / `9fd59e6`). 
 
 ## Decisions made / known gotchas
 - Explicitly label PDF as internal groundwork: no export UI or public export API exists in this base. `compose.ts` dynamically imports both `jspdf` and `svg2pdf.js`; both are already package dependencies. No dependency changes in this PR.
-- Do not advertise the fretless spike (#74 / `9662519`) as integrated TAB. Charts/solver are internal groundwork; reader integration remains a separate task.
+- Initial scope excluded fretless integration; superseded by the PR #84 merge update below. Violin/cello finger TAB now ships in 0.5.0; viola/double bass remain gated.
 - Omit validation-only #73 and editor-only #68/#69/#76/#79 from this package's user-facing release notes. The package diff since 0.4.1 was audited for coverage.
 - Behaviour changes explicitly cover Bass, Alto/Tenor, no non-string TAB fallback, matching string counts for tuning, and sounding-pitch ABC octave clefs.
 - GBrain consulted: `default:projects/scoreflow-music-reader` (historical project context), `default:projects/scoreflow-music-reader/gotchas-abc-import` (sounding-pitch rule corroborated against current source and guide). Repo docs/source control release details. No implementer GBrain writes.
@@ -130,3 +130,33 @@ git diff --check: exit 0
 ```
 
 Review r1 outcome: all three findings addressed; ready for re-review. Compared with reviewed head `9c0eae5`, only the reader version pin, its lock entry, package README and this return handoff changed. No runtime source edits or dependency-range changes. These are local results; GitHub CI and review approval are not claimed. No publication, PR watching or PR polling.
+
+## Merged PR #84 — include violin/cello finger TAB in 0.5.0
+
+The user requested merging `origin/main` (no rebase) after 0013 T3 merged as `0c61c4e`, keeping the previous file ownership. Fetch/merge completed without conflicts as `45d8130`; it includes `0c61c4e` and the lead's later documentation commits. Source changes arriving through that merge belong to PR #84; no runtime source was edited for this release-doc update.
+
+Source: [0013 T3 return handoff](2026-11-11-0013-t3-fretless-tab--codex-to-lead.md), `tab/strings/charts.ts`, `tab/strings/svg.ts`, `tab/tab-parts.ts` and `notation/mei-tab.ts`. GBrain historical project lookup repeated (`default:projects/scoreflow-music-reader`); the merged source/handoff governs the new release content.
+
+Updated CHANGELOG 0.5.0 and README String TAB: four-line violin/cello finger + position TAB in TAB/Both views, inline L/H low/high labels, `I pos.` / `pos. ½`, Davidoff cello positions, and display-only finger numbers with source-pitch playback. Chart-based finger TAB ignores fretted tuning/capo. Viola and double bass still get no generated TAB. Also corrected the TAB identity, tuning and behaviour-change text so no active release section still excludes violin/cello. This supersedes the initial/r1 handoff notes that finger TAB was unavailable. No new API or import behavior change in this documentation update.
+
+Traceability: PR #84 / `0c61c4e`; 0013 T3 return linked above. Changes authored after the merge are limited to the two package docs and this 0017 return handoff. Lead-owned ledger changes are inherited from main, not edited here.
+
+Verification: the requested foreground repo-root chain exited 0 with the merged runtime and final package docs:
+```bash
+npm ci && npm run check && npm run build && npm run test:pack
+```
+Logs: `/tmp/0017-finger-{ci,check,build,pack}.log`. No npm publication or PR watch/poll.
+
+```text
+npm ci: exit 0
+npm run check: 23 Astro files, 0 errors, 0 warnings, 0 hints
+npm run build: 10 pages; Complete; demo matches library dist and notices
+npm run test:pack: pepperscore-0.5.0.tgz (113 files), build output and no sources
+  fresh Vite + React host build passed
+  fresh Astro + React client:only host build passed
+  Node import touches no browser globals
+  Astro SSR client:visible host built, served and answered 200
+git diff --check: exit 0
+```
+
+Outcome: documentation updated for merged PR #84, ready for re-review. Only handoff verification text changed after the successful chain. Local checks pass; GitHub CI/review state is not asserted. No npm publication.
