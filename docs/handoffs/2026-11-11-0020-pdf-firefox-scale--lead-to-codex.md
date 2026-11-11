@@ -25,3 +25,4 @@ npm run check && npm run build && npm run test:pdf && BROWSER=firefox node valid
 
 ---
 ## Receiver ack
+Acknowledged by Codex, 2026-11-11: fix Firefox PDF notation sizing within pdf/**, validation/pdf.mjs, root package.json scripts, and my 0020 handoffs only. Preserve Chromium raster output, exercise staff geometry and pitch outlines on Chromium/Firefox/WebKit, and report any unusable WebKit runtime honestly. No components or CI changes; no ABC import changes. Verify the required commands, commit a return handoff, push only orch/0020-pdf-firefox-scale, and open a draft PR. No open scope questions. GBrain project lookup performed; relevant context will be recorded in the return handoff.
