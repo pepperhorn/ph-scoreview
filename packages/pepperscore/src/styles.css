@@ -284,7 +284,8 @@
 .pepperscore .mode-toggle button{display:inline-flex;align-items:center;justify-content:center;padding:0 12px;font-size:12px}
 .pepperscore .mode-toggle-label-short{display:none}
 .pepperscore .topbar .transport{gap:10px}
-@container pepperscore (max-width:1140px){.pepperscore .topbar .transport{gap:8px}}
+/* Leave room for PDF while secondary controls are still inline. */
+@container pepperscore (max-width:1140px){.pepperscore .topbar .transport{gap:4px}}
 @container pepperscore (max-width:900px){
   .pepperscore .topbar .transport{gap:5px}
   .pepperscore .topbar .play-button{padding:0 12px}
@@ -493,3 +494,19 @@
 .pepperscore .ps-pitch-colour-tile[aria-pressed="true"]{opacity:1;box-shadow:0 0 0 2px var(--ps-accent,#345642)}
 .pepperscore .ps-pitch-colour-tile svg{width:100%;height:100%}
 .pepperscore .ps-pitch-colour-tile text{font-family:Poppins,sans-serif;font-weight:600;font-size:20px;fill:var(--ps-pitch-letter,white);stroke:var(--ps-pitch-letter-outline,rgba(0,0,0,.35));stroke-width:3;paint-order:stroke fill}
+
+.pepperscore .pdf-backdrop{position:absolute;inset:0;z-index:110;display:flex;align-items:center;justify-content:center;padding:12px;background:var(--ps-backdrop,#15251a66);font-family:Poppins,Arial,sans-serif}
+.pepperscore .pdf-panel{box-sizing:border-box;width:min(400px,100%);max-height:100%;overflow:auto;padding:20px;border:1px solid var(--ps-border,#e2e9e0);border-radius:16px;background:var(--ps-surface,#fff);color:var(--ps-text,#242824);box-shadow:0 18px 60px var(--ps-shadow-a40,#15251a40);display:flex;flex-direction:column;gap:14px}
+.pepperscore .pdf-panel h2{font-size:18px;margin:0}
+.pepperscore .pdf-field{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px}
+.pepperscore .pdf-field select,.pepperscore .pdf-field input{box-sizing:border-box;width:110px;min-height:38px;padding:6px;border:1px solid var(--ps-border,#dfe6dc);border-radius:8px;background:var(--ps-surface,#fff);color:var(--ps-text,#242824);font:inherit}
+.pepperscore .pdf-fit,.pepperscore .pdf-error{margin:0;font-size:12px;line-height:1.5;color:var(--ps-text-secondary,#46604d)}
+.pepperscore .pdf-error{color:var(--ps-danger,#a32828)}
+.pepperscore .pdf-actions{display:flex;justify-content:flex-end;gap:8px}
+.pepperscore .pdf-actions button{min-height:40px;padding:8px 16px;border:1px solid var(--ps-border,#dfe6dc);border-radius:8px;background:var(--ps-surface,#fff);color:var(--ps-accent,#345642);font:inherit;font-size:13px}
+/* The extra PDF/playback card must share the desktop row with the existing options. */
+.pepperscore .drawer-grid:has(>.playback-view-panel){grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr))}
+.pepperscore .pdf-trigger-icon{display:none}
+/* PDF remains a secondary action; its compact icon leaves slack above the More breakpoint. */
+@container pepperscore (min-width:761px) and (max-width:900px){.pepperscore .topbar:not(.skin-topbar):has(.header-control-pdf) .transport{gap:3px}.pepperscore .topbar:not(.skin-topbar) .pdf-trigger{width:24px}.pepperscore .topbar:not(.skin-topbar) .pdf-trigger-icon{display:block}.pepperscore .topbar:not(.skin-topbar) .pdf-trigger-label{display:none}}
+.pepperscore .pdf-actions .pdf-save{background:var(--ps-accent,#345642);color:var(--ps-on-accent,#fff);border-color:var(--ps-accent,#345642)}

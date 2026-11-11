@@ -5,7 +5,7 @@
 - **Ledger:** 0021
 - **Branch:** `orch/0021-ci-minutes` · **Worktree:** created by T3
 - **Base commit:** d95911e
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 ph-scoreview CI is the main reason for our GitHub Actions bill. This month so far (1–11 Nov), the account has used 11,568 Linux minutes and been billed $54.41 after the free quota ran out on 8 Nov. ph-scoreview is $33.80 of that, and it was $31.10 in October. Since 9 Nov the account has used 2,400–3,600 minutes a day, which is about $15/day.
@@ -71,6 +71,8 @@ Moving CI to a self-hosted runner on our Coolify infrastructure (`runs-on: self-
 
 ---
 ## Receiver ack
+
+Codex (2026-11-11): I will restrict CI pushes to main, ignore docs/root Markdown/orchestration-only paths for push and PR events, key concurrency by PR number or ref, and skip reader jobs on main pushes while keeping PR and manual browser coverage. I will assess the optional validate container change and preserve Poppler. I own only `.github/workflows/ci.yml` and my 0021 handoffs; the ledger and docs-only CI waiting policy stay with the lead. I will validate locally, push `orch/0021-ci-minutes`, open a draft PR, and return without watching or polling it. No open questions. GBrain checked: `default:projects/scoreflow-music-reader` and `default:projects/scoreflow-music-reader/gotchas-abc-import`; no CI-specific guidance found.
 
 ---
 ## Lead notes (2026-11-11)

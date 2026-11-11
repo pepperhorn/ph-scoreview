@@ -509,7 +509,7 @@ try {
   const extras = page.locator('.skin-reader .playback-view-panel');
   await page.locator('.skin-reader .skin-options').click();
   await extras.waitFor({ state: 'visible' });
-  assert.deepEqual(await extras.locator('[data-drawer-control]').evaluateAll(nodes => nodes.map(el => el.dataset.drawerControl)), ['stop', 'viewToggle', 'bars', 'zoom', 'mixer', 'openFile']);
+  assert.deepEqual(await extras.locator('[data-drawer-control]').evaluateAll(nodes => nodes.map(el => el.dataset.drawerControl)), ['stop', 'viewToggle', 'bars', 'zoom', 'mixer', 'openFile', 'pdf']);
   assert.equal(await page.locator('.skin-reader input[type=file]').count(), 1, 'one input even when Open is omitted from the bar');
   assert.equal(await page.locator('.skin-reader .header-stave-scale-input').count(), 1, 'one zoom ref');
   await extras.getByRole('button', { name: 'Endless view', exact: true }).click();
@@ -533,15 +533,15 @@ try {
   await page.locator('.skin-reader').getByRole('button', { name: /browse/i }).click();
   await chooser;
   await page.keyboard.press('Escape');
-  await page.evaluate(() => window.__skin.setSkin({ bar: ['pdf'] }));
+  await page.evaluate(() => { window.__skin.setSkin({ bar: ['pdf'] }); window.__skin.setControls({ pdf: false }); });
   await page.waitForFunction(() => document.querySelector('.skin-reader .topbar:not(.skin-topbar)') && document.querySelector('.skin-minimal .ps-compact-play'));
   assert.equal(await page.locator('.skin-reader .playback-view-panel').count(), 0, 'unshowable bars restore the default drawer too');
-  await page.evaluate(() => window.__skin.setControls({ instrumentSwitch: true }));
+  await page.evaluate(() => window.__skin.setControls({ instrumentSwitch: true, pdf: false }));
   await page.locator('.skin-minimal .ps-corner-controls .instrument-switch').waitFor({ state: 'visible' });
   assert.equal(await page.locator('.skin-minimal .ps-compact-play').isVisible(), true, 'empty-bar fallback also retains explicitly enabled default controls');
   await page.evaluate(() => window.__skin.setControls({}));
   await page.evaluate(() => window.__skin.setSkin(undefined));
-  await page.waitForFunction(() => !document.querySelector('.skin-reader .playback-view-panel'));
+  await page.waitForFunction(() => document.querySelectorAll('.skin-reader [data-drawer-control]').length === 1 && document.querySelector('.skin-reader [data-drawer-control=pdf]'));
   assert.deepEqual(errors, []);
   console.log('Skin phone r1: full/minimal 320/390/580px item-centre hit tests and playback; wrapped dock/toast offsets passed');
   console.log('Skin drawer: omitted actions, single refs, mode/bars/zoom/stop/mixer/file chooser, empty-bar preset fallback and no-skin restoration passed');
@@ -643,7 +643,7 @@ async function assertLegacyPhoneChrome(browser, server) {
       await page.goto(`${server.url}/embed-skin`);
       await page.waitForFunction(() => window.__skin && document.querySelector('.skin-reader .score-system svg') && !document.querySelector('.skin-reader .score-loading'));
       for (const skin of [undefined, { bar: ['pdf'] }]) {
-        await page.evaluate(skin => window.__skin.setSkin(skin), skin);
+        await page.evaluate(skin => { window.__skin.setSkin(skin); window.__skin.setControls({ pdf: false }); }, skin);
         await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
         const full = page.locator('.skin-reader');
         const label = `${width}px touch=${hasTouch} ${skin ? 'PDF fallback' : 'no skin'}`;

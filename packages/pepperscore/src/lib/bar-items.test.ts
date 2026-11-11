@@ -39,18 +39,18 @@ describe('skin bar resolution', () => {
 
 describe('drawer extras and renderable chrome', () => {
   it('preserves the legacy drawer and excludes bar actions and disabled groups', () => {
-    expect(drawerExtras(null, resolveChrome('full'))).toEqual([]);
-    expect(drawerExtras([], resolveChrome('full'))).toEqual(['stop', 'viewToggle', 'bars', 'zoom', 'mixer', 'openFile']);
-    expect(drawerExtras(['stop', 'zoom'], resolveChrome('full', { mixer: false, openFile: false }))).toEqual(['viewToggle', 'bars']);
+    expect(drawerExtras(null, resolveChrome('full'))).toEqual(['pdf']);
+    expect(drawerExtras([], resolveChrome('full'))).toEqual(['stop', 'viewToggle', 'bars', 'zoom', 'mixer', 'openFile', 'pdf']);
+    expect(drawerExtras(['stop', 'zoom'], resolveChrome('full', { mixer: false, openFile: false }))).toEqual(['viewToggle', 'bars', 'pdf']);
     expect(drawerExtras(['options'], resolveChrome('minimal', {}, ['options']))).toEqual([]);
-    expect(drawerExtras([], resolveChrome('full', { transport: false, viewToggle: false, zoom: false, mixer: false, openFile: false }))).toEqual([]);
+    expect(drawerExtras([], resolveChrome('full', { transport: false, viewToggle: false, zoom: false, mixer: false, openFile: false, pdf: false }))).toEqual([]);
   });
   it('restores preset chrome when no bar items can be shown', () => {
     for (const bar of [['pdf'], ['pitchColours'], ['instrumentSwitch']] as const) {
       expect(resolveChrome('minimal', {}, [...bar], [])).toMatchObject({ header: false, compactPlay: true });
       expect(resolveChrome('full', {}, [...bar], [])).toEqual(resolveChrome('full'));
     }
-    expect(resolveChrome('minimal', {}, ['pdf'])).toEqual(resolveChrome('minimal'));
+    expect(resolveChrome('minimal', {}, ['pdf'])).toMatchObject({ pdf: true, header: true, compactPlay: false });
     expect(resolveChrome('full', {}, ['pdf'])).toEqual(resolveChrome('full'));
     expect(resolveChrome('minimal', {}, ['play'], ['play']).header).toBe(true);
   });

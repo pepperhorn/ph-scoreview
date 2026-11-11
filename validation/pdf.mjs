@@ -1,7 +1,7 @@
 // Exercise the isolated engraving worker and vector PDF composer through dynamic imports.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -9,7 +9,7 @@ const require = createRequire(new URL('../packages/pepperscore/package.json', im
 const { PDFDocument, PDFName, decodePDFRawStream } = require('pdf-lib');
 import { createServer } from 'vite';
 import { chromium, firefox, webkit } from 'playwright-core';
-import { root } from './serve-dist.mjs';
+import { root, serveDist } from './serve-dist.mjs';
 
 // Raster parity is a required gate, including on CI. Fail before starting Vite/browser.
 try { execFileSync('pdftoppm', ['-v'], { stdio: 'pipe' }); }
@@ -26,8 +26,11 @@ const server = await createServer({ configFile: false, root, optimizeDeps: { inc
   } }] });
 await server.listen();
 const engine = process.env.BROWSER || 'chromium';
+assert.ok(['chromium', 'firefox', 'webkit'].includes(engine), `Unknown PDF browser: ${engine}`);
 const browser = await ({ chromium, firefox, webkit }[engine]).launch({ headless: true, ...(engine === 'chromium' ? { args: ['--no-sandbox'] } : {}) });
 try {
+  await assertPdfOverlay(browser);
+  if (process.env.PDF_OVERLAY_ONLY) { await browser.close(); await server.close(); process.exit(0); }
   const page = await browser.newPage();
   page.on('console', msg => console.log('browser:', msg.text()));
   page.on('pageerror', error => console.log('browser error:', error.message));
@@ -35,6 +38,27 @@ try {
   page.setDefaultTimeout(60000);
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/pdf-spike`);
   await page.addStyleTag({content:readFileSync(join(root,'packages/pepperscore/dist/style.css'),'utf8').replace(/@import[^;]+;/g,'')});
+  // Match export's unsized offscreen host, including nested SVG parents. Firefox's
+  // nested SVG CTM omits its own viewBox; descendant content CTMs must survive.
+  const viewport = await page.evaluate(async () => {
+    const { flattenViewports } = await import('/packages/pepperscore/src/lib/pdf/normalize.ts');
+    const host = document.createElement('div');
+    host.style.cssText = 'position:absolute;left:-100000px;top:0';
+    host.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2100 2970"><svg data-level="outer" width="100%" height="100%" viewBox="0 0 21000 29700"><svg data-level="inner" x="100" y="200" width="1000" height="2000" viewBox="0 0 100 200"><path d="M 0 0 L 100 200"/></svg></svg></svg>';
+    document.body.append(host);
+    try {
+      const svg = host.firstElementChild, path = svg.querySelector('path');
+      const matrix = () => { const m = path.getScreenCTM(); return [m.a,m.b,m.c,m.d,m.e,m.f]; };
+      const before = matrix();
+      flattenViewports(svg);
+      return {before, after:matrix(), nested:svg.querySelectorAll('svg').length,
+        scales:Array.from(svg.querySelectorAll('[data-level]'),g=>g.transform.baseVal.consolidate().matrix.a)};
+    } finally { host.remove(); }
+  });
+  assert.equal(viewport.nested, 0);
+  assert.ok(viewport.before.every((value,i)=>Math.abs(value-viewport.after[i])<0.02), 'flattening preserves descendant content coordinates');
+  assert.ok(Math.abs(viewport.scales[0]-.1)<1e-6 && Math.abs(viewport.scales[1]-10)<1e-6, 'nested viewBox scales applied exactly once');
+  console.log(`PDF nested viewport transforms passed (${engine}).`);
   await assertPitchRasterParity(browser,page.url());
   if (!process.env.PITCH_PARITY_ONLY) {
   const composition = await page.evaluate(async () => {
@@ -416,7 +440,7 @@ try {
 }
 } finally { await browser.close(); await server.close(); }
 
-/** Compare actual Chromium screen pixels with Poppler pixels from the composed PDF. */
+/** Compare actual browser screen pixels with Poppler pixels from the composed PDF. */
 async function assertPitchRasterParity(browser, url) {
   const screen = await browser.newPage({viewport:{width:3300,height:2400},deviceScaleFactor:4});
   const directory=mkdtempSync(join(tmpdir(),'pitch-parity-'));
@@ -511,4 +535,243 @@ function outlineProfile(image,box,fill) {
   const histogram=new Map();for(const c of colours){const key=c.join(',');histogram.set(key,(histogram.get(key)||0)+1);}
   const mode=[...histogram].sort((a,b)=>b[1]-a[1])[0]?.[0].split(',').map(Number)||[];
   return {rows:widths.length,ratio:median(widths),colour:mode};
+}
+
+
+async function assertPdfOverlay(browser) {
+  // The source maps identify modules, so minification cannot hide an eager engine import.
+  const initial = new Set();
+  function visit(file) {
+    if (initial.has(file)) return;
+    initial.add(file);
+    const code = readFileSync(join(root,'packages/pepperscore/dist',file),'utf8');
+    const map = JSON.parse(readFileSync(join(root,'packages/pepperscore/dist',`${file}.map`),'utf8'));
+    assert.ok(!map.sources.some(source => /\/lib\/pdf\/|PdfOverlay\.tsx/.test(source)), `${file} initial graph contains no PDF modules`);
+    for (const match of code.matchAll(/(?:from\s*|import\s*)["']\.\/([^"']+\.js)["']/g)) visit(match[1]);
+  }
+  visit('index.js');
+  const worker = readdirSync(join(root,'packages/pepperscore/dist/assets')).find(file => /^engrave\.worker-.*\.js$/.test(file));
+  assert.ok(worker, 'package emits separate PDF worker');
+  assert.ok(!readFileSync(join(root,'packages/pepperscore/dist/assets',worker),'utf8').includes('vrvToolkit_constructor'), 'PDF worker does not bundle upstream Verovio');
+  const host = await serveDist();
+  const page = await browser.newPage({ viewport: { width: 1000, height: 850 }, acceptDownloads: true });
+  try {
+    page.setDefaultTimeout(60000);
+    await page.addInitScript(() => {
+      window.__pdfWorkers = [];
+      const nativeFetch = window.fetch;
+      window.fetch = function(input, options) {
+        if (window.__pdfFailFonts && /^(data:)|\.ttf/.test(String(input))) return Promise.reject(new TypeError('Synthetic PDF font network failure'));
+        return nativeFetch.call(this, input, options);
+      };
+      const NativeWorker = window.Worker;
+      window.Worker = class extends NativeWorker {
+        constructor(url, options) { super(url, options); this.record = { url: String(url), terminated: false }; window.__pdfWorkers.push(this.record); this.addEventListener('message', event => { this.record.result = event.data.value; }); }
+        postMessage(message, ...options) { this.record.message = message; return super.postMessage(message, ...options); }
+        terminate() { this.record.terminated = true; return super.terminate(); }
+      };
+    });
+    await page.goto(`${host.url}/embed-skin?pdf`);
+    const full = page.locator('.skin-reader'), minimal = page.locator('.skin-minimal');
+    await full.locator('.score-system svg').first().waitFor();
+    await page.evaluate(() => window.__skin.setControls({ pdf: false }));
+    assert.equal(await full.locator('.pdf-trigger').count(), 0);
+    assert.ok(!host.requests.some(path => /PdfOverlay|export-|engrave[.-]|jspdf|svg2pdf|Poppins.*ttf/.test(path)), 'disabled/unused PDF loads no PDF chunks');
+    await page.evaluate(() => window.__skin.setControls({ pdf: true }));
+    await minimal.locator('.pdf-trigger').waitFor();
+    await page.evaluate(() => {
+      window.__skin.setSkin({ bar: ['pdf', 'play', 'options'] });
+      window.__skin.setAbc('X:1\nT:Skin fixture\nM:4/4\nL:1/4\nQ:1/4=30\nK:C\n' + Array(48).fill('C D E F |').join(' '));
+    });
+    await page.waitForFunction(() => document.querySelectorAll('.skin-reader .score-system').length >= 8 && !document.querySelector('.skin-reader .score-loading'));
+    await full.locator('.score-viewport').evaluate(el => { el.scrollTop = 150; });
+    const before = await full.locator('.score-viewport').evaluate(el => ({ scroll: el.scrollTop, svg: el.querySelector('svg')?.outerHTML }));
+    const workers = []; page.on('worker', worker => workers.push(worker));
+    await full.locator('.pdf-trigger').click();
+    const dialog = full.getByRole('dialog', { name: 'Export PDF' });
+    await dialog.waitFor();
+    assert.equal(await dialog.getByLabel('Paper size').inputValue(), 'a4');
+    assert.equal(await dialog.getByLabel('Bars per line').inputValue(), '4');
+    assert.ok(before.scroll > 0, 'nonzero reader scroll is exercised');
+    // Reader A's dialog must not intercept keys focused in reader B.
+    await minimal.locator('.pdf-trigger').focus();
+    await page.keyboard.press('Tab');
+    assert.ok(await minimal.evaluate(el => el.contains(document.activeElement)), 'Tab in reader B stays in reader B');
+    assert.equal(await dialog.count(), 1, 'reader A remains open after Tab in B');
+    await minimal.locator('.skin-options').click();
+    await minimal.getByRole('switch', {name:'Note names',exact:true}).focus();
+    await page.keyboard.press('Escape');
+    assert.equal(await minimal.locator('.skin-options').getAttribute('aria-expanded'), 'false', 'reader B receives its own Escape');
+    assert.equal(await dialog.count(), 1, 'Escape in reader B leaves reader A open');
+    const barsInput = dialog.getByLabel('Bars per line');
+    await barsInput.fill('');
+    assert.equal(await barsInput.inputValue(), '', 'bars draft can be cleared');
+    await barsInput.fill('6');
+    assert.equal(await barsInput.inputValue(), '6', 'typing after clearing does not prepend 1');
+    await barsInput.press('Tab');
+    await barsInput.fill('99');
+    await barsInput.press('Tab');
+    assert.equal(await barsInput.inputValue(), '8', 'blur clamps to the allowed range');
+    await barsInput.fill('4');
+    await barsInput.press('Tab');
+    await dialog.getByRole('button', { name: 'Save', exact: true }).focus();
+    await page.keyboard.press('Tab');
+    assert.equal(await dialog.getByLabel('Paper size').evaluate(el => el === document.activeElement), true, 'focus wraps');
+    await dialog.getByLabel('Paper size').selectOption('a3');
+    await dialog.getByLabel('Bars per line').fill('2');
+    await dialog.getByLabel('Bars per line').press('Tab');
+    await page.waitForFunction(() => !document.querySelector('.pdf-fit')?.textContent.includes('Checking'));
+    assert.match(await dialog.getByRole('status').innerText(), /fewer than 2 bars on A3/);
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await full.locator('.pdf-trigger').click();
+    assert.equal(await dialog.getByLabel('Paper size').inputValue(), 'a3');
+    assert.equal(await dialog.getByLabel('Bars per line').inputValue(), '4');
+    await dialog.getByLabel('Bars per line').fill('99');
+    const downloadPromise = page.waitForEvent('download');
+    await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+    const download = await downloadPromise;
+    assert.equal(download.suggestedFilename(), 'skin-fixture.pdf');
+    assert.equal(await page.evaluate(() => window.__pdfWorkers.filter(w => /engrave/.test(w.url)).at(-1).message.opts.maxBars), 8, 'Save uses a clamped bars draft');
+    const bytes = readFileSync(await download.path());
+    const pdf = await PDFDocument.load(bytes);
+    assert.ok(Math.abs(pdf.getPage(0).getWidth() * 25.4 / 72 - 297) < .001, 'remembered A3 used in actual bytes');
+    await dialog.waitFor({state:'detached'});
+    const after = await full.locator('.score-viewport').evaluate(el => ({ scroll: el.scrollTop, svg: el.querySelector('svg')?.outerHTML }));
+    assert.deepEqual(after, before, 'export leaves engraving and scroll intact');
+    assert.ok(host.requests.some(path => /engrave\.worker-.*\.js/.test(path)), 'host copies and serves PDF worker URL');
+    assert.ok(workers.some(worker => /engrave/.test(worker.url())), 'separate PDF worker emitted and reached');
+    assert.ok(await page.evaluate(() => window.__pdfWorkers.filter(w => /engrave/.test(w.url)).every(w => w.terminated)), 'completed/cancelled measurement and export workers terminated');
+    // A live transport must keep advancing while export does its separate engraving.
+    await full.getByRole('button', {name:'Play score',exact:true}).click();
+    await page.waitForFunction(() => window.__skin.time > .1);
+    const playback = await page.evaluate(() => ({time:window.__skin.time,stops:window.__skin.stops,renders:window.__skin.renders}));
+    await full.locator('.pdf-trigger').click();
+    const playingDownload = page.waitForEvent('download');
+    await dialog.getByRole('button', {name:'Save',exact:true}).click();
+    await playingDownload;
+    const continued = await page.evaluate(() => ({time:window.__skin.time,stops:window.__skin.stops,renders:window.__skin.renders}));
+    assert.ok(continued.time > playback.time && continued.stops === playback.stops && continued.renders === playback.renders, 'export preserves active playback and engraving');
+    await full.getByRole('button', {name:'Pause playback',exact:true}).click();
+    // Cancel a Save while its real worker is alive; no download follows.
+    let unexpectedDownloads = 0; const onDownload = () => unexpectedDownloads++;
+    page.on('download', onDownload);
+    await full.locator('.pdf-trigger').click();
+    await dialog.getByRole('button', {name:'Save',exact:true}).click();
+    await page.waitForFunction(() => window.__pdfWorkers.some(w => /engrave/.test(w.url) && !w.terminated));
+    await dialog.getByRole('button', {name:'Cancel',exact:true}).click();
+    await page.waitForFunction(() => window.__pdfWorkers.filter(w => /engrave/.test(w.url)).every(w => w.terminated));
+    assert.equal(unexpectedDownloads, 0, 'cancelled Save never downloads');
+    page.off('download', onDownload);
+    // A real font fetch failure is retryable without resetting the overlay.
+    await page.evaluate(() => { window.__pdfFailFonts = true; });
+    await full.locator('.pdf-trigger').click();
+    await dialog.getByRole('button', {name:'Save',exact:true}).click();
+    await dialog.getByRole('alert').waitFor();
+    assert.equal(await dialog.getByRole('button', {name:'Save',exact:true}).isEnabled(), true);
+    await page.evaluate(() => { window.__pdfFailFonts = false; });
+    const retryDownload = page.waitForEvent('download');
+    await dialog.getByRole('button', {name:'Save',exact:true}).click();
+    await retryDownload;
+    // Dense-bar fitting is reported from the real separate engraving worker.
+    await page.evaluate(() => window.__skin.setAbc('X:1\nT:Dense\nM:4/4\nL:1/4\nK:C\n' + Array(4).fill('C4 |').join(' ') + Array(64).fill('C/16').join(' ') + ' | ' + Array(8).fill('C4 |').join(' ')));
+    await page.waitForFunction(() => document.querySelector('.skin-reader h1')?.textContent.includes('Dense') && !document.querySelector('.skin-reader .score-loading'));
+    await full.locator('.pdf-trigger').click();
+    await dialog.getByLabel('Paper size').selectOption('a4');
+    await page.waitForFunction(() => /\d+ lines? will/.test(document.querySelector('.pdf-fit')?.textContent ?? ''));
+    const fitText = await dialog.getByRole('status').innerText();
+    assert.equal(Number.parseInt(fitText), 1, 'exactly the dense line reports fewer bars');
+    const denseCounts = await page.evaluate(() => window.__pdfWorkers.filter(w => /engrave/.test(w.url) && w.result).at(-1).result.lines.map(line => line.count));
+    assert.deepEqual(denseCounts, [4,1,4,4], 'surrounding sparse lines retain four bars');
+    await dialog.getByRole('button', {name:'Cancel',exact:true}).click();
+    await page.evaluate(() => window.__skin.setSettings({semitones:2}));
+    await page.waitForFunction(() => !document.querySelector('.skin-reader .score-loading'));
+    await full.locator('.pdf-trigger').click();
+    const snapshotDownload = page.waitForEvent('download');
+    await dialog.getByRole('button', {name:'Save',exact:true}).click();
+    await page.waitForFunction(() => window.__pdfWorkers.some(w => /engrave/.test(w.url) && !w.terminated));
+    await page.evaluate(() => window.__skin.setSettings({semitones:5}));
+    await snapshotDownload;
+    const captured = await page.evaluate(() => window.__pdfWorkers.filter(w => /engrave/.test(w.url)).at(-1).message.input.view.spelling.semitones);
+    assert.equal(captured, 2, 'Save snapshot retains the pitch view despite a later host change');
+    await page.evaluate(() => window.__skin.setAbc('X:1\nM:4/4\nL:1/4\nK:C\nC D E F |'));
+    await page.waitForFunction(() => document.querySelectorAll('.skin-reader .score-system').length === 1 && !document.querySelector('.skin-reader .score-loading'));
+    await full.locator('.pdf-trigger').click();
+    const untitledDownload = page.waitForEvent('download');
+    await dialog.getByRole('button', {name:'Save',exact:true}).click();
+    assert.equal((await untitledDownload).suggestedFilename(), 'score.pdf');
+    await page.setViewportSize({ width: 390, height: 850 });
+    await full.locator('.pdf-trigger').click();
+    const box = await dialog.boundingBox(), rootBox = await full.boundingBox();
+    assert.ok(box.x >= rootBox.x && box.x + box.width <= rootBox.x + rootBox.width + 1, 'phone overlay contained');
+    const handleBox = await full.locator('.drawer-handle').boundingBox();
+    assert.ok(await page.evaluate(box => document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)?.classList.contains('pdf-backdrop'), handleBox), 'PDF backdrop intercepts the Options handle on phone');
+    await page.keyboard.press('Escape');
+    assert.equal(await dialog.count(), 0);
+    await page.reload();
+    await full.locator('.score-system svg').first().waitFor();
+    await page.evaluate(() => { window.__skin.setSkin({bar:['pdf']}); window.__skin.setControls({pdf:true}); });
+    await full.locator('.pdf-trigger').click();
+    assert.equal(await dialog.getByLabel('Paper size').inputValue(), 'a4', 'paper survives reload');
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    // Exercise the overlay-to-composition palette boundary using actual downloaded bytes.
+    // Paint is applied after engraving, so it intentionally is not part of the worker message.
+    await page.evaluate(() => {
+      const pitches = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+      window.__skin.setSkin({bar:['pdf'],pitchColours:Object.fromEntries(pitches.map(pitch => [pitch,'#336699']))});
+      window.__skin.setSettings({pitchColours:true});
+    });
+    await page.waitForFunction(() => document.querySelector('.skin-reader').hasAttribute('data-ps-pitch-colours'));
+    const hasPaletteFill = async download => {
+      const pdf = await PDFDocument.load(readFileSync(await download.path()));
+      return pdf.getPages().some(page => {
+        const contents = page.node.Contents();
+        const streams = typeof contents.size === 'function' ? Array.from({length:contents.size()},(_,i)=>contents.lookup(i)) : [contents];
+        return streams.some(stream => [...new TextDecoder().decode(decodePDFRawStream(stream).decode()).matchAll(/([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+rg\b/g)]
+          .some(match => [51,102,153].every((value,index) => Math.abs(Number(match[index+1])-value/255) < .002)));
+      });
+    };
+    for (const on of [true,false]) {
+      await page.evaluate(on => window.__skin.setSettings({pitchColours:on}), on);
+      await page.waitForFunction(on => document.querySelector('.skin-reader').hasAttribute('data-ps-pitch-colours') === on, on);
+      await full.locator('.pdf-trigger').click();
+      const colourDownload = page.waitForEvent('download');
+      await dialog.getByRole('button',{name:'Save',exact:true}).click();
+      assert.equal(await hasPaletteFill(await colourDownload), on, `overlay export ${on ? 'carries' : 'omits'} the active pitch palette`);
+    }
+    console.log('PDF r1: reader-local Tab/Escape, draft bars/blur/Save clamping and actual overlay palette on/off passed');
+    const chunkPage = await browser.newPage();
+    chunkPage.setDefaultTimeout(60000);
+    try {
+      await chunkPage.goto(`${host.url}/embed-skin`);
+      await chunkPage.locator('.skin-reader .score-system svg').first().waitFor();
+      await chunkPage.evaluate(() => window.__skin.setSkin({bar:['pdf']}));
+      await chunkPage.route('**/*PdfOverlay*.js', route => route.abort());
+      await chunkPage.locator('.skin-reader .pdf-trigger').click();
+      const failedDialog = chunkPage.locator('.skin-reader').getByRole('dialog',{name:'Export PDF'});
+      await failedDialog.getByRole('alert').waitFor();
+      await chunkPage.unroute('**/*PdfOverlay*.js');
+      await Promise.all([chunkPage.waitForEvent('load'), failedDialog.getByRole('button',{name:'Reload page',exact:true}).click()]);
+      await chunkPage.locator('.skin-reader .score-system svg').first().waitFor();
+      await chunkPage.evaluate(() => window.__skin.setSkin({bar:['pdf']}));
+      await chunkPage.locator('.skin-reader .pdf-trigger').click();
+      await failedDialog.getByLabel('Paper size').waitFor();
+      await failedDialog.getByRole('button',{name:'Cancel',exact:true}).click();
+    } finally { await chunkPage.close(); }
+    const sandboxPage = await browser.newPage();
+    sandboxPage.setDefaultTimeout(60000);
+    try {
+      await sandboxPage.goto(host.url);
+      await sandboxPage.setContent(`<iframe sandbox="allow-scripts allow-same-origin" src="${host.url}/embed-skin" style="width:1000px;height:850px"></iframe>`);
+      const frame = sandboxPage.frameLocator('iframe');
+      await frame.locator('.skin-reader .score-system svg').first().waitFor();
+      await sandboxPage.frames()[1].evaluate(() => window.__skin.setSkin({bar:['pdf']}));
+      await frame.locator('.skin-reader .pdf-trigger').click();
+      const sandboxDialog = frame.locator('.skin-reader').getByRole('dialog',{name:'Export PDF'});
+      await sandboxDialog.getByRole('button',{name:'Save',exact:true}).click();
+      await sandboxDialog.getByRole('alert').waitFor();
+      assert.match(await sandboxDialog.getByRole('alert').innerText(), /Downloads are blocked/);
+      await sandboxDialog.getByRole('button',{name:'Cancel',exact:true}).click();
+    } finally { await sandboxPage.close(); }
+    console.log('PDF overlay: availability, lazy chunks, defaults, focus trap, fit, remembered paper, local bars, actual download, separate worker, unchanged reader and phone containment passed');
+  } finally { await page.close(); await host.close(); }
 }

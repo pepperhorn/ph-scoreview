@@ -2,11 +2,14 @@ name: CI
 
 on:
   push:
+    branches: [main]
+    paths-ignore: ['docs/**', '*.md', '.ph-orch.json', '.claude/**']
   pull_request:
+    paths-ignore: ['docs/**', '*.md', '.ph-orch.json', '.claude/**']
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -17,6 +20,10 @@ jobs:
     name: Check, build and validate (chromium)
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # Match playwright-core so Chromium and its system libraries are already installed.
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      options: --ipc=host
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,11 +32,11 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Install Playwright Chromium
-        run: npx playwright-core install --with-deps chromium
+        run: npx playwright-core install chromium
       - name: Install Poppler for PDF raster validation
         run: |
-          sudo apt-get update
-          sudo apt-get install -y poppler-utils
+          apt-get update
+          apt-get install -y poppler-utils
       - name: Type check
         run: npm run check
       - name: Build
@@ -44,6 +51,7 @@ jobs:
         timeout-minutes: 12
 
   reader:
+    if: github.event_name != 'push'
     name: Reader (${{ matrix.browser }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
