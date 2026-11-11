@@ -195,12 +195,13 @@ export default defineConfig({
 | `scoreUrl` | `string` | | A score to download. Relative URLs resolve against the page. Cross-origin URLs need CORS. |
 | `abc` | `string` | | ABC notation. |
 | `chrome` | `'full' \| 'minimal' \| 'none'` | `'full'` | See the chrome table below. |
-| `controls` | `{ transport?, viewToggle?, openFile?, mixer?, drawer?, zoom?, tabToggle?, instrumentSwitch?, octaveTool? }` (booleans) | from `chrome` | Per-control overrides of the preset, see below. |
+| `controls` | `{ transport?, viewToggle?, openFile?, mixer?, drawer?, zoom?, tabToggle?, instrumentSwitch?, octaveTool?, pdf? }` (booleans) | from `chrome` | Per-control overrides of the preset, see below. |
+| `skin` | `PepperScoreSkin` | | Theme colours, ordered built-in bar and optional pitch palette; see [Skins and pitch colours](#skins-and-pitch-colours). |
 | `view` | `'vertical' \| 'endless'` | saved or `'vertical'` | Vertical scrolls down, Endless scrolls sideways. Changing the prop re-applies it. |
 | `height` | `string` | natural | `"fill"`: the parent's height. Any CSS length (`"420px"`, `"60vh"`, `"100dvh"`) fixes it. Omitted: `full` fills its parent with a 480px floor, and `minimal`/`none` take the height of their score. |
 | `className` | `string` | | Extra classes on the `.pepperscore` root. |
 | `ariaLabel` | `string` | `"Score: <title>"`, or `"Score reader"` | Accessible name of the reader's landmark region. By default it is `Score: ` and the loaded score's title, or `Score reader` while there is no titled score. Give each snippet on a page a distinct name when titles repeat. |
-| `settings` | `PepperScoreSettings` | | **Initial** reader settings: `noteNames`, `chordSymbols`, `inferChords`, `beatCounts`, `subdivisions` (booleans); `musicFont` (`'Bravura' \| 'Petaluma'`); `staveFont` (`'Sans' \| 'Serif' \| 'Mono'`); `barsPerLine` (`'auto' \| 1–8`, Vertical view; without a `zoom`, an explicit count also sets the on-load size: that many bars fill the width, see below); `zoom` (stave scale, `null` = device default; with a `zoom`, `barsPerLine` only sets the line breaks); `semitones` (−12…12); `concert` (concert vs written pitch); `keyFlip` (spell a transposed view in the enharmonic key, for example Gb major for F# major); `bpm` (initial tempo, 30–240; the score's own tempo otherwise); `overlap` (0–3 lines kept on a page turn); `tabView`, `tabTuning`, `capo` (guitar TAB, see [Guitar TAB](#guitar-tab)); `annotationSizes` (text size per add-on, see below); `instrument`, `instruments`, `rangeLevel`, `autoRange` (the instrument switch, see below). Changing a key in the prop re-applies that key. Drawer edits still work in between. With `persist` on, **a saved per-score record overrides `settings` and `view`** when that score is opened again. The record holds the settings, view, zoom, transposition, part sounds, hidden staves and instrument switches the reader stored for that exact file. The instrument settings are the exception: when they differ from the ones the record was saved under, they apply again (see [Instrument switch](#instrument-switch)). |
+| `settings` | `PepperScoreSettings` | | **Initial** reader settings: `noteNames`, `chordSymbols`, `inferChords`, `beatCounts`, `subdivisions`, `pitchColours` (booleans; pitch colours need a skin palette); `musicFont` (`'Bravura' \| 'Petaluma'`); `staveFont` (`'Sans' \| 'Serif' \| 'Mono'`); `barsPerLine` (`'auto' \| 1–8`, Vertical view; without a `zoom`, an explicit count also sets the on-load size: that many bars fill the width, see below); `zoom` (stave scale, `null` = device default; with a `zoom`, `barsPerLine` only sets the line breaks); `semitones` (−12…12); `concert` (concert vs written pitch); `keyFlip` (spell a transposed view in the enharmonic key, for example Gb major for F# major); `bpm` (initial tempo, 30–240; the score's own tempo otherwise); `overlap` (0–3 lines kept on a page turn); `tabView`, `tabInstruments`, `tabTuning`, `capo` (see [String TAB](#string-tab)); `annotationSizes` (text size per add-on, see below); `instrument`, `instruments`, `rangeLevel`, `autoRange` (the instrument switch, see below). Changing a key in the prop re-applies that key. Drawer edits still work in between. With `persist` on, **a saved per-score record overrides `settings` and `view`** when that score is opened again. The record holds the settings, view, zoom, transposition, part sounds, hidden staves and instrument switches the reader stored for that exact file. Host-only `tabInstruments` is not saved per score. The instrument-switch settings are the other exception: when they differ from the ones the record was saved under, they apply again (see [Instrument switch](#instrument-switch)). |
 | `persist` | `string \| false` | `'pepperscore'` for `full`, `false` for `minimal`/`none` | Storage namespace, see below. `false` reads and writes nothing. |
 | `assetBaseUrl` | `string` | jsDelivr copy of `pepperscore-sounds-<soundPack>` | Root of a sounds-package layout. Relative values resolve against the page, and a missing trailing slash is added. |
 | `verovioBaseUrl` | `string` | the copy in `dist/verovio/` | A directory with an interface-compatible Verovio build to engrave with, laid out like the `verovio` npm package's `dist/` (`verovio-module.mjs`, `verovio.mjs`), e.g. `https://cdn.jsdelivr.net/npm/verovio@6.3.0/dist/`. Shared by every reader on the page: set it before the first score engraves (a reader applies it before it warms Verovio up on mount; with `preloadVerovio`, pass it the same value). See [Verovio](#verovio). |
@@ -217,7 +218,7 @@ export default defineConfig({
 | `highlights` | `PepperScoreHighlight[]` | | Classes on notes and measures, see "Host hooks". |
 | `autoFocus` | `boolean` | `false` | Focus the reader on mount so the page-turn keys work before any click. Keyboard shortcuts belong to the focused reader only. Each reader is one Tab stop, and keyboard focus shows a focus ring on it (clicks do not). |
 | `paintTransition` | `'reveal' \| 'none'` | `'reveal'` | How a new `musicXml` or `abc` replaces a score already on screen. `'reveal'` fades it out, shows the loading overlay, scrolls to the top and fades the new score in. `'none'` keeps the current engraving and scroll position until the new one replaces it in place, with no fade or overlay (for a host that edits the score it shows). The first paint, other sources and setting changes always reveal. |
-| `ref` | `Ref<PepperScoreHandle>` | | `{ play(): Promise<void>; stop(): void; transpose(semitones: number): void; seek(seconds: number): void; currentTime(): number; scrollToMeasure(index: number): Promise<void>; seekToMeasure(index: number): void }`. `play` does nothing while playing, before a score has loaded, with `chrome="none"`, or with a `clock`. `stop` does nothing with a `clock`. `transpose` sets the **absolute** transposition (clamped to −12…12), the same as `settings.semitones`. It does not add to the current value. `seek` moves the playhead (and keeps playing from there when playing). With a `clock` it calls `onSeek` instead. `currentTime` returns the playhead seconds, or `clock.now()` with a `clock`. |
+| `ref` | `Ref<PepperScoreHandle>` | | `{ play(): Promise<void>; stop(): void; setPitchColours(on: boolean): void; transpose(semitones: number): void; seek(seconds: number): void; currentTime(): number; scrollToMeasure(index: number): Promise<void>; seekToMeasure(index: number): void }`. `play` does nothing while playing, before a score has loaded, with `chrome="none"`, or with a `clock`. `stop` does nothing with a `clock`. `setPitchColours(on)` toggles palette noteheads without re-engraving (requires `skin.pitchColours`); see below. `transpose` sets the **absolute** transposition (clamped to −12…12), the same as `settings.semitones`. It does not add to the current value. `seek` moves the playhead (and keeps playing from there when playing). With a `clock` it calls `onSeek` instead. `currentTime` returns the playhead seconds, or `clock.now()` with a `clock`. |
 
 **The instrument switch.** `settings.instrument` (a `SwitchInstrumentId`: any `InstrumentId` but `'drum-kit'`) shows the first switchable part as that instrument: its clef, written pitch, range and sound. `settings.instruments` sets it per part and wins over `instrument`. A key is either the 1-based source part number as a string (`{ '2': 'trumpet' }`: parts in score order, a grand staff counted once, a drum kit counted too) or an `onReady` part id; a staff id of a grand staff switches the whole part. `onReady`'s `parts[].sourcePart` and `parts[].id` are both valid keys, and parts with `switchable: false` (drum kits, percussion) are ignored. `rangeLevel` (`RangeLevel`: `'beginner' | 'intermediate' | 'advanced'`, default `'intermediate'`) and `autoRange` (default `true`: phrases outside the range move by an octave) set how switched parts fit. They apply to a score without a saved record, and to a saved one when they differ from the host settings it was saved under (see [Instrument switch](#instrument-switch)). In `minimal` and `none` they switch the part without showing a switcher; set `controls.instrumentSwitch` for one.
 
@@ -270,6 +271,7 @@ For hosts that build on the reader (selection, cursors, navigation):
 | Control | `full` | `minimal` | `none` |
 | --- | --- | --- | --- |
 | Header transport (stop, play, BPM, view toggle, open, mixer) | yes | no | no |
+| PDF export | yes | no | no |
 | Compact play/stop button (corner overlay) | no | yes | no |
 | Playhead, note highlight, follow | yes | yes | no (yes with a `clock`) |
 | Bottom drawer and handle | yes | no | no |
@@ -290,22 +292,75 @@ For hosts that build on the reader (selection, cursors, navigation):
 | `drawer` | The bottom drawer and its handle. |
 | `instrumentSwitch` | The instrument switcher: the Instrument choice in the mixer and the embed popover, the range-level and auto-range controls, and the phone bottom toolbar of embeds. On in `full`; off in `minimal` and `none` unless you set it. `settings.instrument` / `settings.instruments` alone still switch the part, but show no switcher. |
 | `octaveTool` | The octave tool (select a note, passage or phrase and move it 8va/8vb). On in `full`; off in `minimal` and `none` unless you set it. |
-| `tabToggle` | The Notation / TAB / Both switch, in the header (in the More panel on a phone) and in the drawer. With the drawer on, the header copy is left out between 761 and 1260px, where the full header has no room for it. It shows only for a score with a pitched part. |
+| `pdf` | PDF export button, drawer action and dialog; on in `full`, off otherwise. Explicit `false` also removes skin bar item `pdf`. See [PDF export](#pdf-export). |
+| `tabToggle` | The Notation / TAB / Both switch, in the header (in the More panel on a phone) and in the drawer. With the drawer on, the header copy is left out between 761 and 1260px, where the full header has no room for it. It shows only for a score with available TAB. |
 
-The header appears when any of `transport`, `viewToggle`, `openFile`, `mixer`, `zoom` or `tabToggle` is on. For example, `<PepperScore chrome="minimal" controls={{ viewToggle: true }} … />` keeps the compact play button and adds a small header with only the view toggle.
+The header appears when any of `transport`, `viewToggle`, `openFile`, `mixer`, `zoom`, `tabToggle` or `pdf` is on. For example, `<PepperScore chrome="minimal" controls={{ viewToggle: true }} … />` keeps the compact play button and adds a small header with only the view toggle.
 
-### Guitar TAB
+### Skins and pitch colours
 
-`settings.tabView` sets which staves guitar parts show: `'notation'` (default), `'tab'` or `'both'`. Readers switch with `controls.tabToggle` (on in `full`).
+`skin` is plain data (`PepperScoreSkin`), so it also works across an Astro island boundary:
+
+```tsx
+import { PepperScore, mergeSkins, CRF_PITCH_COLOURS, type PepperScoreSkin } from 'pepperscore';
+
+const base: PepperScoreSkin = {
+  theme: { accent: 'var(--brand)', focusRing: '#245fa5' },
+  bar: ['play', 'tempo', 'instrumentSwitch', 'noteNames', 'pitchColours', 'options'],
+  pitchColours: CRF_PITCH_COLOURS,
+};
+const skin = mergeSkins(base, { theme: { surface: '#fff' }, pitchColours: { C: '#ed7777' } });
+<PepperScore abc={tuneAbc} skin={skin} settings={{ pitchColours: true }} />;
+```
+
+- **Theme:** a partial map of `ThemeToken` roles to CSS colours (including host `var()` references). Roles: `accent`, `accentHover`, `accentWash`, `accentWashStrong`, `backdrop`, `border`, `borderMuted`, `danger`, `focusRing`, `onAccent`, `playback`, `shadow`, `surface`, `surfaceRaised`, `text`, `textFaint`, `textMuted`, `textSecondary`, `warning`. Omitted roles keep their defaults. Theme changes do not re-engrave.
+- **Bar:** an ordered `BarItemId[]` replacing the full/minimal header controls. Available ids: `play`, `stop`, `tempo`, `transpose`, `keyFlip`, `bars`, `viewToggle`, `tab`, `zoom`, `mixer`, `openFile`, `instrumentSwitch`, `octaveTool`, `options`, `noteNames`, `counts`, `chordSymbols`, `pitchColours`, `pdf`. Duplicates and unknown ids are ignored. Explicit `controls` values of `false` still win; unavailable controls are omitted. A bar with no renderable items restores the preset defaults. `chrome="none"` does not show a skin bar. Without `bar`, the preset header is unchanged.
+- **Drawer:** `options` opens the drawer. Enabled stop, view, bars, zoom, mixer, file and PDF actions omitted from a composed bar appear in its Playback and view panel. Annotation tiles stay in sync with the drawer and saved preferences; `chordSymbols` toggles authored and inferred symbols together.
+- **Pitch palette:** `PitchPalette` maps all 12 sharp-spelled `PitchClass` keys (`C`, `C#`, `D`, `D#`, `E`, `F`, `F#`, `G`, `G#`, `A`, `A#`, `B`) to colours. Enharmonic equivalents share a colour. `CRF_PITCH_COLOURS` is a ready-made palette. `mergeSkins(base, ...overrides)` merges theme/palette keys and replaces the bar with the last supplied array; the resulting palette must be complete or it throws.
+
+| Setting / handle | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `settings.pitchColours` | `boolean` | `false` | Enable palette noteheads; needs `skin.pitchColours`. Saved per score when persistence is on. |
+| `handle.setPitchColours(on)` | `(on: boolean) => void` | | Toggle the same preference without re-engraving. |
+
+The pitch-colour tile appears in the bar/drawer only when a palette is supplied. Colours follow displayed pitch after transposition, including individual chord heads; percussion and TAB are not coloured. Playback, cursor, selection and range marks retain priority. Palette changes and toggles do not re-engrave. The package exports `PepperScoreSkin`, `ThemeToken`, `BarItemId`, `PitchClass` and `PitchPalette` types alongside the helpers above.
+
+### PDF export
+
+`full` shows a PDF button in the header's secondary controls and the drawer. The header button is icon-only at reader widths 761–900px and appears in the secondary row/More menu on narrow screens. Use `controls={{ pdf: true }}` to enable it in other presets, `controls={{ pdf: false }}` to hide it, or include `'pdf'` in `skin.bar`. The resolved internal flag is `chrome.pdf`; the public `chrome` prop remains a preset string. Export becomes available once a score is loaded.
+
+```tsx
+<PepperScore musicXml={xml} chrome="minimal" controls={{ pdf: true }} />
+```
+
+| Dialog option / preference | Default | Meaning |
+| --- | --- | --- |
+| Paper (`pdfPaper`) | `'a4'` | A4, A3, Letter or Legal. Remembered globally in the reader's preferences when persistence is on, not per score. It is not a `settings` prop. |
+| Bars per line | `4` | Local to the dialog; 1–8, reset on reopen. Does not read or change on-screen `settings.barsPerLine`. Lines may use fewer bars to fit. |
+
+The dialog reports “Checking fit…” while measuring, then how many lines need fewer bars. **Save** can proceed without waiting for that check and captures the current view; **Cancel** or Escape aborts work without downloading. Save downloads `<title>.pdf`, with the title normalized to lowercase hyphen-separated text (or `score.pdf` when no usable title exists). Export does not interrupt playback or change the on-screen layout/scroll position.
+
+The PDF has vector notation, embedded music/text fonts, title/credits and page numbers. It carries the current transposition/instrument view, visible staves, notation/TAB choice, note names, counts, chord symbols and active pitch colours, including annotation sizes. Screen controls, playhead and selection marks are excluded. Serif/Mono annotation text uses Poppins in PDF; unsupported text glyphs report an error instead of silently disappearing.
+
+The dialog loads only when opened; the composer, `jspdf` and `svg2pdf.js` load on Save. Those libraries are installed runtime dependencies. The PDF implementation measured about +1.5 KB gzip for initial package JS+CSS; the larger PDF engine/font payload is deferred. PDF export is verified in Chromium and Firefox, including Firefox's corrected notation scale. Safari/WebKit PDF is not yet verified.
+
+### String TAB
+
+`settings.tabView` sets which staves supported string parts show: `'notation'` (default), `'tab'` or `'both'`. Readers switch with `controls.tabToggle` (on in `full`).
 
 | Setting | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `tabView` | `'notation' \| 'tab' \| 'both'` | `'notation'` | Notation only, TAB only (the notation staff is hidden and its chord symbols, tempo and directions move onto the TAB staff), or both. |
-| `tabTuning` | `number[]` | `[40, 45, 50, 55, 59, 64]` | Open-string MIDI pitches, low to high, of generated TAB (EADGBE). |
-| `capo` | `0`–`12` | `0` | Capo fret of generated TAB. Frets are relative to it. |
+| `tabInstruments` | `PepperScoreSettings['tabInstruments']` | detected per part | Host TAB identity keyed by exact `onReady` part id; `'none'` disables it. Changes TAB, not playback. See the identity list below. |
+| `tabTuning` | `number[]` | instrument defaults | 4–8 open-string MIDI pitches in physical bottom-to-top string order (re-entrant allowed). Applies only to generated fretted parts with the matching string count; finger TAB uses its chart tuning. |
+| `capo` | `0`–`12` | `0` | Capo fret of generated fretted TAB. Frets are relative to it; ignored for finger TAB. |
 
 - **A score with a TAB staff** (MusicXML `<clef><sign>TAB</sign>` with `<staff-details>`, as MuseScore and Guitar Pro export) shows that staff in the TAB and Both views. The reader treats it as a view of its notation part: it is played once, has no note-name or count lanes, and the part controls and mixer list the instrument once.
-- **Any other score** gets TAB generated from its sounding pitches (including ABC octave clefs and MusicXML octave transposition): for every guitar part (General MIDI programs 25–32, the guitar sound, or "guitar" in the part name), or else for the first pitched part's top staff. A fingering solver picks strings and frets for the whole passage (open strings, few position shifts, playable stretches). Notes out of range are moved by an octave. Chord notes that cannot all be fretted lose doubled notes first, then inner voices. MusicXML `<technical><string>`/`<fret>` on a note is kept as a fixed fingering.
+- **Generated TAB** is available for guitar, four-/five-string bass guitar and soprano/tenor/baritone/bass ukulele, using sounding pitches (including ABC octave clefs and MusicXML octave transposition). GM programs take precedence: 25–40 identify fretted strings, with explicit names refining ukulele and bass identities; without a program, string-instrument names are used. Bare Bass normally means bass guitar, but choir Bass and bass winds do not get TAB. There is no first-pitched-part fallback: piano, flute, harp and string ensembles get no generated TAB. Viola and double bass get no generated TAB.
+- **Finger + position TAB:** violin and cello get four string lines in TAB/Both views, with finger numbers on the lines and inline `L`/`H` for low/high placement (for example `L2`, `H4`). Position marks include `I pos.` and `pos. ½`; cello positions follow Davidoff (½, I, I½, II, III, III½, IV, IV½; no II½). Finger numbers are display only: playback uses source pitches. Chart-defined strings and pitches are used; `tabTuning` and `capo` do not apply. Unsupported or impossible events are left unlabelled. Viola and double bass remain notation only.
+- **Identity and tuning:** `settings.tabInstruments: { '<onReady-part-id>': 'bass5' }` selects five-string bass; supported fretted ids are `guitar`, `bass4`, `bass5`, `ukulele-soprano`, `ukulele-tenor`, `ukulele-baritone`, `ukulele-bass`, plus `'none'` to suppress TAB. Use `violin` or `cello` for finger + position TAB. The accepted `viola` and `double-bass` identities still produce no generated TAB. Invalid keys/values are ignored. A reader instrument switch replaces the initial host override; an octave-only edit retains it. This host setting is not saved per score and does not change sound.
+- **Defaults:** guitar EADGBE `[40,45,50,55,59,64]`; bass4 `[28,33,38,43]`; bass5 `[23,28,33,38,43]`; soprano/tenor ukulele re-entrant GCEA `[67,60,64,69]`; baritone ukulele `[50,55,59,64]`; bass ukulele `[28,33,38,43]`. Unqualified Bass uses four strings; Ukulele uses soprano tuning and nylon-guitar sound. Omit `tabTuning` to use these per-part fretted defaults. A supplied or saved tuning applies only to fretted parts with matching string counts: six-note Drop D affects guitars while bass/ukulele retain their defaults; a four-note tuning affects four-string parts, not guitar or bass5. Preserve physical order; do not sort re-entrant pitches.
+- For fretted TAB, a fingering solver picks strings and frets for the whole passage (open strings, few position shifts, playable stretches). Notes out of range are moved by an octave. Chord notes that cannot all be fretted lose doubled notes first, then inner voices. MusicXML `<technical><string>`/`<fret>` on a note is kept as a fixed fingering.
 - **Transposed views** regenerate TAB from the transposed pitches. An imported TAB staff is hidden then, because its frets no longer match.
 - Tied continuations keep their rhythm on the TAB staff but show no fret.
 - **Baked fingerings.** The repository's `npm run tab:bake` (`scripts/tab-bake.mjs`, see the root README) writes the solver's string/fret onto a score's notes ahead of time, and can add a TAB staff. The reader keeps those fingerings as they are.

@@ -30,3 +30,7 @@ npm run check && npm run build && npm run test:pack
 
 ---
 ## Receiver ack
+
+Acknowledged: prepare pepperscore 0.5.0 by changing only the package version, its workspace lock entry, CHANGELOG, and my 0017 handoffs. I will trace release notes to merged work since 0.4.1, call out the specified behaviour changes, verify the package and packed version, and open a draft PR. No npm publication, runtime edits, ledger edits, or GBrain writes. No open questions.
+
+GBrain consulted: `default:projects/scoreflow-music-reader` and `default:projects/scoreflow-music-reader/gotchas-abc-import`; repo docs and current source are authoritative for release details.

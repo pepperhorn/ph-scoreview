@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.5.0 - 2026-11-11
+
+### Added
+
+- `skin` prop (`PepperScoreSkin`): theme colours by interface role, an ordered `bar` of built-in controls, and an optional complete 12-pitch palette. Exports `mergeSkins`, `CRF_PITCH_COLOURS`, `ThemeToken`, `BarItemId`, `PitchClass` and `PitchPalette`. Theme values can reference host CSS variables; changing colours does not re-engrave the score. Without a skin, existing colours and header defaults are retained.
+- Composable bars in full and minimal chrome, including note-name, beat-count and chord-symbol toggles and the instrument switcher. Explicit `controls` values of `false` still hide their controls. Annotation toggles stay in sync with the drawer and saved preferences; the chord-symbol tile switches authored and inferred symbols together.
+- A Playback and view drawer panel for stop, view mode, bars per line, zoom, mixer and file opening when those actions are omitted from the header. On phones, full chrome's playback controls move to a wrapping bottom toolbar.
+- Pitch-coloured noteheads from `skin.pitchColours`, enabled with `settings.pitchColours`, the bar/drawer tile or `handle.setPitchColours(on)`. Off by default, saved per score, and based on displayed pitch after transposition; enharmonic equivalents share a colour. Playback, selection and range marks retain priority. Colour and palette changes do not re-engrave.
+- Generated fret-number TAB for guitar, four-/five-string bass guitar and soprano, tenor, baritone and bass ukulele, with instrument-specific tunings and re-entrant string order. `settings.tabInstruments` maps exact `onReady` part ids to a TAB identity (for example `bass5`) or `'none'`; it changes TAB identity without changing sound. A reader instrument switch replaces that initial override. Unqualified bass uses four strings; unqualified ukulele uses soprano GCEA.
+- Violin and cello get four-line finger + position TAB in TAB/Both views: finger numbers on the string lines, inline L/H for low/high finger placement, and position marks such as `I pos.` and `pos. ½`. Cello positions follow Davidoff. Finger numbers are display only; playback uses the source pitches. Finger TAB uses instrument charts, ignoring fretted tuning/capo settings. Viola and double bass still get no generated TAB.
+- ABC authoring rules and copyable templates in the package README, covering voice/header order, clefs, transposition, MIDI directives, grouping and current limitations.
+- PDF export: a secondary header button in `full` (icon-only at reader widths 761–900px; secondary row/More menu on narrow screens), a drawer action and skin bar item `pdf`. `controls.pdf` enables/disables it (resolved as `chrome.pdf`; on for `full`, off otherwise). The dialog offers A4/A3/Letter/Legal, remembered `pdfPaper`, bars per line defaulting to 4, “Checking fit…”, Save and Cancel. Save downloads `<title>.pdf` (a normalized title, or `score.pdf`), with vector notation, embedded fonts, annotations and active pitch colours from the current view. The overlay and PDF engine are lazy-loaded; the implementation measured approximately +1.5 KB gzip initial package JS+CSS. `jspdf` and `svg2pdf.js` remain runtime dependencies, imported dynamically on Save. PDF export is verified in Chromium and Firefox (including corrected Firefox notation scale); Safari/WebKit PDF is not yet verified.
+
+### Changed
+
+- Instrument names without an explicit MIDI program now distinguish voices from instruments: Alto/Tenor labels (including numbering and divisi) are voices unless an instrument noun such as Sax, Flute or Trombone is present. Choir labels include solo, plural, Mezzo-Soprano, Contralto, Countertenor and split slash/ampersand staves. Treble needs a vocal hint or another named choir range; Treble/Bass alone stays piano plus bass guitar. Three distinct S/A/T/B letters establish choir context when no guitar/drum evidence is present. Explicit MIDI programs retain precedence.
+- Name-only ukulele parts use nylon-guitar sound. Horn names distinguish English Horn/Cor Anglais, Basset Horn and Flugelhorn/Flügelhorn from French Horn; soprano sax, recorder and banjo names select their corresponding GM sounds.
+
+### Fixed
+
+- ABC accidentals follow bar state and ties across barlines; E♯/C♭ and other source spellings survive engraving. Key changes, including mid-bar changes, draw at their onset once per staff, including when layer 1 has no onset there.
+- ABC positioned text (`"^Swing"`, `"_rit."`) stays separate from chord symbols; final and double barlines, alto/tenor clefs and octave clefs are preserved.
+- ABC `%%score`/`%%staves` grouping produces grand staves. Per-voice `transpose=` and `%%MIDI transpose|program|channel` affect sounding pitch and sound; channel 10 or a drum name selects percussion. Only the first tune is imported. Directives work with body-only voice declarations, a file-header `K:` no longer ends the tune header, and `V:` defaults before `X:` keep their clef/name/transposition while preserving grouping.
+- Octave-clef ABC and MusicXML now agree on staff position, playback and sounding-pitch TAB. MusicXML written-octave notes with a matching clef/transpose octave are normalized in the import copy while preserving original source bytes and residual instrument transposition. Switching to guitar retains the octave clef's 8.
+
+### Behaviour changes
+
+- Bare **Bass** now means bass guitar with four-string TAB, except in choir context without guitar/drums or with an explicit vocal label/program. Explicit bass-guitar names remain instrumental; Double Bass/Contrabass/Upright/String Bass remain double bass. **Bass Solo** and **Basses** are voices even in a band: supply a MIDI program for an instrumental bass solo.
+- **Alto 1** / **Tenor II** now mean voices; include **Sax** for saxophones. Instrument nouns and explicit MIDI programs take precedence over voice-range words.
+- Generated TAB is restricted to supported string parts: the first-pitched-part fallback is removed, so piano and other non-string parts no longer acquire guitar TAB. Authored imported TAB remains available. Violin/cello use finger + position TAB; viola/double-bass TAB remains unavailable.
+- `tabTuning` (including saved tunings) applies only to generated fretted parts with the same string count; other parts keep their instrument defaults. A six-string tuning no longer replaces bass/ukulele defaults. String order is physical, not sorted by pitch.
+- Octave-clef ABC letters are stored at **sounding pitch**: `G,` with `clef=treble-8` sounds G3, draws as G4 and generates sounding-pitch TAB. Do not add `transpose=-12` to compensate for the clef; an explicit instrument transpose still applies independently.
+
 ## 0.4.1 - 2026-10-30
 
 ### Added
