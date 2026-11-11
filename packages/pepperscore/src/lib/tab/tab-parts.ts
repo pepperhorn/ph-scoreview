@@ -9,6 +9,11 @@ import type { PartState } from '../file-state';
 import { instrumentFor, STRING_INSTRUMENTS, type TabScore } from './string-instruments';
 import { STANDARD_TUNING } from './fret-assign';
 
+// Type only: native browser hosts need no process shim.
+declare const process: { env: { NODE_ENV?: string } };
+
+const warnedTuningParts = new Set<string>();
+
 export type TabView = 'notation' | 'tab' | 'both';
 /** A generated TAB staff's number: 100 + its notation staff's number. */
 export const tabStaffNumber = (n: string) => String(100 + Number(n));
@@ -132,6 +137,19 @@ export function planTab(score: Score, staffOf: Map<string, string>, view: TabVie
       // A custom tuning applies only to identities with the same physical string count. Legacy standard means auto.
       const explicit = configured?.tuning ?? (options.tuning.join() !== STANDARD_TUNING.join() ? options.tuning : undefined);
       const defaults = instrument ? [...STRING_INSTRUMENTS[instrument].tuning] : options.tuning;
+      try {
+        if (process.env.NODE_ENV !== 'production' && explicit && explicit.length !== defaults.length && !warnedTuningParts.has(part.id)) {
+          warnedTuningParts.add(part.id);
+          const advice = configured?.tuning
+            ? instrument === 'bass4' && explicit.length === 5
+              ? `For five-string bass, use settings.tabInstruments: { '${part.id}': 'bass5' }.`
+              : 'Set settings.tabInstruments for this part to an instrument with the matching string count.'
+            : 'Choose a tuning with the matching string count in the reader.';
+          console.warn(`pepperscore: ${configured?.tuning ? 'Host tabTuning' : 'Reader saved tuning'} has ${explicit.length} strings but part "${part.name}" (${part.id}) uses ${defaults.length}; ignoring this tuning for this part. ${advice}`);
+        }
+      } catch {
+        // Native hosts without process skip development diagnostics.
+      }
       tunings[n] = explicit?.length === defaults.length ? explicit : defaults;
       const partner = partnerOf.get(part.id);
       const partnerN = partner && staffOf.get(partner.id);

@@ -107,21 +107,28 @@ export function midiPitch(midi: number): Pitch {
 export function noteName(p: Pitch): string { return `${p.step}${p.alter === 1 ? '♯' : p.alter === -1 ? '♭' : ''}${p.octave}`; }
 export function instrumentForName(name: string): InstrumentId {
   const n = name.toLowerCase();
+  if (/sax/.test(n)) {
+    if (/\b(?:baritone|bari)\b/.test(n)) return 'bari-saxophone';
+    if (/\btenor\b/.test(n)) return 'tenor-saxophone';
+    // Soprano uses the existing sax icon; import resolves its exact GM 65 sound.
+    return 'alto-saxophone';
+  }
   if (/drum|percussion/.test(n)) return 'drum-kit';
-  if (/bass guitar|bassguitar|electric bass/.test(n)) return 'bassguitar';
-  if (/double bass|contrabass|acoustic bass|upright bass|\bbass\b/.test(n)) return 'double-bass';
+  if (/\b(?:ukulele|ukelele)\b/.test(n)) return 'guitar';
+  if (/\b(?:double[ -]?bass|contrabass|upright bass|string bass)\b/.test(n)) return 'double-bass';
+  if (/\b(?:bass[ -]?guitar|(?:electric|acoustic|fretless)[ -]+bass|e-bass)\b/.test(n)) return 'bassguitar';
   if (/guitar/.test(n)) return 'guitar';
-  if (/baritone sax|bari sax/.test(n)) return 'bari-saxophone';
-  if (/tenor sax/.test(n)) return 'tenor-saxophone';
-  if (/sax/.test(n)) return 'alto-saxophone';
-  if (/flute/.test(n)) return 'flute';
+  if (/flute|recorder/.test(n)) return 'flute';
   if (/clarinet/.test(n)) return 'clarinet';
   if (/trumpet/.test(n)) return 'trumpet';
-  if (/trombone/.test(n)) return 'trombone';
+  if (/trombone|horn/.test(n)) return 'trombone';
+  if (/banjo/.test(n)) return 'guitar';
   if (/violin/.test(n)) return 'violin';
   if (/viola/.test(n)) return 'viola';
   if (/cello/.test(n)) return 'cello';
-  if (/voice|vocal|choir|singer/.test(n)) return 'microphone';
+  if (/\b(?:voices?|vocals?|choir|singers?|satb)\b/.test(n)) return 'microphone';
+  if (/^(?:soprano|alto|tenor|baritone|sop|alt|ten)\.?(?:\s+(?:\d+|[ivx]+))?(?:\s+\(?div(?:isi|\.)?\)?)?$/.test(n.trim())) return 'microphone';
+  if (/\bbass\b/.test(n)) return 'bassguitar';
   return 'piano';
 }
 export function exampleScore(): Score {

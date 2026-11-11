@@ -1,6 +1,7 @@
 import { normalizeOctaveClefs } from './musicxml-octave-clef';
 import { gmProgramForNumber, gmProgramForVirtualName, instrumentForName, midiPitch, pitch, ucfirst, type MeasureNavigation, type Measure, type Part, type Score, type ScoreNote, type Transposition } from '../score';
 import { attachNavigation, musicXmlNavigationReader } from './navigation';
+import { resolveChoirNames } from '../tab/string-instruments';
 import { linkTabParts } from '../tab/tab-parts';
 import { localNameOf, scanXml, XmlElement, XmlError, XmlTreeBuilder, type XmlAttribute } from './xml-stream';
 import type { NoteMark, PedalChange, PlaybackMarks } from '../playback/source-marks';
@@ -604,6 +605,7 @@ function readPartwise(text: string, timewiseInventory: FeatureInventory | undefi
     || (soundingSources.has(sourcePart(p)) && (direction.symbols?.length || direction.wedge || direction.soundDynamics !== undefined))));
   const playableParts = parts.filter(p => sounding(p) || shapesPlayback(p));
   const score = linkTabParts(normalizedScore({ title, subtitle, composer, credits: otherCredits, source: 'MusicXML', tempo, beats, beatType, key, ...(keyMode ? { keyMode } : {}), parts: playableParts.length ? playableParts : parts }));
+  resolveChoirNames(score);
   // Navigation is read once from the first source part and shared by every staff.
   const measureCount = score.parts[0].measures.length;
   const navigation = Array.from({ length: measureCount }, (_, i) => navigationMeasures[i] || {});

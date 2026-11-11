@@ -1,4 +1,4 @@
-import type { Part, Score } from '../score';
+import { gmProgramForNumber, instrumentForName, type Part, type Score } from '../score';
 
 /** TAB instrument identity is independent of the playback sound (ukuleles use nylon guitar). */
 export const STRING_INSTRUMENTS = {
@@ -25,15 +25,20 @@ export function withTabSettings(score: Score, instruments?: TabInstruments, tuni
   return { ...score, tabSettings: { instruments, tuning } };
 }
 
+const explicitBassGuitar = (name: string) => /\b(?:bass[ -]?guitar|(?:electric|acoustic|fretless)[ -]+bass|e-bass)\b/i.test(name);
+
 const namedFretted = (name: string): TabInstrument | undefined => {
+  if (/sax/i.test(name)) return;
+  if (instrumentForName(name) === 'microphone') return;
   if (/\b(?:ukulele|ukelele)\b/i.test(name)) {
     if (/\bbaritone\b/i.test(name)) return 'ukulele-baritone';
     if (/\bbass\b/i.test(name)) return 'ukulele-bass';
     return /\btenor\b/i.test(name) ? 'ukulele-tenor' : 'ukulele-soprano';
   }
-  if (/\b(?:double[ -]?bass|contrabass|upright bass)\b/i.test(name)) return 'double-bass';
-  if (/\b(?:bass[ -]?guitar|(?:electric|acoustic|fretless)[ -]+bass|e-bass)\b/i.test(name)) return 'bass4';
+  if (/\b(?:double[ -]?bass|contrabass|upright bass|string bass)\b/i.test(name)) return 'double-bass';
+  if (explicitBassGuitar(name)) return 'bass4';
   if (/\bguitar\b/i.test(name)) return 'guitar';
+  if (/\bbass\b/i.test(name) && instrumentForName(name) === 'bassguitar') return 'bass4';
 };
 
 /** Switched target ids are exact; source programs gate name-based classification before a switch. */
@@ -64,6 +69,7 @@ export function stringInstrument(part: Part, override?: TabInstrument | 'none', 
     if (gm === 44) return 'double-bass';
     return;
   }
+  if (part.instrument === 'microphone') return;
   const fretted = namedFretted(name);
   if (fretted) return fretted;
   if (/\b(?:violin|fiddle)\b/i.test(name)) return 'violin';
@@ -74,4 +80,42 @@ export function stringInstrument(part: Part, override?: TabInstrument | 'none', 
 /** Overrides use the exact part id reported by onReady; unknown keys/values are ignored. */
 export function instrumentFor(score: TabScore, part: Part, switched = false) {
   return stringInstrument(part, score.tabSettings?.instruments?.[part.id], switched);
+}
+
+
+/** Name-only voices are explicit; ambiguous bass needs choir context without guitar/drum evidence. */
+export function resolveChoirNames(score: Score): Score {
+  const letters = new Set(score.parts.map(part => part.name.trim().toUpperCase()).filter(name => /^[SATB]$/.test(name)));
+  const guitarOrDrums = score.parts.some(part => {
+    const gm = part.gmProgram;
+    if (part.clef === 'percussion' || part.instrument === 'drum-kit') return true;
+    if (gm !== undefined) return (gm >= 25 && gm <= 32) || (gm >= 34 && gm <= 40);
+    return explicitBassGuitar(part.name) || /guitar|drum|percussion/i.test(part.name);
+  });
+  const letterChoir = letters.size >= 3 && !guitarOrDrums;
+  const voiceContext = letterChoir || score.parts.some(part => instrumentForName(part.name) === 'microphone'
+    && (part.gmProgram === undefined || part.instrument === 'microphone'));
+  for (const part of score.parts) {
+    if (part.gmProgram !== undefined || part.tab || part.clef === 'percussion') continue;
+    const named = instrumentForName(part.name);
+    if (/sax/i.test(part.name)) {
+      // GM has a soprano sound even though the reader's icon registry groups it with alto sax.
+      if (/\bsoprano\b/i.test(part.name)) {
+        part.gmProgram = 65;
+        part.gmSoundfont = gmProgramForNumber(65)?.soundfont ?? undefined;
+      }
+      continue;
+    }
+    // These instruments share reader icons with a related instrument, but have their own GM sound.
+    const program = named === 'flute' && /recorder/i.test(part.name) ? 75
+      : named === 'guitar' && /banjo/i.test(part.name) ? 106
+        : named === 'trombone' && /horn/i.test(part.name) ? 61 : undefined;
+    if (program !== undefined) {
+      part.gmProgram = program;
+      part.gmSoundfont = gmProgramForNumber(program)?.soundfont ?? undefined;
+    }
+    if (named === 'microphone' || (letterChoir && /^[SATB]$/i.test(part.name.trim()))
+      || (named === 'bassguitar' && !explicitBassGuitar(part.name) && voiceContext && !guitarOrDrums)) part.instrument = 'microphone';
+  }
+  return score;
 }

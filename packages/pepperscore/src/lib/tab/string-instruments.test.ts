@@ -41,13 +41,13 @@ describe('string instrument TAB', () => {
     const explicit = planTab(withTabSettings(source, undefined, options.tuning), staff, 'both', options);
     expect(explicit.spec!.tunings).toEqual(spec.tunings);
   });
-  it('rejects bass winds and choir voices with their real programs, and ambiguous names without programs', async () => {
+  it('rejects bass winds and choir voices with or without programs', async () => {
     for (const [name, gm] of [['Bassoon',71], ['Bass Clarinet',72], ['Bass Trombone',58], ['Bass Flute',74], ['Bass',53], ['Bass (choir)',53], ['Basso',53]] as const) {
       const p = { ...part(name, gm), instrument: 'double-bass' as const };
       expect(stringInstrument(p), name).toBeUndefined();
       expect(canShowTab(score([p])), name).toBe(false);
     }
-    for (const name of ['Bass', 'Bass (choir)', 'Basso', 'Bassoon', 'Bass Clarinet', 'Bass Trombone', 'Bass Flute', 'Guitarfish']) {
+    for (const name of ['Bass (choir)', 'Basso', 'Bassoon', 'Bass Clarinet', 'Bass Trombone', 'Bass Flute', 'Guitarfish']) {
       expect(stringInstrument(part(name)), name).toBeUndefined();
     }
     for (const name of ['Bass Guitar', 'Electric Bass', 'Acoustic Bass', 'E-Bass']) expect(stringInstrument(part(name))).toBe('bass4');

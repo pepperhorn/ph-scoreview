@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, afterEach } from 'vitest';
 import { applyInstrumentView, type PartSwitch } from '../instrument-view';
 import { pitch, type Part, type Score } from '../score';
+import { withTabSettings } from './string-instruments';
 import { planTab, tabParts } from './tab-parts';
 
 // A guitar part with an imported TAB staff doubling it (staves 1 and 2).
@@ -46,5 +47,47 @@ describe('TAB of an instrument view', () => {
     const view = applyInstrumentView({ ...source, parts: [flute, piano] }, { P: sw('guitar') }, 'written').score;
     expect(tabParts(view).map(part => part.id)).toEqual(['P']);
     expect(planTab(view, new Map([['F', '1'], ['P', '2']]), 'both', options).added).toEqual(['102']);
+  });
+});
+
+
+describe('custom tuning diagnostics', () => {
+  afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+  const bass = { ...guitar, id: 'b1', name: 'Bass', instrument: 'bassguitar' as const, gmProgram: undefined };
+  const tuning = [23, 28, 33, 38, 43];
+  const configured = { ...source, parts: [bass], tabSettings: { tuning } };
+  const staves = new Map([['b1', '1']]);
+  it('warns in development, names the part and suggests the bass5 override, keeping default tuning', () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(planTab(configured, staves, 'both', options).spec!.tunings!['1']).toEqual([28,33,38,43]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('part "Bass" (b1)'));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("settings.tabInstruments: { 'b1': 'bass5' }"));
+    planTab(configured, staves, 'tab', options);
+    planTab({ ...configured, parts: [{ ...bass }] }, staves, 'both', options);
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockClear();
+    expect(planTab(withTabSettings(configured, { b1: 'bass5' }, tuning), staves, 'both', options).spec!.tunings!['1']).toEqual(tuning);
+    expect(warn).not.toHaveBeenCalled();
+  });
+  it('directs saved reader tunings to the reader and warns only once for that part', () => {
+    vi.stubEnv('NODE_ENV', 'development');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const saved = { ...source, parts: [{ ...bass, id: 'saved-bass' }] };
+    const staff = new Map([['saved-bass', '1']]);
+    planTab(saved, staff, 'both', { ...options, tuning });
+    planTab(saved, staff, 'tab', { ...options, tuning: [30,35,40,45,50,55] });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Reader saved tuning'));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('in the reader'));
+    expect(warn.mock.calls[0][0]).not.toContain('settings.tabInstruments');
+  });
+  it.each(['production', 'no-process'])('skips diagnostics safely in %s hosts', environment => {
+    if (environment === 'production') vi.stubEnv('NODE_ENV', 'production');
+    else vi.stubGlobal('process', undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const id = environment;
+    expect(planTab({ ...configured, parts: [{ ...bass, id }] }, new Map([[id, '1']]), 'both', options).spec!.tunings!['1']).toEqual([28,33,38,43]);
+    expect(warn).not.toHaveBeenCalled();
   });
 });
