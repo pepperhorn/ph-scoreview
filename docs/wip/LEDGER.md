@@ -11,7 +11,7 @@ Next ID: 0026
 
 | K | Title | Status | Waiting on | Owner (provider/model) | Branch | PR | Worktree | T3 task/thread | Spec | Plan | Latest handoff | Updated |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 0001 | Composable player skins | changes-requested (t5; t1–t4 merged) | child 0001-t5-impl-r1 (fix r1) | claudeAgent/claude-sonnet-5-5 | orch/0001-t5-skins-docs | https://github.com/pepperhorn/ph-scoreview/pull/90 |  | task `0001-t5-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A0001-t5-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-11-0001-t5-skins-docs--lead-to-claude.md | 2026-11-10 |
+| 0001 | Composable player skins | in-review (t5; t1–t4 merged) | review 0001-t5-review-r2 (Codex) + ci | claudeAgent/claude-sonnet-5-5 | orch/0001-t5-skins-docs | https://github.com/pepperhorn/ph-scoreview/pull/90 |  | task `0001-t5-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A0001-t5-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-11-0001-t5-skins-docs--lead-to-claude.md | 2026-11-10 |
 | 0002 | PDF export | planned (t4; t1 #71, t2 #78, t3 #83 merged) | child 0001-t5 (T4 shares README/CHANGELOG; dispatch after it merges) | codex/gpt-6.1-sol |  |  |  |  | specs/0002-pdf-export.md | plans/0002-pdf-export.md |  | 2026-11-10 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | 0025 (P1 packaging + P3 key rotation); P2 done: repo pepperhorn/pepperscore-pt | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
@@ -102,6 +102,7 @@ Last health scan: never
 ## Log
 2026-11-11 human decisions — runner host t3box (0024 dispatched: CI_RUNS_ON variable; human installs runner, tailnet SSH blocks agents); 0003 P1 private GitHub Packages, P2 pepperhorn/pepperscore-pt (created), P3 rotate key now → 0025 dispatched
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-11 0001-t5 changes-requested→in-review — r1 fixes 07f9f2c (accentHover color-mix, hover + 390px hit-test assertions with negative controls); Codex review r2
 2026-11-11 0025 dispatched→in-review — PR #93 @2d281ad (dist build, publishConfig restricted, licence CLIs, pack check); local timing gates red on loaded host (4 agents), CI is authority; Claude review r1
 2026-11-11 0023 in-review→ready — Claude r1 approve on a1107a5 (600 random passages: pitch preserved; cello D maj shifts 8→0, Eb 16→0); S35 perf on dense chords logged
 2026-11-11 0001-t5 in-review→changes-requested — Codex r1 on 9742645: play button hover falls back to default green (no accentHover in fixture/README); 390px bar assertion too weak. focusRing→--accent accepted, spec line fixed. CI run cancelled pending fix
