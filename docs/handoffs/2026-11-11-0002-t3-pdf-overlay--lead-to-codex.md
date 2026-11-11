@@ -6,7 +6,7 @@
 - **Branch:** orch/0002-t3-pdf-overlay · **Worktree:** created by T3
 - **Base commit:** 299d463 (0002 T1 #71, T2 #78 and 0001 T4 #81 merged)
 - **Port (if running a server):** 5223
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 A PDF button (header registry on `full`, drawer via `drawerExtras`, bar item `pdf`, `controls.pdf`/`chrome.pdf`) opens an overlay with paper size (remembered `pdfPaper`, default A4), bars per line (local, default 4), a "Checking fit…" note, Save and Cancel; Save calls `exportScore` and downloads a blob (`<slugged title>.pdf` or `score.pdf`). Plan T3 (AC1, AC2, AC3, AC5 overlay half, AC9).

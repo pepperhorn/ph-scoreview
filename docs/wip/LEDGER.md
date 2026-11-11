@@ -12,16 +12,17 @@ Next ID: 0022
 | K | Title | Status | Waiting on | Owner (provider/model) | Branch | PR | Worktree | T3 task/thread | Spec | Plan | Latest handoff | Updated |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 0001 | Composable player skins | planned (t5; t1–t4 merged) | child 0002-t3-impl-r1 (T5 shares README/SkinTest; dispatch when #0002-t3 merges) | codex/gpt-6.1-sol |  |  |  |  | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md |  | 2026-11-10 |
-| 0002 | PDF export | in-review (t3; t1 #71, t2 #78 merged) | review 0002-t3-review-r2 | codex/gpt-6.1-sol | orch/0002-t3-pdf-overlay | https://github.com/pepperhorn/ph-scoreview/pull/83 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-d1cdc39d-46ddba0ee7ed626a | task `0002-t3-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0002-t3-impl-r1` | specs/0002-pdf-export.md | plans/0002-pdf-export.md | handoffs/2026-11-11-0002-t3-pdf-overlay--codex-to-lead.md (@3a454d0) | 2026-11-10 |
+| 0002 | PDF export | planned (t4; t1 #71, t2 #78, t3 #83 merged) | lead: dispatch T4 (large scores, Safari, docs) after the 0.5.0 release | codex/gpt-6.1-sol |  |  |  |  | specs/0002-pdf-export.md | plans/0002-pdf-export.md |  | 2026-11-10 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | human: P1–P3 (editor distribution, private repo name, BeCreative licence) before T4 | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0013 | TAB for stringed instruments | planned (t4 docs; t1 #77, t2 #74, t3 #84 merged) | child 0017-impl-r1-fix2 (#85 writes the String TAB README; T4 = remaining docs after it merges) | codex/gpt-6.1-sol |  |  |  |  | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md |  | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
-| 0017 | Release pepperscore 0.5.0 (CHANGELOG, version) | ready (on hold) | child 0002-t3-impl-r1-fix2 (human: release waits for the PDF button #83) | codex/gpt-6.1-sol | orch/0017-release-0-5-0 | https://github.com/pepperhorn/ph-scoreview/pull/85 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-5de38d86-837e74894e3847b8 | task `0017-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0017-impl-r1` |  |  | handoffs/2026-11-11-0017-release-0-5-0--codex-to-lead.md (@6733f80) | 2026-11-11 |
+| 0017 | Release pepperscore 0.5.0 (CHANGELOG, version) | changes-requested | child 0017-impl-r1-fix3 (CHANGELOG/README for PDF export) | codex/gpt-6.1-sol | orch/0017-release-0-5-0 | https://github.com/pepperhorn/ph-scoreview/pull/85 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-5de38d86-837e74894e3847b8 | task `0017-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0017-impl-r1` |  |  | handoffs/2026-11-11-0017-release-0-5-0--codex-to-lead.md (@6733f80) | 2026-11-11 |
 
 ## Done / closed
 
 | K | Title | PR | Merged | Notes |
 |---|---|---|---|---|
+| 0002-t3 | PDF overlay, button and controls.pdf (task of 0002) | https://github.com/pepperhorn/ph-scoreview/pull/83 | 2026-11-11 | merged; +1,497 B gzip initial |
 | 0021 | [quick] Cut CI minutes (docs skip, one run per PR, reader PR-only, validate in Playwright image) | https://github.com/pepperhorn/ph-scoreview/pull/88 | 2026-11-11 | merged; PR run: one run, validate 19.5 min |
 | 0020 | [quick] PDF export in Firefox: notation at the right size (S22) | https://github.com/pepperhorn/ph-scoreview/pull/87 | 2026-11-11 | merged; chromium rasters unchanged |
 | 0019 | [quick] CI validation timeout 15 → 25 min, job 30 → 45 (S28) | https://github.com/pepperhorn/ph-scoreview/pull/86 | 2026-11-11 | merged with human OK |
@@ -87,12 +88,14 @@ Next ID: 0022
 | S30 | improvement | Fretless solver: add a position-continuity cost (prefer staying in position) to cut label density and I/II flips | 0013-t3 return handoff; PR #84 reviews | M | medium (readability) | PR #84 | new |
 | S31 | fix | Safari (WebKit) reader draws pitch-colour notehead outlines solid black, ignoring `--ps-pitch-outline` (PDF is correct); `validation/pdf.mjs:511` fails on webkit, main too | PR #87 review | S | medium (Safari users see heavy outlines) | PR #87 review | new |
 | S32 | fix | PDF page 1: chord symbol "C" overlaps the tempo mark (all browsers, main too) | PR #87 review | S | low | PR #87 review | new |
+| S33 | fix | PDF dialog: first close returns focus to the reader, not the PDF button; focus from outside the reader can land behind any reader dialog (mixer too) | PR #83 review r2 | S | low | PR #83 review | new |
 | S1 | fix | Emit a mid-bar `<keySig>` only in layer 1; Verovio draws one per layer | `packages/pepperscore/src/lib/notation/document.ts:249` (probe: 2 layers → 3 keySig groups) | S | low today (ABC overlays are separate parts); matters for MIDI/multi-layer | PR #60 review r2 | done (0005, PR #63) |
 
 Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-11 0002-t3 in-review→merged — r2 approve on 3a454d0 (Firefox header fits, keys scoped), PR CI green, merged PR #83 per human. 0017: update #85 docs for PDF export; S33 logged
 2026-11-11 0021 in-review→closed — r1 approve, single green PR run, merged PR #88; this docs-only push is the check that no CI run starts
 2026-11-11 0002-t3 changes-requested→in-review — fixes pushed 3a454d0; review r2
 2026-11-11 0020 in-review→closed — r1 approve (firefox = chromium rasters; chromium unchanged), CI green (single PR run + push run, pre-0021), merged PR #87; reviewer installed webkit apt deps on the dev machine via sudo; S31, S32 logged
