@@ -1,3 +1,4 @@
+import "./style.css";
 export * from './model/durations';
 export * from './model/ids';
 export * from './model/schema';

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { setMeta, type EditorHost, type EditorPlugin } from 'pepperscore-editor';
+import { setMeta, type EditorHost, type EditorPlugin } from '@pepperhorn/pepperscore-editor';
 
 declare global {
   interface Window {

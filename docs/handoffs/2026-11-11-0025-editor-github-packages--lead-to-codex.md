@@ -70,3 +70,5 @@ npm pack --dry-run -w @pepperhorn/pepperscore-editor
 
 ---
 ## Receiver ack
+
+Acknowledged by Codex, 2026-11-11. I will package the editor as @pepperhorn/pepperscore-editor using Vite and declaration emission, rename active consumers, add a tarball consumer check and safe licence CLI tooling, and run the required checks. I own only the paths listed above and my 0025 handoffs. Publishing, real key generation, public-key/demo rotation and other repos remain out of scope. No open questions. GBrain consulted: projects/scoreflow-music-reader (project context; no packaging-specific guidance returned).

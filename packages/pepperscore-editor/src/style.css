@@ -1,8 +1,4 @@
 @import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap');
-@import '@fontsource/poppins/400.css';
-@import '@fontsource/poppins/500.css';
-@import '@fontsource/poppins/600.css';
-@import '@fontsource/poppins/700.css';
 
 /* pepperscore-editor chrome ("the engraver's desk", after the /design mock). Every rule is scoped under .ps-editor;
    the engraving keeps the viewer's own styles. */
