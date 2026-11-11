@@ -3,7 +3,8 @@ import { PAPER_SIZES } from './paper';
 import type { Score, ScoreNote } from '../score';
 import { annotationLayout, type AnnotationSettings } from '../render';
 import type { PitchColourPaint } from '../pitch-colours';
-import { annotatePage, paintPitchColours } from './annotations';
+import { annotatePageSteps, paintPitchColours } from './annotations';
+import { driveSteps, sliceTicker, type ExportProgress } from './cooperative';
 import { composePdf } from './compose';
 import { engravePages, type PageInput, type PageOptions } from './engrave';
 
@@ -11,9 +12,11 @@ import { engravePages, type PageInput, type PageOptions } from './engrave';
  * input.view is its planStaves view (including hidden staves, spelling and TAB).
  * No reader channel or live DOM is used. T3 imports only this module, dynamically.
  */
-export type ExportRequest = { input: PageInput; options: PageOptions; score: Score; annotations?: AnnotationSettings; pitchColours?: PitchColourPaint; visiblePartIds?: string[]; tabAliases?: ReadonlyMap<string, ScoreNote>; tabStaves?: ReadonlySet<string> };
+export type ExportRequest = { input: PageInput; options: PageOptions; score: Score; annotations?: AnnotationSettings; pitchColours?: PitchColourPaint; visiblePartIds?: string[]; tabAliases?: ReadonlyMap<string, ScoreNote>; tabStaves?: ReadonlySet<string>; onProgress?: (progress: ExportProgress) => void };
+export type { ExportProgress };
 export async function exportScore(request: ExportRequest, signal: AbortSignal): Promise<Blob> {
   signal.throwIfAborted();
+  request.onProgress?.({ phase: 'engraving', page: 0, pages: 0 });
   const score = request.visiblePartIds ? { ...request.score, parts: request.score.parts.filter(part => request.visiblePartIds!.includes(part.id)) } : request.score;
   const settings = request.annotations || {};
   const layout = annotationLayout(score.parts, settings);
@@ -23,15 +26,17 @@ export async function exportScore(request: ExportRequest, signal: AbortSignal): 
   const host = document.createElement('div');
   host.style.cssText = 'position:absolute;left:-100000px;top:0;pointer-events:none';
   document.body.appendChild(host);
+  const tick = sliceTicker(signal);
   try {
     const pages: string[] = [];
     for (const [index, text] of result.pages.entries()) {
-      signal.throwIfAborted();
+      await tick();
+      request.onProgress?.({ phase: 'annotating', page: index + 1, pages: result.pages.length });
       const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
       const svg = sanitizeSvg(doc);
       host.replaceChildren(svg);
       if (request.pitchColours) paintPitchColours(svg, score, request.pitchColours, request.tabStaves);
-      annotatePage(svg, score, settings, request.options.font, request.tabAliases, request.tabStaves);
+      await driveSteps(annotatePageSteps(svg, score, settings, request.options.font, request.tabAliases, request.tabStaves), tick);
       if (!index) {
         const ratio = svg.viewBox.baseVal.width / PAPER_SIZES[request.options.paper].width;
         // Metadata stays in the reserved heading band, shrinking long lines to fit the page.
@@ -47,8 +52,7 @@ export async function exportScore(request: ExportRequest, signal: AbortSignal): 
         }
       }
       pages.push(new XMLSerializer().serializeToString(svg));
-      await new Promise<void>(resolve => setTimeout(resolve, 0));
     }
-    return await composePdf(pages, { paper: request.options.paper, title: request.score.title }, signal);
+    return await composePdf(pages, { paper: request.options.paper, title: request.score.title, onProgress: request.onProgress }, signal);
   } finally { host.remove(); }
 }

@@ -10,6 +10,13 @@ const { PDFDocument, PDFName, decodePDFRawStream } = require('pdf-lib');
 import { createServer } from 'vite';
 import { chromium, firefox, webkit } from 'playwright-core';
 import { root, serveDist } from './serve-dist.mjs';
+import { budgetScale, assertTiming } from './lib/budgets.mjs';
+import { orchestral } from './synthetic.mjs';
+
+const LARGE_MEASURES = Number(process.env.PDF_LARGE_MEASURES || 12);
+/** Target: under 200 ms per composition slice. The gate leaves room for engine variance on a loaded host. */
+const LARGE_MAX_BLOCK_MS = 500 * budgetScale;
+const LARGE_CANCEL_MS = 750 * budgetScale;
 
 // Raster parity is a required gate, including on CI. Fail before starting Vite/browser.
 try { execFileSync('pdftoppm', ['-v'], { stdio: 'pipe' }); }
@@ -29,6 +36,13 @@ const engine = process.env.BROWSER || 'chromium';
 assert.ok(['chromium', 'firefox', 'webkit'].includes(engine), `Unknown PDF browser: ${engine}`);
 const browser = await ({ chromium, firefox, webkit }[engine]).launch({ headless: true, ...(engine === 'chromium' ? { args: ['--no-sandbox'] } : {}) });
 try {
+  if (process.env.PDF_LARGE_ONLY) {
+    const large = await browser.newPage();
+    large.setDefaultTimeout(600000);
+    await large.goto(`http://127.0.0.1:${server.httpServer.address().port}/pdf-spike`);
+    await assertLargeScoreExport(large);
+    await browser.close(); await server.close(); process.exit(0);
+  }
   await assertPdfOverlay(browser);
   if (process.env.PDF_OVERLAY_ONLY) { await browser.close(); await server.close(); process.exit(0); }
   const page = await browser.newPage();
@@ -436,6 +450,7 @@ try {
   assert.equal(result.single,1); assert.equal(result.empty,1); assert.ok(result.pickup.count>=1);
   assert.equal(result.cancelled,true); assert.equal(result.preCancelled,true); assert.equal(result.hidden,true);
   console.log(`PDF page model spike passed (${engine}): A4 ${result.a4.lines.length} lines; A3 ${result.a3.lines.length}; ${result.many.pages.length} pages for 80 bars.`);
+  await assertLargeScoreExport(page);
 }
 }
 } finally { await browser.close(); await server.close(); }
@@ -782,4 +797,63 @@ async function assertPdfOverlay(browser) {
     } finally { await sandboxPage.close(); }
     console.log('PDF overlay: availability, lazy chunks, defaults, focus trap, fit, remembered paper, local bars, actual download, separate worker, unchanged reader and phone containment passed');
   } finally { await page.close(); await host.close(); }
+}
+
+/**
+ * AC10: the large-score fixture (validation/synthetic.mjs `orchestral`, the generator behind validation/large-score.mjs:
+ * 30 parts, one system per page) exports while the page stays responsive, and Cancel stops it promptly and cleanly.
+ * Composition runs on the main thread (svg2pdf needs a DOM), so it must be sliced. "Responsive" is measured as the longest
+ * gap between 10 ms timer ticks (works in every engine) and, where the engine reports them, long tasks.
+ * The full 150-bar score is minutes of engraving; PDF_LARGE_MEASURES overrides the default bar count for a manual run.
+ */
+async function assertLargeScoreExport(page) {
+  const xml = orchestral(30, LARGE_MEASURES);
+  const result = await page.evaluate(async ({ xml, cancelMs }) => {
+    const { parseMusicXml } = await import('/packages/pepperscore/src/lib/import.ts');
+    const { exportScore } = await import('/packages/pepperscore/src/lib/pdf/export.ts');
+    const files = { module: new URL('/node_modules/verovio/dist/verovio-module.mjs', location.href).href, toolkit: new URL('/node_modules/verovio/dist/verovio.mjs', location.href).href };
+    const score = parseMusicXml(xml);
+    const request = { input: { data: score.document.engravingText }, options: { paper: 'a4', maxBars: 4, files }, score, annotations: { showNames: true, showCounts: true } };
+    const workers = [];
+    const NativeWorker = window.Worker;
+    window.Worker = class extends NativeWorker {
+      constructor(url, options) { super(url, options); this.record = { terminated: false }; workers.push(this.record); }
+      terminate() { this.record.terminated = true; return super.terminate(); }
+    };
+    const monitor = () => {
+      let last = performance.now(), maxGap = 0;
+      const beat = setInterval(() => { const now = performance.now(); maxGap = Math.max(maxGap, now - last); last = now; }, 10);
+      const longTasks = [];
+      let observer; try { observer = new PerformanceObserver(list => list.getEntries().forEach(entry => longTasks.push(entry.duration))); observer.observe({ entryTypes: ['longtask'] }); } catch { /* engine without long-task entries */ }
+      return { stop() { clearInterval(beat); observer?.takeRecords().forEach(entry => longTasks.push(entry.duration)); observer?.disconnect(); return { maxGap, longest: Math.max(0, ...longTasks), longTasks: observer ? longTasks.length : null }; } };
+    };
+    const hosts = () => Array.from(document.body.children).filter(element => element.style.left === '-100000px').length;
+    const fonts = document.fonts.size;
+    const full = monitor(), progress = [];
+    const started = performance.now();
+    const blob = await exportScore({ ...request, onProgress: update => progress.push(update) }, new AbortController().signal);
+    const exportMs = performance.now() - started;
+    const responsive = full.stop();
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    // Cancel while composing pages (after the worker has finished engraving).
+    const controller = new AbortController();
+    const cancelProgress = [];
+    let abortedAt = 0;
+    const cancelled = exportScore({ ...request, onProgress: update => { cancelProgress.push(update); if (update.phase === 'composing' && !abortedAt) { abortedAt = performance.now(); controller.abort(); } } }, controller.signal)
+      .then(() => ({ outcome: 'completed' }), error => ({ outcome: error.name, latency: performance.now() - abortedAt }));
+    const cancelResult = await cancelled;
+    await new Promise(resolve => setTimeout(resolve, 100));
+    return { exportMs, responsive, pdfHeader: String.fromCharCode(...bytes.subarray(0, 5)), progress, cancelResult, cancelProgress, abortedAt, cancelMs,
+      leaked: { hosts: hosts(), fonts: document.fonts.size - fonts, workers: workers.filter(worker => !worker.terminated).length }, workerCount: workers.length };
+  }, { xml, cancelMs: LARGE_CANCEL_MS });
+  const pages = result.progress.filter(update => update.phase === 'composing').length;
+  console.log(`PDF large score (${engine}, 30 parts x ${LARGE_MEASURES} bars): export ${Math.round(result.exportMs)} ms, ${pages} pages, longest timer gap ${Math.round(result.responsive.maxGap)} ms, longest long task ${result.responsive.longTasks === null ? 'n/a' : Math.round(result.responsive.longest) + ' ms'}; cancel latency ${Math.round(result.cancelResult.latency)} ms`);
+  assert.equal(result.pdfHeader, '%PDF-', 'large export produces a PDF');
+  assert.ok(pages >= 2, 'large fixture spans several pages');
+  assert.ok(result.progress[0].phase === 'engraving' && result.progress.at(-1).page === result.progress.at(-1).pages, 'progress runs from engraving to the last page');
+  assertTiming(result.responsive.maxGap < LARGE_MAX_BLOCK_MS, `large export keeps the page responsive: longest main-thread block ${Math.round(result.responsive.maxGap)} ms >= ${LARGE_MAX_BLOCK_MS} ms`);
+  assert.equal(result.cancelResult.outcome, 'AbortError', 'cancelling during composition rejects with AbortError');
+  assertTiming(result.cancelResult.latency < result.cancelMs, `cancel stops composition promptly: ${Math.round(result.cancelResult.latency)} ms >= ${result.cancelMs} ms`);
+  assert.deepEqual(result.leaked, { hosts: 0, fonts: 0, workers: 0 }, 'cancelled and completed exports leave no offscreen host, font face or worker behind');
+  assert.ok(result.cancelProgress.filter(update => update.phase === 'composing').length < pages, 'cancelled export stopped before composing every page');
 }

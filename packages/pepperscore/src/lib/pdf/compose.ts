@@ -1,12 +1,15 @@
 import { sanitizeSvg } from '../render';
 import { PAPER_SIZES, type PaperId } from './paper';
 import { embedFonts } from './fonts';
-import { flattenViewports, normalizeText } from './normalize';
-import { materializePaint } from './annotations';
+import { flattenViewports, normalizeTextSteps } from './normalize';
+import { materializePaintSteps } from './annotations';
+import { driveSteps, sliceTicker, type ExportProgress } from './cooperative';
+import { planSlices, sliceShell } from './slices';
 
-type ComposeOptions = { paper: PaperId; title?: string };
+type ComposeOptions = { paper: PaperId; title?: string; onProgress?: (progress: ExportProgress) => void };
 
-/** Vector pages in exact physical dimensions. Import this module dynamically from the export UI. */
+/** Vector pages in exact physical dimensions. Import this module dynamically from the export UI.
+ * Works in slices, yielding to the page between them; `signal` is checked at every slice. */
 export async function composePdf(pages: string[], opts: ComposeOptions, signal: AbortSignal): Promise<Blob> {
   signal.throwIfAborted();
   const size = PAPER_SIZES[opts.paper];
@@ -19,17 +22,19 @@ export async function composePdf(pages: string[], opts: ComposeOptions, signal: 
   const host = document.createElement('div');
   host.style.cssText = 'position:absolute;left:-100000px;top:0;pointer-events:none';
   document.body.appendChild(host);
+  const tick = sliceTicker(signal);
   try {
     for (const [index, page] of pages.entries()) {
-      signal.throwIfAborted();
+      await tick();
       const doc = new DOMParser().parseFromString(page, 'image/svg+xml');
       if (doc.querySelector('parsererror') || doc.documentElement.localName !== 'svg') throw new Error('Invalid PDF SVG page.');
       const svg = sanitizeSvg(doc);
       host.replaceChildren(svg);
       flattenViewports(svg);
-      normalizeText(svg);
+      await driveSteps(normalizeTextSteps(svg), tick);
       // Fail clearly rather than silently producing missing glyphs (e.g. CJK titles).
       for (const text of Array.from(svg.querySelectorAll('text, tspan'))) {
+        await tick();
         pdf.setFont(text.getAttribute('font-family') || 'Poppins', text.getAttribute('font-weight') === 'bold' ? 'bold' : 'normal');
         const font = pdf.getFont();
         const metadata = font.metadata as { characterToGlyph?: (code: number) => number };
@@ -37,15 +42,25 @@ export async function composePdf(pages: string[], opts: ComposeOptions, signal: 
           throw new Error(`PDF font ${pdf.getFont().fontName} has no glyph for "${character}". Use a supported title or text.`);
         }
       }
-      materializePaint(svg, size, (element, size) => {
+      await driveSteps(materializePaintSteps(svg, size, (element, size) => {
         pdf.setFont(element.getAttribute('font-family') || 'Poppins', element.getAttribute('font-weight') === 'bold' ? 'bold' : 'normal');
         return pdf.getStringUnitWidth(element.textContent || '') * size;
-      });
+      }), tick);
       if (index) pdf.addPage([size.width, size.height], 'portrait');
-      await svg2pdf(svg, pdf, { x: 0, y: 0, width: size.width, height: size.height });
+      // svg2pdf draws a whole page in one synchronous burst (seconds for a 30-part system), so give it
+      // a few dozen elements at a time. Slices are drawn in document order, so paint order is unchanged.
+      const slices = planSlices(svg);
+      svg.remove();
+      for (const chunks of slices) {
+        await tick();
+        const shell = sliceShell(svg, chunks);
+        host.replaceChildren(shell);
+        await svg2pdf(shell, pdf, { x: 0, y: 0, width: size.width, height: size.height });
+      }
+      host.replaceChildren();
       pdf.setFont('Poppins', 'normal'); pdf.setFontSize(8); pdf.setTextColor(0);
       pdf.text(String(index + 1), size.width / 2, size.height - 5, { align: 'center' });
-      await new Promise<void>(resolve => setTimeout(resolve, 0));
+      opts.onProgress?.({ phase: 'composing', page: index + 1, pages: pages.length });
     }
     signal.throwIfAborted();
     return pdf.output('blob');
