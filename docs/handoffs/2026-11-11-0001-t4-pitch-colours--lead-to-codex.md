@@ -6,7 +6,7 @@
 - **Branch:** orch/0001-t4-pitch-colours · **Worktree:** created by T3
 - **Base commit:** 03d0ac7 (0001 T1–T3 and 0002 T1–T2 merged)
 - **Port (if running a server):** 5214
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 With a skin palette, the user can colour every notehead by displayed pitch via a "Coloured notes" tile (drawer annotations panel, and bar item `pitchColours`), pref `pitchColours`, `settings.pitchColours` and `handle.setPitchColours(on)`. Plan T4 (AC8a–AC8c of spec 0001). **Plus:** exported PDFs show the same pitch colours with outlines (spec 0002 AC8a).

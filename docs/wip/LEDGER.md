@@ -11,10 +11,10 @@ Next ID: 0019
 
 | K | Title | Status | Waiting on | Owner (provider/model) | Branch | PR | Worktree | T3 task/thread | Spec | Plan | Latest handoff | Updated |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 0001 | Composable player skins | ready (t4; t1 #59, t2 #66, t3 #72 merged) | human: approve merge of PR #81 (edits .github/workflows/ci.yml: poppler-utils) | codex/gpt-6.1-sol | orch/0001-t4-pitch-colours | https://github.com/pepperhorn/ph-scoreview/pull/81 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-6e1573c8-388b2ff6de2075c9 | task `0001-t4-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0001-t4-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-11-0001-t4-pitch-colours--codex-to-lead.md (@50265da) | 2026-11-10 |
-| 0002 | PDF export | planned (t3, t4; t1 #71, t2 #78 merged) | child 0001-t4-impl-r1 (T3 shares files); human: merge T3/T4 on green | codex/gpt-6.1-sol |  |  |  |  | specs/0002-pdf-export.md | plans/0002-pdf-export.md |  | 2026-11-10 |
+| 0001 | Composable player skins | planned (t5; t1–t4 merged) | lead: dispatch T5 after 0002-T3 (shares README/SkinTest) | codex/gpt-6.1-sol |  |  |  |  | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md |  | 2026-11-10 |
+| 0002 | PDF export | dispatched (t3; t1 #71, t2 #78 merged) | lead: delegate | codex/gpt-6.1-sol | orch/0002-t3-pdf-overlay |  |  |  | specs/0002-pdf-export.md | plans/0002-pdf-export.md | handoffs/2026-11-11-0002-t3-pdf-overlay--lead-to-codex.md | 2026-11-10 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | human: P1–P3 (editor distribution, private repo name, BeCreative licence) before T4 | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
-| 0013 | TAB for stringed instruments | planned (t3, t4; t1 #77, t2 #74 merged) | child 0002-t2 (T3 touches render paths incl. lib/pdf and render.ts; dispatch after #78 and 0001-T4 ordering) | codex/gpt-6.1-sol |  |  |  |  | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md |  | 2026-11-10 |
+| 0013 | TAB for stringed instruments | dispatched (t3; t1 #77, t2 #74 merged) | lead: delegate | codex/gpt-6.1-sol | orch/0013-t3-fretless-tab |  |  |  | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md | handoffs/2026-11-11-0013-t3-fretless-tab--lead-to-codex.md | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
 | 0017 | Release pepperscore 0.5.0 (CHANGELOG, version) | planned | child 0018 (release after it merges) | lead |  |  |  |  |  |  |  | 2026-11-11 |
 | 0018 | [quick] Choir name variants and horn sounds (S26, S27) | dispatched | child 0018-impl-r1 | codex/gpt-6.1-sol | orch/0018-choir-horn-names |  |  | task `0018-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0018-impl-r1` |  |  | handoffs/2026-11-11-0018-choir-and-horn-names--lead-to-codex.md | 2026-11-11 |
@@ -23,6 +23,7 @@ Next ID: 0019
 
 | K | Title | PR | Merged | Notes |
 |---|---|---|---|---|
+| 0001-t4 | Pitch colours and toggle tile + PDF parity (task of 0001; closes 0002 AC8a) | https://github.com/pepperhorn/ph-scoreview/pull/81 | 2026-11-11 | 299d463; ci.yml poppler-utils (S21) |
 | 0016 | [quick] Instrument names: Bass, ukulele sound, tuning warning | https://github.com/pepperhorn/ph-scoreview/pull/80 | 2026-11-11 | c1415a0; human naming policy; ABC guide updated |
 | 0002-t2 | PDF composition (task of 0002) | https://github.com/pepperhorn/ph-scoreview/pull/78 | 2026-11-11 | 03d0ac7; AC8a parity moved into 0001-T4 |
 | 0013-t1 | String instruments, TAB part selection and tunings (task of 0013) | https://github.com/pepperhorn/ph-scoreview/pull/77 | 2026-11-11 | d248d7b; settings.tabInstruments; README text proposed for T4 |
@@ -70,7 +71,7 @@ Next ID: 0019
 | S18 | test | Instrument-switch validation covers only the ABC guitar; add a MusicXML-source leg | `validation/instrument-switch.mjs` | XS | low | PR #75 review | new |
 | S19 | risk | Reader (webkit) flake: "Extra large note names keep clear of the count row" (gap −1.7 → −3.5) failed on PDF-only PR #71's push run, passed on its PR run | CI run 42740873297; `validation/reader.mjs` | S | medium (blocks merges) | PR #71 CI | new |
 | S20 | fix | `findTarget` returns null when the plugin's own overlay (e.g. a spotlight backdrop) covers the target centre; use `elementsFromPoint` and ignore hits inside `[data-ps-plugin]` — needed before 0003 T4 | `packages/pepperscore-editor/src/plugin/host.ts:33` | XS | high for T4 | PR #76 review r2 | done (0014, PR #79) |
-| S21 | ci | Install `poppler-utils` in the CI validate job so the PDF raster check runs in CI, not only locally | PR #78 review r2 | XS | medium | PR #78 review | accepted → 0001-t4 (ci.yml poppler-utils) |
+| S21 | ci | Install `poppler-utils` in the CI validate job so the PDF raster check runs in CI, not only locally | PR #78 review r2 | XS | medium | PR #78 review | done (0001-t4, PR #81) |
 | S22 | fix | Firefox PDF export: notation ~10× too large (offscreen layout root has no width/height, so Firefox returns identity CTM); give the root SVG explicit size before measuring — goes in 0002 T4 handoff | PR #78 review r3; `BROWSER=firefox node validation/pdf.mjs` | S | high before shipping PDF | PR #78 review | new |
 | S23 | fix | PDF annotations: TAB staves default to none when not passed; shadow offset drops multi-value `dy` | PR #78 review r3 | XS | low | PR #78 review | new |
 | S24 | fix | tabTuning mismatch warning always says "host": `PepperScore.tsx:495-497` passes host and reader-saved tunings through the same field | PR #80 review r2 | XS | low | PR #80 review | new |
@@ -83,6 +84,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-11 0001-t4 ready→merged — human OK for the ci.yml change, CI green, merged PR #81 (299d463). 0002-t3 and 0013-t3 dispatched in parallel (disjoint files)
 2026-11-11 0001-t4 in-review→ready — r3 approve on 50265da; CI green (Poppler step ran); needs human OK for the ci.yml change
 2026-11-11 0016 ready→closed — CI back (billing resolved), green on af741f6, merged PR #80 (c1415a0); guide updated. Human: until CI is reliable, an approved PR may merge on the reviewer's full local suite; S26+S27 quick fix before 0.5.0
 2026-11-11 0016 in-review→ready — r5 approve on af741f6; full local suite green (490 tests; editor-phone, reader, large needed reruns under load avg up to 72); CI billing-blocked; S26, S27 logged
