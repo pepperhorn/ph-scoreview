@@ -18,7 +18,7 @@ permissions:
 jobs:
   validate:
     name: Check, build and validate (chromium)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
     timeout-minutes: 45
     # Match playwright-core so Chromium and its system libraries are already installed.
     container:
@@ -53,7 +53,7 @@ jobs:
   reader:
     if: github.event_name != 'push'
     name: Reader (${{ matrix.browser }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
     timeout-minutes: 30
     # The Playwright image carries the browsers and every system library they need. Installing those libraries with
     # apt on the runner (`--with-deps`, ~120 MB for WebKit or Firefox) has crawled at ~50 kB/s from the runner's mirror
