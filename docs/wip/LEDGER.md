@@ -17,7 +17,7 @@ Next ID: 0019
 | 0013 | TAB for stringed instruments | planned (t3, t4; t1 #77, t2 #74 merged) | child 0002-t2 (T3 touches render paths incl. lib/pdf and render.ts; dispatch after #78 and 0001-T4 ordering) | codex/gpt-6.1-sol |  |  |  |  | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md |  | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
 | 0017 | Release pepperscore 0.5.0 (CHANGELOG, version) | planned | child 0018 (release after it merges) | lead |  |  |  |  |  |  |  | 2026-11-11 |
-| 0018 | [quick] Choir name variants and horn sounds (S26, S27) | dispatched | lead: delegate | codex/gpt-6.1-sol | orch/0018-choir-horn-names |  |  |  |  |  | handoffs/2026-11-11-0018-choir-and-horn-names--lead-to-codex.md | 2026-11-11 |
+| 0018 | [quick] Choir name variants and horn sounds (S26, S27) | dispatched | child 0018-impl-r1 | codex/gpt-6.1-sol | orch/0018-choir-horn-names |  |  | task `0018-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0018-impl-r1` |  |  | handoffs/2026-11-11-0018-choir-and-horn-names--lead-to-codex.md | 2026-11-11 |
 
 ## Done / closed
 
