@@ -68,3 +68,12 @@ npm run test:pdf && BROWSER=firefox npm run test:pdf && BROWSER=webkit npm run t
 
 ---
 ## Receiver ack
+
+**Acknowledged by claude (implementer), 2026-11-12.** Understanding:
+- Make PDF export cooperative and cancellable: compose page by page, yield between pages (`scheduler.yield` when available, else `setTimeout`), check the `AbortSignal` between pages, and report progress if the overlay has room. Also yield inside the per-page annotate loop in `lib/pdf/export.ts`.
+- Find and fix the root cause of S34 (WebKit overlay doesn't recover after an aborted lazy chunk + reload; intermittent duplicate `.pdf-trigger`). Establish whether it's a product or a test bug and don't weaken the assertion. I touch `PdfOverlay.tsx`/`PepperScore.tsx` only if the cause is there, and I'll say so.
+- Extend `validation/pdf.mjs` with large-score export (page responsiveness via a long-task observer, and Cancel) and make `test:pdf` pass in Chromium, Firefox and WebKit. Measure export time and longest task per engine against the large-score fixture.
+- Add Firefox and WebKit PDF steps inside the existing PR-only `reader` job in `.github/workflows/ci.yml` (no new job, `runs-on` untouched).
+- Docs: README (API, options, cancel, browser support), CHANGELOG `Unreleased`, and mark phase 2 done in `docs/specs/pepperscore-plugins-and-embeds.md`.
+- Out of scope: editor, root package.json, `apps/reader/**`, `lib/tab/**`, overlay templates, new features, and S32 unless trivial inside `lib/pdf/**`.
+
