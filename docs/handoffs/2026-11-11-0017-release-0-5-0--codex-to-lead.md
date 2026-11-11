@@ -42,7 +42,7 @@ The prior release's version commit is `4cd4352` (merged by PR #58 / `9fd59e6`). 
 | Internal PDF page model and vector composition | #71 / `6d0d41a`, #78 / `03d0ac7`; [0002 T1](2026-11-10-0002-t1-pdf-page-model--codex-to-lead.md), [0002 T2](2026-11-10-0002-t2-pdf-composition--codex-to-lead.md) |
 
 ## Decisions made / known gotchas
-- Explicitly label PDF as internal groundwork: no export UI or public export API exists in this base. `compose.ts` dynamically imports both `jspdf` and `svg2pdf.js`; both are already package dependencies. No dependency changes in this PR.
+- Initial PDF-groundwork wording is superseded by the merged PDF export update below. `compose.ts` still dynamically imports both `jspdf` and `svg2pdf.js`; both remain package dependencies. No dependency changes authored in this PR.
 - Initial scope excluded fretless integration; superseded by the PR #84 merge update below. Violin/cello finger TAB now ships in 0.5.0; viola/double bass remain gated.
 - Omit validation-only #73 and editor-only #68/#69/#76/#79 from this package's user-facing release notes. The package diff since 0.4.1 was audited for coverage.
 - Behaviour changes explicitly cover Bass, Alto/Tenor, no non-string TAB fallback, matching string counts for tuning, and sounding-pitch ABC octave clefs.
@@ -160,3 +160,33 @@ git diff --check: exit 0
 ```
 
 Outcome: documentation updated for merged PR #84, ready for re-review. Only handoff verification text changed after the successful chain. Local checks pass; GitHub CI/review state is not asserted. No npm publication.
+
+## Merged PDF export — PR #83 and Firefox fix #87
+
+The human decided 0.5.0 ships PDF export and explicitly requested another `git fetch origin && git merge origin/main`, without rebasing. The clean worktree merged without conflicts as `ae15bf5`, including #83 (`8356961`), #87 (`6c9af58`) and other upstream commits. Source/CI changes from the merge are inherited, not release-task edits. The same owned files remain in force; authored changes after merging are only CHANGELOG, README and this return handoff. The single requested push contains all changes and this verification record.
+
+Sources: [0002 T3 return](2026-11-11-0002-t3-pdf-overlay--codex-to-lead.md), [0002 T2 return](2026-11-10-0002-t2-pdf-composition--codex-to-lead.md), [0020 Firefox return](2026-11-11-0020-pdf-firefox-scale--codex-to-lead.md), current PdfOverlay/chrome/prefs/bar/compose code. GBrain historical lookup repeated (`default:projects/scoreflow-music-reader`); merged repo source/handoffs control these release details.
+
+Replaced internal-only PDF wording with the shipped button/dialog/export behavior. Added README PDF section, `controls.pdf` row and prop-table key, preset availability and skin-bar documentation. Paper is global prefs `pdfPaper`, NOT a new public settings field; PDF bars default to 4 on each dialog mount and are independent of screen bars. Filenames are slugged normalized titles, falling back to score.pdf. Vector/embedded-font output captures annotations and active pitch colours; Serif/Mono text falls back to Poppins. The measured approximately +1.5 KB gzip is T3's initial package JS+CSS delta, not a new benchmark or total PDF payload size. Runtime jspdf/svg2pdf remain deferred until Save. Chromium/Firefox PDF verification is recorded in the merged returns; Safari/WebKit remains unverified (missing WebKit host libraries). No API implementation, import behavior or dependency-spec edits made here.
+
+Traceability: CHANGELOG PDF coverage now includes #71/#78/#81 groundwork plus #83 UI and #87 Firefox scale. Prior handoff/PR descriptions saying no PDF UI existed are superseded.
+
+Verification: the requested foreground repo-root chain exited 0 against the merged runtime and final package docs:
+```bash
+npm ci && npm run check && npm run build && npm run test:pack
+```
+Logs: `/tmp/0017-pdf-{ci,check,build,pack}.log`. No publication or PR watch/poll.
+
+```text
+npm ci: exit 0
+npm run check: 23 Astro files, 0 errors, 0 warnings, 0 hints
+npm run build: 10 pages; Complete; library/demo worker, Verovio and notices match
+npm run test:pack: pepperscore-0.5.0.tgz (121 files), build output and no sources
+  fresh Vite + React host build passed
+  fresh Astro + React client:only host build passed
+  Node import touches no window/document/storage/location
+  Astro SSR client:visible host built, served and answered 200
+git diff --check: exit 0
+```
+
+Outcome: release docs now cover shipped PDF export and Firefox scale correction. Only this handoff's verification text changed after the green command chain. Scope audit after the merge lists only the two package docs and this handoff; no runtime code or dependency specs authored in this update. PDF browser support statements come from the merged #83/#87 verification, not a new browser run in this release-doc task. GitHub CI/review approval is not claimed. Ready for re-review; no npm publication, no PR watch/poll.

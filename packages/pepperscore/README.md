@@ -195,7 +195,7 @@ export default defineConfig({
 | `scoreUrl` | `string` | | A score to download. Relative URLs resolve against the page. Cross-origin URLs need CORS. |
 | `abc` | `string` | | ABC notation. |
 | `chrome` | `'full' \| 'minimal' \| 'none'` | `'full'` | See the chrome table below. |
-| `controls` | `{ transport?, viewToggle?, openFile?, mixer?, drawer?, zoom?, tabToggle?, instrumentSwitch?, octaveTool? }` (booleans) | from `chrome` | Per-control overrides of the preset, see below. |
+| `controls` | `{ transport?, viewToggle?, openFile?, mixer?, drawer?, zoom?, tabToggle?, instrumentSwitch?, octaveTool?, pdf? }` (booleans) | from `chrome` | Per-control overrides of the preset, see below. |
 | `skin` | `PepperScoreSkin` | | Theme colours, ordered built-in bar and optional pitch palette; see [Skins and pitch colours](#skins-and-pitch-colours). |
 | `view` | `'vertical' \| 'endless'` | saved or `'vertical'` | Vertical scrolls down, Endless scrolls sideways. Changing the prop re-applies it. |
 | `height` | `string` | natural | `"fill"`: the parent's height. Any CSS length (`"420px"`, `"60vh"`, `"100dvh"`) fixes it. Omitted: `full` fills its parent with a 480px floor, and `minimal`/`none` take the height of their score. |
@@ -271,6 +271,7 @@ For hosts that build on the reader (selection, cursors, navigation):
 | Control | `full` | `minimal` | `none` |
 | --- | --- | --- | --- |
 | Header transport (stop, play, BPM, view toggle, open, mixer) | yes | no | no |
+| PDF export | yes | no | no |
 | Compact play/stop button (corner overlay) | no | yes | no |
 | Playhead, note highlight, follow | yes | yes | no (yes with a `clock`) |
 | Bottom drawer and handle | yes | no | no |
@@ -291,9 +292,10 @@ For hosts that build on the reader (selection, cursors, navigation):
 | `drawer` | The bottom drawer and its handle. |
 | `instrumentSwitch` | The instrument switcher: the Instrument choice in the mixer and the embed popover, the range-level and auto-range controls, and the phone bottom toolbar of embeds. On in `full`; off in `minimal` and `none` unless you set it. `settings.instrument` / `settings.instruments` alone still switch the part, but show no switcher. |
 | `octaveTool` | The octave tool (select a note, passage or phrase and move it 8va/8vb). On in `full`; off in `minimal` and `none` unless you set it. |
+| `pdf` | PDF export button, drawer action and dialog; on in `full`, off otherwise. Explicit `false` also removes skin bar item `pdf`. See [PDF export](#pdf-export). |
 | `tabToggle` | The Notation / TAB / Both switch, in the header (in the More panel on a phone) and in the drawer. With the drawer on, the header copy is left out between 761 and 1260px, where the full header has no room for it. It shows only for a score with available TAB. |
 
-The header appears when any of `transport`, `viewToggle`, `openFile`, `mixer`, `zoom` or `tabToggle` is on. For example, `<PepperScore chrome="minimal" controls={{ viewToggle: true }} … />` keeps the compact play button and adds a small header with only the view toggle.
+The header appears when any of `transport`, `viewToggle`, `openFile`, `mixer`, `zoom`, `tabToggle` or `pdf` is on. For example, `<PepperScore chrome="minimal" controls={{ viewToggle: true }} … />` keeps the compact play button and adds a small header with only the view toggle.
 
 ### Skins and pitch colours
 
@@ -312,8 +314,8 @@ const skin = mergeSkins(base, { theme: { surface: '#fff' }, pitchColours: { C: '
 ```
 
 - **Theme:** a partial map of `ThemeToken` roles to CSS colours (including host `var()` references). Roles: `accent`, `accentHover`, `accentWash`, `accentWashStrong`, `backdrop`, `border`, `borderMuted`, `danger`, `focusRing`, `onAccent`, `playback`, `shadow`, `surface`, `surfaceRaised`, `text`, `textFaint`, `textMuted`, `textSecondary`, `warning`. Omitted roles keep their defaults. Theme changes do not re-engrave.
-- **Bar:** an ordered `BarItemId[]` replacing the full/minimal header controls. Available ids: `play`, `stop`, `tempo`, `transpose`, `keyFlip`, `bars`, `viewToggle`, `tab`, `zoom`, `mixer`, `openFile`, `instrumentSwitch`, `octaveTool`, `options`, `noteNames`, `counts`, `chordSymbols`, `pitchColours`. `pdf` is reserved and has no control in 0.5.0. Duplicates and unknown ids are ignored. Explicit `controls` values of `false` still win; unavailable controls are omitted. A bar with no renderable items restores the preset defaults. `chrome="none"` does not show a skin bar. Without `bar`, the preset header is unchanged.
-- **Drawer:** `options` opens the drawer. Enabled stop, view, bars, zoom, mixer and file actions omitted from a composed bar appear in its Playback and view panel. Annotation tiles stay in sync with the drawer and saved preferences; `chordSymbols` toggles authored and inferred symbols together.
+- **Bar:** an ordered `BarItemId[]` replacing the full/minimal header controls. Available ids: `play`, `stop`, `tempo`, `transpose`, `keyFlip`, `bars`, `viewToggle`, `tab`, `zoom`, `mixer`, `openFile`, `instrumentSwitch`, `octaveTool`, `options`, `noteNames`, `counts`, `chordSymbols`, `pitchColours`, `pdf`. Duplicates and unknown ids are ignored. Explicit `controls` values of `false` still win; unavailable controls are omitted. A bar with no renderable items restores the preset defaults. `chrome="none"` does not show a skin bar. Without `bar`, the preset header is unchanged.
+- **Drawer:** `options` opens the drawer. Enabled stop, view, bars, zoom, mixer, file and PDF actions omitted from a composed bar appear in its Playback and view panel. Annotation tiles stay in sync with the drawer and saved preferences; `chordSymbols` toggles authored and inferred symbols together.
 - **Pitch palette:** `PitchPalette` maps all 12 sharp-spelled `PitchClass` keys (`C`, `C#`, `D`, `D#`, `E`, `F`, `F#`, `G`, `G#`, `A`, `A#`, `B`) to colours. Enharmonic equivalents share a colour. `CRF_PITCH_COLOURS` is a ready-made palette. `mergeSkins(base, ...overrides)` merges theme/palette keys and replaces the bar with the last supplied array; the resulting palette must be complete or it throws.
 
 | Setting / handle | Type | Default | Meaning |
@@ -322,6 +324,25 @@ const skin = mergeSkins(base, { theme: { surface: '#fff' }, pitchColours: { C: '
 | `handle.setPitchColours(on)` | `(on: boolean) => void` | | Toggle the same preference without re-engraving. |
 
 The pitch-colour tile appears in the bar/drawer only when a palette is supplied. Colours follow displayed pitch after transposition, including individual chord heads; percussion and TAB are not coloured. Playback, cursor, selection and range marks retain priority. Palette changes and toggles do not re-engrave. The package exports `PepperScoreSkin`, `ThemeToken`, `BarItemId`, `PitchClass` and `PitchPalette` types alongside the helpers above.
+
+### PDF export
+
+`full` shows a PDF button in the header's secondary controls and the drawer. The header button is icon-only at reader widths 761–900px and appears in the secondary row/More menu on narrow screens. Use `controls={{ pdf: true }}` to enable it in other presets, `controls={{ pdf: false }}` to hide it, or include `'pdf'` in `skin.bar`. The resolved internal flag is `chrome.pdf`; the public `chrome` prop remains a preset string. Export becomes available once a score is loaded.
+
+```tsx
+<PepperScore musicXml={xml} chrome="minimal" controls={{ pdf: true }} />
+```
+
+| Dialog option / preference | Default | Meaning |
+| --- | --- | --- |
+| Paper (`pdfPaper`) | `'a4'` | A4, A3, Letter or Legal. Remembered globally in the reader's preferences when persistence is on, not per score. It is not a `settings` prop. |
+| Bars per line | `4` | Local to the dialog; 1–8, reset on reopen. Does not read or change on-screen `settings.barsPerLine`. Lines may use fewer bars to fit. |
+
+The dialog reports “Checking fit…” while measuring, then how many lines need fewer bars. **Save** can proceed without waiting for that check and captures the current view; **Cancel** or Escape aborts work without downloading. Save downloads `<title>.pdf`, with the title normalized to lowercase hyphen-separated text (or `score.pdf` when no usable title exists). Export does not interrupt playback or change the on-screen layout/scroll position.
+
+The PDF has vector notation, embedded music/text fonts, title/credits and page numbers. It carries the current transposition/instrument view, visible staves, notation/TAB choice, note names, counts, chord symbols and active pitch colours, including annotation sizes. Screen controls, playhead and selection marks are excluded. Serif/Mono annotation text uses Poppins in PDF; unsupported text glyphs report an error instead of silently disappearing.
+
+The dialog loads only when opened; the composer, `jspdf` and `svg2pdf.js` load on Save. Those libraries are installed runtime dependencies. The PDF implementation measured about +1.5 KB gzip for initial package JS+CSS; the larger PDF engine/font payload is deferred. PDF export is verified in Chromium and Firefox, including Firefox's corrected notation scale. Safari/WebKit PDF is not yet verified.
 
 ### String TAB
 
