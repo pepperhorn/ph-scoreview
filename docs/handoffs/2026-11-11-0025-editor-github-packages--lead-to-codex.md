@@ -1,0 +1,72 @@
+# Handoff: 0025 — Ship pepperscore-editor via private GitHub Packages + licence tooling (0003 P1/P3) (lead → codex)
+
+- **Date:** 2026-11-11
+- **Type:** dispatch
+- **Ledger:** 0025 · **Spec:** docs/specs/0003-teaching-layer.md · **Plan:** docs/plans/0003-teaching-layer.md (prerequisites P1, P3)
+- **Branch:** orch/0025-editor-github-packages · **Worktree:** created by T3
+- **Status:** open
+
+## Goal
+Human decisions (2026-11-11):
+- **P1:** the editor ships as `@pepperhorn/pepperscore-editor` on the **private GitHub Packages npm registry** (restricted).
+- **P2:** the private plugin repo is `pepperhorn/pepperscore-pt`, already created and empty.
+- **P3:** the licence signing key will be **rotated now**, and then BeCreative's key will be issued.
+
+This task makes the editor installable outside this monorepo and adds licence tooling to the repo. It does **not** publish: the human publishes (`npm login --registry=https://npm.pkg.github.com` first, as a separate step, then publish).
+
+## Scope
+- **In:**
+  1. `packages/pepperscore-editor/package.json`:
+     - rename to `@pepperhorn/pepperscore-editor`
+     - remove `private: true`
+     - `publishConfig: { registry: "https://npm.pkg.github.com", access: "restricted" }`
+     - `repository` field pointing at pepperhorn/ph-scoreview
+     - `files: ["dist", "README.md"]`
+     - a `build` script that emits ESM JS + `.d.ts` + `style.css` into `dist/`, and `exports` pointing at `dist`
+     - Keep `pepperscore` as a peer dependency (`>=0.5.0`).
+     - Library build tool: use whatever the repo already uses for `packages/pepperscore` (Vite lib mode + tsc for types). Don't add a new bundler.
+  2. Update every in-repo consumer of the old name: the reader app, validation scripts, tsconfig paths, the root workspaces/scripts. The reader must still resolve the editor **from source** in dev, or build it first in `npm run build`, whichever the pepperscore package already does.
+  3. A pack check: `npm pack --dry-run -w @pepperhorn/pepperscore-editor` must list only dist + README + package.json. Add it to the root `test:pack` (or a sibling script) if cheap.
+  4. Licence tooling: `packages/pepperscore-editor/scripts/licence-keygen.mjs` and `licence-sign.mjs`, ported from the lead's tested scratch versions, which are inlined below. **Do not generate or commit a real key.** Tests: a unit test that a key signed by a throwaway keypair verifies with `verifyLicence(key, publicJwk)`.
+  5. README for the editor package: install from GitHub Packages (`.npmrc` with `@pepperhorn:registry=https://npm.pkg.github.com` plus a read:packages token via env, never committed), and how to sign a licence.
+- **Out:**
+  - Swapping `DEFAULT_LICENCE_PUBLIC_KEY_JWK` and re-signing the demo key in `apps/reader/src/embed/EditorDemo.tsx`. The lead will send the new public JWK and demo key in a follow-up round once the human has rotated. Leave a clearly marked TODO only if the round hasn't arrived by the time you open the PR.
+  - Publishing, and anything in pepperscore-pt or becreative.
+- **Files you own:**
+  - `packages/pepperscore-editor/**`
+  - `apps/reader/**` (import renames only)
+  - root `package.json` and `package-lock.json` (workspace/script and name changes only)
+  - `tsconfig*.json` (path renames)
+  - `validation/**` (import renames only)
+  - `scripts/pack-*.mjs` (if you extend the pack check)
+  - your own handoff files for 0025
+- **Do not touch:** `packages/pepperscore/src/lib/tab/**` (0023), `.github/workflows/ci.yml` (0024), `styles.css` (0022), README/CHANGELOG of pepperscore (0001-t5).
+
+### Reference scripts (tested by lead)
+```js
+// keygen: node licence-keygen.mjs <private-jwk-path>  → writes private JWK (0600, refuses overwrite), prints public JWK {kty,crv,x}
+// sign:   node licence-sign.mjs <private-jwk-path> <sub> <YYYY-MM-DD> <maxStaves> → prints base64url(payload).base64url(sig)
+```
+Payload is `{ sub, exp: unixSeconds(YYYY-MM-DDT00:00:00Z), maxStaves }`, signed with Ed25519 over the exact JSON bytes. That is the format `verifyLicence` in `src/licence.ts` checks.
+
+## Acceptance criteria
+- [ ] `npm run build` builds the editor's `dist/`. A scratch consumer (`npm pack` tarball installed into a temp dir with react, react-dom and pepperscore) can `import { ... } from '@pepperhorn/pepperscore-editor'` and its types resolve.
+- [ ] The reader and all editor tests still pass under the new name: `npm run test:editor`, `npm run test:editor-browser`, `npm run test:editor-phone`.
+- [ ] Licence scripts plus a unit test; the README documents install and signing.
+- [ ] Full verify passes.
+
+## Verify with
+```bash
+npm ci && npx playwright-core install chromium
+npm run check && npm run build && npm run test:manifest && npm run test:validation
+npm run test:editor && npm run test:editor-browser && npm run test:editor-phone
+npm pack --dry-run -w @pepperhorn/pepperscore-editor
+```
+
+## Known gotchas
+- Memories: the licence private key was generated by an agent in Oct 2026 and has passed through transcripts. That's why we're rotating. Never print, log or commit a private JWK.
+- `licenceKey="dev"` works only in dev builds (`import.meta.env.DEV`). Keep that.
+- This changes a package name and its public install path. The human approves the merge.
+
+---
+## Receiver ack

@@ -39,6 +39,11 @@ These block T4 to T6, not T1 to T3.
 - **P2. Private repo.** Name and create it, and decide how BeCreative installs its package (private registry or git dependency). Recommended: a static import, which `pepperscore-plugins-and-embeds.md` allows for first-party plugins, so that app-sdk plugins and signed URLs (phase 3 of that spec) are not needed yet.
 - **P3. BeCreative licence.** Issue a signed key that `verifyLicence` accepts and store it as a BeCreative secret. This needs the private signing key, which should be rotated before paid release.
 
+**Decisions (human, 2026-11-11):**
+- P1: private GitHub Packages as `@pepperhorn/pepperscore-editor` (ledger 0025).
+- P2: repo `pepperhorn/pepperscore-pt` (created, private), statically imported by BeCreative from the same private registry.
+- P3: rotate the signing key now, then issue the BeCreative key. Signing tooling ships in 0025; the human holds the private JWK outside git.
+
 ## Tasks
 
 ### T1 — Score details fields
@@ -116,7 +121,7 @@ New props: `plugins?: EditorPlugin[]`, and `startedNew?: boolean`, which sets `o
 
 - **Depends on:** T3, P1, P2
 - **Route:** implement (default)
-- **Owns:** the new private repo. Working name `pepperscore-coach`; final name from P2.
+- **Owns:** the new private repo. Repo `pepperhorn/pepperscore-pt` (P2).
 - **Acceptance:** spec "Setup tour" and "Where it appears and how it ends", without final copy.
 - **Produces:** `createCoachPlugin({ script, storage? }): EditorPlugin`, and:
 
