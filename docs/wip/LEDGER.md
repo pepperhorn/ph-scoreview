@@ -5,7 +5,7 @@
 > Waiting on: `child <taskId>` · `review <taskId>` · `ci` · `human: <why>` · `lead: <next action>`. Set it on every status change. A row needs the lead when it starts with `lead`, or when it's empty and Status is dispatched, in-review, changes-requested, ready, or merged. The lead's Stop hook won't let the lead end its turn while any row needs it.
 > Type: normal items have a spec and plan. Quick items have the title prefix `[quick]` (no spec or plan, a short handoff). PRs adopted by `orch-sweep` have the prefix `[pr]`.
 
-Next ID: 0023
+Next ID: 0025
 
 ## Active
 
@@ -16,6 +16,8 @@ Next ID: 0023
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | human: P1–P3 (editor distribution, private repo name, BeCreative licence) before T4 | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
 | 0022 | [quick] Safari draws pitch-colour outlines solid black (S31) | dispatched | child 0022-impl-r1 | codex/gpt-6.1-sol | orch/0022-safari-pitch-outline |  |  | task `0022-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A0022-impl-r1` |  |  | handoffs/2026-11-11-0022-safari-pitch-outline--lead-to-codex.md | 2026-11-11 |
+| 0023 | [quick] Fretless solver: position continuity (S30) | dispatched | child 0023-impl-r1 | codex/gpt-6.1-sol | orch/0023-fretless-position-continuity |  |  | task `0023-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3Ac74f9e93-cb09-4963-ad26-a335a09a74fe` | specs/0013-stringed-instrument-tab.md |  | handoffs/2026-11-11-0023-fretless-position-continuity--lead-to-codex.md | 2026-11-11 |
+| 0024 | Self-hosted GitHub Actions runner (CI minutes, follow-up to 0021) | proposed | human: pick runner host + approve ci.yml runs-on change | lead |  |  |  |  |  |  |  | 2026-11-11 |
 
 ## Done / closed
 
@@ -86,7 +88,7 @@ Next ID: 0023
 | S27 | fix | `/horn/` gives English Horn, Basset Horn, Flugelhorn the French horn sound; should be GM 70 (cor anglais), clarinet, trumpet/flugelhorn | `packages/pepperscore/src/lib/score.ts:124` | XS | low | PR #80 review | done (0018, PR #82) |
 | S28 | ci | CI "Validation suite" step (timeout 15 min) takes ~12 min and times out on busy runs (PR #82 push run, two main runs) | `.github/workflows/ci.yml:41` | XS | high (false reds) | PR #82 review r2 | done (0019, PR #86) |
 | S29 | fix | Fretless position-label pruning happens after Verovio layout, so a removed label can leave a neighbour one row higher than needed | PR #84 review r2 | S | low (cosmetic) | PR #84 review | new |
-| S30 | improvement | Fretless solver: add a position-continuity cost (prefer staying in position) to cut label density and I/II flips | 0013-t3 return handoff; PR #84 reviews | M | medium (readability) | PR #84 | new |
+| S30 | improvement | Fretless solver: add a position-continuity cost (prefer staying in position) to cut label density and I/II flips | 0013-t3 return handoff; PR #84 reviews | M | medium (readability) | PR #84 | accepted → 0023 |
 | S31 | fix | Safari (WebKit) reader draws pitch-colour notehead outlines solid black, ignoring `--ps-pitch-outline` (PDF is correct); `validation/pdf.mjs:511` fails on webkit, main too | PR #87 review | S | medium (Safari users see heavy outlines) | PR #87 review | accepted → 0022 |
 | S32 | fix | PDF page 1: chord symbol "C" overlaps the tempo mark (all browsers, main too) | PR #87 review | S | low | PR #87 review | new |
 | S33 | fix | PDF dialog: first close returns focus to the reader, not the PDF button; focus from outside the reader can land behind any reader dialog (mixer too) | PR #83 review r2 | S | low | PR #83 review | new |
@@ -96,6 +98,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-11 0023 new→dispatched — human accepted S30 (position continuity); Codex, owns lib/tab/strings/**. 0024 proposed — human OK for a self-hosted runner; host choice pending (syd1 is 2 vCPU/8 GB with prod apps; make-1 has 12 cores/39 GB with docker 29.9)
 2026-11-11 0017 merged→closed — npm shows pepperscore 0.5.0 (published by human). 0013 closed (T4 docs landed in the 0.5.0 README). 0001-t5 dispatched (route alt: Claude Sonnet; review by Codex). 0022 (S31 Safari outline) dispatched for 0.5.1. 0002-t4 after 0001-t5
 2026-11-11 0017 ready→merged — CI green on 95e3418, merged PR #85 (9a3ab8c); pack dry run reports pepperscore@0.5.0; human to publish
 2026-11-11 0017 changes-requested→ready — 95e3418 merges main and documents PDF export (lead checked the docs-only delta); waiting on CI, then publish
