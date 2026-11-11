@@ -31,14 +31,13 @@ describe('TAB of an instrument view', () => {
     }
   });
 
-  it('a guitar switched to violin is no TAB part: notation stays, the imported TAB is hidden', () => {
+  it('a guitar switched to violin gets finger TAB and hides imported fret TAB', () => {
     const view = applyInstrumentView(source, { G: sw('violin') }, 'written').score;
-    expect(tabParts(view)).toEqual([]);
+    expect(tabParts(view).map(part => part.id)).toEqual(['G']);
     const plan = planTab(view, staffOf, 'tab', options);
-    expect(plan.hidden).toEqual(['2']);
-    expect(plan.added).toEqual([]);
-    expect(plan.display.size).toBe(0);
-    expect(plan.spec).toBeUndefined();
+    expect(plan.hidden).toEqual(['1', '2']);
+    expect(plan.added).toEqual(['101']);
+    expect(plan.spec?.fingers).toEqual({ '1': 'violin' });
   });
 
   it('a part switched to guitar takes generated TAB', () => {

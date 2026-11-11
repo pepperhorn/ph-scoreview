@@ -1,4 +1,4 @@
-/** Fretless spike data; not yet wired into the reader.
+/** Fretless chart data; violin and cello are integrated in the reader.
  * Source: ~/violintab/src/lib/tab/instruments.ts (violin/cello).
  * Strings run high → low; MIDI values are SOUNDING pitches, including bass.
  */

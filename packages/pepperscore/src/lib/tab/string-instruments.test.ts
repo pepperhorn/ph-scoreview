@@ -14,16 +14,16 @@ describe('string instrument TAB', () => {
   it('recognizes every GM guitar/bass program and rejects non-strings', () => {
     for (let gm = 25; gm <= 40; gm++) expect(stringInstrument(part('Part', gm))).toBe(gm < 33 ? 'guitar' : 'bass4');
     for (const name of ['Piano', 'Flute', 'Clarinet']) expect(canShowTab(score([part(name)]))).toBe(false);
-    for (const name of ['Violin', 'Cello', 'Viola', 'Double Bass']) expect(canShowTab(score([part(name)]))).toBe(false);
+    for (const name of ['Viola', 'Double Bass']) expect(canShowTab(score([part(name)]))).toBe(false);
     expect(stringInstrument(part('Double Bass', 33))).toBe('double-bass');
     expect(stringInstrument({ ...part('Acoustic Bass', 33), instrument: 'double-bass' })).toBe('bass4');
     expect(stringInstrument(part('Cello', 25))).toBe('guitar');
   });
-  it('classifies finger TAB candidates without generating their staves', () => {
+  it('classifies finger TAB candidates and generates four-line chart staves', () => {
     for (const name of ['Violin', 'Cello']) {
       const id = stringInstrument(part(name))!;
       expect(STRING_INSTRUMENTS[id].kind).toBe('finger');
-      expect(planTab(score([part(name)]), new Map([[name, '1']]), 'both', options).added).toEqual([]);
+      expect(planTab(score([part(name)]), new Map([[name, '1']]), 'both', options).added).toEqual(['101']);
     }
   });
   it('uses independent defaults for mixed instruments and exact-id host overrides', () => {
@@ -90,9 +90,9 @@ describe('string instrument TAB', () => {
     ['double-bass', 'double-bass', false],
     ['bassguitar', 'bass4', true],
     ['guitar', 'guitar', true],
-    ['violin', 'violin', false],
+    ['violin', 'violin', true],
     ['viola', 'viola', false],
-    ['cello', 'cello', false],
+    ['cello', 'cello', true],
   ] as const)('switches Piano to %s using the target id before GM inference', (target, identity, available) => {
     const source = withTabSettings(score([part('Piano', 1)]), { Piano: 'bass5' });
     const view = applyInstrumentView(source, {
