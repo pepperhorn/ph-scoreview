@@ -387,11 +387,17 @@ The pitch-colour tile appears in the bar/drawer only when a palette is supplied.
 | Paper (`pdfPaper`) | `'a4'` | A4, A3, Letter or Legal. Remembered globally in the reader's preferences when persistence is on, not per score. It is not a `settings` prop. |
 | Bars per line | `4` | Local to the dialog; 1–8, reset on reopen. Does not read or change on-screen `settings.barsPerLine`. Lines may use fewer bars to fit. |
 
-The dialog reports “Checking fit…” while measuring, then how many lines need fewer bars. **Save** can proceed without waiting for that check and captures the current view; **Cancel** or Escape aborts work without downloading. Save downloads `<title>.pdf`, with the title normalized to lowercase hyphen-separated text (or `score.pdf` when no usable title exists). Export does not interrupt playback or change the on-screen layout/scroll position.
+The dialog reports “Checking fit…” while measuring, then how many lines need fewer bars. **Save** can proceed without waiting for that check and captures the current view. While it builds, the dialog shows “Building PDF… page N of M”; **Cancel** (or Escape) stops it, discards the work and downloads nothing. Save downloads `<title>.pdf`, with the title normalized to lowercase hyphen-separated text (or `score.pdf` when no usable title exists). Export does not interrupt playback or change the on-screen layout/scroll position.
+
+There is no imperative export call: the button, drawer action, skin bar item and `controls.pdf` are the whole public surface, and `pdfPaper` is the only preference.
 
 The PDF has vector notation, embedded music/text fonts, title/credits and page numbers. It carries the current transposition/instrument view, visible staves, notation/TAB choice, note names, counts, chord symbols and active pitch colours, including annotation sizes. Screen controls, playhead and selection marks are excluded. Serif/Mono annotation text uses Poppins in PDF; unsupported text glyphs report an error instead of silently disappearing.
 
-The dialog loads only when opened; the composer, `jspdf` and `svg2pdf.js` load on Save. Those libraries are installed runtime dependencies. The PDF implementation measured about +1.5 KB gzip for initial package JS+CSS; the larger PDF engine/font payload is deferred. PDF export is verified in Chromium and Firefox, including Firefox's corrected notation scale. Safari/WebKit PDF is not yet verified.
+**Large scores.** Engraving runs in its own worker. Drawing needs a DOM, so it runs on the page, one page at a time and in slices of a few dozen elements, yielding to the browser between slices; the page stays responsive and playback keeps running. A 30-part score (one system per page) took about 15–25 s for 12 bars on a developer machine, so expect minutes for hundreds of bars; Cancel takes effect within one slice (tens of milliseconds). Cancelling terminates the engraving worker and removes the temporary fonts and offscreen page the export added.
+
+**Browsers.** Chromium, Firefox and Safari/WebKit are covered by the package's validation. One WebKit limitation: if the dialog's lazy chunk fails to download (for example after a network drop), Safari keeps the failed preload for the life of the tab, so **Reload page** shows the same error until the page is opened in a new tab. Other engines recover on reload.
+
+The dialog loads only when opened; the composer, `jspdf` and `svg2pdf.js` load on Save. Those libraries are installed runtime dependencies. The PDF implementation measured about +1.5 KB gzip for initial package JS+CSS; the larger PDF engine/font payload is deferred.
 
 ### String TAB
 
