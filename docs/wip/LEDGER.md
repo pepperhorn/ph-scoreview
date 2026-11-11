@@ -5,7 +5,7 @@
 > Waiting on: `child <taskId>` · `review <taskId>` · `ci` · `human: <why>` · `lead: <next action>`. Set it on every status change. A row needs the lead when it starts with `lead`, or when it's empty and Status is dispatched, in-review, changes-requested, ready, or merged. The lead's Stop hook won't let the lead end its turn while any row needs it.
 > Type: normal items have a spec and plan. Quick items have the title prefix `[quick]` (no spec or plan, a short handoff). PRs adopted by `orch-sweep` have the prefix `[pr]`.
 
-Next ID: 0021
+Next ID: 0022
 
 ## Active
 
@@ -18,6 +18,7 @@ Next ID: 0021
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
 | 0017 | Release pepperscore 0.5.0 (CHANGELOG, version) | ready (on hold) | review 0002-t3-review-r1 and child 0020 (human: release waits for the PDF button and a Firefox PDF fix) | codex/gpt-6.1-sol | orch/0017-release-0-5-0 | https://github.com/pepperhorn/ph-scoreview/pull/85 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-5de38d86-837e74894e3847b8 | task `0017-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0017-impl-r1` |  |  | handoffs/2026-11-11-0017-release-0-5-0--codex-to-lead.md (@6733f80) | 2026-11-11 |
 | 0020 | [quick] PDF export in Firefox: notation ~10× too large (S22) | dispatched | child 0020-impl-r1 | codex/gpt-6.1-sol | orch/0020-pdf-firefox-scale |  |  | task `0020-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0020-impl-r1` |  |  | handoffs/2026-11-11-0020-pdf-firefox-scale--lead-to-codex.md | 2026-11-11 |
+| 0021 | [quick] Cut CI minutes: docs-only skip, one run per PR push, reader only on PRs | dispatched | lead: delegate | codex/gpt-6.1-sol | orch/0021-ci-minutes |  |  |  |  |  | handoffs/2026-11-11-0021-ci-minutes--human-to-lead.md | 2026-11-11 |
 
 ## Done / closed
 
@@ -90,6 +91,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-11 0021 new→dispatched — human: ph-scoreview is most of the Actions bill (~45 billed min/run; docs commits and duplicate push+PR runs); cancelled 3 redundant in-flight runs (main docs, #85 push+PR while release is on hold). Lead process: batch ledger commits, never wait on ci for docs-only commits
 2026-11-11 0020 new→dispatched — human: release also waits for a quick Firefox PDF fix (S22); runs in parallel with #83 (lib/pdf vs components)
 2026-11-11 0017 — human: 0.5.0 waits for the PDF button (#83); #85 held; human already ran npm login
 2026-11-11 0017 changes-requested→ready — 6733f80 merges main and adds violin/cello finger TAB to CHANGELOG/README (lead checked the docs-only delta against #84; no further review round); waiting on CI
