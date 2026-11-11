@@ -18,7 +18,8 @@ declare global {
 }
 // becreative's section accent mapping (see apps/reader/src/embed/host.css `.accent-*` scopes, copied from becreative's custom.css).
 // `--accent-ring` there is a box-shadow value, not a colour, so the focus ring uses `--accent`.
-const becreativeTheme: PepperScoreSkin = { theme: { accent: 'var(--accent-ink)', accentWash: 'var(--accent-wash)', accentWashStrong: 'var(--accent-wash-strong)', focusRing: 'var(--accent)' } };
+// becreative has no hover token, so `accentHover` darkens the section's `--accent-ink` (hover must not fall back to the default green).
+const becreativeTheme: PepperScoreSkin = { theme: { accent: 'var(--accent-ink)', accentHover: 'color-mix(in srgb, var(--accent-ink) 82%, black)', accentWash: 'var(--accent-wash)', accentWashStrong: 'var(--accent-wash-strong)', focusRing: 'var(--accent)' } };
 const becreativeSkin = mergeSkins(becreativeTheme, { pitchColours: CRF_PITCH_COLOURS, bar: ['play', 'tempo', 'instrumentSwitch', 'noteNames', 'counts', 'chordSymbols', 'options'] });
 const BECREATIVE_ABC = 'X:1\nT:becreative fixture\nM:4/4\nL:1/4\nK:C\n[CEG] [CEG] [CEG] [CEG] | [FAC] [FAC] [FAC] [FAC] |';
 // becreative's three shapes: reader = full chrome, snippet = minimal chrome with the bar, static = theme only, no bar.

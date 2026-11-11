@@ -315,7 +315,7 @@ const skin = mergeSkins(base, { theme: { surface: '#fff' }, pitchColours: { C: '
 
 #### Worked example: following a host's accent scopes
 
-becreative sets `--accent-ink`, `--accent`, `--accent-wash` and `--accent-wash-strong` on `.accent-blue`, `.accent-orange` and `.accent-pink` section wrappers. Mapping theme roles to those variables makes the player change colour with the section, with no re-render or re-engrave. Define the skin once (TypeScript):
+becreative sets `--accent-ink`, `--accent`, `--accent-wash` and `--accent-wash-strong` on `.accent-blue`, `.accent-orange` and `.accent-pink` section wrappers. Mapping theme roles to those variables (with `accentHover` derived from the ink, since the host has no hover token and an unset `accentHover` falls back to the default green) makes the player change colour with the section, with no re-render or re-engrave. Define the skin once (TypeScript):
 
 ```ts
 import { CRF_PITCH_COLOURS, mergeSkins, type PepperScoreSkin } from 'pepperscore';
@@ -323,6 +323,7 @@ import { CRF_PITCH_COLOURS, mergeSkins, type PepperScoreSkin } from 'pepperscore
 export const becreativeSkin: PepperScoreSkin = {
   theme: {
     accent: 'var(--accent-ink)',
+    accentHover: 'color-mix(in srgb, var(--accent-ink) 82%, black)', // becreative has no hover token: darken the section ink
     accentWash: 'var(--accent-wash)',
     accentWashStrong: 'var(--accent-wash-strong)',
     focusRing: 'var(--accent)', // a colour; becreative's --accent-ring is a box-shadow value
@@ -342,7 +343,7 @@ Plain JavaScript uses the same exports; the skin is only data, with no types nee
 import { CRF_PITCH_COLOURS, mergeSkins, THEME_TOKENS, BAR_ITEM_IDS } from 'pepperscore';
 
 export const becreativeSkin = {
-  theme: { accent: 'var(--accent-ink)', accentWash: 'var(--accent-wash)', accentWashStrong: 'var(--accent-wash-strong)', focusRing: 'var(--accent)' },
+  theme: { accent: 'var(--accent-ink)', accentHover: 'color-mix(in srgb, var(--accent-ink) 82%, black)', accentWash: 'var(--accent-wash)', accentWashStrong: 'var(--accent-wash-strong)', focusRing: 'var(--accent)' },
   pitchColours: CRF_PITCH_COLOURS,
   bar: ['play', 'tempo', 'instrumentSwitch', 'noteNames', 'counts', 'chordSymbols', 'options'],
 };

@@ -746,12 +746,35 @@ async function assertBecreativeFixture(browser, server) {
     await page.addStyleTag({ content: '.pepperscore,.pepperscore *{transition:none!important}' });
     const label = `becreative ${width}px`;
     // Agreed bar on reader and snippet; static has theme only.
+    const controlHits = async shape => page.locator(shape).evaluate(async root => {
+      const out = [];
+      for (const item of root.querySelectorAll('[data-bar-item]')) {
+        const control = item.matches('button,input') ? item : item.querySelector('button,input') ?? item;
+        control.scrollIntoView({ block: 'center', inline: 'center' });
+        const r = control.getBoundingClientRect();
+        const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+        out.push({ id: item.dataset.barItem, where: item.closest('.skin-playback-toolbar') ? 'toolbar' : item.closest('.header-secondary-panel') ? 'more' : 'header', visible: r.width > 0 && r.height > 0 && r.right <= window.innerWidth + 1 && r.left >= -1, reachable: Boolean(hit && control.contains(hit)) });
+      }
+      return out;
+    });
     if (width > 580) {
       for (const shape of ['.bc-reader', '.bc-snippet']) assert.deepEqual(await page.locator(`${shape} [data-bar-item]`).evaluateAll(nodes => nodes.map(el => el.dataset.barItem)), expectedBar, `${label} ${shape}: agreed bar in order`);
     } else {
+      // Phone: the bar splits across the bottom toolbar, the header and the More panel. All seven items must be visible and reachable, each group keeping the agreed relative order.
       for (const shape of ['.bc-reader', '.bc-snippet']) {
         await page.locator(`${shape} .skin-playback-toolbar .play-button`).waitFor({ state: 'visible' });
-        assert.equal(await page.locator(`${shape} [data-bar-item=tempo]`).count() > 0, true, `${label} ${shape}: bar items mounted on phone`);
+        await page.locator(`${shape} .header-more-toggle`).scrollIntoViewIfNeeded();
+        await page.locator(`${shape} .header-more-toggle`).click();
+        await page.locator(`${shape} .header-secondary-panel [data-bar-item=options]`).waitFor({ state: 'visible' });
+        const hits = await controlHits(shape);
+        assert.deepEqual(hits.map(item => item.id).sort(), [...expectedBar].sort(), `${label} ${shape}: full agreed item set across toolbar, header and More`);
+        assert.ok(hits.every(item => item.visible && item.reachable), `${label} ${shape}: every item visible and reachable: ${JSON.stringify(hits)}`);
+        for (const where of ['toolbar', 'header', 'more']) {
+          const ids = hits.filter(item => item.where === where).map(item => item.id);
+          assert.deepEqual(ids, expectedBar.filter(id => ids.includes(id)), `${label} ${shape} ${where}: agreed relative order`);
+        }
+        assert.deepEqual(hits.filter(item => item.where === 'toolbar').map(item => item.id), ['play', 'tempo'], `${label} ${shape}: playback sits in the bottom toolbar`);
+        await page.keyboard.press('Escape');
       }
     }
     assert.equal(await page.locator('.bc-static [data-bar-item], .bc-static .topbar, .bc-static .skin-bar').count(), 0, `${label}: static shows no bar`);
@@ -766,6 +789,14 @@ async function assertBecreativeFixture(browser, server) {
         const play = page.locator(`${shape} .play-button`).first();
         await play.waitFor({ state: 'visible' });
         assert.equal(await play.evaluate(el => getComputedStyle(el).backgroundColor), accents[accent], `${label} ${shape} ${accent}: play button uses --accent-ink`);
+        // Hover paint: the host's accentHover (darkened ink), never the default green rgb(37, 70, 51).
+        const expectedHover = await page.evaluate(ink => { const probe = document.createElement('span'); document.body.append(probe); probe.style.color = `color-mix(in srgb, ${ink} 82%, black)`; const colour = getComputedStyle(probe).color; probe.remove(); return colour; }, accents[accent]);
+        await play.scrollIntoViewIfNeeded();
+        await play.hover();
+        assert.equal(await play.evaluate(el => getComputedStyle(el).backgroundColor), expectedHover, `${label} ${shape} ${accent}: hovered play button uses the host-derived accentHover`);
+        assert.notEqual(expectedHover, accents[accent], `${label} ${accent}: hover differs from rest`);
+        assert.notEqual(expectedHover, 'rgb(37, 70, 51)', `${label} ${accent}: hover is not the default green`);
+        await page.mouse.move(0, 0);
       }
       for (const shape of ['.bc-reader', '.bc-snippet', '.bc-static']) {
         const vars = await page.locator(shape).evaluate(el => { const style = getComputedStyle(el); const probe = document.createElement('span'); document.body.append(probe); const resolve = value => { probe.style.color = ''; probe.style.color = value; return getComputedStyle(probe).color; }; const out = { accent: resolve(style.getPropertyValue('--ps-accent')), wash: resolve(style.getPropertyValue('--ps-accent-wash')), focus: resolve(style.getPropertyValue('--ps-focus-ring')) }; probe.remove(); return out; });
