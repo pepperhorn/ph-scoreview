@@ -11,6 +11,15 @@ import { createServer } from 'vite';
 import { chromium, firefox, webkit } from 'playwright-core';
 import { root } from './serve-dist.mjs';
 
+// Raster parity is a required gate, including on CI. Fail before starting Vite/browser.
+try { execFileSync('pdftoppm', ['-v'], { stdio: 'pipe' }); }
+catch (error) {
+  if (error.code === 'ENOENT') {
+    throw new Error('Poppler required for pitch raster parity: install poppler-utils (pdftoppm).');
+  }
+  throw error;
+}
+
 const server = await createServer({ configFile: false, root, optimizeDeps: { include: ['jspdf', 'svg2pdf.js', 'abcjs', '@tonejs/midi', 'fflate'] }, server: { host: '127.0.0.1', port: 0 },
   plugins: [{ name: 'pdf-spike-page', configureServer(server) {
     server.middlewares.use('/pdf-spike', (_req, res) => { res.setHeader('Content-Type','text/html'); res.end('<!doctype html><title>PDF spike</title>'); });
@@ -25,6 +34,9 @@ try {
   page.on('requestfailed', req => console.log('request failed:', req.url(), req.failure()));
   page.setDefaultTimeout(60000);
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/pdf-spike`);
+  await page.addStyleTag({content:readFileSync(join(root,'packages/pepperscore/dist/style.css'),'utf8').replace(/@import[^;]+;/g,'')});
+  await assertPitchRasterParity(browser,page.url());
+  if (!process.env.PITCH_PARITY_ONLY) {
   const composition = await page.evaluate(async () => {
     const { composePdf } = await import('/packages/pepperscore/src/lib/pdf/compose.ts');
     const { exportScore } = await import('/packages/pepperscore/src/lib/pdf/export.ts');
@@ -61,6 +73,38 @@ try {
     const rect = element => { const b=annotationBox(element,geometrySvg); return {x:b.x*mm,y:b.y*mm,width:b.width*mm,height:b.height*mm}; };
     const expected = {lines:Array.from(geometrySvg.querySelectorAll('g.staff > path')).slice(0,5).map(rect),head:rect(geometrySvg.querySelector('.notehead')),label:rect(geometrySvg.querySelector('.note-label'))};
     geometrySvg.remove();
+    const { CRF_PITCH_COLOURS } = await import('/packages/pepperscore/src/lib/skin.ts');
+    const { pitchColourStyle, resolvePitchColours } = await import('/packages/pepperscore/src/lib/pitch-colours.ts');
+    const { renderScore } = await import('/packages/pepperscore/src/lib/render.ts');
+    const pitchScore = await parseAbc('X:1\nM:4/4\nL:1/4\nK:C\n[CE] D F G |'); pitchScore.title='';
+    const reader = document.createElement('div');reader.className='pepperscore';reader.setAttribute('data-ps-pitch-colours','');
+    Object.entries(pitchColourStyle(CRF_PITCH_COLOURS)).forEach(([k,v])=>reader.style.setProperty(k,v));
+    const canvas=document.createElement('div');canvas.style.width='1000px';reader.append(canvas);document.body.append(reader);
+    const {setVerovioBaseUrl}=await import('/packages/pepperscore/src/lib/verovio-runtime.ts');setVerovioBaseUrl('/node_modules/verovio/dist/');
+    const screen=await renderScore(canvas,pitchScore,'portrait',false,false,false,4,false,false,700,1);
+    const screenColours=Array.from(canvas.querySelectorAll('.notehead[data-pitch]'),head=>({pitch:head.dataset.pitch,fill:getComputedStyle(head).fill,stroke:getComputedStyle(head).stroke}));
+    const pitchPaint=resolvePitchColours(reader);
+    screen.dispose();reader.remove();
+    const pitchBlob=await exportScore({input:{data:pitchScore.document.engravingText},score:pitchScore,options:geometryOptions,pitchColours:pitchPaint},signal);
+    const pitchPages=await engravePages({data:pitchScore.document.engravingText},geometryOptions,signal);
+    const pitchSvg=new DOMParser().parseFromString(pitchPages.pages[0],'image/svg+xml').documentElement;document.body.append(pitchSvg);
+    const {paintPitchColours}=await import('/packages/pepperscore/src/lib/pdf/annotations.ts');paintPitchColours(pitchSvg,pitchScore,pitchPaint);
+    // ABC has no per-pitch source ids and preserves source order. Explicit identities,
+    // when supplied (e.g. MusicXML/MEI), must win over array order.
+    const {tagPitchColours}=await import('/packages/pepperscore/src/lib/pitch-colours.ts');
+    const firstEvent=pitchScore.parts[0].measures[0].notes[0];
+    const chord=pitchSvg.querySelector('.chord');const before=Array.from(chord.querySelectorAll('.notehead'),h=>h.dataset.pitch);
+    const identified=firstEvent.pitches.map((pitch,index)=>({...pitch,sourceId:chord.querySelectorAll('.notehead')[index].closest('.note').id}));
+    tagPitchColours(chord,{...firstEvent,pitches:identified.reverse()},pitchScore.parts[0]);
+    if(JSON.stringify(before)!==JSON.stringify(Array.from(chord.querySelectorAll('.notehead'),h=>h.dataset.pitch)))throw Error('Chord source identities lost');
+    for(const kind of ['percussion','tab']){
+      const clone=chord.cloneNode(true);clone.querySelectorAll('[data-pitch]').forEach(h=>h.removeAttribute('data-pitch'));
+      tagPitchColours(clone,firstEvent,{clef:kind});if(clone.querySelector('[data-pitch]'))throw Error(kind+' must remain uncoloured');
+    }
+    const pitchRatio=210/pitchSvg.viewBox.baseVal.width;
+    const pitchHeads=Array.from(pitchSvg.querySelectorAll('.notehead[data-pitch]'),head=>{const b=annotationBox(head,pitchSvg);return {pitch:head.dataset.pitch,fill:getComputedStyle(head).fill,stroke:getComputedStyle(head).stroke,box:{x:b.x*pitchRatio,y:b.y*pitchRatio,width:b.width*pitchRatio,height:b.height*pitchRatio}};});
+    pitchSvg.remove();
+
     const { scoreForView } = await import('/packages/pepperscore/src/lib/transpose.ts');
     const { planStaves } = await import('/packages/pepperscore/src/lib/render.ts');
     const { scanBaseline } = await import('/packages/pepperscore/src/lib/notation/mei-view.ts');
@@ -81,7 +125,7 @@ try {
     const cancelled = new AbortController(); cancelled.abort();
     let aborted = false;
     try { await composePdf([svg],{paper:'a4'},cancelled.signal); } catch (error) { aborted = error.name === 'AbortError'; }
-    return {files,tabLaneWorked,geometry:{bytes:Array.from(new Uint8Array(await geometryBlob.arrayBuffer())),expected},accidentals:Array.from(new Uint8Array(await accidentalBlob.arrayBuffer())),tabAliasWorked,viewed:Array.from(new Uint8Array(await viewBlob.arrayBuffer())),exported:Array.from(new Uint8Array(await blob.arrayBuffer())),unsupported,aborted};
+    return {pitch:{bytes:Array.from(new Uint8Array(await pitchBlob.arrayBuffer())),heads:pitchHeads,screen:screenColours,ratio:pitchRatio},files,tabLaneWorked,geometry:{bytes:Array.from(new Uint8Array(await geometryBlob.arrayBuffer())),expected},accidentals:Array.from(new Uint8Array(await accidentalBlob.arrayBuffer())),tabAliasWorked,viewed:Array.from(new Uint8Array(await viewBlob.arrayBuffer())),exported:Array.from(new Uint8Array(await blob.arrayBuffer())),unsupported,aborted};
   });
   if (process.env.PDF_ARTIFACTS) {
     mkdirSync(process.env.PDF_ARTIFACTS,{recursive:true});
@@ -235,25 +279,23 @@ try {
   // below the matching note and a text origin within one glyph width of its centre.
   assert.ok(297-nameRun.matrix[5]*mmPerPoint>expected.head.y+expected.head.height);
   assert.ok(Math.abs(nameX-expected.head.x-expected.head.width/2)<0.1,'name remains under its own note');
-  // Actually rasterize the exported first page when Poppler is installed. The content-stream
-  // geometry above is the portable fallback; it also catches nested transform regressions.
+  // Raster geometry supplements the content-stream checks; Poppler was required up front.
+  assert.notEqual(composition.pitch.ratio,1);
+
   const directory=mkdtempSync(join(tmpdir(),'pepperscore-pdf-r1-'));
   try {
     const input=join(directory,'geometry.pdf');writeFileSync(input,Buffer.from(composition.geometry.bytes));
-    let available=true;try {execFileSync('pdftoppm',['-v'],{stdio:'pipe'});} catch(error) {if(error.code==='ENOENT') available=false;else throw error;}
-    if (available) {
-      execFileSync('pdftoppm',['-f','1','-singlefile','-r','144',input,join(directory,'page')],{stdio:'pipe'});
-      const ppm=readFileSync(join(directory,'page.ppm'));
-      const header=/^P6\s+(\d+)\s+(\d+)\s+255\s/.exec(ppm.subarray(0,80).toString());assert.ok(header);
-      const width=Number(header[1]),height=Number(header[2]),pixels=ppm.subarray(header[0].length),scale=144/25.4;
-      const ink=(x,y)=>{const i=(y*width+x)*3;return pixels[i]<180||pixels[i+1]<180||pixels[i+2]<180;};
-      const coverage=box=>{let count=0,total=0;for(let y=Math.max(0,Math.floor(box.y*scale));y<Math.min(height,Math.ceil((box.y+box.height)*scale));y++)for(let x=Math.max(0,Math.floor(box.x*scale));x<Math.min(width,Math.ceil((box.x+box.width)*scale));x++){total++;if(ink(x,y))count++;}return count/Math.max(1,total);};
-      for (const line of expected.lines) assert.ok(coverage({x:line.x,y:line.y-0.2,width:186,height:0.4})>0.12,'raster staff line occupies expected content coordinates');
-      assert.ok(coverage(expected.head)>0.2,'known notehead is present at full size');
-      assert.ok(coverage(expected.label)>0.03,'note name is under its own note in the raster');
-      assert.ok(expected.label.y>expected.head.y && Math.abs(expected.label.x+expected.label.width/2-expected.head.x-expected.head.width/2)<0.1,'name is centred below its note');
-      console.log('Poppler raster: staff width/6.5 mm height, known notehead and aligned note-name ink passed.');
-    } else console.log('Poppler unavailable: PDF content-stream transform geometry passed.');
+    execFileSync('pdftoppm',['-f','1','-singlefile','-r','144',input,join(directory,'page')],{stdio:'pipe'});
+    const ppm=readFileSync(join(directory,'page.ppm'));
+    const header=/^P6\s+(\d+)\s+(\d+)\s+255\s/.exec(ppm.subarray(0,80).toString());assert.ok(header);
+    const width=Number(header[1]),height=Number(header[2]),pixels=ppm.subarray(header[0].length),scale=144/25.4;
+    const ink=(x,y)=>{const i=(y*width+x)*3;return pixels[i]<180||pixels[i+1]<180||pixels[i+2]<180;};
+    const coverage=box=>{let count=0,total=0;for(let y=Math.max(0,Math.floor(box.y*scale));y<Math.min(height,Math.ceil((box.y+box.height)*scale));y++)for(let x=Math.max(0,Math.floor(box.x*scale));x<Math.min(width,Math.ceil((box.x+box.width)*scale));x++){total++;if(ink(x,y))count++;}return count/Math.max(1,total);};
+    for (const line of expected.lines) assert.ok(coverage({x:line.x,y:line.y-0.2,width:186,height:0.4})>0.12,'raster staff line occupies expected content coordinates');
+    assert.ok(coverage(expected.head)>0.2,'known notehead is present at full size');
+    assert.ok(coverage(expected.label)>0.03,'note name is under its own note in the raster');
+    assert.ok(expected.label.y>expected.head.y && Math.abs(expected.label.x+expected.label.width/2-expected.head.x-expected.head.width/2)<0.1,'name is centred below its note');
+    console.log('Poppler raster: staff width/6.5 mm height, known notehead and aligned note-name ink passed.');
   } finally {rmSync(directory,{recursive:true,force:true});}
   const viewed = await parsePdf(composition.viewed);
   assert.ok(viewed.text.includes('D') && viewed.text.includes('F') && viewed.text.includes('A'), 'annotation pitches follow transposed snapshot');
@@ -371,4 +413,102 @@ try {
   assert.equal(result.cancelled,true); assert.equal(result.preCancelled,true); assert.equal(result.hidden,true);
   console.log(`PDF page model spike passed (${engine}): A4 ${result.a4.lines.length} lines; A3 ${result.a3.lines.length}; ${result.many.pages.length} pages for 80 bars.`);
 }
+}
 } finally { await browser.close(); await server.close(); }
+
+/** Compare actual Chromium screen pixels with Poppler pixels from the composed PDF. */
+async function assertPitchRasterParity(browser, url) {
+  const screen = await browser.newPage({viewport:{width:3300,height:2400},deviceScaleFactor:4});
+  const directory=mkdtempSync(join(tmpdir(),'pitch-parity-'));
+  try {
+    await screen.goto(url);
+    await screen.addStyleTag({content:readFileSync(join(root,'packages/pepperscore/dist/style.css'),'utf8').replace(/@import[^;]+;/g,'')});
+    for(const variant of ['default','host']) {
+      const fixture=await screen.evaluate(async variant=>{
+        const {parseAbc}=await import('/packages/pepperscore/src/lib/import.ts');
+        const {engravePages}=await import('/packages/pepperscore/src/lib/pdf/engrave.ts');
+        const {exportScore}=await import('/packages/pepperscore/src/lib/pdf/export.ts');
+        const {findAnnotationNote,annotationBox}=await import('/packages/pepperscore/src/lib/render.ts');
+        const {tagPitchColours,pitchColourStyle,resolvePitchColours}=await import('/packages/pepperscore/src/lib/pitch-colours.ts');
+        const {CRF_PITCH_COLOURS}=await import('/packages/pepperscore/src/lib/skin.ts');
+        const score=await parseAbc('X:1\nM:4/4\nL:1/4\nK:C\n[CE] D F G |');score.title='';
+        const options={paper:variant==='host'?'a3':'a4',maxBars:4,files:{module:new URL('/node_modules/verovio/dist/verovio-module.mjs',location.href).href,toolkit:new URL('/node_modules/verovio/dist/verovio.mjs',location.href).href}};
+        const signal=new AbortController().signal;
+        const pages=await engravePages({data:score.document.engravingText},options,signal);
+        const svg=new DOMParser().parseFromString(pages.pages[0],'image/svg+xml').documentElement;
+        document.body.replaceChildren();document.body.style.cssText='margin:0;background:white';
+        const reader=document.createElement('div');reader.className='pepperscore';reader.setAttribute('data-ps-pitch-colours','');reader.style.cssText='width:3000px;background:white';
+        Object.entries(pitchColourStyle(CRF_PITCH_COLOURS)).forEach(([key,value])=>reader.style.setProperty(key,value));
+        if(variant==='host'){
+          reader.style.setProperty('--host-outline','rgba(20,80,140,.5)');reader.style.setProperty('--ps-pitch-outline','var(--host-outline)');
+          reader.style.setProperty('--host-pitch','#d45b91');reader.style.setProperty('--ps-pitch-c','var(--host-pitch)');
+        }
+        svg.style.cssText='display:block;width:3000px;height:auto';reader.append(svg);document.body.append(reader);
+        const byId=new Map(Array.from(svg.querySelectorAll('[id]'),element=>[element.id,element]));
+        for(const part of score.parts)for(const measure of part.measures)for(const event of measure.notes){const element=findAnnotationNote(byId,score,event);if(element)tagPitchColours(element,event,part);}
+        reader.removeAttribute('data-ps-pitch-colours');
+        const childrenBefore=reader.childElementCount;
+        let inactiveRejected=false;
+        try { resolvePitchColours(reader); } catch(error) { inactiveRejected=/Pitch colours must be active/.test(error.message); }
+        if(!inactiveRejected || reader.childElementCount!==childrenBefore)throw Error('Inactive pitch snapshot must fail before adding a probe');
+        reader.setAttribute('data-ps-pitch-colours','');
+        const paint=resolvePitchColours(reader);
+        const paperWidth=variant==='host'?297:210,ratio=paperWidth/svg.viewBox.baseVal.width;
+        const heads=Array.from(svg.querySelectorAll('.notehead[data-pitch]'),(head,index)=>{
+          head.setAttribute('data-raster-head',String(index));
+          const b=annotationBox(head,svg),r=head.getBoundingClientRect();
+          return {pitch:head.dataset.pitch,fill:paint.palette[head.dataset.pitch],screen:{x:r.x,y:r.y,width:r.width,height:r.height},pdf:{x:b.x*ratio,y:b.y*ratio,width:b.width*ratio,height:b.height*ratio}};
+        });
+        const blob=await exportScore({input:{data:score.document.engravingText},score,options,pitchColours:paint},signal);
+        return {bytes:Array.from(new Uint8Array(await blob.arrayBuffer())),heads,ratio,paint};
+      },variant);
+      assert.notEqual(fixture.ratio,1);
+      const input=join(directory,variant+'.pdf');writeFileSync(input,Buffer.from(fixture.bytes));
+      if(process.env.PDF_ARTIFACTS){mkdirSync(process.env.PDF_ARTIFACTS,{recursive:true});writeFileSync(join(process.env.PDF_ARTIFACTS,'pitch-'+variant+'.pdf'),Buffer.from(fixture.bytes));}
+      const factor=1200/25.4;
+      const originX=Math.floor((Math.min(...fixture.heads.map(h=>h.pdf.x))-1)*factor);
+      const originY=Math.floor((Math.min(...fixture.heads.map(h=>h.pdf.y))-1)*factor);
+      const cropWidth=Math.ceil((Math.max(...fixture.heads.map(h=>h.pdf.x+h.pdf.width))+1)*factor)-originX;
+      const cropHeight=Math.ceil((Math.max(...fixture.heads.map(h=>h.pdf.y+h.pdf.height))+1)*factor)-originY;
+      execFileSync('pdftoppm',['-f','1','-singlefile','-r','1200','-x',String(originX),'-y',String(originY),'-W',String(cropWidth),'-H',String(cropHeight),input,join(directory,variant)],{stdio:'pipe'});
+      const data=readFileSync(join(directory,variant+'.ppm'));
+      const h=/^P6\s+(\d+)\s+(\d+)\s+255\s/.exec(data.subarray(0,80).toString());assert.ok(h);
+      const pdf={width:Number(h[1]),height:Number(h[2]),pixels:data.subarray(h[0].length),channels:3};
+      for(const head of fixture.heads){
+        const b=head.screen,pad=4;
+        const png=await screen.screenshot({clip:{x:b.x-pad,y:b.y-pad,width:b.width+2*pad,height:b.height+2*pad},animations:'disabled'});
+        const image=await screen.evaluate(async bytes=>{
+          const bitmap=await createImageBitmap(new Blob([new Uint8Array(bytes)],{type:'image/png'}));
+          const canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;
+          const context=canvas.getContext('2d');context.drawImage(bitmap,0,0);return {width:canvas.width,height:canvas.height,pixels:Array.from(context.getImageData(0,0,canvas.width,canvas.height).data),channels:4};
+        },Array.from(png));
+        const rgb=head.fill.match(/[\d.]+/g).slice(0,3).map(Number);
+        const screenMeasure=outlineProfile(image,{x:pad*4,y:pad*4,width:b.width*4,height:b.height*4},rgb);
+        const pdfMeasure=outlineProfile(pdf,{x:head.pdf.x*factor-originX,y:head.pdf.y*factor-originY,width:head.pdf.width*factor,height:head.pdf.height*factor},rgb);
+        assert.ok(screenMeasure.rows>5 && pdfMeasure.rows>5,`${variant} ${head.pitch}: enough edge rows outside staff/stem ink`);
+        for(let channel=0;channel<3;channel++)assert.ok(Math.abs(screenMeasure.colour[channel]-pdfMeasure.colour[channel])<=18,`${variant} ${head.pitch}: outline colour screen=${screenMeasure.colour} PDF=${pdfMeasure.colour}`);
+        assert.ok(Math.abs(screenMeasure.ratio-pdfMeasure.ratio)<.012 && pdfMeasure.ratio<screenMeasure.ratio*1.5,`${variant} ${head.pitch}: outline/head width screen=${screenMeasure.ratio} PDF=${pdfMeasure.ratio}`);
+        if(variant==='default')for(const c of pdfMeasure.colour)assert.ok(Math.abs(c-89)<=18,`${head.pitch}: default outline is composited 65% black, not opaque black (${pdfMeasure.colour})`);
+        console.log(`Pitch raster ${variant} ${head.pitch}: screen ${screenMeasure.colour} / ${screenMeasure.ratio.toFixed(4)}, PDF ${pdfMeasure.colour} / ${pdfMeasure.ratio.toFixed(4)}`);
+      }
+    }
+  } finally {await screen.close();rmSync(directory,{recursive:true,force:true});}
+}
+function outlineProfile(image,box,fill) {
+  const pixel=(x,y)=>Array.from(image.pixels.slice((y*image.width+x)*image.channels,(y*image.width+x)*image.channels+3));
+  const widths=[],colours=[];
+  for(let y=Math.ceil(box.y+box.height*.12);y<box.y+box.height*.88;y++){
+    const matches=[];
+    for(let x=Math.floor(box.x);x<box.x+box.width;x++)if(pixel(x,y).every((c,k)=>Math.abs(c-fill[k])<12))matches.push(x);
+    if(matches.length<box.width*.35)continue;
+    const start=matches[0];let edge=start-1,ink=[];
+    while(edge>=box.x-box.width*.15 && pixel(edge,y).some(c=>c<230)){ink.push(pixel(edge,y));edge--;}
+    if(!ink.length || edge<box.x-box.width*.15)continue; // staff line or another glyph
+    widths.push((start-edge-1)/box.width);
+    colours.push(...ink);
+  }
+  const median=a=>a.sort((a,b)=>a-b)[Math.floor(a.length/2)];
+  const histogram=new Map();for(const c of colours){const key=c.join(',');histogram.set(key,(histogram.get(key)||0)+1);}
+  const mode=[...histogram].sort((a,b)=>b[1]-a[1])[0]?.[0].split(',').map(Number)||[];
+  return {rows:widths.length,ratio:median(widths),colour:mode};
+}

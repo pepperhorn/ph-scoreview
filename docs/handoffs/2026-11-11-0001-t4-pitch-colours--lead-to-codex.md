@@ -40,3 +40,5 @@ None. Escalate per AGENTS.md §7.
 
 ---
 ## Receiver ack
+
+Acknowledged: implement displayed-pitch notehead tags, palette-driven colours and outlined toggle tile, persisted default-off settings/handle support, and inline PDF colour/outline parity at non-unit scale. I will modify only the declared owned files, preserve percussion/TAB and mark precedence, run the required verification, and return a committed handoff plus draft PR. No open questions. GBrain consulted: default:projects/scoreflow-music-reader (historical context; repo docs govern).

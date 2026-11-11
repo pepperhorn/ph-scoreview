@@ -42,7 +42,7 @@ export type PepperScoreAnnotationSizes = Partial<Record<AnnotationKey, Annotatio
 
 /** Reader settings; `zoom` is the score's explicit stave scale, or null for the device default (see stave-scale.ts). */
 export type Prefs = FileSettings & { zoom: number | null };
-export const defaults: Prefs = { mode: 'portrait', notationFont: 'Bravura', barsPerLine: 'auto', overlap: 1, names: false, chordSymbols: false, inferChordSymbols: false, counts: false, subdivisions: false, annotationFont: 'Sans', namesSize: 'rg', chordSymbolsSize: 'rg', countsSize: 'rg', subdivisionsSize: 'rg', bpm: 96, zoom: null, semitones: 0, scorePitch: 'written', keyFlip: false, tabView: 'notation', tabTuning: [...STANDARD_TAB_TUNING], capo: 0 };
+export const defaults: Prefs = { mode: 'portrait', notationFont: 'Bravura', barsPerLine: 'auto', overlap: 1, names: false, pitchColours: false, chordSymbols: false, inferChordSymbols: false, counts: false, subdivisions: false, annotationFont: 'Sans', namesSize: 'rg', chordSymbolsSize: 'rg', countsSize: 'rg', subdivisionsSize: 'rg', bpm: 96, zoom: null, semitones: 0, scorePitch: 'written', keyFlip: false, tabView: 'notation', tabTuning: [...STANDARD_TAB_TUNING], capo: 0 };
 
 /** Saved global prefs, repaired. Zoom is per score (score-db), so a legacy global zoom is ignored. */
 export function sanitizeSavedPrefs(raw: unknown): Prefs {
@@ -53,6 +53,7 @@ export function sanitizeSavedPrefs(raw: unknown): Prefs {
   if (!Number.isInteger(next.semitones)) next.semitones = 0;
   next.semitones = Math.max(-12, Math.min(12, next.semitones));
   if (!['written', 'concert'].includes(next.scorePitch)) next.scorePitch = 'written';
+  if (typeof next.pitchColours !== 'boolean') next.pitchColours = false;
   if (typeof next.keyFlip !== 'boolean') next.keyFlip = false;
   if (!['Sans', 'Serif', 'Mono'].includes(next.annotationFont)) next.annotationFont = 'Sans';
   for (const key of ANNOTATION_SIZE_PREF_KEYS) if (!isAnnotationSize(next[key])) next[key] = 'rg';
@@ -66,7 +67,7 @@ export function sanitizeSavedPrefs(raw: unknown): Prefs {
 
 /** Initial reader settings a host passes as `settings` (spec names). Changing a key in the prop re-applies that key. */
 export type PepperScoreSettings = Partial<{
-  noteNames: boolean; chordSymbols: boolean; inferChords: boolean; beatCounts: boolean; subdivisions: boolean;
+  pitchColours: boolean; noteNames: boolean; chordSymbols: boolean; inferChords: boolean; beatCounts: boolean; subdivisions: boolean;
   musicFont: 'Bravura' | 'Petaluma'; staveFont: 'Sans' | 'Serif' | 'Mono';
   /** 'auto', or 1-8 bars per line in Vertical view. Without a zoom, an explicit count also sets the stave size: that many bars fill the width. */
   barsPerLine: 'auto' | number;
@@ -112,6 +113,7 @@ const clamp = (value: number, low: number, high: number) => Math.max(low, Math.m
 
 export function settingsToPrefs(settings: PepperScoreSettings = {}): Partial<Prefs> {
   const out: Partial<Prefs> = {};
+  if (settings.pitchColours !== undefined) out.pitchColours = !!settings.pitchColours;
   if (settings.noteNames !== undefined) out.names = settings.noteNames;
   if (settings.chordSymbols !== undefined) out.chordSymbols = settings.chordSymbols;
   if (settings.inferChords !== undefined) out.inferChordSymbols = settings.inferChords;

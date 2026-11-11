@@ -8,7 +8,7 @@ import { build, createServer } from 'vite';
 import { chromium } from 'playwright-core';
 import { root, serveDist } from './serve-dist.mjs';
 import { THEME_TOKENS, BAR_ITEM_IDS, CRF_PITCH_COLOURS, mergeSkins, skinStyle, skinKey, tokenVariable } from 'pepperscore';
-execFileSync(process.execPath, [`${root}/node_modules/vitest/vitest.mjs`, 'run', 'src/lib/bar-items.test.ts'], { cwd: `${root}/packages/pepperscore`, stdio: 'inherit' });
+execFileSync(process.execPath, [`${root}/node_modules/vitest/vitest.mjs`, 'run', 'src/lib/bar-items.test.ts', 'src/lib/pitch-colours.test.ts'], { cwd: `${root}/packages/pepperscore`, stdio: 'inherit' });
 assert.ok(THEME_TOKENS.includes('accent') && BAR_ITEM_IDS.includes('pdf'));
 assert.equal(mergeSkins({ pitchColours: CRF_PITCH_COLOURS }, { bar: ['play'] }).pitchColours.C, '#f86e6e');
 assert.deepEqual(skinStyle({ theme: { accent: 'var(--brand)' } }), { '--ps-accent': 'var(--brand)' });
@@ -19,6 +19,8 @@ const engravedColours = new Set(['.pepperscore .note-label', '.pepperscore .coun
 const stylesheetFiles = ['packages/pepperscore/src/styles.css', 'packages/pepperscore/src/components/open-score-dialog.css'];
 const knownVariables = new Set([
   ...THEME_TOKENS.map(tokenVariable),
+  ...Object.keys(CRF_PITCH_COLOURS).map(pitch => '--ps-pitch-' + pitch.toLowerCase().replace('#', '-sharp')),
+  '--ps-pitch-outline', '--ps-pitch-letter', '--ps-pitch-letter-outline',
   '--ps-bottom-toolbar-h', '--ps-cursor', '--ps-selection', '--ps-transposed', '--ps-out-of-range',
   '--ps-note-name-scale', '--ps-count-scale', '--ps-subdivision-scale', '--ps-chord-symbol-scale',
 ]);
@@ -669,4 +671,62 @@ async function assertLegacyPhoneChrome(browser, server) {
     } finally { await context.close(); }
   }
   console.log('Skin r2: no-skin/PDF full chrome at 390/850px and wide touch has no embed toolbar or switcher; minimal menu and 390px main reader defaults preserved');
+}
+
+// Real reader acceptance for pitch tiles, displayed chord heads and lazy systems.
+{
+  const host = await createServer({configFile:false,root,logLevel:'error',optimizeDeps:{include:['react','react-dom/client','pepperscore'],force:true},server:{host:'0.0.0.0',port:0},plugins:[{name:'pitch-host',configureServer(server){
+    server.middlewares.use(async(req,res,next)=>{
+      if(req.url?.split('?')[0]!=='/pitch-host') return next();
+      const html = await server.transformIndexHtml('/pitch-host', `<!doctype html><div id="root"></div><script type="module">
+      import React from 'react';import {createRoot} from 'react-dom/client';import {PepperScore,CRF_PITCH_COLOURS} from 'pepperscore';import 'pepperscore/style.css';
+      const root=createRoot(document.getElementById('root'));let palette=CRF_PITCH_COLOURS,settings={};window.pitchHandle=React.createRef();
+      const abc='X:1\\nT:Pitch colours\\nM:4/4\\nL:1/4\\nK:C\\n[CE] ^C _D =D | ^D E F ^F | G ^G A ^A | B4 | '+Array(100).fill('[CE] D E F |').join(' ');
+      window.pitchRender=(patch={})=>{if('palette' in patch)palette=patch.palette;if(patch.settings)settings=patch.settings;root.render(React.createElement(PepperScore,{ref:window.pitchHandle,abc,skin:{pitchColours:palette,bar:['pitchColours','options','transpose']},settings,persist:'pitch-acceptance',height:'650px'}));};window.pitchRender();
+      </script>`);res.setHeader('Content-Type','text/html');res.end(html);
+    });
+  }}]});
+  await host.listen();const browser=await chromium.launch({headless:true,args:['--no-sandbox']});
+  try {
+    const page=await browser.newPage({viewport:{width:1280,height:900}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+    const url=`http://127.0.0.1:${host.httpServer.address().port}/pitch-host`;
+    await page.goto(url);await page.locator('.notehead[data-pitch]').first().waitFor();
+    const tile=page.locator('.skin-bar .ps-pitch-colour-tile');
+    assert.equal(await tile.getAttribute('aria-pressed'),'false');
+    assert.deepEqual(await tile.locator('text').evaluate(el=>[getComputedStyle(el).fontSize,el.getAttribute('y'),getComputedStyle(el).dominantBaseline]),['20px','18','central'],'tile C uses the centred house style');
+    await page.evaluate(()=>{window.pitchSvg=document.querySelector('.score-system svg');});
+    await tile.click();assert.equal(await tile.getAttribute('aria-pressed'),'true');
+    const colours=await page.evaluate(()=>Array.from(document.querySelector('.chord').querySelectorAll('.notehead')).map(e=>[e.dataset.pitch,getComputedStyle(e).fill,getComputedStyle(e).stroke]));
+    assert.deepEqual(colours.map(c=>c.slice(0,2)),[['C','rgb(248, 110, 110)'],['E','rgb(255, 245, 109)']]);
+    assert.ok(colours.every(c=>c[2]!=='none'),'pale heads outlined');
+    const chromatic=await page.evaluate(()=>Object.fromEntries(Array.from(document.querySelectorAll('.notehead[data-pitch]'),h=>[h.dataset.pitch,getComputedStyle(h).fill])));
+    for(const [pitch,hex] of Object.entries(CRF_PITCH_COLOURS)){
+      const expected=await page.evaluate(hex=>{const el=document.createElement('span');el.style.color=hex;document.body.append(el);const c=getComputedStyle(el).color;el.remove();return c;},hex);
+      assert.equal(chromatic[pitch],expected,`${pitch}: chromatic palette fill`);
+    }
+
+    assert.deepEqual(await page.locator('.notehead[data-pitch="C#"]').allTextContents().then(a=>a.length>1),true,'enharmonic heads share the same pitch tag');
+    for(const mark of ['is-playing','ps-selection','ps-transposed','ps-out-of-range']) {
+      assert.equal(await page.evaluate(mark=>{const head=document.querySelector('.notehead');const event=head.closest('.reader-note');event.classList.add(mark);const equal=getComputedStyle(head).fill===getComputedStyle(event).fill;event.classList.remove(mark);return equal;},mark),true,`${mark} overrides pitch fill`);
+    }
+    await page.evaluate(()=>window.pitchHandle.current.setPitchColours(false));await page.waitForFunction(()=>!document.querySelector('[data-ps-pitch-colours]'));
+    await page.evaluate(()=>window.pitchRender({settings:{pitchColours:true}}));await page.waitForFunction(()=>document.querySelector('[data-ps-pitch-colours]'));
+    assert.ok(await page.evaluate(()=>window.pitchSvg===document.querySelector('.score-system svg')),'toggle/settings keep engraving');
+    await page.locator('.skin-options').click();assert.equal(await page.locator('.annotations-panel .ps-pitch-colour-tile').getAttribute('aria-pressed'),'true');
+    await page.locator('.annotations-panel .ps-pitch-colour-tile').click();assert.equal(await tile.getAttribute('aria-pressed'),'false');
+    // Reload only after React's persistence effect has saved the toggled value.
+    await page.waitForFunction(()=>JSON.parse(localStorage.getItem('pitch-acceptance-prefs') || 'null')?.pitchColours===false);
+    await page.evaluate(()=>window.pitchHandle.current.setPitchColours(true));
+    await page.waitForFunction(()=>JSON.parse(localStorage.getItem('pitch-acceptance-prefs') || 'null')?.pitchColours===true);
+    await page.reload();await page.locator('.notehead[data-pitch]').first().waitFor();assert.equal(await tile.getAttribute('aria-pressed'),'true','saved toggle reloads');
+    await page.evaluate(()=>{window.pitchSvg=document.querySelector('.score-system svg');window.pitchRender({palette:undefined});});await page.waitForFunction(()=>!document.querySelector('.ps-pitch-colour-tile'));
+    assert.equal(await page.locator('[data-ps-pitch-colours]').count(),0,'saved true without palette draws plain heads');
+    await page.evaluate(()=>window.pitchRender({palette:{C:'#112233','C#':'#112233',D:'#112233','D#':'#112233',E:'#112233',F:'#112233','F#':'#112233',G:'#112233','G#':'#112233',A:'#112233','A#':'#112233',B:'#112233'}}));
+    await page.waitForFunction(()=>getComputedStyle(document.querySelector('.notehead')).fill==='rgb(17, 34, 51)');
+    assert.ok(await page.evaluate(()=>window.pitchSvg===document.querySelector('.score-system svg')),'palette changes preserve engraving');
+    await page.evaluate(()=>window.pitchHandle.current.transpose(2));await page.waitForFunction(()=>document.querySelector('.chord .notehead')?.dataset.pitch==='D');
+    await page.evaluate(()=>window.pitchHandle.current.scrollToMeasure(90));
+    await page.waitForFunction(()=>Array.from(document.querySelectorAll('.score-system')).some(s=>Number(s.dataset.firstMeasure)>60 && s.querySelector('.notehead[data-pitch]')));
+    assert.deepEqual(errors,[]);console.log('Pitch colours: chord/enharmonics, outlines, mark precedence, no re-engrave, drawer/bar/settings/handle/reload, no palette, transposition and lazy paging passed');
+  }finally{await browser.close();await host.close();}
 }

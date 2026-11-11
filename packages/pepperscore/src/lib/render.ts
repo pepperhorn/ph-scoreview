@@ -1,3 +1,4 @@
+import { tagPitchColours } from './pitch-colours';
 import type { Part, Score, ScoreNote } from './score';
 import { inferChordSymbol } from './chords';
 import { spellChordSymbol } from './spelling';
@@ -687,6 +688,7 @@ export async function renderScore(
           if (!element || !svgMeasure.contains(element)) continue;
           const anchor = element.querySelector('.notehead') || element;
           const rect = boxOf(anchor); const x = rect.x + rect.width / 2; const y = rect.y + rect.height / 2;
+          tagPitchColours(element, event, part, tabStaves);
           element.classList.add('reader-note'); element.setAttribute('data-note-id', event.id);
           notes.push({ element, event, partIndex, measure: measure.index, x, y });
           if (!band) continue;

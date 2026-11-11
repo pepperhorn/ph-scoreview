@@ -9,6 +9,7 @@ import { INSTRUMENTS, INSTRUMENT_IDS, LEVELS, type RangeLevel } from './instrume
 export type FileSource = { name: string; size: number; sha256: string; format: string };
 export type FileSettings = {
   mode: 'portrait' | 'landscape'; notationFont: 'Bravura' | 'Petaluma'; barsPerLine: 'auto' | number;
+  pitchColours?: boolean;
   overlap: number; names: boolean; chordSymbols: boolean; inferChordSymbols: boolean;
   counts: boolean; subdivisions: boolean; annotationFont: 'Sans' | 'Serif' | 'Mono'; bpm: number; semitones: number; scorePitch: 'written' | 'concert';
   /** Spell the transposed view in the enharmonic key (F# major shown as Gb major); optional on read, default false. */
@@ -192,6 +193,7 @@ function validSettingsAndParts(state: { settings: SavedSettings; parts: Record<s
   settings.bpm = clampBpm(settings.bpm);
   if (settings.semitones !== undefined && (!Number.isInteger(settings.semitones) || Math.abs(settings.semitones) > 12)) return false;
   if (settings.scorePitch !== undefined && !['written', 'concert'].includes(settings.scorePitch)) return false;
+  if (settings.pitchColours !== undefined && typeof settings.pitchColours !== 'boolean') return false;
   if (settings.keyFlip !== undefined && typeof settings.keyFlip !== 'boolean') return false;
   if (settings.annotationFont !== undefined && !['Sans', 'Serif', 'Mono'].includes(settings.annotationFont)) return false;
   // TAB settings came after version 2 shipped: a missing or unusable one is left out, so applying the record keeps the
@@ -265,6 +267,6 @@ export function buildFileState(source: FileSource, settings: FileSettings, score
   for (const part of score.parts) { const saved = savedSwitch(switches[part.id]); if (saved) parts[part.id].switch = saved; }
   const { mode, notationFont, barsPerLine, overlap, names, chordSymbols, inferChordSymbols, counts, subdivisions, annotationFont, bpm, semitones, scorePitch, keyFlip, tabView, tabTuning, capo } = settings;
   const sizes = Object.fromEntries(ANNOTATION_SIZE_PREF_KEYS.map(key => [key, isAnnotationSize(settings[key]) ? settings[key] : 'rg'])) as Pick<FileSettings, typeof ANNOTATION_SIZE_PREF_KEYS[number]>;
-  return { version: 2, source, lastOpened, settings: { mode, notationFont, barsPerLine, overlap, names, chordSymbols, inferChordSymbols, counts, subdivisions, annotationFont, ...sizes, bpm: clampBpm(bpm), semitones, scorePitch, keyFlip: !!keyFlip,
+  return { version: 2, source, lastOpened, settings: { ...(settings.pitchColours ? { pitchColours: true } : {}), mode, notationFont, barsPerLine, overlap, names, chordSymbols, inferChordSymbols, counts, subdivisions, annotationFont, ...sizes, bpm: clampBpm(bpm), semitones, scorePitch, keyFlip: !!keyFlip,
     tabView: validTabView(tabView) ? tabView : 'notation', tabTuning: validTabTuning(tabTuning) ? [...tabTuning] : [...STANDARD_TAB_TUNING], capo: clampCapo(capo) }, parts, ...(view ? { view } : {}), ...(hostInstruments ? { hostInstruments } : {}) };
 }
