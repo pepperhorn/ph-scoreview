@@ -106,7 +106,7 @@ export function midiPitch(midi: number): Pitch {
 }
 export function noteName(p: Pitch): string { return `${p.step}${p.alter === 1 ? '♯' : p.alter === -1 ? '♭' : ''}${p.octave}`; }
 export function instrumentForName(name: string): InstrumentId {
-  const n = name.toLowerCase();
+  const n = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   if (/sax/.test(n)) {
     if (/\b(?:baritone|bari)\b/.test(n)) return 'bari-saxophone';
     if (/\btenor\b/.test(n)) return 'tenor-saxophone';
@@ -127,11 +127,11 @@ export function instrumentForName(name: string): InstrumentId {
   if (/viola/.test(n)) return 'viola';
   if (/cello/.test(n)) return 'cello';
   if (/\b(?:voices?|vocals?|choir|singers?|satb)\b/.test(n)) return 'microphone';
-  const voiceWord = '(?:mezzo[ -]soprano|mezzo|soprano|alto|tenor|baritone|bass|contralto|countertenor|treble|sop|alt|ten)';
+  const voiceWord = '(?:mezzo[ -]sopranos?|mezzos?|sopranos?|altos?|tenors?|baritones?|bass(?:es)?|contraltos?|countertenors?|sop|alt|ten)';
   const voiceLabel = `${voiceWord}\\.?(?:\\s+(?:\\d+|[ivx]+))?(?:\\s+\\(?div(?:isi|\\.)?\\)?)?(?:\\s+solo)?`;
   // Bass alone/numbered still needs score-level choir context; Solo and split staves are explicit voices.
-  if (new RegExp(`^${voiceLabel}(?:\\s*/\\s*${voiceLabel})*$`).test(n.trim())
-    && (!/^bass\b/.test(n.trim()) || /\bsolo\b|\//.test(n))) return 'microphone';
+  if (new RegExp(`^${voiceLabel}(?:\\s*[/&]\\s*${voiceLabel})*$`).test(n.trim())
+    && (!/^bass\b/.test(n.trim()) || /\bsolo\b|[/&]/.test(n))) return 'microphone';
   if (/\bbass\b/.test(n)) return 'bassguitar';
   return 'piano';
 }

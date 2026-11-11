@@ -5,7 +5,7 @@ import { canShowTab } from './tab/tab-parts';
 import { stringInstrument } from './tab/string-instruments';
 
 const abc = (names: string[], program?: number) => parseAbc(`X:1\nM:4/4\nL:1/4\n${names.map((name, i) => `V:v${i} name="${name}"${i === names.length - 1 && program !== undefined ? `\n%%MIDI program ${program - 1}` : ''}`).join('\n')}\nK:C\n${names.map((_, i) => `[V:v${i}] CDEF |`).join('\n')}`);
-const xml = (names: string[], program?: number) => `<score-partwise version="4.0"><part-list>${names.map((name, i) => `<score-part id="p${i}"><part-name>${name}</part-name>${i === names.length - 1 && program !== undefined ? `<midi-instrument id="i${i}"><midi-channel>1</midi-channel><midi-program>${program}</midi-program></midi-instrument>` : ''}</score-part>`).join('')}</part-list>${names.map((_, i) => `<part id="p${i}"><measure number="1"><attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes><note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><type>whole</type></note></measure></part>`).join('')}</score-partwise>`;
+const xml = (names: string[], program?: number) => `<score-partwise version="4.0"><part-list>${names.map((name, i) => `<score-part id="p${i}"><part-name>${name.replace(/&/g, '&amp;')}</part-name>${i === names.length - 1 && program !== undefined ? `<midi-instrument id="i${i}"><midi-channel>1</midi-channel><midi-program>${program}</midi-program></midi-instrument>` : ''}</score-part>`).join('')}</part-list>${names.map((_, i) => `<part id="p${i}"><measure number="1"><attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes><note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><type>whole</type></note></measure></part>`).join('')}</score-partwise>`;
 
 for (const [format, load] of [
   ['ABC', abc], ['MusicXML', (names: string[], program?: number) => parseMusicXml(xml(names, program))],
@@ -13,7 +13,7 @@ for (const [format, load] of [
 ] as const) describe(`${format} contextual instrument names`, () => {
   it.each([
     ['Soprano', 'Alto', 'Tenor', 'Bass'], ['S', 'A', 'T', 'B'],
-    ['Soprano/Alto', 'Tenor/Bass'], ['Mezzo-Soprano', 'Bass'],
+    ['Soprano/Alto', 'Tenor/Bass'], ['Soprano & Alto', 'Tenor & Bass'], ['Sopranos', 'Altos', 'Tenors', 'Basses'], ['Sopranos/Altos', 'Tenors/Basses'], ['Sopranos & Altos', 'Tenors & Basses'], ['Treble', 'Alto', 'Tenor', 'Bass'], ['Mezzo-Soprano', 'Bass'],
     ['Sop.', 'Alt.', 'Ten.', 'Bass'], ['Alto', 'Tenor', 'Bass'], ['A', 'T', 'B'],
     ['Soprano 1', 'Soprano 2', 'Alto I', 'Alto II', 'Tenor 1', 'Tenor 2', 'Bass I', 'Bass II'],
     ['Alto 1', 'Tenor 1'], ['Baritone', 'Bass'], ['Ten.', 'Bass'],
@@ -42,10 +42,30 @@ for (const [format, load] of [
     expect(score.parts[0].instrument).not.toBe('microphone');
     expect(score.parts[1].instrument).toBe('bassguitar');
   });
+  it.each(['Treble', 'Treble II', 'Treble 1'])('keeps piano-staff label %s from creating choir context', async name => {
+    const score = await load([name, 'Bass']);
+    expect(score.parts.map(p => p.instrument)).toEqual(['piano', 'bassguitar']);
+    expect(stringInstrument(score.parts[1])).toBe('bass4');
+    expect(canShowTab(score)).toBe(true);
+  });
+  it.each(['Soprano', 'Alto', 'Tenor', 'Baritone', 'Mezzo', 'Contralto', 'Countertenor'])('recognizes Treble with another choir word %s', async name => {
+    const score = await load(['Treble II', name, 'Bass']);
+    expect(score.parts.map(p => p.instrument)).toEqual(['microphone', 'microphone', 'microphone']);
+    expect(canShowTab(score)).toBe(false);
+  });
+  it('does not take misleading programmed choir names as Treble context', async () => {
+    const score = await load(['Treble', 'Alto'], 1);
+    expect(score.parts.map(p => p.instrument)).toEqual(['piano', 'piano']);
+  });
+  it('keeps Bass Solo a voice in a band', async () => {
+    const score = await load(['Guitar', 'Drums', 'Bass Solo']);
+    expect(score.parts[2].instrument).toBe('microphone');
+    expect(stringInstrument(score.parts[2])).toBeUndefined();
+  });
   it('does not infer B from a word-only voice label', async () => {
     expect((await load(['Soprano', 'B'])).parts.map(p => p.instrument)).toEqual(['microphone', 'piano']);
   });
-  it.each(['Soprano', 'Alto', 'Tenor', 'Baritone', 'Alto II', 'Soprano Solo', 'Alto Solo', 'Tenor Solo', 'Bass Solo', 'Soprano/Alto', 'Tenor/Bass', 'Mezzo-Soprano', 'Mezzo', 'Contralto', 'Countertenor', 'Treble', 'Voice', 'Vocal', 'Choir', 'Singer'])('uses a voice for %s even alone', async name => {
+  it.each(['Soprano', 'Alto', 'Tenor', 'Baritone', 'Alto II', 'Soprano Solo', 'Alto Solo', 'Tenor Solo', 'Bass Solo', 'Soprano/Alto', 'Tenor/Bass', 'Mezzo-Soprano', 'Mezzo', 'Contralto', 'Countertenor', 'Sopranos', 'Altos', 'Tenors', 'Basses', 'Treble Voice', 'Voice', 'Vocal', 'Choir', 'Singer'])('uses a voice for %s even alone', async name => {
     expect((await load([name])).parts[0].instrument).toBe('microphone');
   });
   it.each(['Bass Voice', 'Choir Bass', 'Bass (Vocal)'])('keeps explicit vocal hint %s even in a band', async name => {
@@ -53,7 +73,7 @@ for (const [format, load] of [
   });
   it.each([
     ['English Horn', 'clarinet', 70, undefined], ['Cor Anglais', 'clarinet', 70, undefined],
-    ['Basset Horn', 'clarinet', undefined, undefined], ['Flugelhorn', 'trumpet', undefined, undefined],
+    ['Flügelhorn', 'trumpet', undefined, undefined], ['Flu\u0308gelhorn', 'trumpet', undefined, undefined], ['Basset Horn', 'clarinet', undefined, undefined], ['Flugelhorn', 'trumpet', undefined, undefined],
     ['French Horn', 'trombone', 61, undefined], ['Horn in F', 'trombone', 61, undefined], ['Horn', 'trombone', 61, undefined],
     ['Treble Recorder', 'flute', 75, undefined], ['Mezzo-Soprano Sax', 'alto-saxophone', 65, undefined],
     ['Alto Flute', 'flute', undefined, undefined], ['Tenor Trombone', 'trombone', undefined, undefined],
@@ -76,7 +96,7 @@ for (const [format, load] of [
     expect(stringInstrument(score.parts[0])).toBe('bass4');
     expect(stringInstrument(score.parts[2])).toBe('bass4');
   });
-  it.each(['Alto 2', 'Tenor II', 'Soprano (Choir)', 'Alto divisi', 'Soprano I div.', 'Mezzo', 'Contralto', 'Countertenor', 'Treble', 'Treble II', 'Treble (Choir)'])('retains voice label %s and choir context', async name => {
+  it.each(['Alto 2', 'Tenor II', 'Soprano (Choir)', 'Alto divisi', 'Soprano I div.', 'Mezzo', 'Contralto', 'Countertenor', 'Treble Voice', 'Treble (Choir)'])('retains voice label %s and choir context', async name => {
     const score = await load([name, 'Bass']);
     expect(score.parts.map(p => p.instrument)).toEqual(['microphone', 'microphone']);
   });
@@ -106,7 +126,7 @@ for (const [format, load] of [
     expect(score.parts.map(p => p.instrument)).toEqual(['microphone', 'microphone', 'piano']);
   });
   it('preserves explicit programs over vocal and sax names', async () => {
-    for (const name of ['Bass', 'Soprano 1', 'Tenor Sax', 'Treble', 'Bass Solo', 'Tenor/Bass', 'Mezzo-Soprano', 'English Horn', 'Cor Anglais', 'Basset Horn', 'Flugelhorn', 'French Horn', 'Horn in F', 'Horn']) {
+    for (const name of ['Bass', 'Soprano 1', 'Tenor Sax', 'Treble', 'Bass Solo', 'Tenor/Bass', 'Mezzo-Soprano', 'English Horn', 'Cor Anglais', 'Basset Horn', 'Flugelhorn', 'Flügelhorn', 'French Horn', 'Horn in F', 'Horn']) {
       const part = (await load(['Soprano', name], 34)).parts[1];
       expect(part.instrument).toBe('bassguitar');
       expect(part.gmProgram).toBe(34);
