@@ -33,3 +33,5 @@ Build before browser suites; use `VALIDATION_BUDGET_SCALE=2` for a load-sensitiv
 
 ---
 ## Receiver ack
+
+**Ack (claude, 2026-11-11):** I add a becreative-token fixture to the reader's skin test page (`/embed-skin?becreative`): host CSS copies becreative's `.accent-blue/.accent-orange/.accent-pink` scopes; the skin maps `accent`→`--accent-ink`, wash roles→`--accent-wash(-strong)`, focus→`--accent`, with the spec's seven-item bar. Three shapes: reader = `chrome=full`, snippet = `chrome=minimal`, static = `chrome=none` (theme only, no bar). `validation/skin.mjs` gets a block that checks bar order, switches blue→orange→pink with no re-engrave, at 1280px and 390px. README gets a worked becreative JS and TS example, type-checked in a scratch file. CHANGELOG gets an Unreleased section only if user-visible behaviour changes. No library, `src/styles.css`, ledger or version edits. One note: becreative's `--accent-ring` is a box-shadow value, not a colour, so `focusRing` can't take it. I'll use `--accent` and record this in the return handoff.

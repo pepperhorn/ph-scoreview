@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import hostCss from './host.css?inline';
 import { PepperScore, CRF_PITCH_COLOURS, mergeSkins, THEME_TOKENS, BAR_ITEM_IDS, type PepperScoreSkin, type PepperScoreControls, type PepperScoreSettings } from 'pepperscore';
 
 // These compile-time assertions are also checked by the reader's normal tsc check.
@@ -15,8 +16,29 @@ const blue: PepperScoreSkin = { theme: { accent: 'var(--accent-ink)', focusRing:
 declare global {
   interface Window { __skin: { setSkin: (skin?: PepperScoreSkin) => void; setControls: (controls: PepperScoreControls) => void; tokens: typeof THEME_TOKENS; bars: typeof BAR_ITEM_IDS; renders: number; plays: number; stops: number; time: number; setAbc: (abc: string) => void; setSettings: (settings: PepperScoreSettings) => void } }
 }
+// becreative's section accent mapping (see apps/reader/src/embed/host.css `.accent-*` scopes, copied from becreative's custom.css).
+// `--accent-ring` there is a box-shadow value, not a colour, so the focus ring uses `--accent`.
+// becreative has no hover token, so `accentHover` darkens the section's `--accent-ink` (hover must not fall back to the default green).
+const becreativeTheme: PepperScoreSkin = { theme: { accent: 'var(--accent-ink)', accentHover: 'color-mix(in srgb, var(--accent-ink) 82%, black)', accentWash: 'var(--accent-wash)', accentWashStrong: 'var(--accent-wash-strong)', focusRing: 'var(--accent)' } };
+const becreativeSkin = mergeSkins(becreativeTheme, { pitchColours: CRF_PITCH_COLOURS, bar: ['play', 'tempo', 'instrumentSwitch', 'noteNames', 'counts', 'chordSymbols', 'options'] });
+const BECREATIVE_ABC = 'X:1\nT:becreative fixture\nM:4/4\nL:1/4\nK:C\n[CEG] [CEG] [CEG] [CEG] | [FAC] [FAC] [FAC] [FAC] |';
+// becreative's three shapes: reader = full chrome, snippet = minimal chrome with the bar, static = theme only, no bar.
+function BecreativeFixture() {
+  // host.css (hostile reset plus the becreative accent scopes) is injected only for this fixture: Astro inlines a plain import into the page and would restyle every other skin test.
+  return <div className="becreative-host accent-blue">
+    <style>{hostCss}</style>
+    <PepperScore className="bc-reader" chrome="full" skin={becreativeSkin} abc={BECREATIVE_ABC} persist={false} audio={false} height="650px" />
+    <PepperScore className="bc-snippet" chrome="minimal" skin={becreativeSkin} abc={BECREATIVE_ABC} persist={false} audio={false} height="320px" />
+    <PepperScore className="bc-static" chrome="none" skin={becreativeTheme} abc={BECREATIVE_ABC} persist={false} />
+  </div>;
+}
 const barSkin = mergeSkins(blue, { bar: ['play', 'tempo', 'instrumentSwitch', 'noteNames', 'counts', 'chordSymbols', 'options'] });
 export default function SkinTest() {
+  const [becreative, setBecreative] = useState(false);
+  useEffect(() => { if (new URLSearchParams(window.location.search).has('becreative')) setBecreative(true); }, []);
+  return becreative ? <BecreativeFixture /> : <SkinFixture />;
+}
+function SkinFixture() {
   const [abc, setAbc] = useState('X:1\nT:Skin fixture\nM:4/4\nL:1/4\nK:C\n[CEG] [CEG] [CEG] [CEG] | [FAC] [FAC] [FAC] [FAC] |');
   const [settings, setSettings] = useState<PepperScoreSettings>({});
   const [controls, setControls] = useState<PepperScoreControls>({});

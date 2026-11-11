@@ -546,6 +546,8 @@ try {
   console.log('Skin phone r1: full/minimal 320/390/580px item-centre hit tests and playback; wrapped dock/toast offsets passed');
   console.log('Skin drawer: omitted actions, single refs, mode/bars/zoom/stop/mixer/file chooser, empty-bar preset fallback and no-skin restoration passed');
   console.log('Skin bar: ordered full/minimal bars, instrument selection, drawer sync, derived chords, persisted toggles, 390px More and unknown/duplicate ids passed');
+  // T5: becreative host fixture (section accents) across reader/snippet/static shapes at desktop and phone widths.
+  await assertBecreativeFixture(browser, server);
 } finally { await browser.close(); await server.close(); }
 
 async function assertDevelopmentWarning(browser) {
@@ -729,4 +731,83 @@ async function assertLegacyPhoneChrome(browser, server) {
     await page.waitForFunction(()=>Array.from(document.querySelectorAll('.score-system')).some(s=>Number(s.dataset.firstMeasure)>60 && s.querySelector('.notehead[data-pitch]')));
     assert.deepEqual(errors,[]);console.log('Pitch colours: chord/enharmonics, outlines, mark precedence, no re-engrave, drawer/bar/settings/handle/reload, no palette, transposition and lazy paging passed');
   }finally{await browser.close();await host.close();}
+}
+
+async function assertBecreativeFixture(browser, server) {
+  const accents = { blue: 'rgb(21, 114, 142)', orange: 'rgb(181, 106, 18)', pink: 'rgb(196, 58, 84)' };
+  const washes = { blue: 'rgba(70, 193, 227, 0.08)', orange: 'rgba(252, 182, 99, 0.1)', pink: 'rgba(242, 121, 143, 0.08)' };
+  const expectedBar = ['play', 'tempo', 'instrumentSwitch', 'noteNames', 'counts', 'chordSymbols', 'options'];
+  const errors = [];
+  for (const [width, height] of [[1280, 900], [390, 844]]) {
+    const page = await browser.newPage({ viewport: { width, height } });
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto(`${server.url}/embed-skin?becreative`);
+    await page.waitForFunction(() => ['.bc-reader', '.bc-snippet', '.bc-static'].every(sel => document.querySelector(sel + ' .score-system svg')), undefined, { timeout: 30000 });
+    await page.addStyleTag({ content: '.pepperscore,.pepperscore *{transition:none!important}' });
+    const label = `becreative ${width}px`;
+    // Agreed bar on reader and snippet; static has theme only.
+    const controlHits = async shape => page.locator(shape).evaluate(async root => {
+      const out = [];
+      for (const item of root.querySelectorAll('[data-bar-item]')) {
+        const control = item.matches('button,input') ? item : item.querySelector('button,input') ?? item;
+        control.scrollIntoView({ block: 'center', inline: 'center' });
+        const r = control.getBoundingClientRect();
+        const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+        out.push({ id: item.dataset.barItem, where: item.closest('.skin-playback-toolbar') ? 'toolbar' : item.closest('.header-secondary-panel') ? 'more' : 'header', visible: r.width > 0 && r.height > 0 && r.right <= window.innerWidth + 1 && r.left >= -1, reachable: Boolean(hit && control.contains(hit)) });
+      }
+      return out;
+    });
+    if (width > 580) {
+      for (const shape of ['.bc-reader', '.bc-snippet']) assert.deepEqual(await page.locator(`${shape} [data-bar-item]`).evaluateAll(nodes => nodes.map(el => el.dataset.barItem)), expectedBar, `${label} ${shape}: agreed bar in order`);
+    } else {
+      // Phone: the bar splits across the bottom toolbar, the header and the More panel. All seven items must be visible and reachable, each group keeping the agreed relative order.
+      for (const shape of ['.bc-reader', '.bc-snippet']) {
+        await page.locator(`${shape} .skin-playback-toolbar .play-button`).waitFor({ state: 'visible' });
+        await page.locator(`${shape} .header-more-toggle`).scrollIntoViewIfNeeded();
+        await page.locator(`${shape} .header-more-toggle`).click();
+        await page.locator(`${shape} .header-secondary-panel [data-bar-item=options]`).waitFor({ state: 'visible' });
+        const hits = await controlHits(shape);
+        assert.deepEqual(hits.map(item => item.id).sort(), [...expectedBar].sort(), `${label} ${shape}: full agreed item set across toolbar, header and More`);
+        assert.ok(hits.every(item => item.visible && item.reachable), `${label} ${shape}: every item visible and reachable: ${JSON.stringify(hits)}`);
+        for (const where of ['toolbar', 'header', 'more']) {
+          const ids = hits.filter(item => item.where === where).map(item => item.id);
+          assert.deepEqual(ids, expectedBar.filter(id => ids.includes(id)), `${label} ${shape} ${where}: agreed relative order`);
+        }
+        assert.deepEqual(hits.filter(item => item.where === 'toolbar').map(item => item.id), ['play', 'tempo'], `${label} ${shape}: playback sits in the bottom toolbar`);
+        await page.keyboard.press('Escape');
+      }
+    }
+    assert.equal(await page.locator('.bc-static [data-bar-item], .bc-static .topbar, .bc-static .skin-bar').count(), 0, `${label}: static shows no bar`);
+    // No clipping or page-level horizontal scroll at this width.
+    for (const shape of ['.bc-reader', '.bc-snippet', '.bc-static']) assert.ok(await page.locator(shape).evaluate(el => el.scrollWidth <= el.clientWidth + 1), `${label} ${shape}: no horizontal clipping`);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `${label}: no page-level horizontal scroll`);
+    // Accent follows the host's section class, with no re-engrave of any shape.
+    await page.evaluate(() => { window.__svgs = Object.fromEntries(['.bc-reader', '.bc-snippet', '.bc-static'].map(sel => [sel, document.querySelector(sel + ' .score-system svg')])); });
+    for (const accent of ['blue', 'orange', 'pink']) {
+      await page.evaluate(accent => { document.querySelector('.becreative-host').className = `becreative-host accent-${accent}`; }, accent);
+      for (const shape of ['.bc-reader', '.bc-snippet']) {
+        const play = page.locator(`${shape} .play-button`).first();
+        await play.waitFor({ state: 'visible' });
+        assert.equal(await play.evaluate(el => getComputedStyle(el).backgroundColor), accents[accent], `${label} ${shape} ${accent}: play button uses --accent-ink`);
+        // Hover paint: the host's accentHover (darkened ink), never the default green rgb(37, 70, 51).
+        const expectedHover = await page.evaluate(ink => { const probe = document.createElement('span'); document.body.append(probe); probe.style.color = `color-mix(in srgb, ${ink} 82%, black)`; const colour = getComputedStyle(probe).color; probe.remove(); return colour; }, accents[accent]);
+        await play.scrollIntoViewIfNeeded();
+        await play.hover();
+        assert.equal(await play.evaluate(el => getComputedStyle(el).backgroundColor), expectedHover, `${label} ${shape} ${accent}: hovered play button uses the host-derived accentHover`);
+        assert.notEqual(expectedHover, accents[accent], `${label} ${accent}: hover differs from rest`);
+        assert.notEqual(expectedHover, 'rgb(37, 70, 51)', `${label} ${accent}: hover is not the default green`);
+        await page.mouse.move(0, 0);
+      }
+      for (const shape of ['.bc-reader', '.bc-snippet', '.bc-static']) {
+        const vars = await page.locator(shape).evaluate(el => { const style = getComputedStyle(el); const probe = document.createElement('span'); document.body.append(probe); const resolve = value => { probe.style.color = ''; probe.style.color = value; return getComputedStyle(probe).color; }; const out = { accent: resolve(style.getPropertyValue('--ps-accent')), wash: resolve(style.getPropertyValue('--ps-accent-wash')), focus: resolve(style.getPropertyValue('--ps-focus-ring')) }; probe.remove(); return out; });
+        assert.equal(vars.accent, accents[accent], `${label} ${shape} ${accent}: accent role`);
+        assert.equal(vars.wash, washes[accent], `${label} ${shape} ${accent}: wash role`);
+        assert.equal(vars.focus, { blue: 'rgb(70, 193, 227)', orange: 'rgb(252, 182, 99)', pink: 'rgb(242, 121, 143)' }[accent], `${label} ${shape} ${accent}: focus ring uses --accent`);
+      }
+      assert.ok(await page.evaluate(() => Object.entries(window.__svgs).every(([sel, svg]) => svg === document.querySelector(sel + ' .score-system svg'))), `${label} ${accent}: accent change does not re-engrave`);
+    }
+    await page.close();
+  }
+  assert.deepEqual(errors, []);
+  console.log('Skin becreative: reader/snippet agreed bar and static no-bar at 1280/390px; blue, orange and pink accents follow the host with no re-engrave');
 }
