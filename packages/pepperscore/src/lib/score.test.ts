@@ -7,6 +7,9 @@ import { stringInstrument } from './tab/string-instruments';
 const cases = [
   ...['Bass', 'Acoustic Bass', 'Electric Bass', 'Bass Guitar', 'Bass 1', 'Bass I', 'Synth Bass', 'Bass line', 'Jazz Bass', 'Bass (8vb)'].map(name => [name, 'bassguitar', 'bass4'] as const),
   ...['Double Bass', 'Contrabass', 'Upright Bass', 'String Bass'].map(name => [name, 'double-bass', 'double-bass'] as const),
+  ...['Soprano Solo', 'Alto Solo', 'Tenor Solo', 'Bass Solo', 'Soprano/Alto', 'Tenor/Bass', 'Mezzo-Soprano', 'Mezzo', 'Contralto', 'Countertenor', 'Treble', 'Treble II', 'Treble (Choir)'].map(name => [name, 'microphone', undefined] as const),
+  ['English Horn', 'clarinet', undefined], ['Cor Anglais', 'clarinet', undefined], ['Basset Horn', 'clarinet', undefined],
+  ['Flugelhorn', 'trumpet', undefined], ['French Horn', 'trombone', undefined], ['Horn in F', 'trombone', undefined], ['Horn', 'trombone', undefined],
   ...['Choir Bass', 'Bass voice', 'Vocal Bass', 'SATB Bass'].map(name => [name, 'microphone', undefined] as const),
   ['Alto Flute', 'flute', undefined], ['Tenor Trombone', 'trombone', undefined],
   ['Baritone Horn', 'trombone', undefined], ['Tenor Horn', 'trombone', undefined],
