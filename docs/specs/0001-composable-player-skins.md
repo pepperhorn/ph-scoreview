@@ -129,7 +129,7 @@ Lives in the becreative repo beside `src/components/score/ScoreEmbed.tsx`, not i
 - **Colours** (lead's call on mapping) follow becreative's section-based accent system, so a score on a blue page goes blue by itself:
   - play button and "on" toggles: `--accent-ink`
   - selected backgrounds: `--accent-wash` / `--accent-wash-strong`
-  - focus: `--accent-ring`
+  - focus: `--accent` (becreative's `--accent-ring` is a full box-shadow, not a colour, so it cannot feed `focusRing`; decided in 0001-t5 review)
   - pressed and hover tints derive from the same tokens
 - "CRF colours" means these brand accents, not the 12 pitch colours (user confirmed).
 
