@@ -26,3 +26,5 @@ Run everything locally; push once when green (CI minutes cost money).
 
 ---
 ## Receiver ack
+
+Acknowledged 2026-11-11: fix WebKit's on-screen pitch-colour outline so default and host-set `--ps-pitch-outline` rasterise consistently with Chromium/Firefox, retaining PDF parity and thickness. I own only the pitch-colour CSS, narrowly necessary render attributes, PDF validation, and these 0022 handoffs. I will run all requested browser checks locally and push once with a draft PR. No open scope questions. GBrain searched: `projects/scoreflow-music-reader` (general project background; no Safari-specific fix found).
