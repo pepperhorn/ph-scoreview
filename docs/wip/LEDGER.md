@@ -15,7 +15,7 @@ Next ID: 0027
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
 | 0024 | [quick] Self-hosted runner on t3box: ci.yml runs-on from CI_RUNS_ON var | merged | human: install runner on t3box + set CI_RUNS_ON (docs/guides/self-hosted-runner.md) | codex/gpt-6.1-sol | orch/0024-ci-runs-on-variable | https://github.com/pepperhorn/ph-scoreview/pull/89 |  | task `0024-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A9cbab5d4-201b-4809-8342-6c4ce4f87509` |  |  | handoffs/2026-11-11-0024-ci-runs-on-variable--lead-to-codex.md | 2026-11-11 |
 | 0025 | Editor via private GitHub Packages + licence tooling (0003 P1/P3) | merged | human: rotate licence key → send public JWK + re-signed demo key (quick PR swaps them); then npm login to GitHub Packages + publish | codex/gpt-6.1-sol | orch/0025-editor-github-packages | https://github.com/pepperhorn/ph-scoreview/pull/93 |  | task `0025-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A659e21e6-7e3f-4cec-809b-062024e53050` | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-11-0025-editor-github-packages--lead-to-codex.md | 2026-11-11 |
-| 0026 | [quick] Release pepperscore 0.5.1 (CHANGELOG + version) | dispatched | child 0026-impl-r1 | codex/gpt-6.1-sol | orch/0026-release-0-5-1 |  |  | task `0026-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A0cb3c522-27fa-4e52-bc3d-5265e7f623e9%3Adelegate-task%3A94a5587b-c895-4207-ace1-a1a9a2136a02` |  |  | handoffs/2026-11-12-0026-release-0-5-1--lead-to-codex.md | 2026-11-12 |
+| 0026 | [quick] Release pepperscore 0.5.1 (CHANGELOG + version) | in-review | review 0026-review-r1 (Claude) + ci; then human: npm login, then publish | codex/gpt-6.1-sol | orch/0026-release-0-5-1 | https://github.com/pepperhorn/ph-scoreview/pull/95 |  | task `0026-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A0cb3c522-27fa-4e52-bc3d-5265e7f623e9%3Adelegate-task%3A94a5587b-c895-4207-ace1-a1a9a2136a02` |  |  | handoffs/2026-11-12-0026-release-0-5-1--lead-to-codex.md | 2026-11-12 |
 
 ## Done / closed
 
@@ -105,6 +105,7 @@ Last health scan: never
 ## Log
 2026-11-11 human decisions — runner host t3box (0024 dispatched: CI_RUNS_ON variable; human installs runner, tailnet SSH blocks agents); 0003 P1 private GitHub Packages, P2 pepperhorn/pepperscore-pt (created), P3 rotate key now → 0025 dispatched
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-12 0026 dispatched→in-review — PR #95 @cb8a0bf (0.5.1; reader pin bump approved by lead as release scope); Claude review r1
 2026-11-12 0026 proposed→dispatched — Codex; adds 0022/0023 entries to CHANGELOG
 2026-11-12 0002 merged→closed — CI green on 2c8efb5, merged PR #94 (human OK); all 4 tasks done. 0026 new (release 0.5.1, human OK)
 2026-11-12 0002-t4 in-review→ready — Codex r3 approve on 2c8efb5 (WebKit/Firefox PDF steps green on CI); human OK merge on green + cut 0.5.1
