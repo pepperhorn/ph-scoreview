@@ -5,22 +5,23 @@
 > Waiting on: `child <taskId>` · `review <taskId>` · `ci` · `human: <why>` · `lead: <next action>`. Set it on every status change. A row needs the lead when it starts with `lead`, or when it's empty and Status is dispatched, in-review, changes-requested, ready, or merged. The lead's Stop hook won't let the lead end its turn while any row needs it.
 > Type: normal items have a spec and plan. Quick items have the title prefix `[quick]` (no spec or plan, a short handoff). PRs adopted by `orch-sweep` have the prefix `[pr]`.
 
-Next ID: 0026
+Next ID: 0027
 
 ## Active
 
 | K | Title | Status | Waiting on | Owner (provider/model) | Branch | PR | Worktree | T3 task/thread | Spec | Plan | Latest handoff | Updated |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 0002 | PDF export | ready (t4; t1 #71, t2 #78, t3 #83 merged) | ci (human OK: merge on green; then 0.5.1 release PR) | claudeAgent/claude-sonnet-5-5 | orch/0002-t4-pdf-large-browsers-docs | https://github.com/pepperhorn/ph-scoreview/pull/94 |  | task `0002-t4-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3Ace713e8b-52ec-48e9-904a-abbf4a1e789f` | specs/0002-pdf-export.md | plans/0002-pdf-export.md | handoffs/2026-11-12-0002-t4-pdf-large-browsers-docs--lead-to-claude.md | 2026-11-12 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | human: key rotation + editor publish (0025 merged), then dispatch T4 in pepperhorn/pepperscore-pt | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
 | 0024 | [quick] Self-hosted runner on t3box: ci.yml runs-on from CI_RUNS_ON var | merged | human: install runner on t3box + set CI_RUNS_ON (docs/guides/self-hosted-runner.md) | codex/gpt-6.1-sol | orch/0024-ci-runs-on-variable | https://github.com/pepperhorn/ph-scoreview/pull/89 |  | task `0024-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A9cbab5d4-201b-4809-8342-6c4ce4f87509` |  |  | handoffs/2026-11-11-0024-ci-runs-on-variable--lead-to-codex.md | 2026-11-11 |
 | 0025 | Editor via private GitHub Packages + licence tooling (0003 P1/P3) | merged | human: rotate licence key → send public JWK + re-signed demo key (quick PR swaps them); then npm login to GitHub Packages + publish | codex/gpt-6.1-sol | orch/0025-editor-github-packages | https://github.com/pepperhorn/ph-scoreview/pull/93 |  | task `0025-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A659e21e6-7e3f-4cec-809b-062024e53050` | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-11-0025-editor-github-packages--lead-to-codex.md | 2026-11-11 |
+| 0026 | [quick] Release pepperscore 0.5.1 (CHANGELOG + version) | proposed | lead: dispatch | codex/gpt-6.1-sol | orch/0026-release-0-5-1 |  |  |  |  |  | handoffs/2026-11-12-0026-release-0-5-1--lead-to-codex.md | 2026-11-12 |
 
 ## Done / closed
 
 | K | Title | PR | Merged | Notes |
 |---|---|---|---|---|
+| 0002-t4 | PDF large scores, browsers, docs (task of 0002; closes 0002 and S34) | https://github.com/pepperhorn/ph-scoreview/pull/94 | 2026-11-12 | 86bb9bf; lazy-import retry on Vite/native ESM |
 | 0001-t5 | Skins docs, becreative fixture and validation (task of 0001; closes 0001) | https://github.com/pepperhorn/ph-scoreview/pull/90 | 2026-11-12 | ab759a8; focus token --accent |
 | 0022 | [quick] Safari pitch-colour outlines (S31) | https://github.com/pepperhorn/ph-scoreview/pull/91 | 2026-11-12 | merged; for 0.5.1; S36 follow-up |
 | 0023 | [quick] Fretless solver position continuity (S30) | https://github.com/pepperhorn/ph-scoreview/pull/92 | 2026-11-12 | merged; cello shifts 84→55; S35 perf follow-up |
@@ -93,7 +94,7 @@ Next ID: 0026
 | S31 | fix | Safari (WebKit) reader draws pitch-colour notehead outlines solid black, ignoring `--ps-pitch-outline` (PDF is correct); `validation/pdf.mjs:511` fails on webkit, main too | PR #87 review | S | medium (Safari users see heavy outlines) | PR #87 review | done → 0022 |
 | S32 | fix | PDF page 1: chord symbol "C" overlaps the tempo mark (all browsers, main too) | PR #87 review | S | low | PR #87 review | new |
 | S33 | fix | PDF dialog: first close returns focus to the reader, not the PDF button; focus from outside the reader can land behind any reader dialog (mixer too) | PR #83 review r2 | S | low | PR #83 review | new |
-| S34 | bug | WebKit: PDF overlay does not recover after an aborted lazy chunk + reload (validation/pdf.mjs:765 waits 60 s for "Paper size"); intermittent duplicate .pdf-trigger after reload | 0022 return handoff (/tmp/0022-baseline.log reproduces before the change) | S | medium (Safari users after a network blip) | 0022 | root cause WebKit (failed modulepreload cached per process); WebKit-only assertion in #94; upstream candidate |
+| S34 | bug | WebKit: PDF overlay does not recover after an aborted lazy chunk + reload (validation/pdf.mjs:765 waits 60 s for "Paper size"); intermittent duplicate .pdf-trigger after reload | 0022 return handoff (/tmp/0022-baseline.log reproduces before the change) | S | medium (Safari users after a network blip) | 0022 | done → 0002-t4 |
 | S35 | efficiency | Fretless phrase DP: 2,000 four-note cello chords 0.19 s → 5.2 s (realistic parts <1 s); prune chord states / beam width; also document weights tied to candidate count, and chunked renders see less lookahead | PR #92 review r1 | S | low–medium (pathological scores) | 0023 | new |
 | S36 | bug | WebKit: overlapping reader marks (playing+transposed, chord transposed+note selected) leave a ~1-unit outline in the other mark's colour; scope playing selector to `.reader-note.is-playing .notehead[data-pitch]`, chord case needs a non-selector fix | PR #91 review r1 | S | low (hairline) | 0022 | new |
 | S37 | risk | CI validate job apt-installs poppler-utils each run; Ubuntu mirror DNS failures fail CI (PR #93, main ab759a8 on 2026-11-11). Bake poppler into a small derived image (ghcr) or cache the .debs; moot on t3box if pre-baked there | CI runs 43059869776, 43060590510 | S | medium (flaky red CI, wasted reruns) | 0025 | new |
@@ -104,6 +105,7 @@ Last health scan: never
 ## Log
 2026-11-11 human decisions — runner host t3box (0024 dispatched: CI_RUNS_ON variable; human installs runner, tailnet SSH blocks agents); 0003 P1 private GitHub Packages, P2 pepperhorn/pepperscore-pt (created), P3 rotate key now → 0025 dispatched
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-12 0002 merged→closed — CI green on 2c8efb5, merged PR #94 (human OK); all 4 tasks done. 0026 new (release 0.5.1, human OK)
 2026-11-12 0002-t4 in-review→ready — Codex r3 approve on 2c8efb5 (WebKit/Firefox PDF steps green on CI); human OK merge on green + cut 0.5.1
 2026-11-12 0002-t4 changes-requested→in-review — r2 fixes 2c8efb5: browser-side cancel timing (input delay 57–71 ms, close 3–6 ms), lazy-import rethrows when chunk not found; pack-smoke Vite recovers / Webpack degrades; docs qualified; Codex review r3
 2026-11-12 0002-t4 in-review→changes-requested — Codex r2 on aa41aea: WebKit CI red on real Cancel-click timing (1688/1250 ms incl. Playwright overhead) → browser-side timestamps; lazy-import recovery not portable to Webpack → lead decision: supported on Vite/native-ESM, best-effort elsewhere (clean degrade), qualify docs. S34 fix, stall diagnosis, +240 B confirmed. CI run cancelled
