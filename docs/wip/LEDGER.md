@@ -16,7 +16,6 @@ Next ID: 0026
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | 0025 (P1 packaging + P3 key rotation); P2 done: repo pepperhorn/pepperscore-pt | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
 | 0022 | [quick] Safari draws pitch-colour outlines solid black (S31) | in-review | review 0022-review-r1 (Claude) + ci | codex/gpt-6.1-sol | orch/0022-safari-pitch-outline | https://github.com/pepperhorn/ph-scoreview/pull/91 |  | task `0022-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A0022-impl-r1` |  |  | handoffs/2026-11-11-0022-safari-pitch-outline--lead-to-codex.md | 2026-11-11 |
-| 0023 | [quick] Fretless solver: position continuity (S30) | ready | ci (quick lane: merge on green) | codex/gpt-6.1-sol | orch/0023-fretless-position-continuity | https://github.com/pepperhorn/ph-scoreview/pull/92 |  | task `0023-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3Ac74f9e93-cb09-4963-ad26-a335a09a74fe` | specs/0013-stringed-instrument-tab.md |  | handoffs/2026-11-11-0023-fretless-position-continuity--lead-to-codex.md | 2026-11-11 |
 | 0024 | [quick] Self-hosted runner on t3box: ci.yml runs-on from CI_RUNS_ON var | merged | human: install runner on t3box + set CI_RUNS_ON (docs/guides/self-hosted-runner.md) | codex/gpt-6.1-sol | orch/0024-ci-runs-on-variable | https://github.com/pepperhorn/ph-scoreview/pull/89 |  | task `0024-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A9cbab5d4-201b-4809-8342-6c4ce4f87509` |  |  | handoffs/2026-11-11-0024-ci-runs-on-variable--lead-to-codex.md | 2026-11-11 |
 | 0025 | Editor via private GitHub Packages + licence tooling (0003 P1/P3) | in-review | review 0025-review-r1 (Claude) + ci; human: merge OK (package rename) + rotated public JWK/demo key | codex/gpt-6.1-sol | orch/0025-editor-github-packages | https://github.com/pepperhorn/ph-scoreview/pull/93 |  | task `0025-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A659e21e6-7e3f-4cec-809b-062024e53050` | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-11-0025-editor-github-packages--lead-to-codex.md | 2026-11-11 |
 
@@ -24,6 +23,7 @@ Next ID: 0026
 
 | K | Title | PR | Merged | Notes |
 |---|---|---|---|---|
+| 0023 | [quick] Fretless solver position continuity (S30) | https://github.com/pepperhorn/ph-scoreview/pull/92 | 2026-11-12 | merged; cello shifts 84→55; S35 perf follow-up |
 | 0017 | Release pepperscore 0.5.0 | https://github.com/pepperhorn/ph-scoreview/pull/85 | 2026-11-11 | 9a3ab8c; published to npm 2026-11-11 (human) |
 | 0013 | TAB for stringed instruments | #74, #77, #84 (+ README in #85) | 2026-11-11 | T4 docs covered by the 0.5.0 README; viola/double bass await teacher charts |
 | 0002-t3 | PDF overlay, button and controls.pdf (task of 0002) | https://github.com/pepperhorn/ph-scoreview/pull/83 | 2026-11-11 | merged; +1,497 B gzip initial |
@@ -102,6 +102,7 @@ Last health scan: never
 ## Log
 2026-11-11 human decisions — runner host t3box (0024 dispatched: CI_RUNS_ON variable; human installs runner, tailnet SSH blocks agents); 0003 P1 private GitHub Packages, P2 pepperhorn/pepperscore-pt (created), P3 rotate key now → 0025 dispatched
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-12 0023 ready→closed — CI green on a1107a5, merged PR #92 (quick lane)
 2026-11-12 0001-t5 in-review→ready — Codex r2 approve on 07f9f2c; human OK merge on green
 2026-11-11 0001-t5 changes-requested→in-review — r1 fixes 07f9f2c (accentHover color-mix, hover + 390px hit-test assertions with negative controls); Codex review r2
 2026-11-11 0025 dispatched→in-review — PR #93 @2d281ad (dist build, publishConfig restricted, licence CLIs, pack check); local timing gates red on loaded host (4 agents), CI is authority; Claude review r1
