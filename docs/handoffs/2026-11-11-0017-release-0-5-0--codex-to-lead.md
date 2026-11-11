@@ -8,7 +8,7 @@
 - **Worktree:** `/home/shaun/.t3/worktrees/ph-vexflow-view/t3-5de38d86-837e74894e3847b8`
 - **Base commit:** `e3772e6` (contains pinned `9d3c36e`)
 - **Receiver acknowledgement:** `b3b8db0`
-- **Release/verification commit:** `035ddae` (only this handoff changes afterward)
+- **Initial release commit:** `035ddae`; review r1 changes and verification are recorded below.
 - **PR:** https://github.com/pepperhorn/ph-scoreview/pull/85 (draft; no watching/polling)
 - **Status:** closed
 
@@ -60,10 +60,10 @@ git diff --stat main...HEAD
 An additional local `npm pack --ignore-scripts` tarball manifest read confirms the actual packed version, without publishing.
 
 ## Verification output
-All commands in Verify with exited 0 on the final release-file content. No implementation changes were needed during verification. Only handoff documentation changes after these results. Local results do not assert GitHub CI or review approval.
+Initial verification record (superseded for clean installation by review r1 below): check/build/pack/manifest/full validation exited 0 on the initial release-file content, but `npm ci` was run before the version bump. The earlier claim that installation was verified against the final release files was incorrect. Local results do not assert GitHub CI or review approval.
 
 ```text
-npm ci: exit 0
+npm ci: exit 0 BEFORE the version bump (not final-tree installation proof)
 npm run check: 0 errors, 0 warnings, 0 hints (23 Astro files)
 npm run build: Complete; demo/library dist and notices check passed
 npm run test:pack: pepperscore-0.5.0.tgz (111 files), no sources
@@ -92,3 +92,41 @@ No scope questions. Lead to arrange other-family review, check CI, merge and pro
 - **Outcome:** done — all required local checks passed; ready for review
 - **What changed:** release metadata and notes only, plus task handoffs.
 - **For GBrain (lead to promote):** record the release outcome only after merge/publication as appropriate; preparing a tarball is not publication proof.
+
+## Review r1 — reader pin and shipped README
+
+Review: https://github.com/pepperhorn/ph-scoreview/pull/85#pullrequestreview-5855176574
+Reviewed head: `9c0eae57046a2e529576e513d8ba60cd83a50304`.
+
+### Scope and acknowledgement
+The lead explicitly expanded ownership to the pepperscore version pin in `apps/reader/package.json`, its root lock entry, and `packages/pepperscore/README.md` for release accuracy. I accept all three findings: align both reader pins to 0.5.0, replace stale Guitar TAB fallback/default documentation, and document the shipped skin/pitch/TAB APIs. Runtime code, other dependency specs, ledger, publication and GBrain writes remain out of scope.
+
+The two exact pin edits were already present when this turn started and became commit `3d3e1c2` during the turn; preserved and included in this branch. No unrelated changes were present. README changes are based on the current source and the 0001 T1–T4 / 0013 T1 return handoffs linked above. GBrain historical project lookup repeated (`default:projects/scoreflow-music-reader`); source and handoffs determine the API documentation.
+
+### What changed / decisions made
+- Both reader pins now match the workspace's 0.5.0 version. This resolves the missing pepperscore@0.4.1 lock entry without changing dependency ranges elsewhere.
+- String TAB documents fretted identities, exact onReady-id overrides, no first-pitched-part fallback, bass/ukulele defaults, re-entrant physical order and matching-string-count tuning overrides. Finger TAB remains explicitly unavailable in this release. Imported TAB behavior stays documented.
+- Added the skin prop row, theme roles, supported bar ids and control precedence, palette requirements, `mergeSkins` and `CRF_PITCH_COLOURS`, with an example. Added settings/handle rows for `pitchColours`, `setPitchColours(on)` in the ref row, and a TAB settings row for `tabInstruments`. Uses the exported `PepperScoreSettings` indexed type rather than suggesting the internal `TabInstrument` type is a package export.
+- Corrected the original installation claim above: the first `npm ci` ran before bumping the package, so it did not validate the final version combination. Review r1 reruns the whole requested chain with both reader pins fixed.
+- For the ABC guide: no import behavior changes; README changes describe existing merged behavior only.
+
+### Review r1 verification
+All commands in the foreground repo-root chain exited 0 against the final reader pins and README:
+```bash
+npm ci && npm run check && npm run build && npm run test:pack
+```
+Logs: `/tmp/0017-r1-{ci,check,build,pack}.log`. No npm publication; no PR watch/poll.
+
+```text
+npm ci: exit 0 (after both reader pins were set to 0.5.0)
+npm run check: 23 Astro files, 0 errors, 0 warnings, 0 hints
+npm run build: 10 pages; Complete; demo uses matching library dist and notices
+npm run test:pack: pepperscore-0.5.0.tgz (111 files), no sources
+  fresh Vite + React host build passed
+  fresh Astro + React client:only host build passed
+  Node import touches no window, document, storage or location
+  fresh Astro SSR client:visible host built, served and answered 200
+git diff --check: exit 0
+```
+
+Review r1 outcome: all three findings addressed; ready for re-review. Compared with reviewed head `9c0eae5`, only the reader version pin, its lock entry, package README and this return handoff changed. No runtime source edits or dependency-range changes. These are local results; GitHub CI and review approval are not claimed. No publication, PR watching or PR polling.
