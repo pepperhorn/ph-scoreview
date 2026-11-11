@@ -88,7 +88,7 @@ Cloudflare              /lib/<version>/…            immutable shared player bu
 ## Phases
 
 1. **Done (#38):** Verovio loaded as a separate replaceable file, plus third-party notices (LGPL compliance).
-2. **Free PDF export** with the formatting overlay.
+2. **Done (0002, #83 and the large-score/browser follow-up):** free PDF export with the formatting overlay, verified in Chromium, Firefox and WebKit.
 3. **`@pepperhorn/app-sdk/plugins`** and pepperscore extension slots with a static first-party test plugin.
 4. **ph-apps collections and Flows;** Worker + B2 embed page; Classroom link and Sites embeds.
 5. **Pro plugins:** MIDI export, play-along, then audio export (after the soundfont replacement).

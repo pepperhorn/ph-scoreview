@@ -101,3 +101,12 @@ jobs:
         timeout-minutes: 4
         env:
           BROWSER: ${{ matrix.browser }}
+      - name: Install Poppler for PDF raster validation
+        run: |
+          apt-get update
+          apt-get install -y poppler-utils
+      - name: PDF export (page model, vector composition, overlay, large score; chromium runs in the validate job)
+        run: npm run test:pdf
+        timeout-minutes: 12
+        env:
+          BROWSER: ${{ matrix.browser }}

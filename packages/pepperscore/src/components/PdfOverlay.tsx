@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ExportRequest } from '../lib/pdf/export';
+import type { ExportProgress, ExportRequest } from '../lib/pdf/export';
 import type { Score } from '../lib/score';
 import type { PitchColourPaint } from '../lib/pitch-colours';
 import { verovioBaseline } from '../lib/verovio-runtime';
@@ -20,6 +20,8 @@ async function prepareSnapshot({ score, prefs: saved, hiddenPartIds, channel, pi
       showChordSymbols: saved.chordSymbols, inferChordSymbols: saved.inferChordSymbols,
       scale: { names: ANNOTATION_SCALE[saved.namesSize], chordSymbols: ANNOTATION_SCALE[saved.chordSymbolsSize], counts: ANNOTATION_SCALE[saved.countsSize], subdivisions: ANNOTATION_SCALE[saved.subdivisionsSize] } } };
 }
+/** Engraving runs in a worker, then each page is drawn in turn: say which. */
+const buildingText = (progress: ExportProgress | null) => progress && progress.pages ? `Building PDF… ${progress.phase === 'composing' ? 'drawing' : 'preparing'} page ${progress.page} of ${progress.pages}` : 'Building PDF…';
 export default function PdfOverlay({ paper, onPaper, snapshot, revision, font, verovioBaseUrl, onClose }: {
   paper: Prefs['pdfPaper']; onPaper: (paper: Prefs['pdfPaper']) => void;
   snapshot: () => PdfCapture; revision: unknown; font: string; verovioBaseUrl?: string; onClose: () => void;
@@ -32,7 +34,7 @@ export default function PdfOverlay({ paper, onPaper, snapshot, revision, font, v
     setBars(next); setBarsDraft(String(next));
     return next;
   };
-  const [fit, setFit] = useState('Checking fit…'), [error, setError] = useState('');
+  const [fit, setFit] = useState('Checking fit…'), [error, setError] = useState(''), [progress, setProgress] = useState<ExportProgress | null>(null);
   const panel = useRef<HTMLElement>(null), measure = useRef<AbortController | null>(null), save = useRef<AbortController | null>(null);
   const snapshotRef = useRef(snapshot); snapshotRef.current = snapshot;
   const closeRef = useRef(onClose); closeRef.current = onClose;
@@ -82,7 +84,7 @@ export default function PdfOverlay({ paper, onPaper, snapshot, revision, font, v
     panel.current?.querySelector<HTMLButtonElement>('.pdf-cancel')?.focus({ preventScroll: true });
     measure.current?.abort();
     const controller = new AbortController(); save.current = controller;
-    setBusy(true); setError('');
+    setBusy(true); setError(''); setProgress(null);
     try {
       // frameElement belongs to the parent's realm; instanceof against this window's
       // HTMLIFrameElement is false even for a same-origin embed.
@@ -91,7 +93,7 @@ export default function PdfOverlay({ paper, onPaper, snapshot, revision, font, v
       const request = await prepareSnapshot(snapshotRef.current());
       controller.signal.throwIfAborted();
       const { exportScore } = await import('../lib/pdf/export');
-      const blob = await exportScore({ ...request, options: { paper, maxBars, font, files } }, controller.signal);
+      const blob = await exportScore({ ...request, options: { paper, maxBars, font, files }, onProgress: update => { if (!controller.signal.aborted) setProgress(update); } }, controller.signal);
       controller.signal.throwIfAborted();
       const url = URL.createObjectURL(blob), anchor = document.createElement('a');
       anchor.href = url;
@@ -109,7 +111,7 @@ export default function PdfOverlay({ paper, onPaper, snapshot, revision, font, v
         <option value="a4">A4</option><option value="a3">A3</option><option value="letter">Letter</option><option value="legal">Legal</option>
       </select></label>
       <label className="pdf-field">Bars per line<input className="pdf-bars" type="number" min={1} max={BARS_PER_LINE_MAX} value={barsDraft} disabled={busy} onChange={event => setBarsDraft(event.target.value)} onBlur={commitBars}/></label>
-      <p className="pdf-fit" role="status">{busy ? 'Building PDF…' : fit}</p>
+      <p className="pdf-fit" role="status">{busy ? buildingText(progress) : fit}</p>
       {error && <p className="pdf-error" role="alert">{error}</p>}
       <div className="pdf-actions"><button type="button" className="pdf-cancel" onClick={onClose}>Cancel</button>{error && <button type="button" className="pdf-reload" onClick={() => window.history.go(0)}>Reload page</button>}<button type="button" className="pdf-save" disabled={busy} onClick={() => void download()}>Save</button></div>
     </section>

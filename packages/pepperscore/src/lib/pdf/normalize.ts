@@ -1,3 +1,5 @@
+import { runSteps } from './cooperative';
+
 /** Replace nested viewports by their browser-resolved parent-space matrices.
  * svg2pdf otherwise applies Verovio's definition-scale viewBox twice.
  * Capture all matrices before changing the tree; outer page units remain intact.
@@ -31,8 +33,12 @@ function contentMatrix(element: SVGGraphicsElement): DOMMatrix | null {
 }
 
 /** Ordinary text and music glyphs have different fonts, even within one chord label. */
-export function normalizeText(svg: SVGSVGElement): void {
+export function normalizeText(svg: SVGSVGElement): void { runSteps(normalizeTextSteps(svg)); }
+
+/** The same work as normalizeText, paused (`yield`) between text elements. */
+export function* normalizeTextSteps(svg: SVGSVGElement): Generator<void> {
   for (const text of Array.from(svg.querySelectorAll('text, tspan'))) {
+    yield;
     for (const node of Array.from(text.childNodes)) {
       if (node.nodeType !== Node.TEXT_NODE || !/[♯♭♮𝄪𝄫]/u.test(node.textContent || '')) continue;
       const fragment = document.createDocumentFragment();
@@ -62,6 +68,7 @@ export function normalizeText(svg: SVGSVGElement): void {
     }
   }
   for (const text of Array.from(svg.querySelectorAll<SVGElement>('text, tspan'))) {
+    yield;
     const requested = getComputedStyle(text).fontFamily;
     const ownText = Array.from(text.childNodes).filter(node=>node.nodeType === Node.TEXT_NODE).map(node=>node.textContent).join('');
     const family = /[\ue000-\uf8ff♯♭♮]/.test(ownText) ? requested.includes('Petaluma') ? 'Petaluma' : 'Bravura' : requested.includes('Petaluma Script') ? 'Petaluma Script' : 'Poppins';

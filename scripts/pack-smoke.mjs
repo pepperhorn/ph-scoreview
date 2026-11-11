@@ -1,20 +1,23 @@
 // npm pack the library, install the tarball into temporary Vite + React and Astro + React apps, build them, and check the output.
 // Needs the network (the hosts install react, vite and astro from the npm registry). Nothing is published.
-// Hosts: vite; astro (static, client:only); astro-ssr (output: 'server' with @astrojs/node, like becreative: a client:visible
+// Hosts: vite (also run in Chromium: a failed lazy PDF chunk recovers); webpack (built, then run in Chromium: the same failure degrades to the
+// ordinary error with its Reload button); astro (static, client:only); astro-ssr (output: 'server' with @astrojs/node, like becreative: a client:visible
 // island rendered on the server; the built server is started on 127.0.0.1 and its page fetched).
 // PACK_SMOKE_HOSTS=vite,astro-ssr (any subset) runs only those; the default runs all three.
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { createServer } from 'node:net';
-import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer as createHttpServer } from 'node:http';
+import { chromium } from 'playwright-core';
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, extname, join, resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const run = (args, cwd) => execFileSync(npm, args, { cwd, stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8' });
 const readJson = path => JSON.parse(readFileSync(join(root, path), 'utf8'));
-const HOSTS = ['vite', 'astro', 'astro-ssr'];
+const HOSTS = ['vite', 'webpack', 'astro', 'astro-ssr'];
 const hosts = (process.env.PACK_SMOKE_HOSTS || HOSTS.join(',')).split(',').map(host => host.trim());
 for (const host of hosts) assert.ok(HOSTS.includes(host), `PACK_SMOKE_HOSTS lists ${HOSTS.join(', ')}, not "${host}"`);
 // No --prefer-offline: a stale cached packument can miss a just-published dependency (ETARGET); cached tarballs are reused anyway.
@@ -39,7 +42,7 @@ function assertHostOutput(label, dir) {
   assert.ok(files.some(file => /poppins.*\.woff2$/i.test(file)), `${label}: Poppins arrives through @fontsource`);
 }
 
-function viteHost(work, tarball) {
+async function viteHost(work, tarball) {
   const app = join(work, 'vite-app');
   mkdirSync(join(app, 'src'), { recursive: true });
   writeFileSync(join(app, 'package.json'), JSON.stringify({ name: 'pepperscore-smoke-vite', private: true, type: 'module' }));
@@ -49,12 +52,81 @@ function viteHost(work, tarball) {
     "import { createRoot } from 'react-dom/client';",
     "import { PepperScore } from 'pepperscore';",
     "import 'pepperscore/style.css';",
-    "createRoot(document.getElementById('app')).render(createElement(PepperScore, { chrome: 'minimal', abc: 'X:1\\nK:C\\nCDEF|' }));",
+    "createRoot(document.getElementById('app')).render(createElement(PepperScore, { chrome: 'minimal', controls: { pdf: true }, abc: 'X:1\\nK:C\\nCDEF|' }));",
   ].join('\n'));
   install(app, tarball, [...react, `vite@${readJson('package.json').devDependencies.vite}`]);
   run(['exec', '--', 'vite', 'build'], app);
   assertHostOutput('Vite', join(app, 'dist/assets'));
   console.log('Pack smoke: a fresh Vite + React host build passed');
+  await lazyChunkCheck('Vite', join(app, 'dist'), { recovers: true });
+}
+
+const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.wasm': 'application/wasm', '.txt': 'text/plain' };
+const filesUnder = dir => readdirSync(dir).flatMap(name => statSync(join(dir, name)).isDirectory() ? filesUnder(join(dir, name)) : [join(dir, name)]);
+
+/**
+ * The PDF dialog is a lazy chunk. In a built host, fail that chunk (every request for it), open the dialog and expect
+ * the ordinary error with its Reload button and no page error. Then clear the fault and reopen: `recovers` hosts
+ * (Vite, native ESM) must open the dialog through the helper's cache-busted retry; elsewhere (Webpack) the retry is best
+ * effort, so only the clean degrade is required.
+ */
+async function lazyChunkCheck(label, dir, { recovers }) {
+  const chunk = filesUnder(dir).find(file => file.endsWith('.js') && readFileSync(file, 'utf8').includes('Paper size'));
+  assert.ok(chunk, `${label} build emits the lazy PDF dialog chunk`);
+  const server = createHttpServer((request, response) => {
+    let path = resolve(dir, `.${decodeURIComponent(new URL(request.url, 'http://x').pathname)}`);
+    if (!path.startsWith(dir)) { response.writeHead(403).end(); return; }
+    try {
+      if (statSync(path).isDirectory()) path = join(path, 'index.html');
+      response.writeHead(200, { 'content-type': types[extname(path)] || 'application/octet-stream' }).end(readFileSync(path));
+    } catch { response.writeHead(404).end(); }
+  });
+  await new Promise(done => server.listen(0, '127.0.0.1', done));
+  const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
+  try {
+    const page = await browser.newPage();
+    page.setDefaultTimeout(60000);
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto(`http://127.0.0.1:${server.address().port}/`);
+    await page.waitForSelector('.pdf-trigger:not([disabled])');
+    const blocked = new RegExp(basename(chunk).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    await page.route(blocked, route => route.abort());
+    await page.click('.pdf-trigger');
+    const dialog = page.getByRole('dialog', { name: 'Export PDF' });
+    await dialog.getByRole('alert').waitFor();
+    await dialog.getByRole('button', { name: 'Reload page', exact: true }).waitFor();
+    await page.unroute(blocked);
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await page.click('.pdf-trigger');
+    if (recovers) await dialog.getByLabel('Paper size').waitFor();
+    else await dialog.locator('select.pdf-paper, [role="alert"]').first().waitFor();
+    assert.deepEqual(errors, [], `${label}: a failed lazy chunk raises no page error`);
+  } finally { await browser.close(); server.close(); }
+  console.log(`Pack smoke: ${label}: a failed lazy PDF chunk ${recovers ? 'recovers through the cache-busted retry' : 'degrades to the ordinary error and Reload button'}`);
+}
+
+/** Webpack 5 compiles the packed library, which names its chunks `42.js` and compiles a variable import() away: recovery is best effort. */
+async function webpackHost(work, tarball) {
+  const app = join(work, 'webpack-app');
+  mkdirSync(join(app, 'src'), { recursive: true });
+  writeFileSync(join(app, 'package.json'), JSON.stringify({ name: 'pepperscore-smoke-webpack', private: true }));
+  writeFileSync(join(app, 'src/main.js'), [
+    "import { createElement } from 'react';",
+    "import { createRoot } from 'react-dom/client';",
+    "import { PepperScore } from 'pepperscore';",
+    "createRoot(document.getElementById('app')).render(createElement(PepperScore, { chrome: 'minimal', controls: { pdf: true }, abc: 'X:1\\nK:C\\nCDEF|' }));",
+  ].join('\n'));
+  mkdirSync(join(app, 'dist'), { recursive: true });
+  writeFileSync(join(app, 'dist/index.html'), '<!doctype html><div id="app"></div><script src="/main.js"></script>');
+  writeFileSync(join(app, 'webpack.config.cjs'), [
+    "module.exports = { mode: 'production', entry: './src/main.js', output: { path: __dirname + '/dist', filename: 'main.js', publicPath: '/', clean: false },",
+    "  performance: { hints: false } };",
+  ].join('\n'));
+  install(app, tarball, [...react, 'webpack@^5.100.0', 'webpack-cli@^6.0.1']);
+  run(['exec', '--', 'webpack', '--config', 'webpack.config.cjs'], app);
+  console.log('Pack smoke: a fresh Webpack + React host build passed');
+  await lazyChunkCheck('Webpack', join(app, 'dist'), { recovers: false });
 }
 
 /** A fresh Astro + React app with the score fixture and one page; `server` adds output: 'server' and the Node adapter. */
@@ -172,7 +244,8 @@ try {
   console.log(`Pack smoke: ${packed.filename} (${files.length} files) has the build output and no sources`);
 
   const tarball = join(work, packed.filename);
-  if (hosts.includes('vite')) viteHost(work, tarball);
+  if (hosts.includes('vite')) await viteHost(work, tarball);
+  if (hosts.includes('webpack')) await webpackHost(work, tarball);
   if (hosts.includes('astro')) astroHost(work, tarball);
   if (hosts.includes('astro-ssr')) await astroSsrHost(work, tarball);
 } finally { rmSync(work, { recursive: true, force: true }); }

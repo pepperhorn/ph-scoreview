@@ -1,9 +1,13 @@
 import { tagPitchColours, type PitchColourPaint } from '../pitch-colours';
 import type { Score, ScoreNote } from '../score';
+import { runSteps } from './cooperative';
 import { annotationBands, annotationBox, annotationLayout, drawEventAnnotations, findAnnotationNote, type AnnotationSettings } from '../render';
 
 /** Attach to the DOM before calling: SVG matrices and glyph boxes require a rendered tree. */
-export function annotatePage(svg: SVGSVGElement, score: Score, settings: AnnotationSettings, font?: string, aliases: ReadonlyMap<string, ScoreNote> = new Map(), tabStaves: ReadonlySet<string> = new Set()): void {
+export function annotatePage(...args: Parameters<typeof annotatePageSteps>): void { runSteps(annotatePageSteps(...args)); }
+
+/** The same work as annotatePage, paused (`yield`) between events so a large page can be drawn in slices. */
+export function* annotatePageSteps(svg: SVGSVGElement, score: Score, settings: AnnotationSettings, font?: string, aliases: ReadonlyMap<string, ScoreNote> = new Map(), tabStaves: ReadonlySet<string> = new Set()): Generator<void> {
   const parts = score.parts.filter(part => !part.tabOf);
   const layout = annotationLayout(parts, settings);
   const byId = new Map(Array.from(svg.querySelectorAll('[id]'), element => [element.id, element]));
@@ -11,6 +15,7 @@ export function annotatePage(svg: SVGSVGElement, score: Score, settings: Annotat
   layer.setAttribute('class', 'reader-annotations');
   const bands = new Map<Element, ReturnType<typeof annotationBands>>();
   for (const part of parts) for (const measure of part.measures) for (const event of measure.notes) {
+    yield;
     const alias = aliases.get(event.id);
     const element = findAnnotationNote(byId, score, event) || (alias ? findAnnotationNote(byId, score, alias) : undefined);
     if (!element) continue;
@@ -41,8 +46,12 @@ export function annotatePage(svg: SVGSVGElement, score: Score, settings: Annotat
 }
 
 /** svg2pdf ignores paint-order: retain identical text geometry in each explicit pass. */
-export function materializePaint(svg: SVGSVGElement, page: { width: number; height: number }, textWidth: (element: SVGElement, size: number) => number): void {
+export function materializePaint(...args: Parameters<typeof materializePaintSteps>): void { runSteps(materializePaintSteps(...args)); }
+
+/** The same work as materializePaint, paused (`yield`) between elements. */
+export function* materializePaintSteps(svg: SVGSVGElement, page: { width: number; height: number }, textWidth: (element: SVGElement, size: number) => number): Generator<void> {
   for (const use of Array.from(svg.querySelectorAll<SVGUseElement>('.notehead[data-pitch] use'))) {
+    yield;
     const href = use.getAttribute('href') || use.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
     const glyph = href?.startsWith('#') ? svg.querySelector(`[id="${CSS.escape(href.slice(1))}"]`) : null;
     if (!glyph) throw new Error('Could not resolve the PDF pitch glyph.');
@@ -54,6 +63,7 @@ export function materializePaint(svg: SVGSVGElement, page: { width: number; heig
     group.append(path); use.replaceWith(group);
   }
   for (const element of Array.from(svg.querySelectorAll<SVGGraphicsElement>('text, .notehead'))) {
+    yield;
     const computed = getComputedStyle(element);
     // Freeze inherited/computed drawing properties before cloning, including inline CSS.
     for (const property of ['fill', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-opacity', 'font-family', 'font-size', 'font-weight', 'font-style', 'text-anchor', 'dominant-baseline']) {

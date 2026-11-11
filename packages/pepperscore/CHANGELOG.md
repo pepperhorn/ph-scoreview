@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- PDF export is cooperative and cancellable on large scores: pages are annotated and drawn in slices that yield to the browser, so the page stays responsive (a 30-part, one-system-per-page score previously blocked the main thread for seconds per page). Cancel now takes effect within one slice, and the dialog shows “Building PDF… page N of M”. No change to the PDF produced.
+
+### Fixed
+
+- PDF export is verified in Safari/WebKit as well as Chromium and Firefox. In WebKit a failed download of the dialog's lazy chunk stayed failed until the tab was closed, because WebKit keeps the failed `modulepreload` Vite adds. On Vite and native-ESM hosts the dialog now retries once through a cache-busted address, so reopening it or reloading recovers. On other bundlers (for example Webpack) the retry is skipped and the dialog shows its usual error and Reload page button.
+
 ## 0.5.0 - 2026-11-11
 
 ### Added

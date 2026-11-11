@@ -1,3 +1,4 @@
+import { importWithRecovery } from '../lib/lazy-import';
 import type { PdfCapture } from './PdfOverlay';
 import PitchColourTile from './PitchColourTile';
 import { pitchColourStyle, resolvePitchColours } from '../lib/pitch-colours';
@@ -339,7 +340,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     if (!pdfOpen || PdfPanel) return;
     let active = true;
     setPdfLoadError('');
-    void import('./PdfOverlay').then(module => { if (active) setPdfPanel(() => module.default); },
+    void importWithRecovery(() => import('./PdfOverlay'), 'PdfOverlay').then(module => { if (active) setPdfPanel(() => module.default); },
       () => { if (active) setPdfLoadError('PDF options could not load. Reload the page to try again.'); });
     return () => { active = false; };
   }, [pdfOpen, PdfPanel]);
