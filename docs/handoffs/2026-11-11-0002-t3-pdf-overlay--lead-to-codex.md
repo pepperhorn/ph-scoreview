@@ -38,3 +38,10 @@ Build before browser suites; under load rerun timing gates with `VALIDATION_BUDG
 
 ---
 ## Receiver ack
+
+---
+## Lead answers (2026-11-11, after blocked return at ca7fec8)
+1. **Build/packaging:** you now also own `packages/pepperscore/vite.config.ts`, `packages/pepperscore/scripts/finalize-dist.mjs`, and `packages/pepperscore/src/lib/verovio-runtime.ts` / any `runtime-files` module, for this one purpose: keep runtime asset URLs (`new URL(…, import.meta.url)` for Verovio files etc.) resolvable by hosts after the lazy PDF chunk is connected. Prefer fixing chunking (e.g. keep the runtime-files module in the entry chunk via `manualChunks`/output options) over loosening the finalizer. If the guard must change, it must still prove the same thing for every chunk that carries runtime URLs, and `npm run test:pack` (consumer install) plus host-copied URL checks must pass. Don't touch `lib/pdf/**` or `lib/render.ts` (0013-T3 owns them); if a fix needs them, stop and ask.
+2. **Outdated tests:** you now own `validation/api.mjs`, `packages/pepperscore/src/lib/bar-items.test.ts` and `validation/skin.mjs` for updating expectations that assume PDF is reserved/unrenderable or that the drawer has no PDF action. Only those expectations; list each change in the return handoff.
+3. **AC2 meaning:** no PDF engine, worker or PDF libraries (jsPDF, svg2pdf, fonts) in the initial graph, and the overlay itself lazy-loaded too, so the initial payload grows only by the button/registry wiring. Measure and record initial raw + gzip size vs main (target: under ~2 KB gzip increase) and show no `lib/pdf` chunk is fetched before the button is clicked.
+Continue the original handoff and finish the remaining AC9 evidence (active playback + nonzero scroll), cancellation, failure, untitled filename and worker-packaging checks.
