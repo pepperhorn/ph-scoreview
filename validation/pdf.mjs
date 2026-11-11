@@ -598,7 +598,7 @@ async function assertPdfOverlay(browser) {
       window.Worker = class extends NativeWorker {
         constructor(url, options) { super(url, options); this.record = { url: String(url), terminated: false }; window.__pdfWorkers.push(this.record); this.addEventListener('message', event => { this.record.result = event.data.value; }); }
         postMessage(message, ...options) { this.record.message = message; return super.postMessage(message, ...options); }
-        terminate() { this.record.terminated = true; return super.terminate(); }
+        terminate() { this.record.terminated = true; this.record.terminatedAt = performance.now(); return super.terminate(); }
       };
     });
     await page.goto(`${host.url}/embed-skin?pdf`);
@@ -707,11 +707,33 @@ async function assertPdfOverlay(browser) {
     await full.locator('.pdf-trigger').click();
     await dialog.getByRole('button', {name:'Save',exact:true}).click();
     await dialog.getByText(/drawing page 1 of/).waitFor({timeout:180000});
+    // Browser-side clock. Playwright's click includes its own actionability and protocol time, which is not the
+    // product's latency, so it is only reported. The product's part is measured in the page: how long the click
+    // waited for the busy main thread (event creation to our capture listener), and from delivery to the dialog
+    // leaving the DOM (the engraving worker is already gone in the drawing phase; its release is asserted below).
+    // Each is gated at the cancel budget.
+    await page.evaluate(() => {
+      const probe = window.__cancelProbe = {};
+      document.addEventListener('click', event => {
+        if (!(event.target instanceof Element) || !event.target.closest('.pdf-cancel') || probe.deliveredAt) return;
+        probe.deliveredAt = performance.now(); probe.createdAt = event.timeStamp;
+        new MutationObserver((_records, observer) => {
+          if (!document.querySelector('.pdf-panel')) { probe.closedAt = performance.now(); observer.disconnect(); }
+        }).observe(document.body, { childList: true, subtree: true });
+      }, true);
+    });
     const cancelClicked = Date.now();
     await dialog.getByRole('button', {name:'Cancel',exact:true}).click();
     await dialog.waitFor({state:'detached'});
-    const cancelLatency = Date.now() - cancelClicked;
-    assertTiming(cancelLatency < 750 * budgetScale + 500, `Cancel click closes the dialog promptly mid-page: ${cancelLatency} ms`);
+    const playwrightMs = Date.now() - cancelClicked;
+    await page.waitForFunction(() => window.__cancelProbe.closedAt);
+    const probe = await page.evaluate(() => {
+      const { deliveredAt, createdAt, closedAt } = window.__cancelProbe;
+      return { inputDelay: Math.max(0, deliveredAt - createdAt), close: closedAt - deliveredAt };
+    });
+    console.log(`PDF overlay Cancel click mid-page (${engine}): input delay ${Math.round(probe.inputDelay)} ms, dialog closed ${Math.round(probe.close)} ms after delivery; Playwright click including its own waits ${playwrightMs} ms (not gated)`);
+    assertTiming(probe.inputDelay < 750 * budgetScale, `the Cancel click reaches the page promptly while a page is being drawn: ${Math.round(probe.inputDelay)} ms`);
+    assertTiming(probe.close < 750 * budgetScale, `the dialog closes promptly after the Cancel click is delivered: ${Math.round(probe.close)} ms`);
     await page.waitForFunction(() => window.__pdfWorkers.filter(w => /engrave/.test(w.url)).every(w => w.terminated));
     await page.waitForTimeout(500);
     const released = await page.evaluate(() => ({ hosts: Array.from(document.body.children).filter(element => element.style.left === '-100000px').length, fonts: document.fonts.size }));

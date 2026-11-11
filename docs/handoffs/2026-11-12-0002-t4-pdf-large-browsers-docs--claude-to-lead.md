@@ -6,7 +6,7 @@
 - **Dispatch:** [lead-to-claude](2026-11-12-0002-t4-pdf-large-browsers-docs--lead-to-claude.md)
 - **Branch:** orch/0002-t4-pdf-large-browsers-docs · **Base:** e1693e8 (main with 0001-t5, 0022 merged)
 - **PR:** see the Return section
-- **Status:** done (r1: review changes addressed, see the r1 sections)
+- **Status:** done (r2: review changes addressed, see the r1 and r2 sections)
 
 ## Goal
 AC10 (large score exports without freezing; Cancel works) and AC11 (Chromium, Firefox, WebKit), plus CI and docs.
@@ -42,10 +42,19 @@ Chromium's export time and block were higher than on the quiet-host run in r0 (1
 ## S34 root cause and fix (r1: reversed from r0)
 - **Cause (unchanged):** the reader app is built with Vite, whose `__vitePreload` adds `<link rel="modulepreload">` for the lazy `PdfOverlay` chunk before `import()`. When that fetch fails, WebKit keeps the failed resource in its per-process memory cache and answers every later attempt (reload, `goto`, retry) from it with no request to the server. Reproduced with `route.abort`, a 503 and a dropped socket.
 - **r0 was wrong that no code-side fix exists.** The review's finding was right: a different query string is a different resource.
-- **Fix (code side, portable to any host bundler):** new `lib/lazy-import.ts`, `importWithRecovery(load, stem)`. If the plain import fails, it finds the chunk's address from the page's `modulepreload` links or resource timing (by file-name stem) and imports `<url>?recovery=<unique>` once. The overlay loader in `PepperScore.tsx` (lazy-load effect only) uses it. Each attempt gets its own query because browsers cache a failed module per address (Chromium cached a fixed `?recovery=1` failure and failed the in-page retry in my first attempt). If no address is found, or the retry fails, the original error is shown as before. Reload page stays as the last resort. Initial-graph cost: the helper is ~1 KB raw in the entry; I did not re-measure gzip separately and expect it within noise of the 2 KB target.
-- **No host-config change:** I did not touch `apps/reader/astro.config.mjs`, `vite.config.ts` or `build.modulePreload`; the code-side fix is enough and works for hosts we do not control. README mentions that Vite hosts can also exclude the chunk from `modulePreload`.
+- **Fix (code side; recovers on Vite / native-ESM hosts, elsewhere shows Reload):** new `lib/lazy-import.ts`, `importWithRecovery(load, stem)`. If the plain import fails, it finds the chunk's address from the page's `modulepreload` links or resource timing (by file-name stem) and imports `<url>?recovery=<unique>` once. The overlay loader in `PepperScore.tsx` (lazy-load effect only) uses it. Each attempt gets its own query because browsers cache a failed module per address (Chromium cached a fixed `?recovery=1` failure and failed the in-page retry in my first attempt). If no address is found, or the retry fails, the original error is shown as before. Reload page stays as the last resort. Initial-graph cost: the helper is ~1 KB raw in the entry; I did not re-measure gzip separately and expect it within noise of the 2 KB target.
+- **No host-config change:** I did not touch `apps/reader/astro.config.mjs`, `vite.config.ts` or `build.modulePreload`. README mentions that Vite hosts can also exclude the chunk from `modulePreload`.
 - **Test:** the original recovery assertion is restored in all three engines. The fault is `route(/PdfOverlay/)` (so the retry address fails too), then unroute, **Reload page**, open the overlay and expect "Paper size". A second scenario recovers in the same page (Cancel, reopen). The duplicate scoped `.pdf-trigger` is a transition: `setSkin({bar:['pdf']})` briefly renders both the header and bar buttons, so every open waits for exactly one trigger first.
 - Files changed for this: `lib/lazy-import.ts` (new), `components/PepperScore.tsx` (one import and one call in the PDF lazy-load effect), `validation/pdf.mjs`.
+
+## r2: supported hosts, Cancel-click measurement
+- **Scope (lead decision):** recovery is supported on Vite and native-ESM hosts (our reader, BeCreative on Astro/Vite, the CDN/embed build). On other bundlers it is best effort: a failed load shows the original error, the existing alert and Reload page, and the helper raises nothing. README, CHANGELOG and this handoff now say "recovers on Vite / native-ESM hosts; elsewhere shows Reload"; the "portable to any host bundler" / "works for hosts we do not control" claims are removed.
+- **Why Webpack cannot recover (review finding 2, reproduced):** Webpack names the lazy chunk `42.js`, so the file-name lookup finds nothing, and it compiles a variable `import()` into an empty async context. I did not try to make it recover. `lazy-import.ts` now: never throws from the lookup (try/catch, no `document`/`performance` needed), skips the retry and rethrows the **original** error when no address is found or the retry fails, and marks the retry import `webpackIgnore` so a Webpack consumer gets no "critical dependency" warning (a Webpack 5 build of the packed library emits none).
+- **Regressions:**
+  - `lib/lazy-import.test.ts` (6 unit tests, in `test:pepperscore`): Vite-named chunk found from links/resource timing and earlier recoveries ignored; Webpack-numbered chunks (`42.index.js`), an uninspectable page and no `document` all rethrow the original error; a failing retry rethrows the original; success passes through; a discoverable chunk retries once through a unique query.
+  - Packaged-consumer check in `scripts/pack-smoke.mjs` (part of `npm run test:pack`; needs the network like the rest of it; `PACK_SMOKE_HOSTS=vite,webpack` runs just these, 39 s here). The npm-packed tarball is installed into a fresh **Vite** app and a fresh **Webpack 5** app, both built. In Chromium each has every request for the lazy dialog chunk failed: both must show the alert and Reload page with no page error. After clearing the fault and reopening, the Vite host must open the dialog (the cache-busted retry); the Webpack host only has to end in a clean state (open or the alert). The built-reader WebKit case stays in `validation/pdf.mjs`.
+  - I changed `scripts/pack-smoke.mjs`, which was not on the ownership list; it is the existing packaged-consumer harness. It now imports `playwright-core` (already a root dependency) and adds a `webpack` host that installs `webpack` and `webpack-cli` into its temporary app only (no repo `package.json` change).
+- **Cancel-click gate (review finding 1):** the old gate timed Playwright's click, whose actionability and protocol waits are not product latency (on this host the click took 241 ms in WebKit, 615 ms in Chromium and 1085 ms in Firefox, against 57–71 ms of actual input delay; CI WebKit hit 1688 ms). The overlay test now records browser-side timestamps: a capture listener gives **input delay** (event creation to delivery to the page, while a page is being drawn) and a MutationObserver gives **delivery to the dialog leaving the DOM**. Both are gated at the unchanged cancel budget (750 ms × scale), and Playwright's time is printed but not gated. Local numbers: input delay 57–71 ms and close 3–6 ms in all three engines. The worker is already terminated in the drawing phase, so its release is still asserted afterwards rather than timed; no budget was relaxed.
 
 ## WebKit engraving stall: cause and fix (r1)
 - **Root cause: the test harness, not the product.** A worker that only does `import('verovio-module.mjs')` then instantiates it stalled the page's timers for 6.1 s (import took 11.4 s) in WebKit when the 7.3 MB module was served by the Vite dev server (which transforms it); the same module served byte for byte as static JS took 0.6 s to import with a 387 ms main-thread gap, and instantiating took 0.6 s either way. The structured clone of the input is 28 ms and not a factor. The CI stall of 2.8 s came from the same dev transform, as `validation/pdf.mjs` loaded Verovio through Vite.
@@ -80,22 +89,25 @@ No ABC import behaviour changed.
 ## Files touched
 `validation/pdf.mjs`, `packages/pepperscore/src/lib/pdf/{cooperative,slices,compose,export,annotations,normalize}.ts`, `components/PdfOverlay.tsx` (progress text only), `components/PepperScore.tsx` (the PDF lazy-load effect: one import and one call), `lib/lazy-import.ts` (new), `README.md`, `CHANGELOG.md`, `.github/workflows/ci.yml` (reader job only), `docs/specs/pepperscore-plugins-and-embeds.md`, own handoffs. Nothing in the do-not-touch list.
 
-## Verification output
-Final r1 run on the head of this branch. Host load was 8–10 for the per-engine runs; timing suites used `VALIDATION_BUDGET_SCALE=2`; no budget or threshold was changed.
+## Verification output (r2)
+Host load varied (other agents); timing suites used `VALIDATION_BUDGET_SCALE=2`; no budget was changed.
 
 ```text
 npm run check: exit 0
 npm run build: exit 0
-npm run test:manifest: exit 0
-VALIDATION_BUDGET_SCALE=2 npm run test:validation: exit 0 (full chain, includes test:pdf on chromium;
-  PDF large score (chromium, 30 parts x 12 bars): export 15201 ms, longest timer gap 222 ms, long task 106 ms)
-VALIDATION_BUDGET_SCALE=2 BROWSER=chromium npm run test:pdf: exit 0
-VALIDATION_BUDGET_SCALE=2 BROWSER=firefox  npm run test:pdf: exit 0
+npm run test -w pepperscore: 20 files, 716 tests passed (includes lazy-import.test.ts)
+PACK_SMOKE_HOSTS=vite,webpack npm run test:pack: exit 0
+  Vite: a failed lazy PDF chunk recovers through the cache-busted retry
+  Webpack: a failed lazy PDF chunk degrades to the ordinary error and Reload button
 VALIDATION_BUDGET_SCALE=2 BROWSER=webkit   npm run test:pdf: exit 0
-VALIDATION_BUDGET_SCALE=2 PDF_LARGE_MEASURES=150 PDF_LARGE_ONLY=1 BROWSER=chromium node validation/pdf.mjs: exit 0
-  (30 parts x 150 bars: 38 pages, export 245177 ms, longest gap 313 ms; run alone, 4m18s wall)
+  Cancel click: input delay 60 ms, dialog closed 6 ms after delivery (Playwright click 241 ms, not gated)
+  large score: export 32.5 s, longest gap 245 ms {engraving 155, annotating 122, composing 245}, cancel 0 / 25 / 25 ms
+VALIDATION_BUDGET_SCALE=2 BROWSER=chromium npm run test:pdf: exit 0
+  Cancel click: input delay 71 ms, closed 3 ms (Playwright 615 ms); large: 12.8 s, longest gap 224 ms, cancel 0 / 24 / 14 ms
+VALIDATION_BUDGET_SCALE=2 BROWSER=firefox  npm run test:pdf: exit 0
+  Cancel click: input delay 57 ms, closed 5 ms (Playwright 1085 ms); large: 16.0 s, longest gap 183 ms, cancel 0 / 19 / 19 ms
 ```
-The per-engine numbers in the Timings table come from the second set of runs above.
+Not re-run in r2: the full `test:validation` chain and the 150-bar export (r1 results stand; nothing they exercise changed except `lazy-import.ts` internals and `pdf.mjs` measurement). CI is the check for the rest.
 
 ## Receiver ack
 Lead acknowledges through the ledger on main.
