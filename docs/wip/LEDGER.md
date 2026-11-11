@@ -11,7 +11,7 @@ Next ID: 0019
 
 | K | Title | Status | Waiting on | Owner (provider/model) | Branch | PR | Worktree | T3 task/thread | Spec | Plan | Latest handoff | Updated |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 0001 | Composable player skins | in-review (t4; t1 #59, t2 #66, t3 #72 merged) | review 0001-t4-review-r3 | codex/gpt-6.1-sol | orch/0001-t4-pitch-colours | https://github.com/pepperhorn/ph-scoreview/pull/81 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-6e1573c8-388b2ff6de2075c9 | task `0001-t4-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0001-t4-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-11-0001-t4-pitch-colours--codex-to-lead.md (@50265da) | 2026-11-10 |
+| 0001 | Composable player skins | ready (t4; t1 #59, t2 #66, t3 #72 merged) | human: approve merge of PR #81 (edits .github/workflows/ci.yml: poppler-utils) | codex/gpt-6.1-sol | orch/0001-t4-pitch-colours | https://github.com/pepperhorn/ph-scoreview/pull/81 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-6e1573c8-388b2ff6de2075c9 | task `0001-t4-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0001-t4-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-11-0001-t4-pitch-colours--codex-to-lead.md (@50265da) | 2026-11-10 |
 | 0002 | PDF export | planned (t3, t4; t1 #71, t2 #78 merged) | child 0001-t4-impl-r1 (T3 shares files); human: merge T3/T4 on green | codex/gpt-6.1-sol |  |  |  |  | specs/0002-pdf-export.md | plans/0002-pdf-export.md |  | 2026-11-10 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | human: P1–P3 (editor distribution, private repo name, BeCreative licence) before T4 | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0013 | TAB for stringed instruments | planned (t3, t4; t1 #77, t2 #74 merged) | child 0002-t2 (T3 touches render paths incl. lib/pdf and render.ts; dispatch after #78 and 0001-T4 ordering) | codex/gpt-6.1-sol |  |  |  |  | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md |  | 2026-11-10 |
@@ -83,6 +83,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-11 0001-t4 in-review→ready — r3 approve on 50265da; CI green (Poppler step ran); needs human OK for the ci.yml change
 2026-11-11 0016 ready→closed — CI back (billing resolved), green on af741f6, merged PR #80 (c1415a0); guide updated. Human: until CI is reliable, an approved PR may merge on the reviewer's full local suite; S26+S27 quick fix before 0.5.0
 2026-11-11 0016 in-review→ready — r5 approve on af741f6; full local suite green (490 tests; editor-phone, reader, large needed reruns under load avg up to 72); CI billing-blocked; S26, S27 logged
 2026-11-11 0001-t4 changes-requested→in-review — Poppler/ci.yml fix pushed 50265da; review r3 with full local suite
