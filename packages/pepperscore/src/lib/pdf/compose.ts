@@ -30,7 +30,9 @@ export async function composePdf(pages: string[], opts: ComposeOptions, signal: 
       if (doc.querySelector('parsererror') || doc.documentElement.localName !== 'svg') throw new Error('Invalid PDF SVG page.');
       const svg = sanitizeSvg(doc);
       host.replaceChildren(svg);
+      await tick();
       flattenViewports(svg);
+      await tick();
       await driveSteps(normalizeTextSteps(svg), tick);
       // Fail clearly rather than silently producing missing glyphs (e.g. CJK titles).
       for (const text of Array.from(svg.querySelectorAll('text, tspan'))) {

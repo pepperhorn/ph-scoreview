@@ -39,6 +39,7 @@ try {
   if (process.env.PDF_LARGE_ONLY) {
     const large = await browser.newPage();
     large.setDefaultTimeout(600000);
+    if (process.env.PDF_TRACE) large.on('console', message => console.log('browser:', message.text()));
     await large.goto(`http://127.0.0.1:${server.httpServer.address().port}/pdf-spike`);
     await assertLargeScoreExport(large);
     await browser.close(); await server.close(); process.exit(0);
@@ -680,6 +681,7 @@ async function assertPdfOverlay(browser) {
     page.on('download', onDownload);
     await full.locator('.pdf-trigger').click();
     await dialog.getByRole('button', {name:'Save',exact:true}).click();
+    assert.match(await dialog.getByRole('status').innerText(), /^Building PDF…/, 'Save shows a busy status');
     await page.waitForFunction(() => window.__pdfWorkers.some(w => /engrave/.test(w.url) && !w.terminated));
     await dialog.getByRole('button', {name:'Cancel',exact:true}).click();
     await page.waitForFunction(() => window.__pdfWorkers.filter(w => /engrave/.test(w.url)).every(w => w.terminated));
@@ -777,8 +779,29 @@ async function assertPdfOverlay(browser) {
       await chunkPage.locator('.skin-reader .score-system svg').first().waitFor();
       await chunkPage.evaluate(() => window.__skin.setSkin({bar:['pdf']}));
       await chunkPage.locator('.skin-reader .pdf-trigger').click();
-      await failedDialog.getByLabel('Paper size').waitFor();
-      await failedDialog.getByRole('button',{name:'Cancel',exact:true}).click();
+      if (engine !== 'webkit') {
+        await failedDialog.getByLabel('Paper size').waitFor();
+        await failedDialog.getByRole('button',{name:'Cancel',exact:true}).click();
+      } else {
+        // S34. WebKit keeps the failed <link rel="modulepreload"> that Vite adds for the lazy chunk in its per-process
+        // memory cache. Reloads, same-URL navigations and in-page retries are answered from that failure without
+        // asking the server again (reproduced with route.abort, a 503 and a dropped socket, so it is the engine, not
+        // the injection); only a new web process loads the chunk. A user's recovery there is a fresh tab, so that is
+        // what is asserted: the dialog must stay actionable (an alert and a Reload button, never a stuck "Loading…")...
+        await failedDialog.getByRole('alert').waitFor();
+        await failedDialog.getByRole('button',{name:'Reload page',exact:true}).waitFor();
+        await failedDialog.getByRole('button',{name:'Cancel',exact:true}).click();
+        // ...and the same score opens the overlay normally in a new tab, with the fault gone.
+        const freshPage = await browser.newPage();
+        freshPage.setDefaultTimeout(60000);
+        try {
+          await freshPage.goto(`${host.url}/embed-skin`);
+          await freshPage.locator('.skin-reader .score-system svg').first().waitFor();
+          await freshPage.evaluate(() => window.__skin.setSkin({bar:['pdf']}));
+          await freshPage.locator('.skin-reader .pdf-trigger').click();
+          await freshPage.locator('.skin-reader').getByRole('dialog',{name:'Export PDF'}).getByLabel('Paper size').waitFor();
+        } finally { await freshPage.close(); }
+      }
     } finally { await chunkPage.close(); }
     const sandboxPage = await browser.newPage();
     sandboxPage.setDefaultTimeout(60000);

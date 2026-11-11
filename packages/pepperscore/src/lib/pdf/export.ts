@@ -34,7 +34,9 @@ export async function exportScore(request: ExportRequest, signal: AbortSignal): 
       request.onProgress?.({ phase: 'annotating', page: index + 1, pages: result.pages.length });
       const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
       const svg = sanitizeSvg(doc);
+      await tick();
       host.replaceChildren(svg);
+      await tick();
       if (request.pitchColours) paintPitchColours(svg, score, request.pitchColours, request.tabStaves);
       await driveSteps(annotatePageSteps(svg, score, settings, request.options.font, request.tabAliases, request.tabStaves), tick);
       if (!index) {

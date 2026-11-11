@@ -5,12 +5,12 @@
  */
 export const SLICE_MS = 25;
 
-type SchedulerLike = { yield?: () => Promise<void> };
-
-/** Let input, timers and painting run. `scheduler.yield` where the engine has it; a macrotask elsewhere. */
+/**
+ * Let input, timers, playback and painting run: a plain macrotask. `scheduler.yield` is not used because its
+ * continuation is queued ahead of other pending tasks, so timers (the reader's playback clock) can starve.
+ */
 export function yieldToMain(): Promise<void> {
-  const scheduler = (globalThis as { scheduler?: SchedulerLike }).scheduler;
-  return scheduler?.yield ? scheduler.yield() : new Promise<void>(resolve => setTimeout(resolve));
+  return new Promise<void>(resolve => setTimeout(resolve));
 }
 
 /** Throws when aborted; yields when the current slice has used its budget. Call it often: it is cheap. */

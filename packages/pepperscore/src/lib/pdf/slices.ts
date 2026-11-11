@@ -1,7 +1,7 @@
 const SHARED = new Set(['defs', 'style', 'desc', 'title', 'metadata']);
 
 /** About this many elements per svg2pdf call: a few tens of milliseconds, measured on a 30-part page. */
-export const SLICE_ELEMENTS = 100;
+export const SLICE_ELEMENTS = 60;
 
 /**
  * Split a page into runs of sibling subtrees of at most `limit` elements each, in document order.
