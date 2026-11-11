@@ -107,15 +107,19 @@ export function midiPitch(midi: number): Pitch {
 export function noteName(p: Pitch): string { return `${p.step}${p.alter === 1 ? '♯' : p.alter === -1 ? '♭' : ''}${p.octave}`; }
 export function instrumentForName(name: string): InstrumentId {
   const n = name.toLowerCase();
+  if (/sax/.test(n)) {
+    if (/\b(?:baritone|bari)\b/.test(n)) return 'bari-saxophone';
+    if (/\btenor\b/.test(n)) return 'tenor-saxophone';
+    // Soprano uses the existing sax icon; import resolves its exact GM 65 sound.
+    return 'alto-saxophone';
+  }
   if (/drum|percussion/.test(n)) return 'drum-kit';
-  if (/\b(?:voice|vocal|choir|singer|satb)\b/.test(n)) return 'microphone';
+  if (/\b(?:voices?|vocals?|choir|singers?|satb)\b/.test(n)) return 'microphone';
   if (/\b(?:ukulele|ukelele)\b/.test(n)) return 'guitar';
   if (/\b(?:double[ -]?bass|contrabass|upright bass|string bass)\b/.test(n)) return 'double-bass';
+  if (/\b(?:soprano|alto|tenor|baritone|sop|alt|ten)\b/.test(n)) return 'microphone';
   if (/\b(?:bass[ -]?guitar|(?:electric|acoustic|fretless)[ -]+bass|e-bass)\b/.test(n)) return 'bassguitar';
   if (/guitar/.test(n)) return 'guitar';
-  if (/baritone sax|bari sax/.test(n)) return 'bari-saxophone';
-  if (/tenor sax/.test(n)) return 'tenor-saxophone';
-  if (/sax/.test(n)) return 'alto-saxophone';
   if (/flute/.test(n)) return 'flute';
   if (/clarinet/.test(n)) return 'clarinet';
   if (/trumpet/.test(n)) return 'trumpet';

@@ -13,52 +13,78 @@ for (const [format, load] of [
 ] as const) describe(`${format} contextual instrument names`, () => {
   it.each([
     ['Soprano', 'Alto', 'Tenor', 'Bass'], ['S', 'A', 'T', 'B'],
-    ['Sop.', 'Alt.', 'Ten.', 'Bass'], ['Soprano', 'B'], ['Alto', 'Tenor', 'Bass'], ['A', 'T', 'B'],
-  ])('resolves a choir (%j) without programs to voice and offers no TAB', async (...names) => {
+    ['Sop.', 'Alt.', 'Ten.', 'Bass'], ['Alto', 'Tenor', 'Bass'], ['A', 'T', 'B'],
+    ['Soprano 1', 'Soprano 2', 'Alto I', 'Alto II', 'Tenor 1', 'Tenor 2', 'Bass I', 'Bass II'],
+    ['Alto 1', 'Tenor 1'], ['Baritone', 'Bass'], ['Ten.', 'Bass'],
+  ])('resolves named or letter choir (%j) to voice without TAB', async (...names) => {
     const score = await load(names);
-    expect(score.parts).toHaveLength(names.length);
     expect(score.parts.map(p => p.instrument)).toEqual(names.map(() => 'microphone'));
-    expect(score.parts.every(p => p.gmProgram === undefined)).toBe(true);
     expect(canShowTab(score)).toBe(false);
-    expect(score.parts.map(p => stringInstrument(p))).toEqual(names.map(() => undefined));
   });
-  it.each([['A'], ['A', 'B'], ['S', 'B'], ['A', 'A', 'B'], ['A', 'Bass'], ['Ten.', 'Bass'], ['Soprano', 'Alto', 'Tenor']])('keeps incomplete choir or placeholder names (%j) unchanged', async (...names) => {
+  it.each([
+    ['Soprano', 'Bass', 'Piano'], ['Soprano', 'Alto', 'Tenor', 'Bass', 'Piano'],
+    ['Soprano 1', 'Alto II', 'Bass I', 'Organ'], ['S', 'A', 'T', 'B', 'Piano'],
+  ])('keeps accompanied choir (%j) as voices and piano', async (...names) => {
+    for (const program of [undefined, 1]) {
+      const score = await load(names, program);
+      expect(score.parts.map(p => p.instrument)).toEqual([...names.slice(0, -1).map(() => 'microphone'), 'piano']);
+      expect(canShowTab(score)).toBe(false);
+    }
+  });
+  it.each([['A'], ['A', 'B'], ['S', 'B'], ['A', 'A', 'B'], ['A', 'Bass']])('keeps incomplete letter labels (%j) at their defaults', async (...names) => {
     const score = await load(names);
     expect(score.parts.map(p => p.instrument)).toEqual(names.map(name => name === 'Bass' ? 'bassguitar' : 'piano'));
   });
+  it('does not infer B from a word-only voice label', async () => {
+    expect((await load(['Soprano', 'B'])).parts.map(p => p.instrument)).toEqual(['microphone', 'piano']);
+  });
+  it.each(['Soprano', 'Alto', 'Tenor', 'Baritone', 'Alto II', 'Voice', 'Vocal', 'Choir', 'Singer'])('uses a voice for %s even alone', async name => {
+    expect((await load([name])).parts[0].instrument).toBe('microphone');
+  });
+  it.each(['Bass Voice', 'Choir Bass', 'Bass (Vocal)'])('keeps explicit vocal hint %s even in a band', async name => {
+    expect((await load(['Guitar', 'Drums', name])).parts[2].instrument).toBe('microphone');
+  });
+  it('uses sax names explicitly for a big band', async () => {
+    const score = await load(['Alto Sax 1', 'Tenor Sax 1', 'Trumpet', 'Bass', 'Drums']);
+    expect(score.parts.map(p => p.instrument)).toEqual(['alto-saxophone', 'tenor-saxophone', 'trumpet', 'bassguitar', 'drum-kit']);
+    expect(stringInstrument(score.parts[3])).toBe('bass4');
+  });
   it.each([
-    ['Alto 1', 'Tenor 1', 'Trumpet', 'Bass', 'Drums'],
-    ['Alto 1', 'Tenor 2', 'Bass'], ['Soprano', 'Alto 1', 'Bass'],
-    ['Soprano', 'Bass', 'Piano'], ['Soprano', 'Bass', 'Guitar'],
-    ['Soprano', 'Bass', 'Trumpet'], ['Soprano', 'Bass', 'Saxophone'],
-    ['Soprano', 'Bass', 'Drums'],
-  ])('keeps band labels (%j) out of the choir pass', async (...names) => {
+    ['Vocals', 'Guitar', 'Bass', 'Drums'], ['Soprano', 'Bass', 'Guitar'], ['Soprano', 'Bass', 'Drums'],
+  ])('keeps bass guitar in a guitar/drum band (%j)', async (...names) => {
     const score = await load(names);
     const bass = score.parts.find(p => p.name === 'Bass')!;
     expect(bass.instrument).toBe('bassguitar');
     expect(stringInstrument(bass)).toBe('bass4');
-    expect(score.parts.filter(p => p.name !== 'Bass').every(p => p.instrument !== 'microphone')).toBe(true);
   });
-  it.each([1, 25, 57, 66, 113])('rejects band GM program %i even with an anonymous label', async program => {
+  it.each([25, 34])('keeps bass guitar with explicit guitar GM %i', async program => {
     const score = await load(['Soprano', 'Bass', 'Other'], program);
-    const bass = score.parts.find(p => p.name === 'Bass')!;
-    expect(bass.instrument).toBe('bassguitar');
-    expect(stringInstrument(bass)).toBe('bass4');
-  });
-  it('keeps a band bass and guitar as fretted instruments', async () => {
-    const score = await load(['Guitar', 'Bass']);
-    expect(score.parts.map(p => p.instrument)).toEqual(['guitar', 'bassguitar']);
-    expect(stringInstrument(score.parts[1])).toBe('bass4');
-  });
-  it('preserves an explicit bass program even beside a choir label', async () => {
-    const score = await load(['Soprano', 'Bass'], 34);
     expect(score.parts[1].instrument).toBe('bassguitar');
-    expect(score.parts[1].gmProgram).toBe(34);
-    expect(stringInstrument(score.parts[1])).toBe('bass4');
   });
-  it('does not treat a tenor saxophone as a choir label', async () => {
-    const score = await load(['Tenor Saxophone', 'Bass']);
+  it.each([1, 20, 57, 66, 113])('does not use GM %i as a band exclusion', async program => {
+    const score = await load(['Soprano', 'Bass', 'Other'], program);
+    expect(score.parts[1].instrument).toBe('microphone');
+  });
+  it('uses an explicit piano program over a misleading guitar name for context', async () => {
+    const score = await load(['Soprano', 'Bass', 'Guitar'], 1);
+    expect(score.parts.map(p => p.instrument)).toEqual(['microphone', 'microphone', 'piano']);
+  });
+  it('preserves explicit programs over vocal and sax names', async () => {
+    for (const name of ['Bass', 'Soprano 1', 'Tenor Sax']) {
+      const part = (await load(['Soprano', name], 34)).parts[1];
+      expect(part.instrument).toBe('bassguitar');
+      expect(part.gmProgram).toBe(34);
+    }
+  });
+  it.each([
+    ['Soprano Sax', 'alto-saxophone'], ['Alto Sax 1', 'alto-saxophone'],
+    ['Tenor Saxophone II', 'tenor-saxophone'], ['Baritone Sax', 'bari-saxophone'],
+    ['Sax Tenor 1', 'tenor-saxophone'], ['Choir Tenor Sax', 'tenor-saxophone'],
+  ])('uses a saxophone for %s and gives Bass no choir context', async (name, instrument) => {
+    const score = await load([name, 'Bass']);
+    expect(score.parts[0].instrument).toBe(instrument);
     expect(score.parts[1].instrument).toBe('bassguitar');
-    expect(stringInstrument(score.parts[1])).toBe('bass4');
+    expect(stringInstrument(score.parts[0])).toBeUndefined();
+    if (name === 'Soprano Sax') expect(score.parts[0]).toMatchObject({ gmProgram: 65, gmSoundfont: 'soprano_sax' });
   });
 });

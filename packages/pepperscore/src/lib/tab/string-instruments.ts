@@ -1,4 +1,4 @@
-import { instrumentForName, type Part, type Score } from '../score';
+import { gmProgramForNumber, instrumentForName, type Part, type Score } from '../score';
 
 /** TAB instrument identity is independent of the playback sound (ukuleles use nylon guitar). */
 export const STRING_INSTRUMENTS = {
@@ -26,6 +26,7 @@ export function withTabSettings(score: Score, instruments?: TabInstruments, tuni
 }
 
 const namedFretted = (name: string): TabInstrument | undefined => {
+  if (/sax/i.test(name)) return;
   if (/\b(?:voice|vocal|choir|singer|satb)\b/i.test(name)) return;
   if (/\b(?:ukulele|ukelele)\b/i.test(name)) {
     if (/\bbaritone\b/i.test(name)) return 'ukulele-baritone';
@@ -80,25 +81,31 @@ export function instrumentFor(score: TabScore, part: Part, switched = false) {
 }
 
 
-/** Resolve Bass/B only in a credible choir; placeholder letters and band labels keep their imported sounds. */
+/** Name-only voices are explicit; ambiguous bass needs choir context without guitar/drum evidence. */
 export function resolveChoirNames(score: Score): Score {
-  const roles: Record<string, string> = { soprano: 's', sop: 's', s: 's', alto: 'a', alt: 'a', a: 'a', tenor: 't', ten: 't', t: 't', bass: 'b', b: 'b' };
-  const label = (part: Part) => part.name.trim().toLowerCase().replace(/\.$/, '');
-  const role = (part: Part) => Object.hasOwn(roles, label(part)) ? roles[label(part)] : undefined;
-  if (!score.parts.some(part => role(part) === 'b' && part.gmProgram === undefined)) return score;
-  const bandPart = (part: Part) => {
+  const letters = new Set(score.parts.map(part => part.name.trim().toUpperCase()).filter(name => /^[SATB]$/.test(name)));
+  const guitarOrDrums = score.parts.some(part => {
     const gm = part.gmProgram;
-    return part.clef === 'percussion' || part.instrument === 'drum-kit'
-      || /\b(?:drums?|percussion|brass|trumpets?|trombones?|tubas?|horns?|cornets?|flugelhorns?|sax(?:ophones?)?|guitars?|piano|keyboards?|organ|harpsichord|clavinet|celesta)\b/i.test(part.name)
-      || /^(?:soprano|sop\.?|alto|alt\.?|tenor|ten\.?|bass|[satb])\s*(?:\d+|\s+[ivx]+)\b/i.test(part.name.trim())
-      || (gm !== undefined && ((gm >= 1 && gm <= 32) || (gm >= 57 && gm <= 68) || (gm >= 113 && gm <= 120)));
-  };
-  if (score.parts.some(bandPart)) return score;
-  const distinctRoles = new Set(score.parts.map(role).filter(Boolean));
-  const soprano = score.parts.some(part => /^(?:soprano|sop)$/.test(label(part)));
-  if (!soprano && distinctRoles.size < 3) return score;
+    if (part.clef === 'percussion' || part.instrument === 'drum-kit') return true;
+    if (gm !== undefined) return (gm >= 25 && gm <= 32) || (gm >= 34 && gm <= 40);
+    return /guitar|drum|percussion/i.test(part.name);
+  });
+  const letterChoir = letters.size >= 3 && !guitarOrDrums;
+  const voiceContext = letterChoir || score.parts.some(part => instrumentForName(part.name) === 'microphone'
+    && (part.gmProgram === undefined || part.instrument === 'microphone'));
   for (const part of score.parts) {
-    if (part.gmProgram === undefined && !part.tab && role(part)) part.instrument = 'microphone';
+    if (part.gmProgram !== undefined || part.tab || part.clef === 'percussion') continue;
+    const named = instrumentForName(part.name);
+    if (/sax/i.test(part.name)) {
+      // GM has a soprano sound even though the reader's icon registry groups it with alto sax.
+      if (/\bsoprano\b/i.test(part.name)) {
+        part.gmProgram = 65;
+        part.gmSoundfont = gmProgramForNumber(65)?.soundfont ?? undefined;
+      }
+      continue;
+    }
+    if (named === 'microphone' || (letterChoir && /^[SATB]$/i.test(part.name.trim()))
+      || (named === 'bassguitar' && voiceContext && !guitarOrDrums)) part.instrument = 'microphone';
   }
   return score;
 }
