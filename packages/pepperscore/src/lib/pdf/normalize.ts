@@ -5,7 +5,7 @@
 export function flattenViewports(svg: SVGSVGElement): void {
   const nested = Array.from(svg.querySelectorAll('svg')).map(element => {
     const parent = element.parentElement as unknown as SVGGraphicsElement;
-    const own = element.getScreenCTM(), outer = parent.getScreenCTM();
+    const own = contentMatrix(element), outer = contentMatrix(parent);
     if (!own || !outer) throw new Error('Could not resolve the PDF SVG viewport.');
     return { element, matrix: outer.inverse().multiply(own) };
   });
@@ -17,6 +17,17 @@ export function flattenViewports(svg: SVGSVGElement): void {
     group.setAttribute('transform', `matrix(${matrix.a} ${matrix.b} ${matrix.c} ${matrix.d} ${matrix.e} ${matrix.f})`);
     group.append(...Array.from(element.childNodes)); element.replaceWith(group);
   }
+}
+
+/** Firefox reports a nested SVG's viewport-to-screen matrix without its viewBox
+ * transform. A child group reports content-to-screen consistently across engines.
+ */
+function contentMatrix(element: SVGGraphicsElement): DOMMatrix | null {
+  if (element.localName !== 'svg') return element.getScreenCTM();
+  const probe = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  element.appendChild(probe);
+  try { return probe.getScreenCTM(); }
+  finally { probe.remove(); }
 }
 
 /** Ordinary text and music glyphs have different fonts, even within one chord label. */

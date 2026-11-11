@@ -38,6 +38,8 @@
     "test:embed": "node validation/embed.mjs",
     "test:layout": "node validation/layout.mjs",
     "test:pdf": "npm run test -w pepperscore -- --run src/lib/pdf/fit.test.ts && node validation/pdf.mjs",
+    "test:pdf:firefox": "BROWSER=firefox npm run test:pdf",
+    "test:pdf:webkit": "BROWSER=webkit npm run test:pdf",
     "test:embed:firefox": "BROWSER=firefox node validation/embed.mjs",
     "test:embed:webkit": "BROWSER=webkit node validation/embed.mjs",
     "test:browsers": "playwright-core install chromium firefox webkit",
