@@ -136,3 +136,103 @@ git diff --check: exit 0
 ```
 
 Logs: `/tmp/t4-r1-check.log`, `/tmp/t4-r1-build.log`, `/tmp/t4-r1-skin.log`, `/tmp/t4-r1-pdf.log`, `/tmp/t4-r1-reader.log`. The two intentional failing controls are `/tmp/t4-r1-negative.log` and `/tmp/t4-r1-width-negative.log`. Scope against reviewed head 96809a0 is exactly the seven owned source/validation files plus this return document. The broader initial aggregate evidence above remains historical; this review round ran the five commands requested by the lead.
+
+
+## Review r2 response — 5852609433
+
+- **Review:** https://github.com/pepperhorn/ph-scoreview/pull/81#pullrequestreview-5852609433
+- **Reviewed head:** `5fe13cb5e2198e5bf5e1b9c8c81b53f05f13346e`.
+- **Fix code/validation head:** `1ce0b303319f2d5c8e128afafc7028351c7be7b2`; return documentation only afterward.
+- **Ownership exception (lead decision):** `.github/workflows/ci.yml` is owned for exactly one change: install `poppler-utils` with apt in the Chromium validate job before tests. This implements the fix for ledger suggestion S21. The ledger remains lead-owned and unmodified.
+- **CI change:** one named install step runs `sudo apt-get update` and `sudo apt-get install -y poppler-utils` after Chromium installation and before type checks/build/tests. Local YAML parsing, shell syntax validation and a deep comparison against the reviewed workflow prove every other job/setting is unchanged.
+- **Missing-tool behaviour:** `validation/pdf.mjs` probes `pdftoppm -v` before creating Vite or launching a browser. Missing Poppler throws `Poppler required for pitch raster parity: install poppler-utils (pdftoppm).` The old optional geometry-raster branch was removed; pixel checks do not skip. An isolated Node run with PATH pointing to an empty temporary directory exits 1 with that actionable message and no ENOENT text.
+- **Minor fixed:** `resolvePitchColours` documents and enforces that its argument is `.pepperscore[data-ps-pitch-colours]`. A future caller must pass the active player root (palette + preference on); an inactive root throws before any probe is added. The real PDF browser fixture removes the active attribute, verifies the rejection and unchanged child count, restores it, then runs the normal pixel comparisons for default/host-variable variants. The reviewed PDF outline implementation is unchanged.
+- **GBrain:** `default:projects/scoreflow-music-reader` consulted for historical context; current review and lead instructions govern. Implementer writes no GBrain pages.
+- **Remote CI limitation:** the lead reports GitHub Actions billing failures across all jobs. Local validation and workflow syntax/scope checks are reported here; execution of the apt install on GitHub and green CI are not claimed. No CI watching/polling or billing changes.
+- **Verification:** every requested local command now has a passing run. Commands ran sequentially in the foreground; skin required the documented isolated retries and test synchronization. This is not a claim of a single uninterrupted seven-command green chain.
+- **For the ABC guide:** no import behaviour changed.
+- **For GBrain (lead to promote):** a required external raster tool needs an explicit CI installation and an actionable startup preflight. A paint snapshot helper should reject inactive rendering state instead of silently returning plain fills.
+
+
+### r2 timing observations (unchanged source)
+The initial skin run passed its unit, native-host, focus/theme, phone/drawer and bar checks, then timed out at `validation/skin.mjs:718` waiting 30 seconds for a notehead after reload. An immediate isolated `npm run test:skin` rerun passed the unit tests but timed out in the legacy-phone fixture at `validation/skin.mjs:644`. The machine exposed 12 CPUs; load averages observed after these failures were `65.34,47.52,34.86` and `112.78,77.88,49.35`. These are observations, not a baseline reproduction or proof of cause. No product/timing changes were made to address them. Complete logs: `/tmp/t4-r2-skin.log`, `/tmp/t4-r2-skin-retry.log`. The remaining requested commands continue sequentially; another isolated skin run follows them.
+
+
+The later isolated skin run reached the reload assertion but reported `saved toggle reloads: false !== true` (`/tmp/t4-r2-skin-final.log`). Inspection found the fixture called `setPitchColours(true)` and immediately reloaded, racing React's persistence effect. The owned skin validation now waits for the actual stored preference to become false after the drawer toggle, then true after the handle setter, before reloading. It still asserts the reloaded value; it neither forces storage nor changes product code or timing thresholds. A synchronized isolated skin run is recorded below. The requested check/build/PDF/score-db/chunks/reader commands already passed on `1ce0b303319f2d5c8e128afafc7028351c7be7b2`; this subsequent change is confined to the skin fixture's synchronization.
+
+
+### r2 completed local results
+
+Product/CI changes are in `1ce0b303319f2d5c8e128afafc7028351c7be7b2`. The only subsequent source change is the three-line skin-fixture synchronization in `bba38d3cbdddee61124b5f3c6aa14f59ac3c57ca`, verified by both an isolated pitch fixture and the final complete skin run. Return documentation follows those commits.
+
+The first synchronized full skin attempt timed out waiting for `.reader-note.is-playing` at `validation/skin.mjs:428` (`/tmp/t4-r2-skin-synchronized.log`), before reaching the changed reload fixture. The extracted, unchanged pitch fixture then passed in isolation (`/tmp/t4-r2-pitch-isolated.log`), and the final complete `npm run test:skin` passed (`/tmp/t4-r2-skin-last.log`). All preceding failures are retained above and in their logs. Timing thresholds and production playback/persistence code are unchanged.
+
+```text
+npm run check: exit 0
+  Result (23 files): 0 errors, 0 warnings, 0 hints
+npm run build: exit 0
+  Demo build uses the library dist (worker chunks and Verovio files match)
+  and ships its notices
+npm run test:skin: final isolated run exit 0
+  skin.test.ts: 5 passed
+  bar-items.test.ts + pitch-colours.test.ts: 11 passed
+npm run test:pdf: exit 0
+  fit.test.ts: 6 passed
+npm run test:score-db: exit 0
+npm run test:chunks: exit 0
+npm run test:reader: exit 0 (full suite; no reader retry needed)
+Missing-Poppler control: expected Node exit 1, actionable install poppler-utils
+  message, no ENOENT text; outer verification exit 0
+Workflow check: YAML parses; install-step bash syntax valid; exactly one added
+  Chromium validate step before tests; all other jobs/settings identical
+Isolated synchronized pitch fixture: exit 0
+git diff --check: exit 0
+```
+
+Successful browser/fixture results (Vite connection chatter omitted; full logs listed below):
+```text
+Skin r2: no-skin/PDF full chrome at 390/850px and wide touch has no embed toolbar or switcher; minimal menu and 390px main reader defaults preserved
+Skin native ESM: unchanged dist mounts with/without skin and no process global; explicit development/production shims gate diagnostics
+Skin focus: Tab reaches every focusable control including select, both ranges, checkbox, textarea and link; no-skin and accent-only outlines match original defaults
+Skin: JS exports, typed fixture, static colour guard, desktop/mobile/all-chrome/icon and modern-colour audit, consumer dev/prod diagnostics, live host variables and no re-engrave passed
+Skin phone r1: full/minimal 320/390/580px item-centre hit tests and playback; wrapped dock/toast offsets passed
+Skin drawer: omitted actions, single refs, mode/bars/zoom/stop/mixer/file chooser, empty-bar preset fallback and no-skin restoration passed
+Skin bar: ordered full/minimal bars, instrument selection, drawer sync, derived chords, persisted toggles, 390px More and unknown/duplicate ids passed
+Pitch raster default C: screen 89,89,89 / 0.0456, PDF 89,89,89 / 0.0442
+Pitch raster default E: screen 89,89,89 / 0.0456, PDF 89,89,89 / 0.0442
+Pitch raster default D: screen 89,89,89 / 0.0456, PDF 89,89,89 / 0.0442
+Pitch raster default F: screen 89,89,89 / 0.0456, PDF 89,89,89 / 0.0442
+Pitch raster default G: screen 89,89,89 / 0.0456, PDF 89,89,89 / 0.0442
+Pitch raster host C: screen 137,167,197 / 0.0516, PDF 137,167,197 / 0.0442
+Pitch raster host E: screen 137,167,197 / 0.0387, PDF 137,167,197 / 0.0442
+Pitch raster host D: screen 137,167,197 / 0.0387, PDF 137,167,197 / 0.0442
+Pitch raster host F: screen 137,167,197 / 0.0387, PDF 137,167,197 / 0.0442
+Pitch raster host G: screen 137,167,197 / 0.0387, PDF 137,167,197 / 0.0442
+Poppler raster: staff width/6.5 mm height, known notehead and aligned note-name ink passed.
+Vector composition passed: four exact paper sizes, embedded/selectable text, RGB paths, multipage annotated export, unsupported glyph error, cancellation.
+PDF page model spike passed (chromium): A4 4 lines; A3 4; 2 pages for 80 bars.
+Score memory: IndexedDB round trip, v1 migration, localStorage fallback, eviction, debounce, write-ahead reload recovery and stable keys passed
+Slice keys: a leading key replaces the carried key; a mid-measure change keeps it passed
+chromium: whole 8 systems, chunked 8 systems
+chromium: chunked engraving matches the whole engraving across chunk boundaries passed (27.6 s)
+chromium: header first paint matches the server render (no hydration reflow) passed
+chromium: reader import, engraving, layout, annotations, fonts, mixer, persistence and playback passed
+chromium: four-bar Vertical default, compact readable floor, Endless default and user-zoom restore passed
+chromium: stave scale reflow, quiet zoom commits, anchoring and per-score memory passed
+chromium: rotation re-fits default zoom, keeps user zoom and keeps tall stacks reachable passed
+chromium: system paging, overhang and page-jump playback follow passed
+chromium: silent playback fallback passed
+chromium: TimGM6mb fallback shares one soundfont download passed
+chromium: ID-less MusicXML with a multi-measure rest intro passed
+chromium: open dialog passed
+chromium: score link passed
+chromium: stave focus passed
+chromium: options drawer layout and annotation sizes passed
+chromium: endless with scrollbars passed
+
+Pitch colours: chord/enharmonics, outlines, mark precedence, no re-engrave, drawer/bar/settings/handle/reload, no palette, transposition and lazy paging passed
+```
+
+Full successful logs: `/tmp/t4-r2-check.log`, `/tmp/t4-r2-build.log`, `/tmp/t4-r2-skin-last.log`, `/tmp/t4-r2-pdf.log`, `/tmp/t4-r2-score-db.log`, `/tmp/t4-r2-chunks.log`, `/tmp/t4-r2-reader.log`. Negative-control log: `/tmp/t4-r2-no-poppler.log`. Earlier skin attempts: `/tmp/t4-r2-skin.log`, `/tmp/t4-r2-skin-retry.log`, `/tmp/t4-r2-skin-final.log`, `/tmp/t4-r2-skin-synchronized.log`; isolated changed fixture: `/tmp/t4-r2-pitch-isolated.log`.
+
+**Outcome:** r2 implementation and requested local verification complete; remote CI remains unverified under the lead-reported Actions billing issue. Lead can promote S21's installation fix and arrange re-review/CI once Actions can execute. The r2 diff against 5fe13cb contains the authorized CI install step, required-tool diagnostic, snapshot guard/test, skin-fixture synchronization and this return document only. No ledger or other protected paths changed.
