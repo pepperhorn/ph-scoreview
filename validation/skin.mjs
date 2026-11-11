@@ -714,7 +714,10 @@ async function assertLegacyPhoneChrome(browser, server) {
     assert.ok(await page.evaluate(()=>window.pitchSvg===document.querySelector('.score-system svg')),'toggle/settings keep engraving');
     await page.locator('.skin-options').click();assert.equal(await page.locator('.annotations-panel .ps-pitch-colour-tile').getAttribute('aria-pressed'),'true');
     await page.locator('.annotations-panel .ps-pitch-colour-tile').click();assert.equal(await tile.getAttribute('aria-pressed'),'false');
+    // Reload only after React's persistence effect has saved the toggled value.
+    await page.waitForFunction(()=>JSON.parse(localStorage.getItem('pitch-acceptance-prefs') || 'null')?.pitchColours===false);
     await page.evaluate(()=>window.pitchHandle.current.setPitchColours(true));
+    await page.waitForFunction(()=>JSON.parse(localStorage.getItem('pitch-acceptance-prefs') || 'null')?.pitchColours===true);
     await page.reload();await page.locator('.notehead[data-pitch]').first().waitFor();assert.equal(await tile.getAttribute('aria-pressed'),'true','saved toggle reloads');
     await page.evaluate(()=>{window.pitchSvg=document.querySelector('.score-system svg');window.pitchRender({palette:undefined});});await page.waitForFunction(()=>!document.querySelector('.ps-pitch-colour-tile'));
     assert.equal(await page.locator('[data-ps-pitch-colours]').count(),0,'saved true without palette draws plain heads');
