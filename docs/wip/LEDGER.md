@@ -17,12 +17,12 @@ Next ID: 0021
 | 0013 | TAB for stringed instruments | planned (t4 docs; t1 #77, t2 #74, t3 #84 merged) | child 0017-impl-r1-fix2 (#85 writes the String TAB README; T4 = remaining docs after it merges) | codex/gpt-6.1-sol |  |  |  |  | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md |  | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
 | 0017 | Release pepperscore 0.5.0 (CHANGELOG, version) | changes-requested | child 0017-impl-r1-fix2 (docs for merged #84) | codex/gpt-6.1-sol | orch/0017-release-0-5-0 | https://github.com/pepperhorn/ph-scoreview/pull/85 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-5de38d86-837e74894e3847b8 | task `0017-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0017-impl-r1` |  |  | handoffs/2026-11-11-0017-release-0-5-0--codex-to-lead.md (@6ca54cc) | 2026-11-11 |
-| 0019 | [quick] CI validation step timeout 15 → 25 min, job 30 → 45 (S28) | in-review | review 0019-review-r1; human OK to merge on green | codex/gpt-6.1-sol | orch/0019-ci-validation-timeout | https://github.com/pepperhorn/ph-scoreview/pull/86 |  | task `0019-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0019-impl-r1` |  |  | handoffs/2026-11-11-0019-ci-validation-timeout--codex-to-lead.md (@7366227) | 2026-11-11 |
 
 ## Done / closed
 
 | K | Title | PR | Merged | Notes |
 |---|---|---|---|---|
+| 0019 | [quick] CI validation timeout 15 → 25 min, job 30 → 45 (S28) | https://github.com/pepperhorn/ph-scoreview/pull/86 | 2026-11-11 | merged with human OK |
 | 0013-t3 | Violin and cello finger + position TAB (task of 0013) | https://github.com/pepperhorn/ph-scoreview/pull/84 | 2026-11-11 | merged; option D |
 | 0018 | [quick] Choir name variants and horn sounds (S26, S27) | https://github.com/pepperhorn/ph-scoreview/pull/82 | 2026-11-11 | 9d3c36e; ABC guide updated |
 | 0001-t4 | Pitch colours and toggle tile + PDF parity (task of 0001; closes 0002 AC8a) | https://github.com/pepperhorn/ph-scoreview/pull/81 | 2026-11-11 | 299d463; ci.yml poppler-utils (S21) |
@@ -80,7 +80,7 @@ Next ID: 0021
 | S25 | fix | A "Bass" part with an explicit Acoustic Bass program shows the double-bass icon alongside bass-guitar TAB | PR #80 review r4 | XS | low | PR #80 review | new |
 | S26 | fix | Choir names missed by the voice-word pattern: "Soprano Solo"… "Bass Solo", slash staves "Soprano/Alto, Tenor/Bass", "Mezzo-Soprano", "Contralto" → Bass becomes bass guitar with TAB | `packages/pepperscore/src/lib/score.ts:130` (PR #80 r5) | XS | medium (hymns, solos) | PR #80 review | done (0018, PR #82) |
 | S27 | fix | `/horn/` gives English Horn, Basset Horn, Flugelhorn the French horn sound; should be GM 70 (cor anglais), clarinet, trumpet/flugelhorn | `packages/pepperscore/src/lib/score.ts:124` | XS | low | PR #80 review | done (0018, PR #82) |
-| S28 | ci | CI "Validation suite" step (timeout 15 min) takes ~12 min and times out on busy runs (PR #82 push run, two main runs) | `.github/workflows/ci.yml:41` | XS | high (false reds) | PR #82 review r2 | accepted → 0019 |
+| S28 | ci | CI "Validation suite" step (timeout 15 min) takes ~12 min and times out on busy runs (PR #82 push run, two main runs) | `.github/workflows/ci.yml:41` | XS | high (false reds) | PR #82 review r2 | done (0019, PR #86) |
 | S29 | fix | Fretless position-label pruning happens after Verovio layout, so a removed label can leave a neighbour one row higher than needed | PR #84 review r2 | S | low (cosmetic) | PR #84 review | new |
 | S30 | improvement | Fretless solver: add a position-continuity cost (prefer staying in position) to cut label density and I/II flips | 0013-t3 return handoff; PR #84 reviews | M | medium (readability) | PR #84 | new |
 | S1 | fix | Emit a mid-bar `<keySig>` only in layer 1; Verovio draws one per layer | `packages/pepperscore/src/lib/notation/document.ts:249` (probe: 2 layers → 3 keySig groups) | S | low today (ABC overlays are separate parts); matters for MIDI/multi-layer | PR #60 review r2 | done (0005, PR #63) |
@@ -89,6 +89,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-11 0019 in-review→closed — CI green on 7366227, merged PR #86 (human OK)
 2026-11-11 0017 ready→changes-requested — #84 merged first, so CHANGELOG/README must describe violin/cello finger TAB; implementer merging main and updating docs
 2026-11-11 0013-t3 ready→merged — CI green on a77ca15, merged PR #84 per human
 2026-11-11 0002-t3 dispatched→in-review — PR #83 @3d90d5d; initial package +1,376 B gzip; chunking via reader static-graph grouping, finalizer guard unchanged; review r1
