@@ -16,7 +16,7 @@ Next ID: 0020
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | human: P1–P3 (editor distribution, private repo name, BeCreative licence) before T4 | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0013 | TAB for stringed instruments | in-review (t3; t1 #77, t2 #74 merged) | review 0013-t3-review-r1 | codex/gpt-6.1-sol | orch/0013-t3-fretless-tab | https://github.com/pepperhorn/ph-scoreview/pull/84 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-e5798ced-64614dac132b6dc3 | task `0013-t3-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0013-t3-impl-r1` | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md | handoffs/2026-11-11-0013-t3-fretless-tab--codex-to-lead.md (@d71c6ab) | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
-| 0017 | Release pepperscore 0.5.0 (CHANGELOG, version) | changes-requested | child 0017-impl-r1-fix1 | codex/gpt-6.1-sol | orch/0017-release-0-5-0 | https://github.com/pepperhorn/ph-scoreview/pull/85 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-5de38d86-837e74894e3847b8 | task `0017-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0017-impl-r1` |  |  | handoffs/2026-11-11-0017-release-0-5-0--codex-to-lead.md (@9c0eae5) | 2026-11-11 |
+| 0017 | Release pepperscore 0.5.0 (CHANGELOG, version) | in-review | review 0017-review-r2 | codex/gpt-6.1-sol | orch/0017-release-0-5-0 | https://github.com/pepperhorn/ph-scoreview/pull/85 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-5de38d86-837e74894e3847b8 | task `0017-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0017-impl-r1` |  |  | handoffs/2026-11-11-0017-release-0-5-0--codex-to-lead.md (@6ca54cc) | 2026-11-11 |
 
 ## Done / closed
 
@@ -85,6 +85,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-11 0017 changes-requested→in-review — reader pin + README pushed 6ca54cc; review r2
 2026-11-11 0017 in-review→changes-requested — r1: reader app pins pepperscore@0.4.1 so npm ci fails; README still describes the TAB fallback and lacks skin/pitchColours/tabInstruments docs; lead granted reader pin + README sections
 2026-11-11 0017 dispatched→in-review — PR #85 @9c0eae5 (0.5.0 + CHANGELOG); review r1
 2026-11-11 0013-t3 dispatched→in-review — PR #84 @d71c6ab (502 tests, full validation); evidence archived; lead spotted suspicious labels in the evidence (violin B3 'L2', C4 'H3'; cello lowest note '1 pos ½'); review r1
