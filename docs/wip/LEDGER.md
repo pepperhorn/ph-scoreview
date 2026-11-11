@@ -16,7 +16,8 @@ Next ID: 0021
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | human: P1–P3 (editor distribution, private repo name, BeCreative licence) before T4 | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0013 | TAB for stringed instruments | planned (t4 docs; t1 #77, t2 #74, t3 #84 merged) | child 0017-impl-r1-fix2 (#85 writes the String TAB README; T4 = remaining docs after it merges) | codex/gpt-6.1-sol |  |  |  |  | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md |  | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
-| 0017 | Release pepperscore 0.5.0 (CHANGELOG, version) | ready (on hold) | review 0002-t3-review-r1 (human: release waits for the PDF button #83; then update CHANGELOG/README for PDF export) | codex/gpt-6.1-sol | orch/0017-release-0-5-0 | https://github.com/pepperhorn/ph-scoreview/pull/85 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-5de38d86-837e74894e3847b8 | task `0017-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0017-impl-r1` |  |  | handoffs/2026-11-11-0017-release-0-5-0--codex-to-lead.md (@6733f80) | 2026-11-11 |
+| 0017 | Release pepperscore 0.5.0 (CHANGELOG, version) | ready (on hold) | review 0002-t3-review-r1 and child 0020 (human: release waits for the PDF button and a Firefox PDF fix) | codex/gpt-6.1-sol | orch/0017-release-0-5-0 | https://github.com/pepperhorn/ph-scoreview/pull/85 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-5de38d86-837e74894e3847b8 | task `0017-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0017-impl-r1` |  |  | handoffs/2026-11-11-0017-release-0-5-0--codex-to-lead.md (@6733f80) | 2026-11-11 |
+| 0020 | [quick] PDF export in Firefox: notation ~10× too large (S22) | dispatched | lead: delegate | codex/gpt-6.1-sol | orch/0020-pdf-firefox-scale |  |  |  |  |  | handoffs/2026-11-11-0020-pdf-firefox-scale--lead-to-codex.md | 2026-11-11 |
 
 ## Done / closed
 
@@ -74,7 +75,7 @@ Next ID: 0021
 | S19 | risk | Reader (webkit) flake: "Extra large note names keep clear of the count row" (gap −1.7 → −3.5) failed on PDF-only PR #71's push run, passed on its PR run | CI run 42740873297; `validation/reader.mjs` | S | medium (blocks merges) | PR #71 CI | new |
 | S20 | fix | `findTarget` returns null when the plugin's own overlay (e.g. a spotlight backdrop) covers the target centre; use `elementsFromPoint` and ignore hits inside `[data-ps-plugin]` — needed before 0003 T4 | `packages/pepperscore-editor/src/plugin/host.ts:33` | XS | high for T4 | PR #76 review r2 | done (0014, PR #79) |
 | S21 | ci | Install `poppler-utils` in the CI validate job so the PDF raster check runs in CI, not only locally | PR #78 review r2 | XS | medium | PR #78 review | done (0001-t4, PR #81) |
-| S22 | fix | Firefox PDF export: notation ~10× too large (offscreen layout root has no width/height, so Firefox returns identity CTM); give the root SVG explicit size before measuring — goes in 0002 T4 handoff | PR #78 review r3; `BROWSER=firefox node validation/pdf.mjs` | S | high before shipping PDF | PR #78 review | new |
+| S22 | fix | Firefox PDF export: notation ~10× too large (offscreen layout root has no width/height, so Firefox returns identity CTM); give the root SVG explicit size before measuring — goes in 0002 T4 handoff | PR #78 review r3; `BROWSER=firefox node validation/pdf.mjs` | S | high before shipping PDF | PR #78 review | accepted → 0020 |
 | S23 | fix | PDF annotations: TAB staves default to none when not passed; shadow offset drops multi-value `dy` | PR #78 review r3 | XS | low | PR #78 review | new |
 | S24 | fix | tabTuning mismatch warning always says "host": `PepperScore.tsx:495-497` passes host and reader-saved tunings through the same field | PR #80 review r2 | XS | low | PR #80 review | new |
 | S25 | fix | A "Bass" part with an explicit Acoustic Bass program shows the double-bass icon alongside bass-guitar TAB | PR #80 review r4 | XS | low | PR #80 review | new |
@@ -89,6 +90,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-11 0020 new→dispatched — human: release also waits for a quick Firefox PDF fix (S22); runs in parallel with #83 (lib/pdf vs components)
 2026-11-11 0017 — human: 0.5.0 waits for the PDF button (#83); #85 held; human already ran npm login
 2026-11-11 0017 changes-requested→ready — 6733f80 merges main and adds violin/cello finger TAB to CHANGELOG/README (lead checked the docs-only delta against #84; no further review round); waiting on CI
 2026-11-11 0019 in-review→closed — CI green on 7366227, merged PR #86 (human OK)
