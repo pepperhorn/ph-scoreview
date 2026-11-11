@@ -1,6 +1,6 @@
 {
   "name": "pepperscore",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "An embeddable, browser-only music score reader for React: MusicXML, MXL, MIDI, MEI and ABC, engraved by Verovio, with playback.",
   "license": "MIT AND LGPL-3.0-or-later",
   "type": "module",

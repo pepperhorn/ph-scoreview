@@ -1,13 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.5.1 - 2026-11-12
 
 ### Changed
 
+- Generated violin and cello finger TAB favours staying in position across a phrase, reducing unnecessary position shifts and labels. This changes display-only fingering choices; sounding pitches and playback are unchanged.
 - PDF export is cooperative and cancellable on large scores: pages are annotated and drawn in slices that yield to the browser, so the page stays responsive (a 30-part, one-system-per-page score previously blocked the main thread for seconds per page). Cancel now takes effect within one slice, and the dialog shows “Building PDF… page N of M”. No change to the PDF produced.
 
 ### Fixed
 
+- Pitch-coloured notehead outlines use the intended default or host-set outline colour in Safari/WebKit instead of drawing solid black. Playback, cursor, selection, transposed and out-of-range highlights retain their own colours.
 - PDF export is verified in Safari/WebKit as well as Chromium and Firefox. In WebKit a failed download of the dialog's lazy chunk stayed failed until the tab was closed, because WebKit keeps the failed `modulepreload` Vite adds. On Vite and native-ESM hosts the dialog now retries once through a cache-busted address, so reopening it or reloading recovers. On other bundlers (for example Webpack) the retry is skipped and the dialog shows its usual error and Reload page button.
 
 ## 0.5.0 - 2026-11-11
