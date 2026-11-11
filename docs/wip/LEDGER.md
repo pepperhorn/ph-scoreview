@@ -85,6 +85,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-11 0002-t3 — lead granted validation/reader.mjs for the PDF-button tab-order expectation only
 2026-11-11 0018 in-review→closed — r2 approve on c2be5a3, PR-run CI green (push run hit the 15-min validation timeout, S28), merged PR #82 (9d3c36e); guide updated. 0017 release dispatched
 2026-11-11 0018 changes-requested→in-review — Treble/umlaut/& fixes pushed c2be5a3 (683 tests); review r2
 2026-11-11 0002-t3 dispatched→blocked→dispatched — draft PR #83; blocked on build finalizer (lazy PDF moved runtime asset URLs into shared chunks) and outdated PDF-reserved tests; lead granted vite.config/finalize-dist/runtime files and the three test files; AC2 = no PDF engine in initial graph + lazy overlay, <~2 KB gz increase
