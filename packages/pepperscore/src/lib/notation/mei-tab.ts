@@ -155,9 +155,11 @@ function collect(mei: string, spec: TabSpec): { staves: Map<string, EventRec[]>;
   let chord: EventRec | null = null; let chordGrace = false;
   let note: { rec: NoteRec; attributes: string; written?: string; gestural?: string; event: EventRec; inChord: boolean } | null = null;
   let graceDepth = 0;
-  let globalKey = '0';
-  const keys = new Map<string, string>();
-  const accidentals = new Map<string, string>();
+  const keyChanges: { staff?: string; onset: number; sig: string }[] = [{ onset: 0, sig: '0' }];
+  const pending: { rec: NoteRec; staff: string; onset: number; measure: number; semi: number; attributes: string; written?: string; gestural?: string }[] = [];
+  const addKey = (sig: string | null, n?: string) => {
+    if (sig !== null) keyChanges.push({ staff: n, onset: measureStart + (inMeasure ? cursor : 0), sig });
+  };
   const keyAlter = (step: string, key: string) => {
     const count = Number.parseInt(key) || 0;
     const order = key.endsWith('f') ? 'beadgcf' : 'fcgdaeb';
@@ -166,13 +168,8 @@ function collect(mei: string, spec: TabSpec): { staves: Map<string, EventRec[]>;
   const finishNote = () => {
     if (!note) return;
     const staffInfo = info.get(staff!);
-    if (spec.fingers?.[staff!]) {
-      const step = attributeOf(note.attributes, 'pname') ?? '';
-      const accidentalKey = `${staff}:${step}:${attributeOf(note.attributes, 'oct')}`;
-      const explicit = attributeOf(note.attributes, 'accid.ges') ?? note.gestural ?? attributeOf(note.attributes, 'accid') ?? note.written;
-      if (explicit !== undefined && explicit !== null) accidentals.set(accidentalKey, explicit);
-      else note.gestural = accidentals.get(accidentalKey) ?? keyAlter(step, keys.get(staff!) ?? globalKey);
-    }
+    if (spec.fingers?.[staff!]) pending.push({ rec: note.rec, staff: staff!, onset: note.event.onset,
+      measure: measureStart, semi: staffInfo?.semi ?? 0, attributes: note.attributes, written: note.written, gestural: note.gestural });
     if (staff! in refret) {
       const course = Number(attributeOf(note.attributes, 'tab.course')), fret = Number(attributeOf(note.attributes, 'tab.fret'));
       const open = staffInfo?.courses?.get(course);
@@ -202,14 +199,9 @@ function collect(mei: string, spec: TabSpec): { staves: Map<string, EventRec[]>;
       else if (name === 'staff' && --staffDepth === 0) staff = null;
       return;
     }
-    if (name === 'scoreDef') { globalKey = attributeOf(attributes, 'keysig') ?? attributeOf(attributes, 'key.sig') ?? globalKey; setMeter(attributes, 'meter.'); return; }
+    if (name === 'scoreDef') { addKey(attributeOf(attributes, 'keysig') ?? attributeOf(attributes, 'key.sig')); setMeter(attributes, 'meter.'); return; }
     if (name === 'keySig') {
-      const sig = attributeOf(attributes, 'sig');
-      if (sig) {
-        const n = staff ?? reading?.n;
-        if (n) keys.set(n, sig); else globalKey = sig;
-        for (const key of accidentals.keys()) if (!n || key.startsWith(`${n}:`)) accidentals.delete(key);
-      }
+      addKey(attributeOf(attributes, 'sig'), staff ?? reading?.n);
       return;
     }
     if (name === 'meterSig') { setMeter(attributes, ''); return; }
@@ -217,7 +209,7 @@ function collect(mei: string, spec: TabSpec): { staves: Map<string, EventRec[]>;
       setMeter(attributes, 'meter.');
       const n = attributeOf(attributes, 'n') || '';
       if (collected.has(n)) {
-        const key = attributeOf(attributes, 'keysig') ?? attributeOf(attributes, 'key.sig'); if (key) keys.set(n, key);
+        addKey(attributeOf(attributes, 'keysig') ?? attributeOf(attributes, 'key.sig'), n);
         const previous = info.get(n);
         const ppq = Number(attributeOf(attributes, 'ppq'));
         const semi = attributeOf(attributes, 'trans.semi');
@@ -235,7 +227,7 @@ function collect(mei: string, spec: TabSpec): { staves: Map<string, EventRec[]>;
       if (course >= 1 && midi !== null) reading.courses.set(course, midi);
       return;
     }
-    if (name === 'measure') { accidentals.clear(); inMeasure = true; measureLength = 0; measureRest = false; return; }
+    if (name === 'measure') { inMeasure = true; measureLength = 0; measureRest = false; return; }
     if (name === 'tie' && inMeasure) {
       const start = (attributeOf(attributes, 'startid') || '').replace(/^#/, ''), end = (attributeOf(attributes, 'endid') || '').replace(/^#/, '');
       if (start && end) { tieStarts.add(start); tieEnds.add(end); }
@@ -302,6 +294,27 @@ function collect(mei: string, spec: TabSpec): { staves: Map<string, EventRec[]>;
       else cursor += durationOf(attributes, ppq, tuplets);
     }
   });
+  // Resolve after collecting all voices: a key change in one layer must not leak
+  // backwards into earlier notes in another layer. Later global definitions supersede
+  // opening staff keys, while simultaneous staff definitions override the global one.
+  const carried = new Map<string, { value: string; measure: number; key: number }>();
+  for (const note of pending.sort((a, b) => a.onset - b.onset)) {
+    let active = 0;
+    keyChanges.forEach((key, i) => {
+      if ((!key.staff || key.staff === note.staff) && key.onset <= note.onset
+        && (key.onset > keyChanges[active].onset || key.onset === keyChanges[active].onset
+          && (Number(!!key.staff) > Number(!!keyChanges[active].staff) || !!key.staff === !!keyChanges[active].staff && i > active))) active = i;
+    });
+    const step = attributeOf(note.attributes, 'pname') ?? '';
+    const id = `${note.staff}:${step}:${attributeOf(note.attributes, 'oct')}`;
+    const explicit = attributeOf(note.attributes, 'accid.ges') ?? note.gestural ?? attributeOf(note.attributes, 'accid') ?? note.written;
+    const previous = carried.get(id);
+    const effective = explicit ?? (previous?.measure === note.measure && previous.key === active ? previous.value : keyAlter(step, keyChanges[active].sig));
+    if (explicit !== undefined && explicit !== null) carried.set(id, { value: explicit, measure: note.measure, key: active });
+    note.rec.midi = midiOf(note.attributes, { ...note, gestural: effective }, note.semi);
+    const alter = ALTER[effective] ?? 0;
+    if (step in STEP_PC && Math.abs(alter) <= 2) note.rec.spelling = { step: step.toUpperCase() as PitchSpelling['step'], alter: alter as PitchSpelling['alter'] };
+  }
   return { staves, tieStarts, tieEnds, info, ids };
 }
 
@@ -482,12 +495,13 @@ export function injectTab(mei: string, spec: TabSpec, memory?: FretMemory): stri
     }
     if (skip) { if (closing) skip--; else if (!selfClosing) skip++; return; }
     const id = attributeOf(attributes, 'xml:id') || '';
-    if (!closing && name === 'note' && spec.fingers?.[cloneN]) {
+    if (!closing && name === 'note' && spec.fingers?.[cloneN] && attributeOf(attributes, 'grace') === null && fingerings.has(id) && !continuations.has(id)) {
       const fingering = fingerings.get(id);
       const position = fingering?.position || handPosition.get(cloneN) || 0;
       if (position && position !== measurePosition) {
+        const reassert = !measurePosition && handPosition.get(cloneN) === position;
         const target = ` startid="#${escapeId(id)}-tab"`;
-        if (target) directions.push(`<dir staff="${100 + Number(cloneN)}"${target} place="above" type="finger-position"><rend fontsize="30%">${positionLabel(position)}</rend></dir>`);
+        if (target) directions.push(`<dir staff="${100 + Number(cloneN)}"${target} place="above" type="finger-position finger-staff-${100 + Number(cloneN)}${reassert ? ' finger-reassert' : ''}"><rend fontsize="30%">${positionLabel(position)}</rend></dir>`);
         measurePosition = position; handPosition.set(cloneN, position);
       }
     }

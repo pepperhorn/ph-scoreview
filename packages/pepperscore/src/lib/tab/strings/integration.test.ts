@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import createVerovioModule from 'verovio/wasm';
+import { VerovioToolkit } from 'verovio/esm';
 import { injectTab, type TabSpec } from '../../notation/mei-tab';
 import { VIOLIN, CELLO } from './charts';
 import { fingeringPitch } from './solver';
@@ -13,6 +15,40 @@ describe('finger TAB integration', () => {
     expect(mei).toContain('finger-tab-L2-p1'); // Bb3, not A#3
     expect(mei).toContain('I pos.');
     expect(mei).toContain('lines="4"');
+  });
+  it('uses the changed global key in real Verovio MEI (F major to D major, B3 natural)', async () => {
+    const tk = new VerovioToolkit(await createVerovioModule());
+    try {
+      const xml = '<score-partwise version="4.0"><part-list><score-part id="V"><part-name>Violin</part-name></score-part></part-list><part id="V">' + [-1, 2].map((fifths, i) => `<measure number="${i + 1}"><attributes><divisions>1</divisions><key><fifths>${fifths}</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time></attributes><note><pitch><step>B</step><octave>3</octave></pitch><duration>4</duration><type>whole</type></note></measure>`).join('') + '</part></score-partwise>';
+      tk.loadData(xml);
+      const mei = injectTab(tk.getMEI(), spec);
+      const labels = [...mei.matchAll(/type="finger-tab-([^" ]+)"/g)].map(m => m[1]);
+      expect(labels).toEqual(['L2-p1', '2-p1']);
+    } finally { tk.destroy(); }
+  });
+  it('resolves mid-bar keys at each voice onset, then resets accidentals under the new key', () => {
+    const notes = '<note xml:id="a" pname="b" oct="3" dur="4"/><keySig sig="2s"/><note xml:id="b" pname="b" oct="3" dur="4"/></layer><layer n="2"><note xml:id="c" pname="b" oct="3" dur="4"/><note xml:id="d" pname="b" oct="3" dur="4"/>';
+    const mei = injectTab(wrap(notes, '1f'), spec);
+    for (const id of ['a','c']) expect(mei).toMatch(new RegExp(`xml:id="${id}-tabn"[^>]*finger-tab-L2-p1`));
+    for (const id of ['b','d']) expect(mei).toMatch(new RegExp(`xml:id="${id}-tabn"[^>]*finger-tab-2-p1`));
+  });
+  it('keeps an explicit staff key ahead of a simultaneous global default', () => {
+    const mei = wrap('<note xml:id="b" pname="b" oct="3" dur="4"/>', '1f')
+      .replace('lines="5"/>', 'lines="5" keysig="2s"/>')
+      .replace('</staffGrp></scoreDef>', '</staffGrp><keySig sig="1f"/></scoreDef>');
+    expect(injectTab(mei, spec)).toContain('finger-tab-2-p1');
+  });
+  it('does not anchor a position reassert to a skipped grace note', () => {
+    const mei = injectTab(wrap('<note xml:id="g" grace="unacc" pname="b" oct="3" dur="8"/><note xml:id="a" pname="a" oct="3" dur="4"/>'), spec);
+    expect(mei).toContain('startid="#a-tab"');
+    expect(mei).not.toContain('startid="#g-tab"');
+  });
+  it('drops redundant bar reassertions per staff and reasserts on the next system', () => {
+    const dir = (staff: number, reassert = false) => `<g class="dir finger-position finger-staff-${staff}${reassert ? ' finger-reassert' : ''}"><text x="50">I pos.</text></g>`;
+    const svg = `<svg><g class="system">${dir(101)}${dir(102)}${dir(101,true)}${dir(102,true)}${dir(101)}</g><g class="system">${dir(101,true)}${dir(101,true)}</g></svg>`;
+    const out = substituteFingerLabels(svg);
+    expect((out.match(/finger-position/g) ?? []).length).toBe(4); // 2 initial, 1 true change, 1 new-system reassert
+    expect(substituteFingerLabels(out)).toBe(out);
   });
   it('numeric placeholders reserve two glyphs; metadata survives independently of ordering/font size', () => {
     const mei = injectTab(wrap('<note xml:id="a" pname="b" oct="3" accid="f" dur="4"/>'), spec);
