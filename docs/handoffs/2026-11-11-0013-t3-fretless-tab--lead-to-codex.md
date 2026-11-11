@@ -6,7 +6,7 @@
 - **Branch:** orch/0013-t3-fretless-tab · **Worktree:** created by T3
 - **Base commit:** 299d463 (0013 T1 #77, T2 #74; 0001 T4 #81; 0002 T2 #78 merged)
 - **Port (if running a server):** 5333
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 Violin and cello parts (identified by 0013-T1's classifier) get a four-line finger + position TAB staff in the TAB and Both views, rendered as **option D**: finger numbers on the string lines with inline `L`/`H` modifiers, and position changes as `<dir>` text ("I pos.", "III pos.", "pos. ½" for half position). Viola and double bass get none. Spec AC3.
