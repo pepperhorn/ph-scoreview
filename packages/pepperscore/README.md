@@ -313,6 +313,54 @@ const skin = mergeSkins(base, { theme: { surface: '#fff' }, pitchColours: { C: '
 <PepperScore abc={tuneAbc} skin={skin} settings={{ pitchColours: true }} />;
 ```
 
+#### Worked example: following a host's accent scopes
+
+becreative sets `--accent-ink`, `--accent`, `--accent-wash` and `--accent-wash-strong` on `.accent-blue`, `.accent-orange` and `.accent-pink` section wrappers. Mapping theme roles to those variables makes the player change colour with the section, with no re-render or re-engrave. Define the skin once (TypeScript):
+
+```ts
+import { CRF_PITCH_COLOURS, mergeSkins, type PepperScoreSkin } from 'pepperscore';
+
+export const becreativeSkin: PepperScoreSkin = {
+  theme: {
+    accent: 'var(--accent-ink)',
+    accentWash: 'var(--accent-wash)',
+    accentWashStrong: 'var(--accent-wash-strong)',
+    focusRing: 'var(--accent)', // a colour; becreative's --accent-ring is a box-shadow value
+  },
+  pitchColours: CRF_PITCH_COLOURS,
+  bar: ['play', 'tempo', 'instrumentSwitch', 'noteNames', 'counts', 'chordSymbols', 'options'],
+};
+// `static` shows no bar, so give it the theme only.
+export const becreativeStaticSkin: PepperScoreSkin = { theme: becreativeSkin.theme };
+// Same skin with a shorter bar; `mergeSkins` replaces `bar` whole.
+export const quietSkin = mergeSkins(becreativeSkin, { bar: ['play', 'options'] });
+```
+
+Plain JavaScript uses the same exports; the skin is only data, with no types needed:
+
+```js
+import { CRF_PITCH_COLOURS, mergeSkins, THEME_TOKENS, BAR_ITEM_IDS } from 'pepperscore';
+
+export const becreativeSkin = {
+  theme: { accent: 'var(--accent-ink)', accentWash: 'var(--accent-wash)', accentWashStrong: 'var(--accent-wash-strong)', focusRing: 'var(--accent)' },
+  pitchColours: CRF_PITCH_COLOURS,
+  bar: ['play', 'tempo', 'instrumentSwitch', 'noteNames', 'counts', 'chordSymbols', 'options'],
+};
+console.log(THEME_TOKENS.includes('accent'), BAR_ITEM_IDS.includes('options')); // true true: valid names at runtime
+```
+
+Then pass it as `skin` on the shapes that carry a bar, and the theme-only skin on the shape that does not:
+
+```tsx
+<section className="accent-orange">
+  <PepperScore chrome="full" skin={becreativeSkin} abc={tuneAbc} />     {/* reader */}
+  <PepperScore chrome="minimal" skin={becreativeSkin} abc={tuneAbc} />  {/* snippet */}
+  <PepperScore chrome="none" skin={becreativeStaticSkin} abc={tuneAbc} /> {/* static: no bar */}
+</section>
+```
+
+Changing the section's class (`accent-blue` to `accent-orange` to `accent-pink`) recolours every shape. The reader's embed test page (`/embed-skin?becreative`) runs this at 1280px and 390px and `npm run test:skin` checks it.
+
 - **Theme:** a partial map of `ThemeToken` roles to CSS colours (including host `var()` references). Roles: `accent`, `accentHover`, `accentWash`, `accentWashStrong`, `backdrop`, `border`, `borderMuted`, `danger`, `focusRing`, `onAccent`, `playback`, `shadow`, `surface`, `surfaceRaised`, `text`, `textFaint`, `textMuted`, `textSecondary`, `warning`. Omitted roles keep their defaults. Theme changes do not re-engrave.
 - **Bar:** an ordered `BarItemId[]` replacing the full/minimal header controls. Available ids: `play`, `stop`, `tempo`, `transpose`, `keyFlip`, `bars`, `viewToggle`, `tab`, `zoom`, `mixer`, `openFile`, `instrumentSwitch`, `octaveTool`, `options`, `noteNames`, `counts`, `chordSymbols`, `pitchColours`, `pdf`. Duplicates and unknown ids are ignored. Explicit `controls` values of `false` still win; unavailable controls are omitted. A bar with no renderable items restores the preset defaults. `chrome="none"` does not show a skin bar. Without `bar`, the preset header is unchanged.
 - **Drawer:** `options` opens the drawer. Enabled stop, view, bars, zoom, mixer, file and PDF actions omitted from a composed bar appear in its Playback and view panel. Annotation tiles stay in sync with the drawer and saved preferences; `chordSymbols` toggles authored and inferred symbols together.
