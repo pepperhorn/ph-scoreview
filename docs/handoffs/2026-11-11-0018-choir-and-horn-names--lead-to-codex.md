@@ -27,3 +27,7 @@ npm run test -w pepperscore && npm run check && npm run build && npm run test:ta
 
 ---
 ## Receiver ack
+
+Acknowledged 2026-11-11 (Codex). I will extend name-only voice recognition for solo/slash/mezzo/contralto/countertenor/treble labels and map English Horn/Cor Anglais, Basset Horn, Flugelhorn and French Horn variants to their existing GM sounds/icons. Instrument nouns and explicit MIDI programs retain precedence; the existing PR #80 naming policy remains covered. I will edit only score.ts, the duplicated/shared classification in tab/string-instruments.ts, their tests, abc-import.test.ts and my two 0018 handoffs. I will run the dispatch verification plus the repository manifest/full validation checks, record added ABC names and sound choices in the return handoff, push the named branch and open a draft PR. No open questions.
+
+GBrain consulted: `default:projects/scoreflow-music-reader` (historical context only); current repository handoff controls this task. No GBrain writes as implementer. Worktree starts clean and contains base 7dfd360.
