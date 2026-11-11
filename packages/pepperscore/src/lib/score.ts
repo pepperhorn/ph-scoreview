@@ -106,7 +106,7 @@ export function midiPitch(midi: number): Pitch {
 }
 export function noteName(p: Pitch): string { return `${p.step}${p.alter === 1 ? '♯' : p.alter === -1 ? '♭' : ''}${p.octave}`; }
 export function instrumentForName(name: string): InstrumentId {
-  const n = name.toLowerCase();
+  const n = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   if (/sax/.test(n)) {
     if (/\b(?:baritone|bari)\b/.test(n)) return 'bari-saxophone';
     if (/\btenor\b/.test(n)) return 'tenor-saxophone';
@@ -119,15 +119,19 @@ export function instrumentForName(name: string): InstrumentId {
   if (/\b(?:bass[ -]?guitar|(?:electric|acoustic|fretless)[ -]+bass|e-bass)\b/.test(n)) return 'bassguitar';
   if (/guitar/.test(n)) return 'guitar';
   if (/flute|recorder/.test(n)) return 'flute';
-  if (/clarinet/.test(n)) return 'clarinet';
-  if (/trumpet/.test(n)) return 'trumpet';
+  if (/clarinet|\b(?:english horn|cor anglais|basset horn)\b/.test(n)) return 'clarinet';
+  if (/trumpet|flugelhorn/.test(n)) return 'trumpet';
   if (/trombone|horn/.test(n)) return 'trombone';
   if (/banjo/.test(n)) return 'guitar';
   if (/violin/.test(n)) return 'violin';
   if (/viola/.test(n)) return 'viola';
   if (/cello/.test(n)) return 'cello';
   if (/\b(?:voices?|vocals?|choir|singers?|satb)\b/.test(n)) return 'microphone';
-  if (/^(?:soprano|alto|tenor|baritone|sop|alt|ten)\.?(?:\s+(?:\d+|[ivx]+))?(?:\s+\(?div(?:isi|\.)?\)?)?$/.test(n.trim())) return 'microphone';
+  const voiceWord = '(?:mezzo[ -]sopranos?|mezzos?|sopranos?|altos?|tenors?|baritones?|bass(?:es)?|contraltos?|countertenors?|sop|alt|ten)';
+  const voiceLabel = `${voiceWord}\\.?(?:\\s+(?:\\d+|[ivx]+))?(?:\\s+\\(?div(?:isi|\\.)?\\)?)?(?:\\s+solo)?`;
+  // Bass alone/numbered still needs score-level choir context; Solo and split staves are explicit voices.
+  if (new RegExp(`^${voiceLabel}(?:\\s*[/&]\\s*${voiceLabel})*$`).test(n.trim())
+    && (!/^bass\b/.test(n.trim()) || /\bsolo\b|[/&]/.test(n))) return 'microphone';
   if (/\bbass\b/.test(n)) return 'bassguitar';
   return 'piano';
 }

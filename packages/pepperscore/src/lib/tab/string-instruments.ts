@@ -95,6 +95,10 @@ export function resolveChoirNames(score: Score): Score {
   const letterChoir = letters.size >= 3 && !guitarOrDrums;
   const voiceContext = letterChoir || score.parts.some(part => instrumentForName(part.name) === 'microphone'
     && (part.gmProgram === undefined || part.instrument === 'microphone'));
+  // Treble/Bass commonly labels piano staves: Treble needs another named choir range, not letters or Bass alone.
+  const trebleContext = score.parts.some(part => instrumentForName(part.name) === 'microphone'
+    && /\b(?:sopranos?|altos?|tenors?|baritones?|mezzos?|contraltos?|countertenors?|sop|alt|ten)\b/i.test(part.name)
+    && (part.gmProgram === undefined || part.instrument === 'microphone'));
   for (const part of score.parts) {
     if (part.gmProgram !== undefined || part.tab || part.clef === 'percussion') continue;
     const named = instrumentForName(part.name);
@@ -107,14 +111,17 @@ export function resolveChoirNames(score: Score): Score {
       continue;
     }
     // These instruments share reader icons with a related instrument, but have their own GM sound.
-    const program = named === 'flute' && /recorder/i.test(part.name) ? 75
+    const program = named === 'clarinet' && /\b(?:english horn|cor anglais)\b/i.test(part.name) ? 70
+      : named === 'flute' && /recorder/i.test(part.name) ? 75
       : named === 'guitar' && /banjo/i.test(part.name) ? 106
         : named === 'trombone' && /horn/i.test(part.name) ? 61 : undefined;
     if (program !== undefined) {
       part.gmProgram = program;
       part.gmSoundfont = gmProgramForNumber(program)?.soundfont ?? undefined;
     }
-    if (named === 'microphone' || (letterChoir && /^[SATB]$/i.test(part.name.trim()))
+    const trebleVoice = trebleContext && named === 'piano' && /\btreble\b/i.test(part.name)
+      && instrumentForName(part.name.replace(/\btreble\b/gi, 'soprano')) === 'microphone';
+    if (named === 'microphone' || trebleVoice || (letterChoir && /^[SATB]$/i.test(part.name.trim()))
       || (named === 'bassguitar' && !explicitBassGuitar(part.name) && voiceContext && !guitarOrDrums)) part.instrument = 'microphone';
   }
   return score;
