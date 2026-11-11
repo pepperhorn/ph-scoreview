@@ -5,7 +5,7 @@
 > Waiting on: `child <taskId>` · `review <taskId>` · `ci` · `human: <why>` · `lead: <next action>`. Set it on every status change. A row needs the lead when it starts with `lead`, or when it's empty and Status is dispatched, in-review, changes-requested, ready, or merged. The lead's Stop hook won't let the lead end its turn while any row needs it.
 > Type: normal items have a spec and plan. Quick items have the title prefix `[quick]` (no spec or plan, a short handoff). PRs adopted by `orch-sweep` have the prefix `[pr]`.
 
-Next ID: 0025
+Next ID: 0026
 
 ## Active
 
@@ -13,11 +13,12 @@ Next ID: 0025
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 0001 | Composable player skins | dispatched (t5; t1–t4 merged) | child 0001-t5-impl-r1 | claudeAgent/claude-sonnet-5-5 | orch/0001-t5-skins-docs |  |  | task `0001-t5-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A0001-t5-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-11-0001-t5-skins-docs--lead-to-claude.md | 2026-11-10 |
 | 0002 | PDF export | planned (t4; t1 #71, t2 #78, t3 #83 merged) | child 0001-t5 (T4 shares README/CHANGELOG; dispatch after it merges) | codex/gpt-6.1-sol |  |  |  |  | specs/0002-pdf-export.md | plans/0002-pdf-export.md |  | 2026-11-10 |
-| 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | human: P1–P3 (editor distribution, private repo name, BeCreative licence) before T4 | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
+| 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | 0025 (P1 packaging + P3 key rotation); P2 done: repo pepperhorn/pepperscore-pt | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
 | 0022 | [quick] Safari draws pitch-colour outlines solid black (S31) | dispatched | child 0022-impl-r1 | codex/gpt-6.1-sol | orch/0022-safari-pitch-outline |  |  | task `0022-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A0022-impl-r1` |  |  | handoffs/2026-11-11-0022-safari-pitch-outline--lead-to-codex.md | 2026-11-11 |
 | 0023 | [quick] Fretless solver: position continuity (S30) | dispatched | child 0023-impl-r1 | codex/gpt-6.1-sol | orch/0023-fretless-position-continuity |  |  | task `0023-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3Ac74f9e93-cb09-4963-ad26-a335a09a74fe` | specs/0013-stringed-instrument-tab.md |  | handoffs/2026-11-11-0023-fretless-position-continuity--lead-to-codex.md | 2026-11-11 |
-| 0024 | Self-hosted GitHub Actions runner (CI minutes, follow-up to 0021) | proposed | human: pick runner host + approve ci.yml runs-on change | lead |  |  |  |  |  |  |  | 2026-11-11 |
+| 0024 | [quick] Self-hosted runner on t3box: ci.yml runs-on from CI_RUNS_ON var | dispatched | child 0024-impl-r1; then human: install runner on t3box + set CI_RUNS_ON (guides/self-hosted-runner.md) | codex/gpt-6.1-sol | orch/0024-ci-runs-on-variable |  |  | task `0024-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A9cbab5d4-201b-4809-8342-6c4ce4f87509` |  |  | handoffs/2026-11-11-0024-ci-runs-on-variable--lead-to-codex.md | 2026-11-11 |
+| 0025 | Editor via private GitHub Packages + licence tooling (0003 P1/P3) | dispatched | child 0025-impl-r1; human: rotate licence key (send public JWK + re-signed demo key) | codex/gpt-6.1-sol | orch/0025-editor-github-packages |  |  | task `0025-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A659e21e6-7e3f-4cec-809b-062024e53050` | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-11-0025-editor-github-packages--lead-to-codex.md | 2026-11-11 |
 
 ## Done / closed
 
@@ -97,6 +98,7 @@ Next ID: 0025
 Last health scan: never
 
 ## Log
+2026-11-11 human decisions — runner host t3box (0024 dispatched: CI_RUNS_ON variable; human installs runner, tailnet SSH blocks agents); 0003 P1 private GitHub Packages, P2 pepperhorn/pepperscore-pt (created), P3 rotate key now → 0025 dispatched
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
 2026-11-11 0023 new→dispatched — human accepted S30 (position continuity); Codex, owns lib/tab/strings/**. 0024 proposed — human OK for a self-hosted runner; host choice pending (syd1 is 2 vCPU/8 GB with prod apps; make-1 has 12 cores/39 GB with docker 29.9)
 2026-11-11 0017 merged→closed — npm shows pepperscore 0.5.0 (published by human). 0013 closed (T4 docs landed in the 0.5.0 README). 0001-t5 dispatched (route alt: Claude Sonnet; review by Codex). 0022 (S31 Safari outline) dispatched for 0.5.1. 0002-t4 after 0001-t5
