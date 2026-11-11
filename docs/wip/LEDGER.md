@@ -16,7 +16,7 @@ Next ID: 0018
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | human: P1–P3 (editor distribution, private repo name, BeCreative licence) before T4 | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0013 | TAB for stringed instruments | planned (t3, t4; t1 #77, t2 #74 merged) | child 0002-t2 (T3 touches render paths incl. lib/pdf and render.ts; dispatch after #78 and 0001-T4 ordering) | codex/gpt-6.1-sol |  |  |  |  | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md |  | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
-| 0016 | [quick] Instrument names: bare Bass = bass guitar, ukulele sound, tabTuning mismatch warning | in-review | review 0016-review-r5 | codex/gpt-6.1-sol | orch/0016-instrument-names | https://github.com/pepperhorn/ph-scoreview/pull/80 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-f4c5a8a8-bae6c18130633ca8 | task `0016-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0016-impl-r1` |  |  | handoffs/2026-11-11-0016-instrument-names--codex-to-lead.md (@af741f6) | 2026-11-11 |
+| 0016 | [quick] Instrument names: bare Bass = bass guitar, ukulele sound, tabTuning mismatch warning | ready | human: CI billing-blocked — fix billing or accept full local runs | codex/gpt-6.1-sol | orch/0016-instrument-names | https://github.com/pepperhorn/ph-scoreview/pull/80 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-f4c5a8a8-bae6c18130633ca8 | task `0016-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0016-impl-r1` |  |  | handoffs/2026-11-11-0016-instrument-names--codex-to-lead.md (@af741f6) | 2026-11-11 |
 | 0017 | Release pepperscore 0.5.0 (CHANGELOG, version) | planned | child 0016 (release after it merges) | lead |  |  |  |  |  |  |  | 2026-11-11 |
 
 ## Done / closed
@@ -74,12 +74,15 @@ Next ID: 0018
 | S23 | fix | PDF annotations: TAB staves default to none when not passed; shadow offset drops multi-value `dy` | PR #78 review r3 | XS | low | PR #78 review | new |
 | S24 | fix | tabTuning mismatch warning always says "host": `PepperScore.tsx:495-497` passes host and reader-saved tunings through the same field | PR #80 review r2 | XS | low | PR #80 review | new |
 | S25 | fix | A "Bass" part with an explicit Acoustic Bass program shows the double-bass icon alongside bass-guitar TAB | PR #80 review r4 | XS | low | PR #80 review | new |
+| S26 | fix | Choir names missed by the voice-word pattern: "Soprano Solo"… "Bass Solo", slash staves "Soprano/Alto, Tenor/Bass", "Mezzo-Soprano", "Contralto" → Bass becomes bass guitar with TAB | `packages/pepperscore/src/lib/score.ts:130` (PR #80 r5) | XS | medium (hymns, solos) | PR #80 review | new |
+| S27 | fix | `/horn/` gives English Horn, Basset Horn, Flugelhorn the French horn sound; should be GM 70 (cor anglais), clarinet, trumpet/flugelhorn | `packages/pepperscore/src/lib/score.ts:124` | XS | low | PR #80 review | new |
 | S1 | fix | Emit a mid-bar `<keySig>` only in layer 1; Verovio draws one per layer | `packages/pepperscore/src/lib/notation/document.ts:249` (probe: 2 layers → 3 keySig groups) | S | low today (ABC overlays are separate parts); matters for MIDI/multi-layer | PR #60 review r2 | done (0005, PR #63) |
 
 Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-11 0016 in-review→ready — r5 approve on af741f6; full local suite green (490 tests; editor-phone, reader, large needed reruns under load avg up to 72); CI billing-blocked; S26, S27 logged
 2026-11-11 0001-t4 changes-requested→in-review — Poppler/ci.yml fix pushed 50265da; review r3 with full local suite
 2026-11-11 0016 changes-requested→in-review — instrument-word priority pushed af741f6; review r5 with full local suite (CI billing-blocked)
 2026-11-11 0001-t4 in-review→changes-requested — r2: PDF outline parity confirmed; CI lacks Poppler (pdftoppm ENOENT); lead granted ci.yml for poppler-utils only (S21) + clear error; CI change needs human OK at merge
