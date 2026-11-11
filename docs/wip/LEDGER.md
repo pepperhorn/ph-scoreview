@@ -16,7 +16,7 @@ Next ID: 0021
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | human: P1–P3 (editor distribution, private repo name, BeCreative licence) before T4 | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0013 | TAB for stringed instruments | planned (t4 docs; t1 #77, t2 #74, t3 #84 merged) | lead: dispatch T4 docs after 0017 release (README overlap) | codex/gpt-6.1-sol |  |  |  |  | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md |  | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
-| 0017 | Release pepperscore 0.5.0 (CHANGELOG, version) | ready | child 0019 (CI validation timeout blocks every PR) | codex/gpt-6.1-sol | orch/0017-release-0-5-0 | https://github.com/pepperhorn/ph-scoreview/pull/85 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-5de38d86-837e74894e3847b8 | task `0017-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0017-impl-r1` |  |  | handoffs/2026-11-11-0017-release-0-5-0--codex-to-lead.md (@6ca54cc) | 2026-11-11 |
+| 0017 | Release pepperscore 0.5.0 (CHANGELOG, version) | changes-requested | child 0017-impl-r1-fix2 (docs for merged #84) | codex/gpt-6.1-sol | orch/0017-release-0-5-0 | https://github.com/pepperhorn/ph-scoreview/pull/85 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-5de38d86-837e74894e3847b8 | task `0017-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0017-impl-r1` |  |  | handoffs/2026-11-11-0017-release-0-5-0--codex-to-lead.md (@6ca54cc) | 2026-11-11 |
 | 0019 | [quick] CI validation step timeout 15 → 25 min, job 30 → 45 (S28) | in-review | review 0019-review-r1; human OK to merge on green | codex/gpt-6.1-sol | orch/0019-ci-validation-timeout | https://github.com/pepperhorn/ph-scoreview/pull/86 |  | task `0019-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0019-impl-r1` |  |  | handoffs/2026-11-11-0019-ci-validation-timeout--codex-to-lead.md (@7366227) | 2026-11-11 |
 
 ## Done / closed
@@ -89,6 +89,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-11 0017 ready→changes-requested — #84 merged first, so CHANGELOG/README must describe violin/cello finger TAB; implementer merging main and updating docs
 2026-11-11 0013-t3 ready→merged — CI green on a77ca15, merged PR #84 per human
 2026-11-11 0002-t3 dispatched→in-review — PR #83 @3d90d5d; initial package +1,376 B gzip; chunking via reader static-graph grouping, finalizer guard unchanged; review r1
 2026-11-11 0013-t3 in-review→ready — r2 approve on a77ca15 (key changes, per-system labels, naturals, grace notes fixed; stacked cello labels are real position changes); waiting on chromium CI; S29, S30 logged
