@@ -34,6 +34,16 @@
 - `%%MIDI channel 10` or a voice named like "Drums": unpitched percussion. Use `clef=perc`.
 - Body-only voices: a `%%MIDI` line after `[V:id]` / `V:id` in the body applies to that voice. One before any voice selector applies to the first voice, unless notes or a barline come before every selector: then it belongs to that implicit default voice and later voices don't inherit it. Safest: put each `%%MIDI` line right after its voice's `V:` line.
 
+### Instrument names (no `%%MIDI program`)
+A `%%MIDI program` (or MusicXML instrument sound) always wins. Without one, the part name decides (2026-11-11, PR #80):
+- **Saxophones** must say Sax/Saxophone ("Alto Sax 1"). "Alto 1", "Tenor II" without Sax are **voices**.
+- **Instrument words beat voice words:** Alto Flute, Tenor Trombone, Baritone Horn, Soprano Recorder, Tenor Banjo, Baritone/Tenor Guitar keep their instruments.
+- **Voices:** Soprano/Alto/Tenor/Baritone alone, numbered or divisi ("Alto 2", "Soprano I div."), or with Voice/Vocal/Choir/Singer.
+- **Bass:** any name with "Bass" (Bass, Bass 1, Synth Bass) is **bass guitar** with 4-string TAB, unless the score has other voice parts and no guitar or drums (then it's a voice), or it says Voice/Choir. Electric/Acoustic/Fretless Bass and Bass Guitar are always bass guitar. Double Bass/Contrabass/Upright/String Bass are double bass (no TAB).
+- **Letters:** S/A/T/B are voices only with at least three of them; a lone "A" means nothing.
+- **Ukulele** plays a nylon guitar sound with ukulele TAB.
+- Safest: add `%%MIDI program N` to every voice.
+
 ### Transposing instruments
 - `V:sax name="Alto Saxophone" transpose=-9` → written A4 sounds C4. Values are written→sounding semitones: B♭ clarinet/trumpet -2, tenor sax -14, alto sax -9, horn in F -7, baritone sax -21.
 - `transpose=` wins over `%%MIDI transpose`. Prefer `transpose=`.
@@ -110,6 +120,7 @@ G, A, B, C | D4 |]
 
 ## Change log
 <!-- Newest first: YYYY-MM-DD — ledger item / PR — what changed for ABC authors -->
+- 2026-11-11 — 0016 / PR #80 — part-name rules: bare "Bass" = bass guitar; Sax needs "Sax"; voice words only alone/numbered/hinted; ukulele sound. Existing files without `%%MIDI program`: "Bass" parts change from double bass to bass guitar (with TAB) unless in a choir; "Alto 1"-style parts become voices.
 - 2026-11-10 — 0012 / PR #75 — octave clefs now draw at the right octave (guitar `G,` on the second line) and generated TAB uses sounding pitch; the instrument switch keeps the "8". Known limit removed.
 - 2026-11-10 — known limit added (scale-to-song report) — octave clefs draw an octave high; fix tracked as 0012.
 - 2026-11-10 — 0008 / PR #67 — `V:` lines before `X:` now keep clef, name and transposition as defaults (tune-header `V:` overrides per property); `%%score`/`%%staves` grouping is kept.

@@ -5,7 +5,7 @@
 - **Ledger:** 0016 (scale-to-song findings 2026-11-11)
 - **Branch:** orch/0016-instrument-names · **Worktree:** created by T3
 - **Base commit:** 12f4bea
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 Fix three findings from scale-to-song's re-test (`docs/handoffs/2026-11-10-adhoc-abc-authoring-guide--pepperscore-to-scale-to-song.md`, 2026-11-11 section in their copy; summarised here):

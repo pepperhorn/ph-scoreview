@@ -16,13 +16,13 @@ Next ID: 0018
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | human: P1–P3 (editor distribution, private repo name, BeCreative licence) before T4 | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0013 | TAB for stringed instruments | planned (t3, t4; t1 #77, t2 #74 merged) | child 0002-t2 (T3 touches render paths incl. lib/pdf and render.ts; dispatch after #78 and 0001-T4 ordering) | codex/gpt-6.1-sol |  |  |  |  | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md |  | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
-| 0016 | [quick] Instrument names: bare Bass = bass guitar, ukulele sound, tabTuning mismatch warning | ready | human: CI billing-blocked — fix billing or accept full local runs | codex/gpt-6.1-sol | orch/0016-instrument-names | https://github.com/pepperhorn/ph-scoreview/pull/80 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-f4c5a8a8-bae6c18130633ca8 | task `0016-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0016-impl-r1` |  |  | handoffs/2026-11-11-0016-instrument-names--codex-to-lead.md (@af741f6) | 2026-11-11 |
 | 0017 | Release pepperscore 0.5.0 (CHANGELOG, version) | planned | child 0016 (release after it merges) | lead |  |  |  |  |  |  |  | 2026-11-11 |
 
 ## Done / closed
 
 | K | Title | PR | Merged | Notes |
 |---|---|---|---|---|
+| 0016 | [quick] Instrument names: Bass, ukulele sound, tuning warning | https://github.com/pepperhorn/ph-scoreview/pull/80 | 2026-11-11 | c1415a0; human naming policy; ABC guide updated |
 | 0002-t2 | PDF composition (task of 0002) | https://github.com/pepperhorn/ph-scoreview/pull/78 | 2026-11-11 | 03d0ac7; AC8a parity moved into 0001-T4 |
 | 0013-t1 | String instruments, TAB part selection and tunings (task of 0013) | https://github.com/pepperhorn/ph-scoreview/pull/77 | 2026-11-11 | d248d7b; settings.tabInstruments; README text proposed for T4 |
 | 0014 | [quick] findTarget ignores the plugin's own overlay (S20) | https://github.com/pepperhorn/ph-scoreview/pull/79 | 2026-11-11 | merged |
@@ -82,6 +82,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-11 0016 ready→closed — CI back (billing resolved), green on af741f6, merged PR #80 (c1415a0); guide updated. Human: until CI is reliable, an approved PR may merge on the reviewer's full local suite; S26+S27 quick fix before 0.5.0
 2026-11-11 0016 in-review→ready — r5 approve on af741f6; full local suite green (490 tests; editor-phone, reader, large needed reruns under load avg up to 72); CI billing-blocked; S26, S27 logged
 2026-11-11 0001-t4 changes-requested→in-review — Poppler/ci.yml fix pushed 50265da; review r3 with full local suite
 2026-11-11 0016 changes-requested→in-review — instrument-word priority pushed af741f6; review r5 with full local suite (CI billing-blocked)
