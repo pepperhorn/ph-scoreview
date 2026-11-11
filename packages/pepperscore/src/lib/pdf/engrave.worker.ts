@@ -1,3 +1,4 @@
+import { substituteFingerLabels } from '../tab/strings/svg';
 import type createVerovioModule from 'verovio/wasm';
 import type { VerovioToolkit } from 'verovio/esm';
 import type { VerovioFiles } from '../verovio-protocol';
@@ -101,7 +102,7 @@ self.onmessage = async ({ data }: MessageEvent<{ input: PageInput; opts: PageOpt
       pageMarginLeft: 0, pageMarginRight: 0, pageMarginTop: 0, pageMarginBottom: 0,
       noJustification: true, adjustPageWidth: true, adjustPageHeight: true, svgBoundingBoxes: true,
     });
-    const naturalSvg = tk.renderToSVG(1);
+    const naturalSvg = substituteFingerLabels(tk.renderToSVG(1));
     const measured = measureSvg(naturalSvg);
     if (measured.bars.length !== count) throw new Error('PDF spike: contextual measure count differs.');
     const naturalHeight = dimensions(naturalSvg)[1];
@@ -132,7 +133,7 @@ self.onmessage = async ({ data }: MessageEvent<{ input: PageInput; opts: PageOpt
       lines = starts.map((start,i)=>({start,count:(starts[i+1] ?? count)-start,width:0}));
       plannedMei = buildViewMei(mei, { ...view, breakBefore: starts });
       load(plannedMei, { ...pageOptions, breaks: 'encoded', noJustification: true, svgBoundingBoxes: true });
-      const naturalLines = Array.from({length:tk.getPageCount()},(_,i)=>measureSvg(tk!.renderToSVG(i+1)).systems).flat();
+      const naturalLines = Array.from({length:tk.getPageCount()},(_,i)=>measureSvg(substituteFingerLabels(tk!.renderToSVG(i+1))).systems).flat();
       if (naturalLines.length !== lines.length) throw new Error('PDF spike: natural system count differs.');
       let needed = overhead, neededFirst = firstOverhead, overflow = false;
       for (let i = 0; i < lines.length; i++) {
@@ -153,7 +154,7 @@ self.onmessage = async ({ data }: MessageEvent<{ input: PageInput; opts: PageOpt
       geometry = pageGeometry(opts.paper,naturalHeight,overhead);
     }
     load(plannedMei, pageOptions);
-    const pages = Array.from({ length: Math.max(1, tk.getPageCount()) }, (_, i) => tk!.renderToSVG(i + 1));
+    const pages = Array.from({ length: Math.max(1, tk.getPageCount()) }, (_, i) => substituteFingerLabels(tk!.renderToSVG(i + 1)));
     // Check actual membership, not just the number of systems: breaks must survive pagination.
     const actual: number[] = [];
     for (const svg of pages) {
