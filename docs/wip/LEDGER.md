@@ -18,7 +18,7 @@ Next ID: 0022
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
 | 0017 | Release pepperscore 0.5.0 (CHANGELOG, version) | ready (on hold) | review 0002-t3-review-r1 and child 0020 (human: release waits for the PDF button and a Firefox PDF fix) | codex/gpt-6.1-sol | orch/0017-release-0-5-0 | https://github.com/pepperhorn/ph-scoreview/pull/85 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-5de38d86-837e74894e3847b8 | task `0017-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0017-impl-r1` |  |  | handoffs/2026-11-11-0017-release-0-5-0--codex-to-lead.md (@6733f80) | 2026-11-11 |
 | 0020 | [quick] PDF export in Firefox: notation ~10× too large (S22) | in-review | review 0020-review-r1 | codex/gpt-6.1-sol | orch/0020-pdf-firefox-scale | https://github.com/pepperhorn/ph-scoreview/pull/87 |  | task `0020-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0020-impl-r1` |  |  | handoffs/2026-11-11-0020-pdf-firefox-scale--codex-to-lead.md (@62d7324) | 2026-11-11 |
-| 0021 | [quick] Cut CI minutes: docs-only skip, one run per PR push, reader only on PRs | dispatched | child 0021-impl-r1 | codex/gpt-6.1-sol | orch/0021-ci-minutes |  |  | task `0021-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0021-impl-r1` |  |  | handoffs/2026-11-11-0021-ci-minutes--human-to-lead.md | 2026-11-11 |
+| 0021 | [quick] Cut CI minutes: docs-only skip, one run per PR push, reader only on PRs | in-review | review 0021-review-r1 | codex/gpt-6.1-sol | orch/0021-ci-minutes | https://github.com/pepperhorn/ph-scoreview/pull/88 |  | task `0021-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0021-impl-r1` |  |  | handoffs/2026-11-11-0021-ci-minutes--codex-to-lead.md (@e2e9911) | 2026-11-11 |
 
 ## Done / closed
 
@@ -91,6 +91,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-11 0021 dispatched→in-review — PR #88 @e2e9911 (push main only, paths-ignore, PR-number concurrency, reader PR-only, validate in Playwright container); review r1
 2026-11-11 0020 dispatched→in-review — PR #87 @62d7324 (chromium + firefox PDF pass, chromium rasters unchanged; webkit can't launch locally); review r1
 2026-11-11 0002-t3 in-review→changes-requested — r1: Firefox header overflows at 761px (PDF button); overlay keys on document steal Tab/Escape from other readers; rest verified
 2026-11-11 0021 new→dispatched — human: ph-scoreview is most of the Actions bill (~45 billed min/run; docs commits and duplicate push+PR runs); cancelled 3 redundant in-flight runs (main docs, #85 push+PR while release is on hold). Lead process: batch ledger commits, never wait on ci for docs-only commits
