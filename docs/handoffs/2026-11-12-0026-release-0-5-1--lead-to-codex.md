@@ -43,3 +43,5 @@ npm run check && npm run build && npm run test:pack
 
 ---
 ## Receiver ack
+
+Acknowledged 2026-11-12 (Codex): prepare pepperscore 0.5.1 by changing only the package version, its root lockfile entry, the release changelog, and my 0026 handoffs. I will trace changelog wording to the merged return handoffs, preserve historical 0.5.0 text, run npm ci plus check/build/test:pack and the repository-required manifest/validation checks, inspect the packed version, then push this branch and open a draft PR against main. No npm publishing, runtime changes, ledger edits, or GBrain writes. No open questions. GBrain context checked: default:projects/scoreflow-music-reader and default:projects/scoreflow-music-reader/gotchas-abc-import; repo docs govern this release.
