@@ -3,87 +3,109 @@
 - **Date:** 2026-11-11
 - **Type:** return
 - **Ledger:** 0002 · **Spec:** [PDF export](../specs/0002-pdf-export.md) · **Plan:** [PDF export T3](../plans/0002-pdf-export.md)
-- **Dispatch:** [lead-to-codex](2026-11-11-0002-t3-pdf-overlay--lead-to-codex.md)
+- **Dispatch + lead answers:** [lead-to-codex](2026-11-11-0002-t3-pdf-overlay--lead-to-codex.md), answers supplied at `6a8f604`
 - **Branch:** orch/0002-t3-pdf-overlay
 - **Worktree:** /home/shaun/.t3/worktrees/ph-vexflow-view/t3-d1cdc39d-46ddba0ee7ed626a
 - **Base:** fbf1f27d17572cbba0c3882a1f7164ee51c88d4f (required 299d463 is an ancestor)
-- **Acknowledgement commit:** f6c1f48eb796ce5d5ef68ce74c443ae998018e1b
-- **PR:** draft created after this return commit; PR body links both handoffs
-- **Port:** 5223 reserved; no persistent server started
-- **Status:** blocked
+- **Acknowledgement:** f6c1f48eb796ce5d5ef68ce74c443ae998018e1b
+- **PR:** https://github.com/pepperhorn/ph-scoreview/pull/83 (draft; no watching or polling)
+- **Port:** 5223 reserved; validation owns ephemeral servers; no persistent server
+- **Status:** done
 
 ## Goal
-Expose PDF export through default full chrome, explicit controls and skin bars, with a themed overlay, remembered paper, local bars, cancellable fit checking and Save-time view snapshots.
+Expose PDF export through default full chrome, explicit controls and skin bars, with a lazy themed overlay, remembered paper, local bars, cancellable fit checking and Save-time view snapshots. This return supersedes the blocked return at ca7fec8; the lead expanded ownership and clarified AC2 before implementation resumed.
 
 ## Scope
-- **In / owned:** `packages/pepperscore/src/components/PdfOverlay.tsx`, `components/PepperScore.tsx`, `lib/chrome.ts`, `lib/bar-items.ts`, `lib/prefs.ts`, `src/styles.css`, `validation/pdf.mjs`, `apps/reader/src/embed/SkinTest.tsx`, and the two 0002-t3 handoffs. `DrawerControls.tsx` was owned but needed no edit.
-- **Out / protected:** PDF internals, render, notation, TAB, ledger, unrelated docs, dependencies and build configuration/scripts. None changed.
+- **Owned/changed:** `packages/pepperscore/src/components/PdfOverlay.tsx`, `components/PepperScore.tsx`, `lib/chrome.ts`, `lib/bar-items.ts`, `lib/prefs.ts`, `src/styles.css`, `validation/pdf.mjs`, `apps/reader/src/embed/SkinTest.tsx`, both 0002-t3 handoffs; expanded scope `packages/pepperscore/vite.config.ts`, `validation/api.mjs`, `packages/pepperscore/src/lib/bar-items.test.ts`, `validation/skin.mjs`; additionally `validation/reader.mjs` for PDF-only expectations, authorized by the user after the reader tab-order failure.
+- `DrawerControls.tsx`, runtime-files/verovio-runtime and finalize-dist were available within scope but required no final changes. The finalizer's original strict guard is preserved.
+- **Protected:** no changes to `lib/pdf/**`, render, notation, TAB, dependencies, ledger, unrelated docs or CI.
 
-## Current state and acceptance criteria
-Implementation is present but is **not ready for approval**. AC1/AC2/AC3/AC5-overlay/AC9 remain unverified through the built UI because the build integration gate fails. The added UI test has not passed; it must be exercised and corrected once the build blocker is resolved. No claim is made that playback preservation, download behaviour, phone containment or worker packaging is certified.
+## Implementation and acceptance evidence
+- **AC1:** `controls.pdf`/`chrome.pdf` default on for full and off otherwise, explicit minimal true works, explicit false removes button and drawer action. Skin `pdf` is renderable and respects explicit false. The secondary header registry entry is composed in PepperScore; default full also exposes PDF in its drawer.
+- **AC2:** overlay code imports only after clicking PDF; engraving only after opening and composition only on Save. Source-map traversal asserts the entire initial library graph contains no `lib/pdf` or `PdfOverlay` module. Built-consumer request tracking asserts no overlay/PDF/worker/library/font chunk loads before click, including with controls.pdf false. See size measurements below.
+- **AC3:** paper defaults A4, bars default 4 on every mount; paper persists through reopen/reload, bars do not read or change on-screen barsPerLine. Actual downloaded bytes are parsed to confirm remembered A3 page dimensions and slugged title; untitled export downloads `score.pdf`. No download occurs until Save.
+- **AC5 overlay:** real dense fixture reports exactly one shortened line. Captured worker output is `[4, 1, 4, 4]`, verifying sparse lines retain four bars. Fit uses the same metadata/annotation geometry as export, changes paper/bars reactively and aborts prior work. Save does not wait for fit.
+- **AC9:** built UI exports at a real nonzero scroll offset and compares unchanged SVG/scroll before/after. Separate active-playback export verifies the playback time advances, stop callback count stays fixed and render callback count stays fixed.
+- **Snapshots:** immutable current score, prefs, hidden IDs, channel and resolved active palette are captured synchronously before async work. The lazy overlay uses the reader's cached baseline and shared planStaves, passing hidden staves, spelling, TAB plan, visible IDs, TAB aliases/staves and annotation scales to exportScore. A host pitch change from +2 to +5 during Save leaves the export worker snapshot at +2. Palette resolution only runs when the root has pitch colours enabled; existing screen/PDF raster parity remains in test:pdf.
+- **Cancellation:** worker instrumentation proves previous measure workers terminate, Cancel aborts an active Save and terminates the worker, and no cancelled download occurs. Unmount cancels both controllers; completed workers terminate too.
+- **Failure recovery:** an injected font-fetch failure displays an alert and re-enables Save; restoring fetch and clicking Save succeeds. An aborted overlay module request displays an actionable error; Reload page recovers and opens the overlay successfully. Browser module-import failures are cached, so a same-page Retry was explicitly tested and rejected as ineffective. Export errors also provide Reload page alongside Cancel/Save.
+- **Sandbox:** a real same-origin sandboxed iframe without allow-downloads displays an error before composition. frameElement comes from the parent realm, so the guard uses its attributes rather than this window's instanceof HTMLIFrameElement. Cross-origin ancestor sandbox restrictions remain outside reliable frameElement introspection; no claim is made of universal download-block detection.
+- **UI:** contextual classes, Poppins, existing theme tokens, absolute positioning inside the reader, focus wrapping/restoration, Escape and a 390px containment check. PDF is not a phone playback-toolbar item. Its backdrop uses the same z-index 110 as the mixer, above the Options handle; a 390px hit-test verifies that the backdrop intercepts that handle. Adding the button exposed a real 901px overflow; the existing medium-width transport gap is now 4px instead of 8px. The original overflow assertions are unchanged, and touch/non-touch checks cover 761/900/901/1140/1141/1280px. The extra-controls drawer uses a 240px card minimum, preserving the original 272px minimum without that panel; at 1440px all five cards share one row with no card overflow or drawer scrolling. CSS scope validation passes in the full chain.
+- **Packaging:** dedicated emitted PDF worker is reached through the host-copied URL. Its code does not contain upstream Verovio; the worker loads the separately published runtime. The original runtime URL guard remains intact.
 
-- Added controls.pdf/chrome.pdf, the PDF bar action, a secondary entry composed with the header registry in PepperScore, and PDF drawer extras including the default drawer.
-- Added an absolute-positioned themed Poppins dialog with local default 4 bars, A4 default, persisted/validated pdfPaper, fit status, Save/Cancel, busy/error states, focus wrapping, Escape and cancellation cleanup.
-- Imports `lib/pdf/engrave` only from the fit effect after opening, and `lib/pdf/export` only from Save. No runtime static PDF import was introduced; type imports erase.
-- Captures displayScore/prefs/hidden parts/palette synchronously, then uses the cached baseline and shared planStaves for the Save view, TAB aliases and TAB staves. The active palette is resolved only when the root has pitch colours enabled.
-- Fit uses the annotation geometry and metadata reservation matching export. Each measurement cancels its predecessor. Cancel/unmount abort fit and Save; engraving's existing AbortSignal path terminates its worker.
-- Downloads use a temporary Blob URL and a slugged title/fallback score.pdf. Detects a same-origin sandbox without allow-downloads and reports an error. Cross-origin ancestor sandbox restrictions cannot be reliably diagnosed by this implementation and remain a risk.
+## Decisions made
+- The library bundler collects the reader's **static** dependency graph, subtracts the static audio/instruments graphs, and groups only the remaining reader modules in the entry. Dynamic imports are excluded from collection. Shared framework-free modules retain normal automatic splitting. `preserveEntrySignatures: 'allow-extension'` permits private cross-chunk helper exports. This avoids a large shared render chunk, preserves plain runtime URLs in index.js, and reduces initial gzip overhead. No runtime-file or finalizer relaxation was needed.
+- Snapshot planning belongs in the lazy overlay; the initial reader only captures current immutable references and the active palette.
+- pdfPaper is a global preference, not part of per-score FileSettings. PDF bars are local overlay state.
+- Failed module downloads require explicit page reload because the browser caches the failed module URL. Transient export/font failures can use Save again. Reload is never automatic.
 
-## Blockers requiring lead scope decision
-1. `npm run build` fails in **unowned** `packages/pepperscore/scripts/finalize-dist.mjs:26`:
-   ```text
-   AssertionError [ERR_ASSERTION]: dist/index.js refers to ./verovio/verovio-module.mjs as a plain new URL(…, import.meta.url)
-   ```
-   Connecting the lazy export makes the bundler extract `runtime-files-*.js` (350 bytes) and `render-*.js` shared chunks. The existing finalizer requires runtime asset URL expressions in index.js itself. Main builds successfully in an isolated temporary archive with the same node_modules; T3 reaches bundling and then fails this guard. Resolving packaging/asset paths needs ownership of build scripts/config and potentially runtime-files or PDF internals. Do not merely remove the assertion: validate host-copied URLs, worker packaging and pack consumers.
-2. Unowned `validation/api.mjs:11` (exact resolved-chrome object), `lib/bar-items.test.ts:42–54` and `validation/skin.mjs:536,645` still assert PDF is reserved/unrenderable and the legacy drawer has no added PDF action. Those expectations conflict with this task's explicit requirements and need authorized updates. No out-of-scope tests were edited.
-3. AC2's strict unchanged-byte claim is not met by the current static overlay import. Static library graph comparison (relative ESM imports reachable from index.js; dependencies external) against local main fbf1f27:
-   - main: **509,740 raw bytes**, **146,309 zlib-compressed bytes** (compression level 9).
-   - first T3 bundle: **519,919 raw bytes**, **151,461 zlib-compressed bytes**; +10,179 raw / +5,152 compressed. This is a development measurement before the final small effect/revision edits, not a final artifact claim.
-   - PDF export chunk: ~2.664 MB; worker code appears embedded in the lazy output. Worker separation and actual host network loading remain unverified because finalization fails.
-   Lead should clarify whether the requirement means no PDF libraries in the initial graph (intended by plan) or byte-identical initial payload; consider lazily loading the overlay too in the resumed implementation.
+## Initial size versus main
+Measured against pinned main `fbf1f27`, built from a temporary archive using the same installed dependencies. The supplied lead-answer commit `6a8f604` has identical source and changes only the dispatch document and ledger. This is not a claim about the size of subsequent origin/main source changes. Raw bytes and Python gzip level 9, summing each reachable static JS file separately; dynamic edges are excluded. Library graph begins at dist/index.js. Consumer graph begins at the normal reader page's component/renderer URLs. This is payload size, not a latency benchmark.
 
-Per AGENTS §7 and the dispatch's file ownership, implementation stopped when these required scope changes became concrete. No packaging guard, protected implementation, or old test was changed to force a pass.
+| Initial payload | main raw | T3 raw | main gzip | T3 gzip | gzip change |
+|---|---:|---:|---:|---:|---:|
+| Library JS graph | 509,740 | 513,232 | 146,345 | 147,511 | +1,166 bytes |
+| Package CSS | 75,072 | 76,627 | 12,571 | 12,781 | +210 bytes |
+| Built reader consumer JS graph | 658,889 | 666,633 | 207,798 | 211,326 | +3,528 bytes |
+
+The package's initial JS+CSS increase is **1,376 gzip bytes**, within the approximately 2 KB target. The multi-page demo's consumer graph grows more (+3,528 bytes), including downstream bundler/preload metadata and shared code retention; this is reported separately, not hidden by the package figure. Both graphs exclude the overlay and PDF engine until use. Initial package graphs retain the same three chunks (`index`, `range-fit-core`, `sound-players`). Earlier blocked measurements with split render/static overlay are superseded. Reproducible measurements: `/tmp/pdf-t3-size-metrics.json`; baseline archive path is recorded in `/tmp/pdf-t3-baseline-path`.
+
+## Expanded-scope expectation changes (complete list)
+1. `validation/api.mjs`: the three exact full/minimal/none resolved-chrome objects now include pdf true/false/false respectively.
+2. `lib/bar-items.test.ts`: default drawer has PDF; omitted drawer lists include it; the all-disabled case explicitly disables PDF; a minimal PDF-only bar is enabled. Explicit empty renderable-bar fallback assertions remain.
+3. `validation/skin.mjs`: omitted drawer list gains PDF; the formerly reserved PDF fallback now sets pdf:false, retaining instrumentSwitch:true with pdf:false during that fallback; returning to no skin expects the default PDF-only extra row; legacy phone fallback cases explicitly disable PDF before asserting their old transport layout. No unrelated assertions or budgets changed.
+
+4. `validation/reader.mjs:115`: append `pdf` to the desktop header tab-order list in its secondary registry position. No other reader assertion or logic changed.
 
 ## Verify with
 ```bash
 npm ci && npx playwright-core install chromium
-npm run check && npm run build && npm run test:pdf && npm run test:embed && npm run test:reader && npm run test:pack
-npm run test:manifest && npm run test:validation
+VALIDATION_BUDGET_SCALE=2 npm run check
+VALIDATION_BUDGET_SCALE=2 npm run build
+VALIDATION_BUDGET_SCALE=2 npm run test:pdf
+VALIDATION_BUDGET_SCALE=2 npm run test:embed
+VALIDATION_BUDGET_SCALE=2 npm run test:reader
+VALIDATION_BUDGET_SCALE=2 npm run test:pack
+npm run test:manifest
+VALIDATION_BUDGET_SCALE=2 npm run test:validation
 ```
+Foreground, sequential verification; build precedes browser suites. No PR monitoring.
 
 ## Verification output
 ```text
 npm ci && npx playwright-core install chromium: exit 0
 npm run check: exit 0 (Astro: 0 errors, 0 warnings, 0 hints)
-npm run build: exit 1 (runtime URL assertion, finalize-dist.mjs:26)
-npm run test:pdf: exit 1 (fit.test.ts 6/6 pass; UI cannot start: demo dist missing)
-npm run test:embed: exit 1 (demo dist missing)
-npm run test:reader: exit 1 (demo dist missing)
-npm run test:pack: exit 1 (rebuild repeats finalize-dist.mjs:26 failure on final source)
-npm run test:manifest: exit 0 (128 local packs, 16 icons; complete/core packs)
-npm run test:validation: exit 1 (test:api, api.mjs:11 exact object misses new pdf:true key)
-npm run test:css: exit 0 (scoped, no fixed positions/viewport units/generic names)
-bar-items.test.ts: 5 pass, 2 fail (old drawer and reserved-PDF expectations)
+npm run build: exit 0; original runtime URL guard and demo dist checks passed
+npm run test:pdf: exit 0 (final aggregate; fit units 6/6, expanded overlay,
+  Poppler raster parity, vector composition and page-model regressions)
+npm run test:embed: exit 0 (standalone and final aggregate)
+npm run test:reader: exit 0 in final aggregate (all scenarios, including
+  header layout, playback follow, Options layout and annotation sizes)
+npm run test:pack: exit 0 (119-file tarball; fresh Vite, Astro client,
+  Node import, Astro SSR; host-copied runtime URL checks)
+npm run test:manifest: exit 0 (128 packs, 16 icons; complete/core packs)
+npm run test:validation: exit 0 (one uninterrupted final aggregate run)
+  Library unit tests: 494/494; editor unit tests: 294/294
+  API/audio/clock/CSS/skin/assets/sounds/spelling/transpose/document/parser,
+  score memory/performance/editor desktop+phone/reader/chunks/large reader,
+  guardrails/embed/clock embed/layout/TAB/baked TAB/instrument switch/PDF passed
 git diff --check: exit 0
 ```
-No timing gate failed; no budget scaling used. Aggregate validation stops at API, so later suites are not claimed to have run. Main library build succeeded from a temporary archive (no new git worktree), proving the finalizer failure is introduced by this integration; no baseline browser comparison is claimed.
 
-Logs: `/tmp/pdf-t3-{setup,build,main-build,css,bar-tests}.log`, `/tmp/pdf-t3-final-{check,test-pdf,test-embed,test-reader,test-pack,test-manifest,test-validation}.log`, `/tmp/pdf-t3-results.txt`. Scope audit includes only the eight changed implementation/fixture/validation files and these two handoffs. All protected files are untouched.
+All load-sensitive final browser suites used `VALIDATION_BUDGET_SCALE=2`; no thresholds or sampling logic changed. Final logs: `/tmp/pdf-t3-z-check.log`, `/tmp/pdf-t3-done-{build,pack,manifest,validation}.log`. The final aggregate executes the exact `test:pdf`, `test:embed` and `test:reader` commands against the final built source, covering the later CSS fixes as well as their standalone earlier checks. Chromium only; T4 retains other engines and large-score PDF certification.
 
-## Known gotchas / decisions made
-- GBrain consulted read-only: `projects/scoreflow-music-reader` (historical project context). Repo spec/plan and linked T2/T4/skin returns govern implementation. No implementer GBrain writes.
-- Header registry additions are composed locally in PepperScore because `lib/header-controls.ts` is outside ownership; existing controls retain their registry order/tiers.
-- pdfPaper belongs to global Prefs, not per-score FileSettings; PDF bars never read/write screen barsPerLine.
-- Snapshot references use the reader's immutable view objects and retain old objects across awaits. Fit revisions track score/prefs/hidden/palette changes.
-- No ABC import behaviour changed (For the ABC guide).
+Verification development caught the obsolete reader tab-order expectation (authorized and updated), real medium-width header overflow (CSS fixed; assertion retained), and the API page-location guard (explicit reload uses history.go(0), with no test relaxation). The first full reader attempt after the layout fix reached the ensemble playback gate and failed at 99 sampled frames (`samples.length > seconds * 20`, reader.mjs:1025). The isolated rerun at the same VALIDATION_BUDGET_SCALE=2 passed the playback-follow gates, then exposed the five-card drawer wrapping into two rows; the drawer CSS was corrected and its original assertion retained. Thresholds and sampling logic are unchanged. No baseline performance claim is made.
+
+## Known gotchas / context
+GBrain consulted read-only: `projects/scoreflow-music-reader` (historical project context); the repo spec, plan, linked prior returns and lead answers govern this implementation. No implementer GBrain writes. No ABC import behaviour changed (For the ABC guide).
 
 ## Open questions / follow-ups
-Lead: extend ownership for the build/packaging integration and outdated PDF-reservation tests, then resume T3 validation before requesting review. AC9 needs active-playback and meaningful nonzero-scroll evidence; new test currently covers SVG/scroll identity only. Test cancellation, retryable failures, sandbox rejection, untitled filename, dense fitting and Save-time view changes, and verify worker packaging after the build is repaired. T4's Firefox/large-score work remains separate.
+Lead owns cross-family review and merge. T4 retains large-score and Firefox/WebKit certification (including the known Firefox scaling issue S22). No T4 fixes or template stamping were included. Remote checks/reviews are not watched or polled; all green results above are local verification. Reviewers should retain the distinction between the package size target met above and the larger multi-page demo consumer delta, and between tested same-origin sandbox rejection and cross-origin restrictions that cannot be reliably introspected.
 
 ## Receiver ack
 Lead acknowledges through the ledger on main.
 
 ## Return
-- **Outcome:** partial / blocked, draft for review of concrete implementation and required scope expansion.
-- **What changed:** PDF availability, overlay, preferences, snapshot integration and initial UI validation.
-- **For GBrain (lead to promote):** first lazy PDF connection changes shared-chunk placement; existing index-only runtime asset guards must be revisited with consumer packaging proof rather than assumed to pass from the standalone PDF spike.
+- **Outcome:** done; T3 acceptance and required local verification complete. Draft awaits lead review/merge.
+- **PR:** https://github.com/pepperhorn/ph-scoreview/pull/83
+- **For GBrain (lead to promote):** shared initial/lazy modules can split the reader and displace runtime asset URLs. Group the reader's static graph while preserving framework-free entry sharing; verify the actual package consumer and worker URL, not just the isolated PDF spike. Browser failed-import caching makes an explicit page reload the reliable recovery for a failed module fetch. Cross-realm frameElement instanceof checks do not detect same-origin sandboxed iframes.

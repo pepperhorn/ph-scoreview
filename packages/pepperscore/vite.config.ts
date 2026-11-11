@@ -19,6 +19,30 @@ const RUNTIME_FILE_URL = /new URL\(\s*(?:\/\*\s*@vite-ignore\s*\*\/\s*)?((["'`])
  * licence comment, next to a LICENSE, and the worker imports them at runtime (replaceable through `verovioBaseUrl`).
  * THIRD_PARTY_NOTICES.txt covers the runtime dependencies, Verovio and the fonts.
  */
+// Keep the reader's static graph in its entry, including host-resolvable runtime URLs.
+// Leave modules also needed by framework-free audio/instruments to automatic sharing;
+// following importedIds (not dynamicallyImportedIds) keeps PDF entirely lazy.
+const readerModules = new Set<string>();
+const readerChunk: Plugin = {
+  name: 'reader-chunk',
+  buildEnd() {
+    const ids = [...this.getModuleIds()];
+    const collect = (suffix: string) => {
+      const found = new Set<string>();
+      const walk = (id: string) => {
+        const info = this.getModuleInfo(id);
+        if (!info || info.isExternal || found.has(id)) return;
+        found.add(id);
+        info.importedIds.forEach(walk);
+      };
+      const entry = ids.find(id => id.endsWith('/packages/pepperscore/src/' + suffix));
+      if (entry) walk(entry);
+      return found;
+    };
+    const shared = new Set([...collect('audio.ts'), ...collect('instruments.ts')]);
+    for (const id of collect('index.ts')) if (!shared.has(id)) readerModules.add(id);
+  },
+};
 const runtimeFiles: Plugin = {
   name: 'pepperscore-runtime-files',
   apply: 'build',
@@ -46,7 +70,7 @@ const runtimeFiles: Plugin = {
 /** Library mode: three ESM entries, one stylesheet, the two workers as separate chunks, and the runtime files above. */
 export default defineConfig({
   base: './',
-  plugins: [runtimeFiles],
+  plugins: [runtimeFiles, readerChunk],
   build: {
     // Three entries: the reader (index.js), the framework-free audio engine (audio.js, `pepperscore/audio`) and the
     // framework-free instrument model (instruments.js, `pepperscore/instruments`). Code the entries share
@@ -57,7 +81,10 @@ export default defineConfig({
     emptyOutDir: true,
     sourcemap: true,
     target: 'es2022',
-    rollupOptions: { external: id => externals.some(dep => id === dep || id.startsWith(`${dep}/`)) },
+    rollupOptions: { preserveEntrySignatures: 'allow-extension', external: id => externals.some(dep => id === dep || id.startsWith(`${dep}/`)),
+      // allow-extension permits private exports from the reader to its lazy PDF chunks.
+      output: { codeSplitting: { groups: [{ name: 'reader', test: id => readerModules.has(id), includeDependenciesRecursively: false }] } },
+    },
   },
   worker: { format: 'es', rolldownOptions: { output: { codeSplitting: false } } },
 });

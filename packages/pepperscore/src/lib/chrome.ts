@@ -27,7 +27,7 @@ export type ResolvedChrome = {
  * Open button, file input, open dialog and reopen offer; `mixer` the mixer and the part icons / instrument picker / stave
  * eyes; `zoom` the stave-scale slider, pinch zoom and the page arrows row; `drawer` the bottom drawer and its handle;
  * `tabToggle` the Notation / TAB / Both switch (header and drawer); `instrumentSwitch` the instrument switcher;
- * `octaveTool` the octave tool. Each defaults to on for `full`, off otherwise.
+ * `octaveTool` the octave tool; `pdf` the export button and overlay. Each defaults to on for `full`, off otherwise.
  */
 export function resolveChrome(preset: ChromePreset = 'full', controls: PepperScoreControls = {}, bar?: BarItemId[] | null, renderableBar: BarItemId[] | null | undefined = bar?.filter(id => id !== 'pitchColours')): ResolvedChrome {
   const composed = preset !== 'none' && Boolean(renderableBar?.length);

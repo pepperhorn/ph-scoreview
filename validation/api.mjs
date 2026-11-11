@@ -7,11 +7,11 @@ import { readFileSync } from 'node:fs';
 import { ANNOTATION_SCALE, ANNOTATION_SIZES, defaults, sanitizeSavedPrefs, settingsToPrefs, viewToMode } from '../packages/pepperscore/src/lib/prefs.ts';
 import { nearestNote, noteInBox } from '../packages/pepperscore/src/lib/hit-test.ts';
 
-const all = { header: true, transport: true, viewToggle: true, openFile: true, mixer: true, drawer: true, zoom: true, tabToggle: true, instrumentSwitch: true, octaveTool: true, compactPlay: false, playhead: true, partControls: true, audio: true };
+const all = { header: true, transport: true, viewToggle: true, openFile: true, mixer: true, drawer: true, zoom: true, tabToggle: true, instrumentSwitch: true, octaveTool: true, pdf: true, compactPlay: false, playhead: true, partControls: true, audio: true };
 assert.deepEqual(resolveChrome(), all, 'full is the default');
 assert.deepEqual(resolveChrome('full'), all);
-assert.deepEqual(resolveChrome('minimal'), { header: false, transport: false, viewToggle: false, openFile: false, mixer: false, drawer: false, zoom: false, tabToggle: false, instrumentSwitch: false, octaveTool: false, compactPlay: true, playhead: true, partControls: false, audio: true });
-assert.deepEqual(resolveChrome('none'), { header: false, transport: false, viewToggle: false, openFile: false, mixer: false, drawer: false, zoom: false, tabToggle: false, instrumentSwitch: false, octaveTool: false, compactPlay: false, playhead: false, partControls: false, audio: false });
+assert.deepEqual(resolveChrome('minimal'), { header: false, transport: false, viewToggle: false, openFile: false, mixer: false, drawer: false, zoom: false, tabToggle: false, instrumentSwitch: false, octaveTool: false, pdf: false, compactPlay: true, playhead: true, partControls: false, audio: true });
+assert.deepEqual(resolveChrome('none'), { header: false, transport: false, viewToggle: false, openFile: false, mixer: false, drawer: false, zoom: false, tabToggle: false, instrumentSwitch: false, octaveTool: false, pdf: false, compactPlay: false, playhead: false, partControls: false, audio: false });
 assert.deepEqual(resolveChrome('full', { mixer: false, openFile: false }), { ...all, mixer: false, openFile: false, partControls: false });
 const minimalWithToggle = resolveChrome('minimal', { viewToggle: true });
 assert.equal(minimalWithToggle.header, true); assert.equal(minimalWithToggle.compactPlay, true);

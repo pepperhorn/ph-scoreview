@@ -29,7 +29,7 @@ export function warnUnknownBar(skin?: PepperScoreSkin) {
   }
 }
 
-/** Only the six missing drawer actions; null preserves the legacy drawer exactly. */
+/** Missing bar actions, plus PDF in the default drawer. Explicit false controls stay hidden. */
 export function drawerExtras(bar: BarItemId[] | null, chrome: ResolvedChrome): BarItemId[] {
   if (bar === null) return chrome.pdf ? ['pdf'] : [];
   return (['stop', 'viewToggle', 'bars', 'zoom', 'mixer', 'openFile', 'pdf'] as const)

@@ -1,12 +1,28 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ExportRequest } from '../lib/pdf/export';
-import { annotationLayout } from '../lib/render';
-import { BARS_PER_LINE_MAX, clampBarsPerLine, type Prefs } from '../lib/prefs';
+import type { Score } from '../lib/score';
+import type { PitchColourPaint } from '../lib/pitch-colours';
+import { verovioBaseline } from '../lib/verovio-runtime';
+import { annotationLayout, planStaves } from '../lib/render';
+import { ANNOTATION_SCALE, BARS_PER_LINE_MAX, clampBarsPerLine, type Prefs } from '../lib/prefs';
 
 type Snapshot = Omit<ExportRequest, 'options'>;
+export type PdfCapture = { score: Score; prefs: Prefs; hiddenPartIds: string[]; channel: number; pitchColours?: PitchColourPaint };
+async function prepareSnapshot({ score, prefs: saved, hiddenPartIds, channel, pitchColours }: PdfCapture): Promise<Snapshot> {
+  if (!score.document) throw new Error('This score has no engraving document.');
+  const hidden = new Set(hiddenPartIds);
+  const info = await verovioBaseline(score.document, channel);
+  const planned = planStaves(info, score, hidden, { view: saved.tabView, tuning: saved.tabTuning, capo: saved.capo });
+  return { score, input: { data: score.document.engravingText, view: { breakEvery: 0, hiddenStaves: planned.hiddenStaves,
+    spelling: planned.spelling, chordSymbols: saved.chordSymbols, ...(planned.tabPlan.spec ? { tab: planned.tabPlan.spec } : {}) } },
+    visiblePartIds: planned.visibleParts.map(part => part.id), tabAliases: planned.tabAlias, tabStaves: planned.tabStaves, pitchColours,
+    annotations: { showNames: saved.names, showCounts: saved.counts, subdivisions: saved.subdivisions,
+      showChordSymbols: saved.chordSymbols, inferChordSymbols: saved.inferChordSymbols,
+      scale: { names: ANNOTATION_SCALE[saved.namesSize], chordSymbols: ANNOTATION_SCALE[saved.chordSymbolsSize], counts: ANNOTATION_SCALE[saved.countsSize], subdivisions: ANNOTATION_SCALE[saved.subdivisionsSize] } } };
+}
 export default function PdfOverlay({ paper, onPaper, snapshot, revision, font, verovioBaseUrl, onClose }: {
   paper: Prefs['pdfPaper']; onPaper: (paper: Prefs['pdfPaper']) => void;
-  snapshot: () => Promise<Snapshot>; revision: unknown; font: string; verovioBaseUrl?: string; onClose: () => void;
+  snapshot: () => PdfCapture; revision: unknown; font: string; verovioBaseUrl?: string; onClose: () => void;
 }) {
   const [bars, setBars] = useState(4), [busy, setBusy] = useState(false);
   const [fit, setFit] = useState('Checking fit…'), [error, setError] = useState('');
@@ -35,7 +51,7 @@ export default function PdfOverlay({ paper, onPaper, snapshot, revision, font, v
     setFit('Checking fit…');
     void (async () => {
       try {
-        const request = await snapshotRef.current();
+        const request = await prepareSnapshot(snapshotRef.current());
         controller.signal.throwIfAborted();
         const { engravePages } = await import('../lib/pdf/engrave');
         const visible = request.score.parts.filter(part => !request.visiblePartIds || request.visiblePartIds.includes(part.id));
@@ -55,13 +71,15 @@ export default function PdfOverlay({ paper, onPaper, snapshot, revision, font, v
     const controller = new AbortController(); save.current = controller;
     setBusy(true); setError('');
     try {
-      const request = await snapshotRef.current();
+      // frameElement belongs to the parent's realm; instanceof against this window's
+      // HTMLIFrameElement is false even for a same-origin embed.
+      const frame = window.frameElement as HTMLIFrameElement | null;
+      if (frame?.hasAttribute('sandbox') && !frame.sandbox.contains('allow-downloads')) throw new Error('Downloads are blocked by this embed. Open the score outside the embed or enable downloads.');
+      const request = await prepareSnapshot(snapshotRef.current());
       controller.signal.throwIfAborted();
       const { exportScore } = await import('../lib/pdf/export');
       const blob = await exportScore({ ...request, options: { paper, maxBars: bars, font, files } }, controller.signal);
       controller.signal.throwIfAborted();
-      const frame = window.frameElement;
-      if (frame instanceof HTMLIFrameElement && frame.hasAttribute('sandbox') && !frame.sandbox.contains('allow-downloads')) throw new Error('Downloads are blocked by this embed. Open the score outside the embed or enable downloads.');
       const url = URL.createObjectURL(blob), anchor = document.createElement('a');
       anchor.href = url;
       anchor.download = `${request.score.title?.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'score'}.pdf`;
@@ -80,7 +98,7 @@ export default function PdfOverlay({ paper, onPaper, snapshot, revision, font, v
       <label className="pdf-field">Bars per line<input type="number" min={1} max={BARS_PER_LINE_MAX} value={bars} disabled={busy} onChange={event => setBars(clampBarsPerLine(Number(event.target.value) || 1))}/></label>
       <p className="pdf-fit" role="status">{busy ? 'Building PDF…' : fit}</p>
       {error && <p className="pdf-error" role="alert">{error}</p>}
-      <div className="pdf-actions"><button type="button" onClick={onClose}>Cancel</button><button type="button" disabled={busy} onClick={() => void download()}>Save</button></div>
+      <div className="pdf-actions"><button type="button" onClick={onClose}>Cancel</button>{error && <button type="button" onClick={() => window.history.go(0)}>Reload page</button>}<button type="button" disabled={busy} onClick={() => void download()}>Save</button></div>
     </section>
   </div>;
 }

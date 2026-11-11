@@ -40,3 +40,15 @@ Build before browser suites; under load rerun timing gates with `VALIDATION_BUDG
 ## Receiver ack
 
 Acknowledged 2026-11-11 (Codex). I will add the PDF control and themed, cancellable overlay within the declared files; use lazy PDF imports, remembered paper and local bars; snapshot the current planned view and active pitch palette on Save; verify unused-feature chunk separation and reader state preservation. No changes to PDF internals, notation, TAB, rendering, ledger or unrelated docs. Base 299d463 is an ancestor and the worktree is clean. GBrain consulted: projects/scoreflow-music-reader (historical context); repo spec/plan and linked returns govern this task. No open scope questions.
+
+---
+## Lead answers (2026-11-11, after blocked return at ca7fec8)
+1. **Build/packaging:** you now also own `packages/pepperscore/vite.config.ts`, `packages/pepperscore/scripts/finalize-dist.mjs`, and `packages/pepperscore/src/lib/verovio-runtime.ts` / any `runtime-files` module, for this one purpose: keep runtime asset URLs (`new URL(…, import.meta.url)` for Verovio files etc.) resolvable by hosts after the lazy PDF chunk is connected. Prefer fixing chunking (e.g. keep the runtime-files module in the entry chunk via `manualChunks`/output options) over loosening the finalizer. If the guard must change, it must still prove the same thing for every chunk that carries runtime URLs, and `npm run test:pack` (consumer install) plus host-copied URL checks must pass. Don't touch `lib/pdf/**` or `lib/render.ts` (0013-T3 owns them); if a fix needs them, stop and ask.
+2. **Outdated tests:** you now own `validation/api.mjs`, `packages/pepperscore/src/lib/bar-items.test.ts` and `validation/skin.mjs` for updating expectations that assume PDF is reserved/unrenderable or that the drawer has no PDF action. Only those expectations; list each change in the return handoff.
+3. **AC2 meaning:** no PDF engine, worker or PDF libraries (jsPDF, svg2pdf, fonts) in the initial graph, and the overlay itself lazy-loaded too, so the initial payload grows only by the button/registry wiring. Measure and record initial raw + gzip size vs main (target: under ~2 KB gzip increase) and show no `lib/pdf` chunk is fetched before the button is clicked.
+Continue the original handoff and finish the remaining AC9 evidence (active playback + nonzero scroll), cancellation, failure, untitled filename and worker-packaging checks.
+
+Acknowledged: resuming within the expanded packaging and expectation-only test scope; AC2 includes lazy overlay and initial gzip measurement.
+
+### Additional lead answer (2026-11-11, reader verification)
+The user expanded ownership to `validation/reader.mjs` for the header tab-order expectation at approximately line 115 (add PDF in registry position) and any other assertion that only changes because PDF now exists. No other changes in that file; enumerate each in the return. Acknowledged.
