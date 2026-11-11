@@ -571,21 +571,45 @@ async function assertPdfOverlay(browser) {
     assert.equal(await dialog.getByLabel('Paper size').inputValue(), 'a4');
     assert.equal(await dialog.getByLabel('Bars per line').inputValue(), '4');
     assert.ok(before.scroll > 0, 'nonzero reader scroll is exercised');
+    // Reader A's dialog must not intercept keys focused in reader B.
+    await minimal.locator('.pdf-trigger').focus();
+    await page.keyboard.press('Tab');
+    assert.ok(await minimal.evaluate(el => el.contains(document.activeElement)), 'Tab in reader B stays in reader B');
+    assert.equal(await dialog.count(), 1, 'reader A remains open after Tab in B');
+    await minimal.locator('.skin-options').click();
+    await minimal.getByRole('switch', {name:'Note names',exact:true}).focus();
+    await page.keyboard.press('Escape');
+    assert.equal(await minimal.locator('.skin-options').getAttribute('aria-expanded'), 'false', 'reader B receives its own Escape');
+    assert.equal(await dialog.count(), 1, 'Escape in reader B leaves reader A open');
+    const barsInput = dialog.getByLabel('Bars per line');
+    await barsInput.fill('');
+    assert.equal(await barsInput.inputValue(), '', 'bars draft can be cleared');
+    await barsInput.fill('6');
+    assert.equal(await barsInput.inputValue(), '6', 'typing after clearing does not prepend 1');
+    await barsInput.press('Tab');
+    await barsInput.fill('99');
+    await barsInput.press('Tab');
+    assert.equal(await barsInput.inputValue(), '8', 'blur clamps to the allowed range');
+    await barsInput.fill('4');
+    await barsInput.press('Tab');
     await dialog.getByRole('button', { name: 'Save', exact: true }).focus();
     await page.keyboard.press('Tab');
     assert.equal(await dialog.getByLabel('Paper size').evaluate(el => el === document.activeElement), true, 'focus wraps');
     await dialog.getByLabel('Paper size').selectOption('a3');
     await dialog.getByLabel('Bars per line').fill('2');
+    await dialog.getByLabel('Bars per line').press('Tab');
     await page.waitForFunction(() => !document.querySelector('.pdf-fit')?.textContent.includes('Checking'));
     assert.match(await dialog.getByRole('status').innerText(), /fewer than 2 bars on A3/);
     await dialog.getByRole('button', { name: 'Cancel' }).click();
     await full.locator('.pdf-trigger').click();
     assert.equal(await dialog.getByLabel('Paper size').inputValue(), 'a3');
     assert.equal(await dialog.getByLabel('Bars per line').inputValue(), '4');
+    await dialog.getByLabel('Bars per line').fill('99');
     const downloadPromise = page.waitForEvent('download');
     await dialog.getByRole('button', { name: 'Save', exact: true }).click();
     const download = await downloadPromise;
     assert.equal(download.suggestedFilename(), 'skin-fixture.pdf');
+    assert.equal(await page.evaluate(() => window.__pdfWorkers.filter(w => /engrave/.test(w.url)).at(-1).message.opts.maxBars), 8, 'Save uses a clamped bars draft');
     const bytes = readFileSync(await download.path());
     const pdf = await PDFDocument.load(bytes);
     assert.ok(Math.abs(pdf.getPage(0).getWidth() * 25.4 / 72 - 297) < .001, 'remembered A3 used in actual bytes');
@@ -667,6 +691,32 @@ async function assertPdfOverlay(browser) {
     await full.locator('.pdf-trigger').click();
     assert.equal(await dialog.getByLabel('Paper size').inputValue(), 'a4', 'paper survives reload');
     await dialog.getByRole('button', { name: 'Cancel' }).click();
+    // Exercise the overlay-to-composition palette boundary using actual downloaded bytes.
+    // Paint is applied after engraving, so it intentionally is not part of the worker message.
+    await page.evaluate(() => {
+      const pitches = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+      window.__skin.setSkin({bar:['pdf'],pitchColours:Object.fromEntries(pitches.map(pitch => [pitch,'#336699']))});
+      window.__skin.setSettings({pitchColours:true});
+    });
+    await page.waitForFunction(() => document.querySelector('.skin-reader').hasAttribute('data-ps-pitch-colours'));
+    const hasPaletteFill = async download => {
+      const pdf = await PDFDocument.load(readFileSync(await download.path()));
+      return pdf.getPages().some(page => {
+        const contents = page.node.Contents();
+        const streams = typeof contents.size === 'function' ? Array.from({length:contents.size()},(_,i)=>contents.lookup(i)) : [contents];
+        return streams.some(stream => [...new TextDecoder().decode(decodePDFRawStream(stream).decode()).matchAll(/([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+rg\b/g)]
+          .some(match => [51,102,153].every((value,index) => Math.abs(Number(match[index+1])-value/255) < .002)));
+      });
+    };
+    for (const on of [true,false]) {
+      await page.evaluate(on => window.__skin.setSettings({pitchColours:on}), on);
+      await page.waitForFunction(on => document.querySelector('.skin-reader').hasAttribute('data-ps-pitch-colours') === on, on);
+      await full.locator('.pdf-trigger').click();
+      const colourDownload = page.waitForEvent('download');
+      await dialog.getByRole('button',{name:'Save',exact:true}).click();
+      assert.equal(await hasPaletteFill(await colourDownload), on, `overlay export ${on ? 'carries' : 'omits'} the active pitch palette`);
+    }
+    console.log('PDF r1: reader-local Tab/Escape, draft bars/blur/Save clamping and actual overlay palette on/off passed');
     const chunkPage = await browser.newPage();
     chunkPage.setDefaultTimeout(60000);
     try {

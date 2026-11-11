@@ -506,3 +506,7 @@
 .pepperscore .pdf-actions button{min-height:40px;padding:8px 16px;border:1px solid var(--ps-border,#dfe6dc);border-radius:8px;background:var(--ps-surface,#fff);color:var(--ps-accent,#345642);font:inherit;font-size:13px}
 /* The extra PDF/playback card must share the desktop row with the existing options. */
 .pepperscore .drawer-grid:has(>.playback-view-panel){grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr))}
+.pepperscore .pdf-trigger-icon{display:none}
+/* PDF remains a secondary action; its compact icon leaves slack above the More breakpoint. */
+@container pepperscore (min-width:761px) and (max-width:900px){.pepperscore .topbar:not(.skin-topbar):has(.header-control-pdf) .transport{gap:3px}.pepperscore .topbar:not(.skin-topbar) .pdf-trigger{width:24px}.pepperscore .topbar:not(.skin-topbar) .pdf-trigger-icon{display:block}.pepperscore .topbar:not(.skin-topbar) .pdf-trigger-label{display:none}}
+.pepperscore .pdf-actions .pdf-save{background:var(--ps-accent,#345642);color:var(--ps-on-accent,#fff);border-color:var(--ps-accent,#345642)}

@@ -25,6 +25,13 @@ export default function PdfOverlay({ paper, onPaper, snapshot, revision, font, v
   snapshot: () => PdfCapture; revision: unknown; font: string; verovioBaseUrl?: string; onClose: () => void;
 }) {
   const [bars, setBars] = useState(4), [busy, setBusy] = useState(false);
+  const [barsDraft, setBarsDraft] = useState('4');
+  const commitBars = () => {
+    const number = Number(barsDraft);
+    const next = barsDraft.trim() && Number.isFinite(number) ? clampBarsPerLine(number) : bars;
+    setBars(next); setBarsDraft(String(next));
+    return next;
+  };
   const [fit, setFit] = useState('Checking fit…'), [error, setError] = useState('');
   const panel = useRef<HTMLElement>(null), measure = useRef<AbortController | null>(null), save = useRef<AbortController | null>(null);
   const snapshotRef = useRef(snapshot); snapshotRef.current = snapshot;
@@ -34,17 +41,21 @@ export default function PdfOverlay({ paper, onPaper, snapshot, revision, font, v
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     panel.current?.querySelector<HTMLElement>('select')?.focus({ preventScroll: true });
-    const keys = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeRef.current(); }
-      if (event.key !== 'Tab') return;
-      const items = Array.from(panel.current?.querySelectorAll<HTMLElement>('button:not(:disabled),select:not(:disabled),input:not(:disabled),a[href]') ?? []);
-      const first = items[0], last = items.at(-1);
-      if (event.shiftKey && (document.activeElement === first || !panel.current?.contains(document.activeElement))) { event.preventDefault(); last?.focus(); }
-      else if (!event.shiftKey && (document.activeElement === last || !panel.current?.contains(document.activeElement))) { event.preventDefault(); first?.focus(); }
+    const owner = panel.current?.closest('.pepperscore');
+    return () => {
+      measure.current?.abort(); save.current?.abort();
+      const active = document.activeElement;
+      if (previous?.isConnected && (active === document.body || (active && owner?.contains(active)))) previous.focus({ preventScroll: true });
     };
-    document.addEventListener('keydown', keys, true);
-    return () => { document.removeEventListener('keydown', keys, true); measure.current?.abort(); save.current?.abort(); if (previous?.isConnected) previous.focus({ preventScroll: true }); };
   }, []);
+  const onKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); return; }
+    if (event.key !== 'Tab') return;
+    const items = Array.from(panel.current?.querySelectorAll<HTMLElement>('button:not(:disabled),select:not(:disabled),input:not(:disabled),a[href]') ?? []);
+    const first = items[0], last = items.at(-1);
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+  };
   useEffect(() => {
     if (busy) return;
     const controller = new AbortController(); measure.current = controller;
@@ -67,6 +78,8 @@ export default function PdfOverlay({ paper, onPaper, snapshot, revision, font, v
     return () => controller.abort();
   }, [paper, bars, font, verovioBaseUrl, revision, busy]);
   const download = async () => {
+    const maxBars = commitBars();
+    panel.current?.querySelector<HTMLButtonElement>('.pdf-cancel')?.focus({ preventScroll: true });
     measure.current?.abort();
     const controller = new AbortController(); save.current = controller;
     setBusy(true); setError('');
@@ -78,7 +91,7 @@ export default function PdfOverlay({ paper, onPaper, snapshot, revision, font, v
       const request = await prepareSnapshot(snapshotRef.current());
       controller.signal.throwIfAborted();
       const { exportScore } = await import('../lib/pdf/export');
-      const blob = await exportScore({ ...request, options: { paper, maxBars: bars, font, files } }, controller.signal);
+      const blob = await exportScore({ ...request, options: { paper, maxBars, font, files } }, controller.signal);
       controller.signal.throwIfAborted();
       const url = URL.createObjectURL(blob), anchor = document.createElement('a');
       anchor.href = url;
@@ -90,15 +103,15 @@ export default function PdfOverlay({ paper, onPaper, snapshot, revision, font, v
     finally { if (!controller.signal.aborted) setBusy(false); }
   };
   return <div className="pdf-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
-    <section ref={panel} className="pdf-panel" role="dialog" aria-modal="true" aria-label="Export PDF" aria-busy={busy}>
+    <section ref={panel} className="pdf-panel" role="dialog" aria-modal="true" aria-label="Export PDF" aria-busy={busy} onKeyDown={onKeyDown}>
       <h2>Export PDF</h2>
-      <label className="pdf-field">Paper size<select value={paper} disabled={busy} onChange={event => onPaper(event.target.value as Prefs['pdfPaper'])}>
+      <label className="pdf-field">Paper size<select className="pdf-paper" value={paper} disabled={busy} onChange={event => onPaper(event.target.value as Prefs['pdfPaper'])}>
         <option value="a4">A4</option><option value="a3">A3</option><option value="letter">Letter</option><option value="legal">Legal</option>
       </select></label>
-      <label className="pdf-field">Bars per line<input type="number" min={1} max={BARS_PER_LINE_MAX} value={bars} disabled={busy} onChange={event => setBars(clampBarsPerLine(Number(event.target.value) || 1))}/></label>
+      <label className="pdf-field">Bars per line<input className="pdf-bars" type="number" min={1} max={BARS_PER_LINE_MAX} value={barsDraft} disabled={busy} onChange={event => setBarsDraft(event.target.value)} onBlur={commitBars}/></label>
       <p className="pdf-fit" role="status">{busy ? 'Building PDF…' : fit}</p>
       {error && <p className="pdf-error" role="alert">{error}</p>}
-      <div className="pdf-actions"><button type="button" onClick={onClose}>Cancel</button>{error && <button type="button" onClick={() => window.history.go(0)}>Reload page</button>}<button type="button" disabled={busy} onClick={() => void download()}>Save</button></div>
+      <div className="pdf-actions"><button type="button" className="pdf-cancel" onClick={onClose}>Cancel</button>{error && <button type="button" className="pdf-reload" onClick={() => window.history.go(0)}>Reload page</button>}<button type="button" className="pdf-save" disabled={busy} onClick={() => void download()}>Save</button></div>
     </section>
   </div>;
 }

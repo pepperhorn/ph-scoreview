@@ -7,7 +7,7 @@
 - **Branch:** orch/0002-t3-pdf-overlay
 - **Worktree:** /home/shaun/.t3/worktrees/ph-vexflow-view/t3-d1cdc39d-46ddba0ee7ed626a
 - **Base:** fbf1f27d17572cbba0c3882a1f7164ee51c88d4f (required 299d463 is an ancestor)
-- **Verified implementation commit:** 9112ba9 (the subsequent merge incorporates only the supplied docs-only lead-answer commit 6a8f604; no later main source changes). The dispatch conflict was resolved by retaining the receiver ack, supplied lead answers and user-authorized reader scope. Ledger changes are inherited from the lead commit, not feature edits.
+- **R0 verified implementation commit:** 9112ba9 (the subsequent merge incorporates only the supplied docs-only lead-answer commit 6a8f604; no later main source changes). The dispatch conflict was resolved by retaining the receiver ack, supplied lead answers and user-authorized reader scope. Ledger changes are inherited from the lead commit, not feature edits.
 - **Acknowledgement:** f6c1f48eb796ce5d5ef68ce74c443ae998018e1b
 - **PR:** https://github.com/pepperhorn/ph-scoreview/pull/83 (draft; no watching or polling)
 - **Port:** 5223 reserved; validation owns ephemeral servers; no persistent server
@@ -40,7 +40,7 @@ Expose PDF export through default full chrome, explicit controls and skin bars, 
 - pdfPaper is a global preference, not part of per-score FileSettings. PDF bars are local overlay state.
 - Failed module downloads require explicit page reload because the browser caches the failed module URL. Transient export/font failures can use Save again. Reload is never automatic.
 
-## Initial size versus main
+## Initial size versus main (r0 reviewed head)
 Measured against pinned main `fbf1f27`, built from a temporary archive using the same installed dependencies. The supplied lead-answer commit `6a8f604` has identical source and changes only the dispatch document and ledger. This is not a claim about the size of subsequent origin/main source changes. Raw bytes and Python gzip level 9, summing each reachable static JS file separately; dynamic edges are excluded. Library graph begins at dist/index.js. Consumer graph begins at the normal reader page's component/renderer URLs. This is payload size, not a latency benchmark.
 
 | Initial payload | main raw | T3 raw | main gzip | T3 gzip | gzip change |
@@ -110,3 +110,42 @@ Lead acknowledges through the ledger on main.
 - **Outcome:** done; T3 acceptance and required local verification complete. Draft awaits lead review/merge.
 - **PR:** https://github.com/pepperhorn/ph-scoreview/pull/83
 - **For GBrain (lead to promote):** shared initial/lazy modules can split the reader and displace runtime asset URLs. Group the reader's static graph while preserving framework-free entry sharing; verify the actual package consumer and worker URL, not just the isolated PDF spike. Browser failed-import caching makes an explicit page reload the reliable recovery for a failed module fetch. Cross-realm frameElement instanceof checks do not detect same-origin sandboxed iframes.
+
+## Review r1 response — 5855741268
+
+Review: https://github.com/pepperhorn/ph-scoreview/pull/83#pullrequestreview-5855741268, on `3d90d5d998f8809f964d8055503b849deeb04d24`.
+
+- **Firefox header:** PDF remains a secondary header item. At root widths 761–900px the legacy inline action uses a 24px-wide, 16px FileMusic icon; the accessible name remains Export PDF. The label/normal width return outside that interval, including in More. In this interval, PDF-enabled legacy headers use a 3px transport gap; headers without PDF and skin bars retain their spacing. A font-loaded Firefox probe after setting zoom to 100% measured a 721px transport plus 24px padding inside 761px (16px slack). Skin bars retain their existing composition. No reader assertion changed. Built-demo probes with Poppins blocked, JS on/off, measured 761/761 client/scroll widths in Chromium and Firefox.
+- **Keyboard scope:** removed the document capture listener. The dialog's own onKeyDown handles Escape and wraps Tab only from its first/last focusable element. Cleanup does not restore focus into A when focus is in another reader; Save focuses its own Cancel before disabling fields. The new /embed-skin two-reader regression focuses reader B, Tabs within it, and closes B's drawer with Escape while A's PDF dialog stays open. A's own Tab wrap/Escape checks remain.
+- **Bars draft:** keep an editable string, permit empty text, and clamp only on blur/Save. An empty commit restores the last valid bars value. Tests clear/type 6 without a prefixed 1, clamp 99 to 8 on blur, and verify the Save worker's maxBars is 8.
+- **Contextual classes:** pdf-save/pdf-cancel/pdf-reload, pdf-paper/pdf-bars; fallback Cancel/Reload also have classes. Save uses existing accent/onAccent theme roles for primary emphasis.
+- **Bundler cleanup:** readerModules clears at buildStart, entries resolve to absolute paths relative to this config rather than matching path suffixes, and comments identify the extra minified exports as private cross-chunk implementation links (including visibility to namespace/export-star consumers).
+- **Overlay pitch colours:** actual overlay downloads carry the supplied RGB palette with colours on and omit it with colours off. These assertions inspect PDF drawing operators. Pitch paint deliberately is not in the engraving worker message: the existing T2 pipeline applies it during composition after worker engraving. No protected PDF internals were changed.
+- **Scope:** PdfOverlay.tsx, PepperScore.tsx, styles.css, vite.config.ts, validation/pdf.mjs and this own return handoff only. No changes to validation/reader.mjs or its 761px assertion, PDF/render/notation/TAB internals, dependencies, CI, ledger or other docs.
+- **GBrain:** projects/scoreflow-music-reader consulted read-only; current review and repo docs govern these fixes. No implementer write-back.
+
+### r1 verification
+All requested checks passed locally before the single r1 push. Commands ran in the foreground, sequentially; browser timing gates used `VALIDATION_BUDGET_SCALE=2`. No reader assertion, timing threshold or scope guard was relaxed.
+
+```text
+npm run check: exit 0 (Astro: 0 errors, 0 warnings, 0 hints)
+npm run build: exit 0 (runtime URL and demo distribution guards unchanged)
+npm run test:pdf: exit 0 (full final build; fit 6/6, r1 reader-local
+  Tab/Escape, draft/blur/Save, actual palette on/off, existing overlay,
+  vector composition, Poppler raster parity and page-model checks)
+npm run test:embed: exit 0
+npm run test:reader (chromium): exit 0
+BROWSER=firefox npm run test:reader: exit 0
+npm run test:pack: exit 0 (fresh Vite, Astro client, Node and Astro SSR)
+npm run test:skin: exit 0 (including real phone control hit-tests)
+npm run test:css: exit 0
+git diff --check: exit 0
+```
+
+Final logs: `/tmp/pdf-r1-final-check.log`, `/tmp/pdf-r1-complete-pdf.log`, `/tmp/pdf-r1-r2-{build,embed,reader-chromium,reader-firefox,pack,skin,css}.log`. The earlier Chromium attempt reached the twelve-staff playback sampling gate and failed at 113 frames; the subsequent full Chromium run passed without changing its threshold. The first compact-icon Firefox attempt passed first-paint but found a 2px font-loaded inline overflow; the PDF-only spacing rule above fixed it, and the entire Firefox suite then passed. Final PDF checks were repeated after the last header CSS change.
+
+R1 initial package JS+CSS (same static graph and gzip-9 method as r0): baseline **584,812 raw / 158,916 gzip bytes**; r1 **590,623 raw / 160,407 gzip bytes**, **+1,491 gzip bytes** versus merge-base, still under the approximately 2 KB target. `/tmp/pdf-r1-sizes.json` records the measurement. Lazy source-map/network and packaging assertions still pass.
+
+Only the user-required Chromium/Firefox reader matrix is claimed here. WebKit installation reported missing host libraries; no WebKit result is claimed. PDF certification for other engines remains T4. No remote checks/reviews were polled or watched.
+
+**Outcome:** review r1 addressed, all requested local checks green; ready for lead re-review. This handoff is included in the sole r1 source push to avoid an extra paid CI run.

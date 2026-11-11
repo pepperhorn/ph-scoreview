@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, type Plugin } from 'vite';
 // @ts-expect-error plain ESM helper without types
@@ -25,6 +25,7 @@ const RUNTIME_FILE_URL = /new URL\(\s*(?:\/\*\s*@vite-ignore\s*\*\/\s*)?((["'`])
 const readerModules = new Set<string>();
 const readerChunk: Plugin = {
   name: 'reader-chunk',
+  buildStart() { readerModules.clear(); },
   buildEnd() {
     const ids = [...this.getModuleIds()];
     const collect = (suffix: string) => {
@@ -35,7 +36,8 @@ const readerChunk: Plugin = {
         found.add(id);
         info.importedIds.forEach(walk);
       };
-      const entry = ids.find(id => id.endsWith('/packages/pepperscore/src/' + suffix));
+      const entryPath = resolve(fileURLToPath(new URL('.', import.meta.url)), 'src', suffix).replaceAll('\\', '/');
+      const entry = ids.find(id => id === entryPath);
       if (entry) walk(entry);
       return found;
     };
@@ -82,7 +84,8 @@ export default defineConfig({
     sourcemap: true,
     target: 'es2022',
     rollupOptions: { preserveEntrySignatures: 'allow-extension', external: id => externals.some(dep => id === dep || id.startsWith(`${dep}/`)),
-      // allow-extension permits private exports from the reader to its lazy PDF chunks.
+      // Extra minified entry exports are private links for lazy chunks, not typed public API.
+      // Namespace/export-star consumers may see them; do not depend on their names.
       output: { codeSplitting: { groups: [{ name: 'reader', test: id => readerModules.has(id), includeDependenciesRecursively: false }] } },
     },
   },

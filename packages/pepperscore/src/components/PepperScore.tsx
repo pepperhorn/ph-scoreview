@@ -1873,7 +1873,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
         onPointerUp={event => releaseStaveScale(event.currentTarget)} onPointerCancel={event => releaseStaveScale(event.currentTarget)}/>
       <output className="header-stave-scale-value">{staveScalePercent}%</output>
     </label>,
-    pdf: chrome.pdf ? <button type="button" className="icon-button pdf-trigger" aria-label="Export PDF" title="Export PDF" aria-haspopup="dialog" aria-expanded={pdfOpen} disabled={!loaded} onClick={() => { setDrawer(false); setMoreOpen(false); setPdfOpen(true); }}>PDF</button> : null,
+    pdf: chrome.pdf ? <button type="button" className="icon-button pdf-trigger" aria-label="Export PDF" title="Export PDF" aria-haspopup="dialog" aria-expanded={pdfOpen} disabled={!loaded} onClick={() => { setDrawer(false); setMoreOpen(false); setPdfOpen(true); }}><FileMusic className="pdf-trigger-icon" size={16}/><span className="pdf-trigger-label">PDF</span></button> : null,
     pitchColours: skin?.pitchColours ? <PitchColourTile on={!!prefs.pitchColours} toggle={() => update({ pitchColours: !prefs.pitchColours })}/> : null,
     noteNames: <button type="button" className="icon-button skin-note-names skin-annotation-toggle" aria-label="Note names" title="Note names" aria-pressed={prefs.names} onClick={() => update({ names: !prefs.names })}><Type size={18}/></button>,
     counts: <button type="button" className="icon-button skin-counts skin-annotation-toggle" aria-label="Counts" title="Counts" aria-pressed={prefs.counts} onClick={() => update({ counts: !prefs.counts })}><Hash size={18}/></button>,
@@ -1957,7 +1957,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
       : <div className="pdf-backdrop"><section className="pdf-panel" role="dialog" aria-modal="true" aria-label="Export PDF" tabIndex={-1} ref={focusOnMount}
         onKeyDown={event => { if (event.key === 'Tab') { event.preventDefault(); const buttons = event.currentTarget.querySelectorAll<HTMLButtonElement>('button'); const next = document.activeElement === buttons[0] ? buttons[buttons.length - 1] : buttons[0]; next?.focus(); } }}>
         <h2>Export PDF</h2><p role={pdfLoadError ? 'alert' : 'status'}>{pdfLoadError || 'Loading PDF options…'}</p>
-        <div className="pdf-actions"><button type="button" onClick={() => setPdfOpen(false)}>Cancel</button>{pdfLoadError && <button type="button" onClick={() => window.history.go(0)}>Reload page</button>}</div>
+        <div className="pdf-actions"><button type="button" className="pdf-cancel" onClick={() => setPdfOpen(false)}>Cancel</button>{pdfLoadError && <button type="button" className="pdf-reload" onClick={() => window.history.go(0)}>Reload page</button>}</div>
       </section></div>)}
     {chrome.mixer && mixer && <div className="mixer-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setMixer(false); }}>
       <section ref={focusOnMount} tabIndex={-1} className="mixer-panel" role="dialog" aria-modal="true" aria-label="Track mixer">
