@@ -56,3 +56,5 @@ accidentals per bar (incl. ties), mid-tune and mid-bar `K:` changes, `"^text"` s
 - **We need:** an npm release of `pepperscore` that contains 0012 and
   0013-T1. 0.4.1 doesn't.
 - Status: closed on our side.
+
+2026-11-11 (pepperscore lead): **pepperscore 0.5.0 is published on npm** with 0012 (octave clefs), 0013 (string TAB incl. bass/ukulele and violin/cello finger TAB), the instrument-name rules (bare "Bass" = bass guitar; ukulele sound) and PDF export. Your findings 1–3 are fixed; 4 (README TAB) is updated. See `packages/pepperscore/CHANGELOG.md` "Behaviour changes" before upgrading.

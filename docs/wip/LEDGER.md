@@ -11,11 +11,11 @@ Next ID: 0023
 
 | K | Title | Status | Waiting on | Owner (provider/model) | Branch | PR | Worktree | T3 task/thread | Spec | Plan | Latest handoff | Updated |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 0001 | Composable player skins | dispatched (t5; t1–t4 merged) | lead: delegate | claudeAgent/claude-sonnet-5-5 | orch/0001-t5-skins-docs |  |  |  | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-11-0001-t5-skins-docs--lead-to-claude.md | 2026-11-10 |
+| 0001 | Composable player skins | dispatched (t5; t1–t4 merged) | child 0001-t5-impl-r1 | claudeAgent/claude-sonnet-5-5 | orch/0001-t5-skins-docs |  |  | task `0001-t5-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A0001-t5-impl-r1` | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md | handoffs/2026-11-11-0001-t5-skins-docs--lead-to-claude.md | 2026-11-10 |
 | 0002 | PDF export | planned (t4; t1 #71, t2 #78, t3 #83 merged) | child 0001-t5 (T4 shares README/CHANGELOG; dispatch after it merges) | codex/gpt-6.1-sol |  |  |  |  | specs/0002-pdf-export.md | plans/0002-pdf-export.md |  | 2026-11-10 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | human: P1–P3 (editor distribution, private repo name, BeCreative licence) before T4 | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
-| 0022 | [quick] Safari draws pitch-colour outlines solid black (S31) | dispatched | lead: delegate | codex/gpt-6.1-sol | orch/0022-safari-pitch-outline |  |  |  |  |  | handoffs/2026-11-11-0022-safari-pitch-outline--lead-to-codex.md | 2026-11-11 |
+| 0022 | [quick] Safari draws pitch-colour outlines solid black (S31) | dispatched | child 0022-impl-r1 | codex/gpt-6.1-sol | orch/0022-safari-pitch-outline |  |  | task `0022-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A0022-impl-r1` |  |  | handoffs/2026-11-11-0022-safari-pitch-outline--lead-to-codex.md | 2026-11-11 |
 
 ## Done / closed
 
