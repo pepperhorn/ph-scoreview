@@ -11,6 +11,15 @@ import { createServer } from 'vite';
 import { chromium, firefox, webkit } from 'playwright-core';
 import { root } from './serve-dist.mjs';
 
+// Raster parity is a required gate, including on CI. Fail before starting Vite/browser.
+try { execFileSync('pdftoppm', ['-v'], { stdio: 'pipe' }); }
+catch (error) {
+  if (error.code === 'ENOENT') {
+    throw new Error('Poppler required for pitch raster parity: install poppler-utils (pdftoppm).');
+  }
+  throw error;
+}
+
 const server = await createServer({ configFile: false, root, optimizeDeps: { include: ['jspdf', 'svg2pdf.js', 'abcjs', '@tonejs/midi', 'fflate'] }, server: { host: '127.0.0.1', port: 0 },
   plugins: [{ name: 'pdf-spike-page', configureServer(server) {
     server.middlewares.use('/pdf-spike', (_req, res) => { res.setHeader('Content-Type','text/html'); res.end('<!doctype html><title>PDF spike</title>'); });
@@ -270,27 +279,23 @@ try {
   // below the matching note and a text origin within one glyph width of its centre.
   assert.ok(297-nameRun.matrix[5]*mmPerPoint>expected.head.y+expected.head.height);
   assert.ok(Math.abs(nameX-expected.head.x-expected.head.width/2)<0.1,'name remains under its own note');
-  // Actually rasterize the exported first page when Poppler is installed. The content-stream
-  // geometry above is the portable fallback; it also catches nested transform regressions.
+  // Raster geometry supplements the content-stream checks; Poppler was required up front.
   assert.notEqual(composition.pitch.ratio,1);
 
   const directory=mkdtempSync(join(tmpdir(),'pepperscore-pdf-r1-'));
   try {
     const input=join(directory,'geometry.pdf');writeFileSync(input,Buffer.from(composition.geometry.bytes));
-    let available=true;try {execFileSync('pdftoppm',['-v'],{stdio:'pipe'});} catch(error) {if(error.code==='ENOENT') available=false;else throw error;}
-    if (available) {
-      execFileSync('pdftoppm',['-f','1','-singlefile','-r','144',input,join(directory,'page')],{stdio:'pipe'});
-      const ppm=readFileSync(join(directory,'page.ppm'));
-      const header=/^P6\s+(\d+)\s+(\d+)\s+255\s/.exec(ppm.subarray(0,80).toString());assert.ok(header);
-      const width=Number(header[1]),height=Number(header[2]),pixels=ppm.subarray(header[0].length),scale=144/25.4;
-      const ink=(x,y)=>{const i=(y*width+x)*3;return pixels[i]<180||pixels[i+1]<180||pixels[i+2]<180;};
-      const coverage=box=>{let count=0,total=0;for(let y=Math.max(0,Math.floor(box.y*scale));y<Math.min(height,Math.ceil((box.y+box.height)*scale));y++)for(let x=Math.max(0,Math.floor(box.x*scale));x<Math.min(width,Math.ceil((box.x+box.width)*scale));x++){total++;if(ink(x,y))count++;}return count/Math.max(1,total);};
-      for (const line of expected.lines) assert.ok(coverage({x:line.x,y:line.y-0.2,width:186,height:0.4})>0.12,'raster staff line occupies expected content coordinates');
-      assert.ok(coverage(expected.head)>0.2,'known notehead is present at full size');
-      assert.ok(coverage(expected.label)>0.03,'note name is under its own note in the raster');
-      assert.ok(expected.label.y>expected.head.y && Math.abs(expected.label.x+expected.label.width/2-expected.head.x-expected.head.width/2)<0.1,'name is centred below its note');
-      console.log('Poppler raster: staff width/6.5 mm height, known notehead and aligned note-name ink passed.');
-    } else console.log('Poppler unavailable: PDF content-stream transform geometry passed.');
+    execFileSync('pdftoppm',['-f','1','-singlefile','-r','144',input,join(directory,'page')],{stdio:'pipe'});
+    const ppm=readFileSync(join(directory,'page.ppm'));
+    const header=/^P6\s+(\d+)\s+(\d+)\s+255\s/.exec(ppm.subarray(0,80).toString());assert.ok(header);
+    const width=Number(header[1]),height=Number(header[2]),pixels=ppm.subarray(header[0].length),scale=144/25.4;
+    const ink=(x,y)=>{const i=(y*width+x)*3;return pixels[i]<180||pixels[i+1]<180||pixels[i+2]<180;};
+    const coverage=box=>{let count=0,total=0;for(let y=Math.max(0,Math.floor(box.y*scale));y<Math.min(height,Math.ceil((box.y+box.height)*scale));y++)for(let x=Math.max(0,Math.floor(box.x*scale));x<Math.min(width,Math.ceil((box.x+box.width)*scale));x++){total++;if(ink(x,y))count++;}return count/Math.max(1,total);};
+    for (const line of expected.lines) assert.ok(coverage({x:line.x,y:line.y-0.2,width:186,height:0.4})>0.12,'raster staff line occupies expected content coordinates');
+    assert.ok(coverage(expected.head)>0.2,'known notehead is present at full size');
+    assert.ok(coverage(expected.label)>0.03,'note name is under its own note in the raster');
+    assert.ok(expected.label.y>expected.head.y && Math.abs(expected.label.x+expected.label.width/2-expected.head.x-expected.head.width/2)<0.1,'name is centred below its note');
+    console.log('Poppler raster: staff width/6.5 mm height, known notehead and aligned note-name ink passed.');
   } finally {rmSync(directory,{recursive:true,force:true});}
   const viewed = await parsePdf(composition.viewed);
   assert.ok(viewed.text.includes('D') && viewed.text.includes('F') && viewed.text.includes('A'), 'annotation pitches follow transposed snapshot');
@@ -441,6 +446,12 @@ async function assertPitchRasterParity(browser, url) {
         svg.style.cssText='display:block;width:3000px;height:auto';reader.append(svg);document.body.append(reader);
         const byId=new Map(Array.from(svg.querySelectorAll('[id]'),element=>[element.id,element]));
         for(const part of score.parts)for(const measure of part.measures)for(const event of measure.notes){const element=findAnnotationNote(byId,score,event);if(element)tagPitchColours(element,event,part);}
+        reader.removeAttribute('data-ps-pitch-colours');
+        const childrenBefore=reader.childElementCount;
+        let inactiveRejected=false;
+        try { resolvePitchColours(reader); } catch(error) { inactiveRejected=/Pitch colours must be active/.test(error.message); }
+        if(!inactiveRejected || reader.childElementCount!==childrenBefore)throw Error('Inactive pitch snapshot must fail before adding a probe');
+        reader.setAttribute('data-ps-pitch-colours','');
         const paint=resolvePitchColours(reader);
         const paperWidth=variant==='host'?297:210,ratio=paperWidth/svg.viewBox.baseVal.width;
         const heads=Array.from(svg.querySelectorAll('.notehead[data-pitch]'),(head,index)=>{

@@ -19,7 +19,11 @@ export function tagPitchColours(element: Element, event: ScoreNote, part: Pick<P
 
 /** Save-time drawing snapshot, resolved in the same root as the screen's noteheads. */
 export type PitchColourPaint = { palette: PitchPalette; outline: string; strokeWidth: string };
+/** Requires the active player root (palette supplied and pitch-colour pref on). */
 export function resolvePitchColours(root: HTMLElement): PitchColourPaint {
+  if (!root.matches('.pepperscore[data-ps-pitch-colours]')) {
+    throw new Error('Pitch colours must be active on the player root before creating a PDF paint snapshot.');
+  }
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.style.cssText = 'position:absolute;width:0;height:0;visibility:hidden;pointer-events:none';
   for (const pitch of PITCH_CLASSES) {
