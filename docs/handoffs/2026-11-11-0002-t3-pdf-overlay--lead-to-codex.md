@@ -38,3 +38,5 @@ Build before browser suites; under load rerun timing gates with `VALIDATION_BUDG
 
 ---
 ## Receiver ack
+
+Acknowledged 2026-11-11 (Codex). I will add the PDF control and themed, cancellable overlay within the declared files; use lazy PDF imports, remembered paper and local bars; snapshot the current planned view and active pitch palette on Save; verify unused-feature chunk separation and reader state preservation. No changes to PDF internals, notation, TAB, rendering, ledger or unrelated docs. Base 299d463 is an ancestor and the worktree is clean. GBrain consulted: projects/scoreflow-music-reader (historical context); repo spec/plan and linked returns govern this task. No open scope questions.
