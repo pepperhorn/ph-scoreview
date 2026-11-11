@@ -65,7 +65,7 @@ const switchedParts = (score: Score) => new Set(Object.entries(score.instrumentV
 const staleTabOf = (score: Score) => new Set(Object.keys(score.instrumentView?.staves ?? {}));
 
 /**
- * Fretted notation parts take generated TAB. Authored imported TAB remains usable; there is no pitched-part fallback.
+ * Fretted and approved violin/cello notation parts take generated TAB. Authored imported TAB remains usable; there is no pitched-part fallback.
  * Instrument switches use the new instrument identity instead of the original name.
  */
 export function tabParts(score: Score): Part[] {
@@ -75,7 +75,7 @@ export function tabParts(score: Score): Part[] {
     const instrument = instrumentFor(score, part, switched.has(part.id));
     // Retain explicitly authored imported TAB, but never invent TAB for a non-string part.
     return !part.tab && part.clef !== 'percussion' && (instrument
-      ? STRING_INSTRUMENTS[instrument].kind === 'fretted'
+      ? STRING_INSTRUMENTS[instrument].kind !== 'unsupported'
       : !switched.has(part.id) && doubled.has(part.id) && (score as TabScore).tabSettings?.instruments?.[part.id] !== 'none');
   });
 }
@@ -124,6 +124,7 @@ export function planTab(score: Score, staffOf: Map<string, string>, view: TabVie
   const used = new Set<Part>();
   const generate: string[] = [];
   const tunings: Record<string, number[]> = {};
+  const fingers: Record<string, 'violin' | 'cello'> = {};
   const retarget: Record<string, string> = {};
   // Switched or octave-moved parts: their imported TAB and the fingerings on their notes are stale.
   const stale = staleTabOf(score);
@@ -133,6 +134,7 @@ export function planTab(score: Score, staffOf: Map<string, string>, view: TabVie
       const n = staffOf.get(part.id);
       if (!n || hiddenIds.has(part.id)) continue;
       const instrument = instrumentFor(score, part, switchedParts(score).has(part.id));
+      if (instrument === 'violin' || instrument === 'cello') fingers[n] = instrument;
       const configured = (score as TabScore).tabSettings;
       // A custom tuning applies only to identities with the same physical string count. Legacy standard means auto.
       const explicit = configured?.tuning ?? (options.tuning.join() !== STANDARD_TUNING.join() ? options.tuning : undefined);
@@ -150,11 +152,11 @@ export function planTab(score: Score, staffOf: Map<string, string>, view: TabVie
       } catch {
         // Native hosts without process skip development diagnostics.
       }
-      tunings[n] = explicit?.length === defaults.length ? explicit : defaults;
+      tunings[n] = !fingers[n] && explicit?.length === defaults.length ? explicit : defaults;
       const partner = partnerOf.get(part.id);
       const partnerN = partner && staffOf.get(partner.id);
       let tabN: string;
-      if (partner && partnerN && !options.stale && !stale.has(part.id)) { tabN = partnerN; used.add(partner); plan.importedFor.set(part.id, partner); }
+      if (!fingers[n] && partner && partnerN && !options.stale && !stale.has(part.id)) { tabN = partnerN; used.add(partner); plan.importedFor.set(part.id, partner); }
       else { tabN = tabStaffNumber(n); generate.push(n); plan.added.push(tabN); if (stale.has(part.id)) unfixed.push(n); }
       if (view === 'tab') { hide(n); retarget[n] = tabN; plan.display.set(part.id, tabN); }
     }
@@ -174,7 +176,7 @@ export function planTab(score: Score, staffOf: Map<string, string>, view: TabVie
     if (n && generate.includes(n) && score.instrumentView?.staves[part.id]?.clef) switched[n] = (part.transposition?.semitones ?? 0) + (score.instrumentView?.staves[part.id]?.clef === 'treble8vb' ? 12 : 0);
   }
   if (generate.length || Object.keys(retarget).length || Object.keys(refret).length) {
-    plan.spec = { generate, retarget, tuning: options.tuning, tunings, capo: options.capo, fixed: !options.stale, ...(sounding.length ? { sounding } : {}), ...(Object.keys(switched).length ? { switched } : {}), ...(unfixed.length && !options.stale ? { unfixed } : {}), ...(Object.keys(refret).length ? { refret } : {}) };
+    plan.spec = { generate, retarget, fingers, tuning: options.tuning, tunings, capo: options.capo, fixed: !options.stale, ...(sounding.length ? { sounding } : {}), ...(Object.keys(switched).length ? { switched } : {}), ...(unfixed.length && !options.stale ? { unfixed } : {}), ...(Object.keys(refret).length ? { refret } : {}) };
   }
   return plan;
 }

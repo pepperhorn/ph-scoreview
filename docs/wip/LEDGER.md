@@ -5,23 +5,25 @@
 > Waiting on: `child <taskId>` · `review <taskId>` · `ci` · `human: <why>` · `lead: <next action>`. Set it on every status change. A row needs the lead when it starts with `lead`, or when it's empty and Status is dispatched, in-review, changes-requested, ready, or merged. The lead's Stop hook won't let the lead end its turn while any row needs it.
 > Type: normal items have a spec and plan. Quick items have the title prefix `[quick]` (no spec or plan, a short handoff). PRs adopted by `orch-sweep` have the prefix `[pr]`.
 
-Next ID: 0020
+Next ID: 0021
 
 ## Active
 
 | K | Title | Status | Waiting on | Owner (provider/model) | Branch | PR | Worktree | T3 task/thread | Spec | Plan | Latest handoff | Updated |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 0001 | Composable player skins | planned (t5; t1–t4 merged) | child 0002-t3-impl-r1 (T5 shares README/SkinTest; dispatch when #0002-t3 merges) | codex/gpt-6.1-sol |  |  |  |  | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md |  | 2026-11-10 |
-| 0002 | PDF export | dispatched (t3; t1 #71, t2 #78 merged) | child 0002-t3-impl-r1-fix1 | codex/gpt-6.1-sol | orch/0002-t3-pdf-overlay | https://github.com/pepperhorn/ph-scoreview/pull/83 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-d1cdc39d-46ddba0ee7ed626a | task `0002-t3-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0002-t3-impl-r1` | specs/0002-pdf-export.md | plans/0002-pdf-export.md | handoffs/2026-11-11-0002-t3-pdf-overlay--lead-to-codex.md | 2026-11-10 |
+| 0002 | PDF export | in-review (t3; t1 #71, t2 #78 merged) | review 0002-t3-review-r1 | codex/gpt-6.1-sol | orch/0002-t3-pdf-overlay | https://github.com/pepperhorn/ph-scoreview/pull/83 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-d1cdc39d-46ddba0ee7ed626a | task `0002-t3-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0002-t3-impl-r1` | specs/0002-pdf-export.md | plans/0002-pdf-export.md | handoffs/2026-11-11-0002-t3-pdf-overlay--codex-to-lead.md (@3d90d5d) | 2026-11-10 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | human: P1–P3 (editor distribution, private repo name, BeCreative licence) before T4 | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
-| 0013 | TAB for stringed instruments | dispatched (t3; t1 #77, t2 #74 merged) | child 0013-t3-impl-r1 | codex/gpt-6.1-sol | orch/0013-t3-fretless-tab |  |  | task `0013-t3-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0013-t3-impl-r1` | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md | handoffs/2026-11-11-0013-t3-fretless-tab--lead-to-codex.md | 2026-11-10 |
+| 0013 | TAB for stringed instruments | planned (t4 docs; t1 #77, t2 #74, t3 #84 merged) | child 0017-impl-r1-fix2 (#85 writes the String TAB README; T4 = remaining docs after it merges) | codex/gpt-6.1-sol |  |  |  |  | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md |  | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
-| 0017 | Release pepperscore 0.5.0 (CHANGELOG, version) | dispatched | lead: delegate | codex/gpt-6.1-sol | orch/0017-release-0-5-0 |  |  |  |  |  | handoffs/2026-11-11-0017-release-0-5-0--lead-to-codex.md | 2026-11-11 |
+| 0017 | Release pepperscore 0.5.0 (CHANGELOG, version) | changes-requested | child 0017-impl-r1-fix2 (docs for merged #84) | codex/gpt-6.1-sol | orch/0017-release-0-5-0 | https://github.com/pepperhorn/ph-scoreview/pull/85 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-5de38d86-837e74894e3847b8 | task `0017-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0017-impl-r1` |  |  | handoffs/2026-11-11-0017-release-0-5-0--codex-to-lead.md (@6ca54cc) | 2026-11-11 |
+| 0019 | [quick] CI validation step timeout 15 → 25 min, job 30 → 45 (S28) | in-review | review 0019-review-r1; human OK to merge on green | codex/gpt-6.1-sol | orch/0019-ci-validation-timeout | https://github.com/pepperhorn/ph-scoreview/pull/86 |  | task `0019-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0019-impl-r1` |  |  | handoffs/2026-11-11-0019-ci-validation-timeout--codex-to-lead.md (@7366227) | 2026-11-11 |
 
 ## Done / closed
 
 | K | Title | PR | Merged | Notes |
 |---|---|---|---|---|
+| 0013-t3 | Violin and cello finger + position TAB (task of 0013) | https://github.com/pepperhorn/ph-scoreview/pull/84 | 2026-11-11 | merged; option D |
 | 0018 | [quick] Choir name variants and horn sounds (S26, S27) | https://github.com/pepperhorn/ph-scoreview/pull/82 | 2026-11-11 | 9d3c36e; ABC guide updated |
 | 0001-t4 | Pitch colours and toggle tile + PDF parity (task of 0001; closes 0002 AC8a) | https://github.com/pepperhorn/ph-scoreview/pull/81 | 2026-11-11 | 299d463; ci.yml poppler-utils (S21) |
 | 0016 | [quick] Instrument names: Bass, ukulele sound, tuning warning | https://github.com/pepperhorn/ph-scoreview/pull/80 | 2026-11-11 | c1415a0; human naming policy; ABC guide updated |
@@ -78,13 +80,29 @@ Next ID: 0020
 | S25 | fix | A "Bass" part with an explicit Acoustic Bass program shows the double-bass icon alongside bass-guitar TAB | PR #80 review r4 | XS | low | PR #80 review | new |
 | S26 | fix | Choir names missed by the voice-word pattern: "Soprano Solo"… "Bass Solo", slash staves "Soprano/Alto, Tenor/Bass", "Mezzo-Soprano", "Contralto" → Bass becomes bass guitar with TAB | `packages/pepperscore/src/lib/score.ts:130` (PR #80 r5) | XS | medium (hymns, solos) | PR #80 review | done (0018, PR #82) |
 | S27 | fix | `/horn/` gives English Horn, Basset Horn, Flugelhorn the French horn sound; should be GM 70 (cor anglais), clarinet, trumpet/flugelhorn | `packages/pepperscore/src/lib/score.ts:124` | XS | low | PR #80 review | done (0018, PR #82) |
-| S28 | ci | CI "Validation suite" step (timeout 15 min) takes ~12 min and times out on busy runs (PR #82 push run, two main runs) | `.github/workflows/ci.yml:41` | XS | high (false reds) | PR #82 review r2 | new |
+| S28 | ci | CI "Validation suite" step (timeout 15 min) takes ~12 min and times out on busy runs (PR #82 push run, two main runs) | `.github/workflows/ci.yml:41` | XS | high (false reds) | PR #82 review r2 | accepted → 0019 |
+| S29 | fix | Fretless position-label pruning happens after Verovio layout, so a removed label can leave a neighbour one row higher than needed | PR #84 review r2 | S | low (cosmetic) | PR #84 review | new |
+| S30 | improvement | Fretless solver: add a position-continuity cost (prefer staying in position) to cut label density and I/II flips | 0013-t3 return handoff; PR #84 reviews | M | medium (readability) | PR #84 | new |
 | S1 | fix | Emit a mid-bar `<keySig>` only in layer 1; Verovio draws one per layer | `packages/pepperscore/src/lib/notation/document.ts:249` (probe: 2 layers → 3 keySig groups) | S | low today (ABC overlays are separate parts); matters for MIDI/multi-layer | PR #60 review r2 | done (0005, PR #63) |
 
 Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-11 0017 ready→changes-requested — #84 merged first, so CHANGELOG/README must describe violin/cello finger TAB; implementer merging main and updating docs
+2026-11-11 0013-t3 ready→merged — CI green on a77ca15, merged PR #84 per human
+2026-11-11 0002-t3 dispatched→in-review — PR #83 @3d90d5d; initial package +1,376 B gzip; chunking via reader static-graph grouping, finalizer guard unchanged; review r1
+2026-11-11 0013-t3 in-review→ready — r2 approve on a77ca15 (key changes, per-system labels, naturals, grace notes fixed; stacked cello labels are real position changes); waiting on chromium CI; S29, S30 logged
+2026-11-11 0019 dispatched→in-review — PR #86 @7366227 (two timeout values); human OK to merge on green
+2026-11-11 0013-t3 changes-requested→in-review — r1 fixes pushed a77ca15; new evidence archived (violin naturals 1-2-3-0 correct; cello stress passage shows position labels stacked in two rows); review r2
+2026-11-11 0019 new→dispatched — both #85 chromium runs timed out at the 15-min validation step (all suites that ran passed); CI timeout raise needs human OK at merge
+2026-11-11 0017 in-review→ready — r2 approve on 6ca54cc; waiting on CI, then human npm login + publish
+2026-11-11 0013-t3 in-review→changes-requested — r1: suspected labels were correct (fixture hid accidentals: B♭3/C♯4, C♯2); real issues: later key changes ignored (wrong pitch), position label every bar, fixture lacks visible accidentals/naturals, grace note steals label; continuity cost optional
+2026-11-11 0017 changes-requested→in-review — reader pin + README pushed 6ca54cc; review r2
+2026-11-11 0017 in-review→changes-requested — r1: reader app pins pepperscore@0.4.1 so npm ci fails; README still describes the TAB fallback and lacks skin/pitchColours/tabInstruments docs; lead granted reader pin + README sections
+2026-11-11 0017 dispatched→in-review — PR #85 @9c0eae5 (0.5.0 + CHANGELOG); review r1
+2026-11-11 0013-t3 dispatched→in-review — PR #84 @d71c6ab (502 tests, full validation); evidence archived; lead spotted suspicious labels in the evidence (violin B3 'L2', C4 'H3'; cello lowest note '1 pos ½'); review r1
+2026-11-11 0002-t3 — lead granted validation/reader.mjs for the PDF-button tab-order expectation only
 2026-11-11 0018 in-review→closed — r2 approve on c2be5a3, PR-run CI green (push run hit the 15-min validation timeout, S28), merged PR #82 (9d3c36e); guide updated. 0017 release dispatched
 2026-11-11 0018 changes-requested→in-review — Treble/umlaut/& fixes pushed c2be5a3 (683 tests); review r2
 2026-11-11 0002-t3 dispatched→blocked→dispatched — draft PR #83; blocked on build finalizer (lazy PDF moved runtime asset URLs into shared chunks) and outdated PDF-reserved tests; lead granted vite.config/finalize-dist/runtime files and the three test files; AC2 = no PDF engine in initial graph + lazy overlay, <~2 KB gz increase

@@ -1,3 +1,4 @@
+import { substituteFingerLabels } from './tab/strings/svg';
 import type createVerovioModule from 'verovio/wasm';
 import type { VerovioToolkit, enableLogToBuffer } from 'verovio/esm';
 import { buildViewMei, scanBaseline, type BaselineInfo, type ViewSpec } from './notation/mei-view';
@@ -303,7 +304,7 @@ async function importSource(revision: number, bytes: ArrayBuffer, force: boolean
  * score and only looks them up inside its own root.
  */
 function svgFor(target: Toolkit, page: number, channel: number): string {
-  const svg = target.renderToSVG(page);
+  const svg = substituteFingerLabels(target.renderToSVG(page));
   const id = /<svg\b[^>]*?\sid="([^"]+)"/.exec(svg)?.[1];
   if (!id || !/^[\w-]+$/.test(id)) return svg;
   return svg.replace(new RegExp(`(?<=[#"-])${id}(?![\\w-])`, 'g'), `${id}-c${channel}`);

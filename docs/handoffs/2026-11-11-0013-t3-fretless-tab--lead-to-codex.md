@@ -6,7 +6,7 @@
 - **Branch:** orch/0013-t3-fretless-tab · **Worktree:** created by T3
 - **Base commit:** 299d463 (0013 T1 #77, T2 #74; 0001 T4 #81; 0002 T2 #78 merged)
 - **Port (if running a server):** 5333
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 Violin and cello parts (identified by 0013-T1's classifier) get a four-line finger + position TAB staff in the TAB and Both views, rendered as **option D**: finger numbers on the string lines with inline `L`/`H` modifiers, and position changes as `<dir>` text ("I pos.", "III pos.", "pos. ½" for half position). Viola and double bass get none. Spec AC3.
@@ -43,3 +43,5 @@ None. Escalate per AGENTS.md §7 (especially if a render path can't be covered).
 
 ---
 ## Receiver ack
+
+Acknowledged 2026-11-11: implement violin/cello four-line finger TAB with inline L/H, shared-position double stops, spelling-aware sounding-pitch solving, position directions, and substitution across worker probe/whole/chunk/PDF paths. Preserve fretted TAB and playback; change only the declared files and task handoffs. Base 299d463 is an ancestor and worktree was clean. No open questions. GBrain consulted: [default:projects/scoreflow-music-reader]; repo spec and merged T2 are authoritative.

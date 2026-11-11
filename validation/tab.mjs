@@ -8,7 +8,8 @@
 // More panel on a phone. BROWSER=chromium|firefox|webkit for part 2 (part 1 always runs on Chromium).
 import assert from 'node:assert/strict';
 import { startVite } from './lib/ports.mjs';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { chromium, firefox, webkit } from 'playwright-core';
 import { serveDist } from './serve-dist.mjs';
@@ -38,6 +39,161 @@ try {
   }
   assert.ok(baseUrl, 'Vite dev server started');
   browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
+  // Real reader worker (probe, whole and forced chunk), dense labels and vector PDF.
+  const evidenceDir = process.env.TAB_EVIDENCE_DIR || '/tmp/0013-t3-evidence-r1';
+  mkdirSync(evidenceDir, { recursive: true });
+  for (const force of [false, true]) {
+    const fingerPage = await browser.newPage({ viewport: { width: 1000, height: 900 } });
+    fingerPage.on('console', msg => console.log('finger:', msg.text()));
+    fingerPage.on('pageerror', error => console.log('finger page error:', error.message));
+    await fingerPage.goto(`${baseUrl}/validation/performance.html`);
+    await fingerPage.evaluate(force => localStorage.setItem('scoreflow-chunking', JSON.stringify({ force, budget: 8 })), force);
+    // Warm dynamic dependencies before a worker render: Vite may reload once after optimization.
+    for (let attempt=0;;attempt++) {
+      try {
+        await fingerPage.evaluate(async()=>{ await import('/packages/pepperscore/src/lib/import.ts'); await import('/packages/pepperscore/src/lib/render.ts'); await import('/packages/pepperscore/src/lib/pdf/export.ts'); });
+        await delay(1500);
+        break;
+      } catch(error) { if(attempt>5) throw error; await fingerPage.waitForLoadState('load'); }
+    }
+    const runFingerCase = () => fingerPage.evaluate(async force => {
+      const { parseMusicXml } = await import('/packages/pepperscore/src/lib/import.ts');
+      const { renderScore, planStaves } = await import('/packages/pepperscore/src/lib/render.ts');
+      const runtime = await import('/packages/pepperscore/src/lib/verovio-runtime.ts');
+      runtime.setVerovioBaseUrl('/node_modules/verovio/dist/');
+      if(runtime.chunkSettings().force!==force) throw Error('Chunk diagnostic was not applied before module initialization');
+      const { scoreForView } = await import('/packages/pepperscore/src/lib/transpose.ts');
+      const { buildBaseTimeline } = await import('/packages/pepperscore/src/lib/playback/timeline.ts');
+      const { engravePages } = await import('/packages/pepperscore/src/lib/pdf/engrave.ts');
+      const { exportScore } = await import('/packages/pepperscore/src/lib/pdf/export.ts');
+      const results = [];
+      for (const instrument of ['Violin','Cello']) {
+        const pitches = instrument === 'Violin' ? ['<step>B</step><alter>-1</alter><octave>3</octave>', '<step>C</step><alter>1</alter><octave>4</octave>', '<step>D</step><octave>4</octave>', '<step>F</step><octave>4</octave>'] : ['<step>C</step><alter>1</alter><octave>2</octave>', '<step>D</step><octave>2</octave>', '<step>F</step><octave>2</octave>', '<step>A</step><octave>4</octave>'];
+        const naturals = instrument === 'Violin' ? ['<step>A</step><octave>3</octave>', '<step>B</step><octave>3</octave>', '<step>C</step><octave>4</octave>', '<step>D</step><octave>4</octave>'] : ['<step>C</step><octave>2</octave>', '<step>D</step><octave>2</octave>', '<step>E</step><octave>2</octave>', '<step>F</step><octave>2</octave>'];
+        const pitchAt = (m,i) => (m ? pitches : naturals)[i%4];
+        const accidentalAt = (m,i) => pitchAt(m,i).includes('<alter>') ? `<accidental>${pitchAt(m,i).includes('<alter>-1') ? 'flat' : 'sharp'}</accidental>` : '';
+        const xml = `<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>${instrument}</part-name></score-part></part-list><part id="P1">${Array.from({length:8},(_,m)=>`<measure number="${m+1}">${m ? '' : `<attributes><divisions>4</divisions><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>${instrument==='Cello'?'F':'G'}</sign><line>${instrument==='Cello'?4:2}</line></clef></attributes>`}${Array.from({length:16},(_,i)=>`<note><pitch>${pitchAt(m,i)}</pitch><duration>1</duration><type>16th</type>${accidentalAt(m,i)}</note>`).join('')}</measure>`).join('')}</part></score-partwise>`;
+        console.log('parse', instrument, force);
+        const score = parseMusicXml(xml);
+        const original = JSON.stringify(buildBaseTimeline(score));
+        const host = document.createElement('div'); host.style.width = '900px'; document.body.append(host);
+        const labelsOf = root => [...root.querySelectorAll('.finger-label')].map(e=>({ id:e.parentElement.id, text:e.textContent }));
+        const views = {};
+        let svg = '';
+        for (const view of ['notation','both','tab']) {
+          console.log('render', instrument, view);
+          const result = await renderScore(host, score, 'portrait', false,false,false,2,false,false,900,1,0,{tab:{view}});
+          console.log('rendered',result.systems.length);
+          for (let i=0;i<result.systems.length;i++) await result.ensureSystem(i);
+          const labels = labelsOf(host); views[view] = labels;
+          if (view !== 'notation') {
+            if (labels.length !== 128) throw Error(`${instrument} ${view} labels ${labels.length}`);
+            const expected = instrument === 'Violin' ? ['1','2','3','0'] : ['0','1','3','4'];
+            if(labels.slice(0,16).some((label,i)=>label.text!==expected[i%4])) throw Error('Plain naturals/open-string passage does not match chart');
+            for (const system of host.querySelectorAll('g.system')) {
+              const dirs=[...system.querySelectorAll('g.finger-position')].map(e=>e.getBoundingClientRect());
+              if(!dirs.length) throw Error('System start is missing its hand position');
+              if(instrument==='Violin' && dirs.length!==1) throw Error('Unchanged position repeats at a non-initial bar');
+              for(let i=0;i<dirs.length;i++) for(let j=i+1;j<dirs.length;j++) {
+                const a=dirs[i],b=dirs[j];
+                if(Math.min(a.right,b.right)-Math.max(a.left,b.left)>0.1 && Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>0.1) throw Error('Dense position labels collide');
+              }
+            }
+            for (const staff of host.querySelectorAll('g.staff[data-n="101"]')) {
+              const rects=[...staff.querySelectorAll('.finger-label')].map(e=>e.getBoundingClientRect());
+              for(let i=0;i<rects.length;i++) for(let j=i+1;j<rects.length;j++) {
+                const a=rects[i],b=rects[j];
+                if(Math.min(a.right,b.right)-Math.max(a.left,b.left)>0.1 && Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>0.1) throw Error('Dense finger labels collide');
+              }
+            }
+          } else if(labels.length) throw Error('Notation view contains finger labels');
+          if(view==='both') svg=host.querySelector('svg').outerHTML;
+          result.dispose();
+        }
+        // Sparse constant-position passage guarantees multiple bars per system, even in PDF.
+        if(instrument==='Violin') {
+          const steadyXml=xml.replace(/(<measure\b[^>]*>)([\s\S]*?)(<\/measure>)/g, (_all,head,body,tail)=>head+(body.match(/<attributes>[\s\S]*?<\/attributes>/)?.[0] ?? '')+Array(4).fill('<note><pitch><step>A</step><octave>3</octave></pitch><duration>4</duration><type>quarter</type></note>').join('')+tail);
+          const steady=parseMusicXml(steadyXml);
+          const rendered=await renderScore(host,steady,'portrait',false,false,false,2,false,false,900,1,0,{tab:{view:'both'}});
+          for(let i=0;i<rendered.systems.length;i++) await rendered.ensureSystem(i);
+          const checkSteady=root=>{
+            const systems=[...root.querySelectorAll('g.system')];
+            if(!systems.length) throw Error('Steady position probe drew no systems');
+            for(const system of systems) {
+              if(system.querySelectorAll('g.measure').length<2) throw Error('Steady position probe needs at least two bars per system');
+              if(system.querySelectorAll('g.finger-position').length!==1) throw Error('Steady position must appear once per system, not once per bar');
+            }
+          };
+          checkSteady(host); rendered.dispose();
+          const steadyInfo=await runtime.verovioBaseline(steady.document);
+          const steadyPlan=planStaves(steadyInfo,steady,new Set(),{view:'both'});
+          const steadyPages=await engravePages({data:steady.document.engravingText,view:{breakEvery:0,hiddenStaves:[],chordSymbols:true,spelling:steadyPlan.spelling,tab:steadyPlan.tabPlan.spec}}, {paper:'a4',maxBars:2,files:runtime.verovioFilesAt('/node_modules/verovio/dist/')},new AbortController().signal);
+          for(const page of steadyPages.pages) checkSteady(new DOMParser().parseFromString(page,'image/svg+xml'));
+        }
+        const viewed=scoreForView(score,'written',1,false);
+        const transposed=await renderScore(host,viewed,'portrait',false,false,false,1,false,false,900,1,0,{tab:{view:'tab'}});
+        const changed=labelsOf(host);
+        if(JSON.stringify(changed.slice(0,16))===JSON.stringify(views.tab.slice(0,16))) throw Error('Transpose did not refinger');
+        transposed.dispose();
+        if(JSON.stringify(buildBaseTimeline(score))!==original) throw Error('TAB changed playback');
+        const info=await runtime.verovioBaseline(score.document);
+        if(!!info.chunked!==force) throw Error('Expected actual whole/chunk baseline');
+        const plan=planStaves(info,score,new Set(),{view:'both'});
+        const input={data:score.document.engravingText,view:{breakEvery:0,hiddenStaves:plan.hiddenStaves,chordSymbols:true,spelling:plan.spelling,tab:plan.tabPlan.spec}};
+        const files=runtime.verovioFilesAt('/node_modules/verovio/dist/');
+        const options={paper:'a4',maxBars:2,files};
+        console.log('pdf',instrument);
+        const pages=await engravePages(input,options,new AbortController().signal);
+        for(const text of pages.pages) {
+          const doc=new DOMParser().parseFromString(text,'image/svg+xml');
+          const svg=document.importNode(doc.documentElement,true); document.body.append(svg);
+          for(const system of svg.querySelectorAll('g.system')) {
+            const boxes=[...system.querySelectorAll('g.finger-position')].map(e=>e.getBoundingClientRect());
+            if(!boxes.length) throw Error('PDF system start is missing its hand position');
+            if(instrument==='Violin' && boxes.length!==1) throw Error('PDF position repeats at a non-initial bar');
+            for(let i=0;i<boxes.length;i++) for(let j=i+1;j<boxes.length;j++) {
+              const a=boxes[i],b=boxes[j];
+              if(Math.min(a.right,b.right)-Math.max(a.left,b.left)>0.1 && Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)>0.1) throw Error('PDF position labels collide');
+            }
+          }
+          svg.remove();
+        }
+        const pdfLabels=pages.pages.flatMap(text=>labelsOf(new DOMParser().parseFromString(text,'image/svg+xml')));
+        if(JSON.stringify(pdfLabels)!==JSON.stringify(views.both)) throw Error('PDF labels differ from reader');
+        const blob=force?null:await exportScore({input,options,score},new AbortController().signal);
+        results.push({instrument,views,svg,pdfSvg:pages.pages[0],pdf:blob?Array.from(new Uint8Array(await blob.arrayBuffer())):null,changed:changed.slice(0,16)});
+        host.remove();
+      }
+      return {force,results};
+    }, force);
+    let evidence;
+    for (let attempt=0;;attempt++) {
+      try { evidence=await runFingerCase(); break; }
+      catch(error) {
+        // Retry only Vite dependency-optimization reloads; acceptance errors still fail immediately.
+        if(attempt>=3 || !/Execution context was destroyed|Failed to fetch dynamically imported module/.test(String(error))) throw error;
+        await fingerPage.reload(); await delay(1500);
+      }
+    }
+    for (const result of evidence.results) {
+      const stem = `${evidenceDir}/${result.instrument}-${force?'chunk':'whole'}`;
+      writeFileSync(`${stem}.svg`,result.svg);
+      writeFileSync(`${stem}-pdf.svg`,result.pdfSvg);
+      if(result.pdf) {
+        writeFileSync(`${stem}.pdf`,Buffer.from(result.pdf));
+        execFileSync('pdftoppm',['-f','1','-singlefile','-scale-to','1800','-png',`${stem}.pdf`,`${stem}-pdf`]);
+        const text=execFileSync('pdftotext',[`${stem}.pdf`,'-'],{encoding:'utf8'});
+        assert.ok((result.instrument==='Cello' ? /H4/ : /L2|H3/).test(text),'PDF preserves inline modifier text on each instrument');
+      }
+    }
+    writeFileSync(`${evidenceDir}/${force?'chunk':'whole'}.json`,JSON.stringify(evidence.results.map(({pdf,svg,pdfSvg,...rest})=>rest),null,2));
+    await fingerPage.close();
+  }
+  const wholeEvidence=JSON.parse(readFileSync(`${evidenceDir}/whole.json`));
+  const chunkEvidence=JSON.parse(readFileSync(`${evidenceDir}/chunk.json`));
+  assert.deepEqual(chunkEvidence,wholeEvidence,'Whole/chunk labels and transposed fingerings match');
+  console.log('Finger TAB: dense violin/cello, Notation/Both/TAB, whole/chunk/probe, transposition, playback and rasterized PDF passed');
+
   const page = await browser.newPage();
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -166,11 +322,14 @@ try {
     assert.equal(result.staffLines['101'], strings, name + ': staff count');
     assert.equal(result.drawnLines['101'], strings, name + ': drawn lines');
   }
-  for (const name of ['a-piano-grand.abc', 'c-cello.abc']) {
+  for (const name of ['a-piano-grand.abc']) {
     const abc = readFileSync(new URL('../docs/handoffs/assets/2026-11-09-abc-import-spike/cases/' + name, import.meta.url), 'utf8');
     assert.equal((await call('parts', { abc })).canShowTab, false, name + ': no TAB option');
     assert.equal((await call('engraveTab', { abc }, { view: 'both' })).tabGroups, 0, name + ': no generated TAB');
   }
+  const celloAbc = readFileSync(new URL('../docs/handoffs/assets/2026-11-09-abc-import-spike/cases/c-cello.abc', import.meta.url), 'utf8');
+  assert.equal((await call('parts', { abc: celloAbc })).canShowTab, true, 'Cello ABC offers TAB');
+  assert.equal((await call('engraveTab', { abc: celloAbc }, { view: 'both' })).staffLines['101'], 4, 'Cello ABC has four-string TAB');
   console.log('TAB: non-string exclusion, bass and ukulele defaults, octave-clef regressions passed');
 
   // 8. Settings: host settings map to prefs, survive a saved per-score record, and bad or missing values get defaults.

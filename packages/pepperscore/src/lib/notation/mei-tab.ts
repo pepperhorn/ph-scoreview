@@ -22,11 +22,16 @@
  * their notes' sounding pitches (the staff's `<tuning>` plus fret) move by the given semitones and are solved again.
  */
 import { assignNoteFrets, STANDARD_TUNING, type FretFixed, type FretNote, type FretPos, type FretResult } from '../tab/fret-assign';
+import { STRING_CHARTS } from '../tab/strings/charts';
+import { solveFingerPhrase } from '../tab/strings/phrase';
+import type { PitchSpelling, StringFingering } from '../tab/strings/solver';
 import { attributeOf, scan } from './mei-view';
 
 export type TabSpec = {
   /** Notation staff numbers (`@n`) that get a generated TAB staff `100 + n`. */
   generate: string[];
+  /** Approved fretless charts by notation staff. Custom tuning/capo do not apply. */
+  fingers?: Record<string, 'violin' | 'cello'>;
   /** Staff-bound control events of a hidden notation staff move to this TAB staff (`n` → TAB `n`). */
   retarget: Record<string, string>;
   /** Open-string MIDI pitches, low to high. */
@@ -54,7 +59,7 @@ export type TabSpec = {
 };
 
 /** Fingerings by notation note `xml:id`, kept across chunk documents so a note keeps its fret wherever it is drawn. */
-export type FretMemory = Map<string, FretPos>;
+export type FretMemory = Map<string, FretPos & { finger?: StringFingering }>;
 
 const STEP_PC: Record<string, number> = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
 const ALTER: Record<string, number> = { s: 1, f: -1, n: 0, x: 2, ss: 2, ff: -2, ts: 3, tf: -3, xs: 3, sx: 3, nf: -1, ns: 1, su: 1, sd: 1, fu: -1, fd: -1, nu: 0, nd: 0 };
@@ -75,7 +80,7 @@ const PITCH_NAMES: [string, string?][] = [['c'], ['c', 's'], ['d'], ['e', 'f'], 
 const escapeId = (id: string) => id.replace(/[&<>"]/g, '');
 const idAttr = (id: string, suffix: string) => id ? ` xml:id="${escapeId(id)}${suffix}"` : '';
 
-type NoteRec = { id: string; midi: number | null; fixed?: FretFixed; continuation: boolean; tieStart: boolean; dur: number;
+type NoteRec = { spelling?: PitchSpelling; id: string; midi: number | null; fixed?: FretFixed; continuation: boolean; tieStart: boolean; dur: number;
   /** A tie continuation's fingering: the string and fret of the note it continues (drawn invisibly). */
   held?: FretResult };
 type EventRec = { onset: number; dur: number; notes: NoteRec[] };
@@ -144,20 +149,37 @@ function collect(mei: string, spec: TabSpec): { staves: Map<string, EventRec[]>;
   let measureStart = 0, measureLength = 0, measureRest = false, inMeasure = false;
   let staff: string | null = null; let staffDepth = 0;
   /** The imported TAB staffDef whose `<course>`s are being read. */
-  let reading: { entry: StaffInfo; courses: Map<number, number> } | null = null;
+  let reading: { n: string; entry: StaffInfo; courses: Map<number, number> } | null = null;
   let cursor = 0;
   const tuplets: number[] = [];
   let chord: EventRec | null = null; let chordGrace = false;
   let note: { rec: NoteRec; attributes: string; written?: string; gestural?: string; event: EventRec; inChord: boolean } | null = null;
   let graceDepth = 0;
+  const keyChanges: { staff?: string; onset: number; sig: string }[] = [{ onset: 0, sig: '0' }];
+  const pending: { rec: NoteRec; staff: string; onset: number; measure: number; semi: number; attributes: string; written?: string; gestural?: string }[] = [];
+  const addKey = (sig: string | null, n?: string) => {
+    if (sig !== null) keyChanges.push({ staff: n, onset: measureStart + (inMeasure ? cursor : 0), sig });
+  };
+  const keyAlter = (step: string, key: string) => {
+    const count = Number.parseInt(key) || 0;
+    const order = key.endsWith('f') ? 'beadgcf' : 'fcgdaeb';
+    return order.slice(0, count).includes(step) ? (key.endsWith('f') ? 'f' : 's') : 'n';
+  };
   const finishNote = () => {
     if (!note) return;
     const staffInfo = info.get(staff!);
+    if (spec.fingers?.[staff!]) pending.push({ rec: note.rec, staff: staff!, onset: note.event.onset,
+      measure: measureStart, semi: staffInfo?.semi ?? 0, attributes: note.attributes, written: note.written, gestural: note.gestural });
     if (staff! in refret) {
       const course = Number(attributeOf(note.attributes, 'tab.course')), fret = Number(attributeOf(note.attributes, 'tab.fret'));
       const open = staffInfo?.courses?.get(course);
       note.rec.midi = open !== undefined && Number.isInteger(fret) && fret >= 0 && attributeOf(note.attributes, 'tab.fret') !== null ? open + fret + refret[staff!] : null;
-    } else note.rec.midi = midiOf(note.attributes, note, staffInfo?.semi ?? 0);
+    } else {
+      note.rec.midi = midiOf(note.attributes, note, staffInfo?.semi ?? 0);
+      const step = (attributeOf(note.attributes, 'pname') ?? '').toUpperCase() as PitchSpelling['step'];
+      const alter = ALTER[attributeOf(note.attributes, 'accid.ges') ?? note.gestural ?? attributeOf(note.attributes, 'accid') ?? note.written ?? 'n'] ?? 0;
+      if (step.toLowerCase() in STEP_PC && Math.abs(alter) <= 2) note.rec.spelling = { step, alter: alter as PitchSpelling['alter'] };
+    }
     note = null;
   };
   scan(mei, ({ closing, name, attributes, selfClosing }) => {
@@ -177,12 +199,17 @@ function collect(mei: string, spec: TabSpec): { staves: Map<string, EventRec[]>;
       else if (name === 'staff' && --staffDepth === 0) staff = null;
       return;
     }
-    if (name === 'scoreDef') { setMeter(attributes, 'meter.'); return; }
+    if (name === 'scoreDef') { addKey(attributeOf(attributes, 'keysig') ?? attributeOf(attributes, 'key.sig')); setMeter(attributes, 'meter.'); return; }
+    if (name === 'keySig') {
+      addKey(attributeOf(attributes, 'sig'), staff ?? reading?.n);
+      return;
+    }
     if (name === 'meterSig') { setMeter(attributes, ''); return; }
     if (name === 'staffDef') {
       setMeter(attributes, 'meter.');
       const n = attributeOf(attributes, 'n') || '';
       if (collected.has(n)) {
+        addKey(attributeOf(attributes, 'keysig') ?? attributeOf(attributes, 'key.sig'), n);
         const previous = info.get(n);
         const ppq = Number(attributeOf(attributes, 'ppq'));
         const semi = attributeOf(attributes, 'trans.semi');
@@ -190,7 +217,7 @@ function collect(mei: string, spec: TabSpec): { staves: Map<string, EventRec[]>;
         // spelled at its new instrument's pitch, whose transposition is given.
         const entry: StaffInfo = { ppq: ppq > 0 ? ppq : previous?.ppq, semi: n in switched ? switched[n] : sounding.has(n) ? 0 : semi !== null ? Number(semi) || 0 : previous?.semi ?? 0, courses: previous?.courses };
         info.set(n, entry);
-        if (n in refret && !selfClosing) reading = { entry, courses: new Map() };
+        if (!selfClosing) reading = { n, entry, courses: new Map() };
       }
       return;
     }
@@ -267,6 +294,27 @@ function collect(mei: string, spec: TabSpec): { staves: Map<string, EventRec[]>;
       else cursor += durationOf(attributes, ppq, tuplets);
     }
   });
+  // Resolve after collecting all voices: a key change in one layer must not leak
+  // backwards into earlier notes in another layer. Later global definitions supersede
+  // opening staff keys, while simultaneous staff definitions override the global one.
+  const carried = new Map<string, { value: string; measure: number; key: number }>();
+  for (const note of pending.sort((a, b) => a.onset - b.onset)) {
+    let active = 0;
+    keyChanges.forEach((key, i) => {
+      if ((!key.staff || key.staff === note.staff) && key.onset <= note.onset
+        && (key.onset > keyChanges[active].onset || key.onset === keyChanges[active].onset
+          && (Number(!!key.staff) > Number(!!keyChanges[active].staff) || !!key.staff === !!keyChanges[active].staff && i > active))) active = i;
+    });
+    const step = attributeOf(note.attributes, 'pname') ?? '';
+    const id = `${note.staff}:${step}:${attributeOf(note.attributes, 'oct')}`;
+    const explicit = attributeOf(note.attributes, 'accid.ges') ?? note.gestural ?? attributeOf(note.attributes, 'accid') ?? note.written;
+    const previous = carried.get(id);
+    const effective = explicit ?? (previous?.measure === note.measure && previous.key === active ? previous.value : keyAlter(step, keyChanges[active].sig));
+    if (explicit !== undefined && explicit !== null) carried.set(id, { value: explicit, measure: note.measure, key: active });
+    note.rec.midi = midiOf(note.attributes, { ...note, gestural: effective }, note.semi);
+    const alter = ALTER[effective] ?? 0;
+    if (step in STEP_PC && Math.abs(alter) <= 2) note.rec.spelling = { step: step.toUpperCase() as PitchSpelling['step'], alter: alter as PitchSpelling['alter'] };
+  }
   return { staves, tieStarts, tieEnds, info, ids };
 }
 
@@ -279,6 +327,7 @@ function solve(staves: Map<string, EventRec[]>, tieStarts: Set<string>, tieEnds:
   const frets = new Map<string, FretResult>();
   const capo = capoOf(spec.capo);
   for (const [n, events] of staves) {
+    if (spec.fingers?.[n]) continue;
     const tuning = tuningOf(spec.tunings?.[n] ?? spec.tuning);
     const recs: NoteRec[] = [];
     const notes: FretNote[] = [];
@@ -328,7 +377,30 @@ export function injectTab(mei: string, spec: TabSpec, memory?: FretMemory): stri
   const frets = collected ? solve(staves, tieStarts, tieEnds, info, spec, memory) : new Map<string, FretResult>();
   /** Tie continuations, with the fingering of the note each continues. */
   const continuations = new Map<string, FretResult | undefined>();
-  for (const events of staves.values()) for (const event of events) for (const rec of event.notes) if (rec.continuation) continuations.set(rec.id, rec.held);
+  for (const [n, events] of staves) for (const event of events) for (const rec of event.notes) {
+    if (rec.continuation || (spec.fingers?.[n] && tieEnds.has(rec.id))) continuations.set(rec.id, rec.held);
+  }
+  const fingerings = new Map<string, StringFingering>();
+  for (const [n, events] of staves) {
+    const chart = spec.fingers?.[n];
+    if (!chart) continue;
+    const solved = solveFingerPhrase(STRING_CHARTS[chart], events.flatMap(event => event.notes.map(note => ({
+      id: note.id, onset: event.onset, duration: note.dur, midi: note.midi, spelling: note.spelling,
+      tieStop: note.continuation || tieEnds.has(note.id), fixed: memory?.get(note.id)?.finger,
+    }))));
+    for (const [id, fingering] of solved) {
+      fingerings.set(id, fingering);
+      memory?.set(id, { string: fingering.string, fret: fingering.finger, finger: fingering });
+      const result = { string: fingering.string, fret: fingering.modifier ? 44 : fingering.finger };
+      frets.set(id, result);
+      if (continuations.has(id)) continuations.set(id, result);
+    }
+  }
+  const fingerNote = (id: string, suffix: string) => {
+    const fingering = fingerings.get(id);
+    const xml = tabNote(id ? `${id}${suffix}` : '', frets.get(id));
+    return fingering ? xml.replace('/>', ` type="finger-tab-${fingering.modifier}${fingering.finger}-p${String(fingering.position).replace('.', '-')}"/>`) : xml;
+  };
   const capo = capoOf(spec.capo);
   /** Generated TAB staff numbers (an event moved onto one is attached to the TAB clone of its note). */
   const generatedTabs = new Set([...generate].map(n => String(100 + Number(n))));
@@ -339,14 +411,21 @@ export function injectTab(mei: string, spec: TabSpec, memory?: FretMemory): stri
   let scoreDefDepth = -1; let scoreDefDone = false; let depth = 0;
   let staffDef: { n: string; id: string; meterSig: string; depth: number } | null = null;
   // The TAB clone of the generated staff being read.
-  let clone: string[] | null = null; let cloneDepth = 0; let skip = 0;
+  let clone: string[] | null = null;
+  let cloneN = '';
+  let directions: string[] = [];
+  let measurePosition = 0;
+  const handPosition = new Map<string, number>();
+  const positionLabel = (p: number) => p === 0.5 ? 'pos. ½' : `${(['', 'I', 'II', 'III', 'IV'][Math.floor(p)] ?? '')}${p % 1 ? '½' : ''} pos.`;
+  let cloneDepth = 0; let skip = 0;
   /** The open chord's TAB group: whether it drew a fret, and the first continuation's fingering otherwise. */
   let chordOpen: { frets: number; held?: FretResult } | null = null;
   /** The depth of the imported TAB staff being re-fingered. */
   let refretDepth = -1;
   const staffDefXml = (n: string, id: string, meterSig: string) => {
-    const tuning = tuningOf(spec.tunings?.[n] ?? spec.tuning);
-    const tuningElement = tuningXml(tuning, capo);
+    const chart = spec.fingers?.[n];
+    const tuning = chart ? [...STRING_CHARTS[chart].openMidi].reverse() : tuningOf(spec.tunings?.[n] ?? spec.tuning);
+    const tuningElement = tuningXml(tuning, spec.fingers?.[n] ? 0 : capo);
     const ppq = info.get(n)?.ppq;
     return `<staffDef${idAttr(id, '-tab')} n="${100 + Number(n)}" lines="${tuning.length}" notationtype="tab.guitar" keysig="0"${ppq ? ` ppq="${ppq}"` : ''}><clef shape="TAB" line="${tuning.length - 1}"/>${tuningElement}${meterSig}</staffDef>`;
   };
@@ -401,6 +480,7 @@ export function injectTab(mei: string, spec: TabSpec, memory?: FretMemory): stri
     if (!clone) {
       if (name === 'staff' && !closing && !selfClosing && generate.has(attributeOf(attributes, 'n') || '')) {
         const n = attributeOf(attributes, 'n')!;
+        cloneN = n; directions = []; measurePosition = 0;
         clone = [`<staff${idAttr(attributeOf(attributes, 'xml:id') || '', '-tab')} n="${100 + Number(n)}">`];
         cloneDepth = depth; skip = 0; chordOpen = null;
       }
@@ -409,12 +489,22 @@ export function injectTab(mei: string, spec: TabSpec, memory?: FretMemory): stri
     // Inside a generated staff: build its TAB clone.
     if (closing && name === 'staff' && depth === cloneDepth - 1) {
       clone.push('</staff>');
-      out.push(clone.join(''));
+      out.push(clone.join(''), ...directions);
       clone = null;
       return;
     }
     if (skip) { if (closing) skip--; else if (!selfClosing) skip++; return; }
     const id = attributeOf(attributes, 'xml:id') || '';
+    if (!closing && name === 'note' && spec.fingers?.[cloneN] && attributeOf(attributes, 'grace') === null && fingerings.has(id) && !continuations.has(id)) {
+      const fingering = fingerings.get(id);
+      const position = fingering?.position || handPosition.get(cloneN) || 0;
+      if (position && position !== measurePosition) {
+        const reassert = !measurePosition && handPosition.get(cloneN) === position;
+        const target = ` startid="#${escapeId(id)}-tab"`;
+        if (target) directions.push(`<dir staff="${100 + Number(cloneN)}"${target} place="above" type="finger-position finger-staff-${100 + Number(cloneN)}${reassert ? ' finger-reassert' : ''}"><rend fontsize="30%">${positionLabel(position)}</rend></dir>`);
+        measurePosition = position; handPosition.set(cloneN, position);
+      }
+    }
     if (closing) {
       if (name === 'layer' || KEPT_CONTAINERS.has(name)) clone.push(`</${name}>`);
       else if (name === 'chord' && chordOpen) {
@@ -440,13 +530,13 @@ export function injectTab(mei: string, spec: TabSpec, memory?: FretMemory): stri
       if (!selfClosing) skip = 1;
       if (chordOpen) {
         if (continuations.has(id)) { if (!chordOpen.held) chordOpen.held = continuations.get(id); return; }
-        const drawn = tabNote(id ? `${id}-tab` : '', frets.get(id));
+        const drawn = fingerNote(id, '-tab');
         if (drawn) chordOpen.frets++;
         clone.push(drawn);
         return;
       }
       if (attributeOf(attributes, 'grace') !== null) return;
-      clone.push(`<tabGrp${idAttr(id, '-tab')}${durAttributes(attributes)}><tabDurSym/>${continuations.has(id) ? heldNote(continuations.get(id)) : tabNote(id ? `${id}-tabn` : '', frets.get(id))}</tabGrp>`);
+      clone.push(`<tabGrp${idAttr(id, '-tab')}${durAttributes(attributes)}><tabDurSym/>${continuations.has(id) ? heldNote(continuations.get(id)) : fingerNote(id, '-tabn')}</tabGrp>`);
       return;
     }
     if (RESTS.has(name) || REPEATS.has(name)) {
