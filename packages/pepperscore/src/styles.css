@@ -472,7 +472,10 @@
 .pepperscore .app-shell.has-skin-toolbar .ps-toast,
 .pepperscore .app-shell.has-skin-toolbar .reader-notices{bottom:calc(var(--ps-bottom-toolbar-h,0px) + 12px)}
 
-/* Pitch paint stays on heads; reader marks inherited from event groups take precedence. */
+/* Pitch paint stays on heads; reader marks inherited from event groups take precedence.
+   WebKit applies Verovio's path {stroke:currentColor} inside <use> glyphs, so
+   colour must agree with stroke as well as fill staying on the notehead. */
+.pepperscore[data-ps-pitch-colours] .notehead[data-pitch]{color:var(--ps-pitch-outline,rgba(0,0,0,.65))}
 .pepperscore[data-ps-pitch-colours] .notehead[data-pitch="C"]{fill:var(--ps-pitch-c);stroke:var(--ps-pitch-outline,rgba(0,0,0,.65));stroke-width:18;paint-order:stroke fill}
 .pepperscore[data-ps-pitch-colours] .notehead[data-pitch="C#"]{fill:var(--ps-pitch-c-sharp);stroke:var(--ps-pitch-outline,rgba(0,0,0,.65));stroke-width:18;paint-order:stroke fill}
 .pepperscore[data-ps-pitch-colours] .notehead[data-pitch="D"]{fill:var(--ps-pitch-d);stroke:var(--ps-pitch-outline,rgba(0,0,0,.65));stroke-width:18;paint-order:stroke fill}
@@ -485,11 +488,11 @@
 .pepperscore[data-ps-pitch-colours] .notehead[data-pitch="A"]{fill:var(--ps-pitch-a);stroke:var(--ps-pitch-outline,rgba(0,0,0,.65));stroke-width:18;paint-order:stroke fill}
 .pepperscore[data-ps-pitch-colours] .notehead[data-pitch="A#"]{fill:var(--ps-pitch-a-sharp);stroke:var(--ps-pitch-outline,rgba(0,0,0,.65));stroke-width:18;paint-order:stroke fill}
 .pepperscore[data-ps-pitch-colours] .notehead[data-pitch="B"]{fill:var(--ps-pitch-b);stroke:var(--ps-pitch-outline,rgba(0,0,0,.65));stroke-width:18;paint-order:stroke fill}
-.pepperscore[data-ps-pitch-colours] .is-playing .notehead[data-pitch]{fill:inherit;stroke:inherit;stroke-width:inherit}
-.pepperscore[data-ps-pitch-colours] .ps-cursor .notehead[data-pitch]{fill:inherit;stroke:inherit;stroke-width:inherit}
-.pepperscore[data-ps-pitch-colours] .ps-selection .notehead[data-pitch]{fill:inherit;stroke:inherit;stroke-width:inherit}
-.pepperscore[data-ps-pitch-colours] .ps-transposed .notehead[data-pitch]{fill:inherit;stroke:inherit;stroke-width:inherit}
-.pepperscore[data-ps-pitch-colours] .ps-out-of-range .notehead[data-pitch]{fill:inherit;stroke:inherit;stroke-width:inherit}
+.pepperscore[data-ps-pitch-colours] .is-playing .notehead[data-pitch]{color:var(--ps-playback,#b87218);fill:inherit;stroke:inherit;stroke-width:inherit}
+.pepperscore[data-ps-pitch-colours] .ps-cursor .notehead[data-pitch]{color:var(--ps-cursor,var(--ps-playback,#2f6fed));fill:inherit;stroke:inherit;stroke-width:inherit}
+.pepperscore[data-ps-pitch-colours] .ps-selection .notehead[data-pitch]{color:var(--ps-selection,#2f6a9a);fill:inherit;stroke:inherit;stroke-width:inherit}
+.pepperscore[data-ps-pitch-colours] .ps-transposed .notehead[data-pitch]{color:var(--ps-transposed,#d9741c);fill:inherit;stroke:inherit;stroke-width:inherit}
+.pepperscore[data-ps-pitch-colours] .ps-out-of-range .notehead[data-pitch]{color:var(--ps-out-of-range,#c62828);fill:inherit;stroke:inherit;stroke-width:inherit}
 .pepperscore .ps-pitch-colour-tile{width:36px;height:36px;flex:none;padding:0;border:0;border-radius:7px;background:var(--ps-pitch-c);opacity:.45;box-shadow:none}
 .pepperscore .ps-pitch-colour-tile[aria-pressed="true"]{opacity:1;box-shadow:0 0 0 2px var(--ps-accent,#345642)}
 .pepperscore .ps-pitch-colour-tile svg{width:100%;height:100%}

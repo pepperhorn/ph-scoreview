@@ -467,7 +467,7 @@ async function assertPitchRasterParity(browser, url) {
           reader.style.setProperty('--host-outline','rgba(20,80,140,.5)');reader.style.setProperty('--ps-pitch-outline','var(--host-outline)');
           reader.style.setProperty('--host-pitch','#d45b91');reader.style.setProperty('--ps-pitch-c','var(--host-pitch)');
         }
-        svg.style.cssText='display:block;width:3000px;height:auto';reader.append(svg);document.body.append(reader);
+        svg.style.cssText='display:block;width:3000px;height:auto';const system=document.createElement('div');system.className='score-system';system.append(svg);reader.append(system);document.body.append(reader);
         const byId=new Map(Array.from(svg.querySelectorAll('[id]'),element=>[element.id,element]));
         for(const part of score.parts)for(const measure of part.measures)for(const event of measure.notes){const element=findAnnotationNote(byId,score,event);if(element)tagPitchColours(element,event,part);}
         reader.removeAttribute('data-ps-pitch-colours');
@@ -483,6 +483,14 @@ async function assertPitchRasterParity(browser, url) {
           const b=annotationBox(head,svg),r=head.getBoundingClientRect();
           return {pitch:head.dataset.pitch,fill:paint.palette[head.dataset.pitch],screen:{x:r.x,y:r.y,width:r.width,height:r.height},pdf:{x:b.x*ratio,y:b.y*ratio,width:b.width*ratio,height:b.height*ratio}};
         });
+        // WebKit's referenced paths use currentColor; keep reader marks above pitch paint.
+        const head=svg.querySelector('.notehead[data-pitch]'),note=head.closest('.note');
+        for(const mark of ['is-playing','ps-cursor','ps-selection','ps-transposed','ps-out-of-range']){
+          note.classList.add('reader-note',mark);
+          const style=getComputedStyle(head);
+          if(style.color!==style.stroke || style.fill!==style.stroke)throw Error(`${mark}: glyph currentColor, stroke and fill must agree`);
+          note.classList.remove('reader-note',mark);
+        }
         const blob=await exportScore({input:{data:score.document.engravingText},score,options,pitchColours:paint},signal);
         return {bytes:Array.from(new Uint8Array(await blob.arrayBuffer())),heads,ratio,paint};
       },variant);
