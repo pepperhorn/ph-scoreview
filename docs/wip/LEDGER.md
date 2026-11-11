@@ -5,7 +5,7 @@
 > Waiting on: `child <taskId>` · `review <taskId>` · `ci` · `human: <why>` · `lead: <next action>`. Set it on every status change. A row needs the lead when it starts with `lead`, or when it's empty and Status is dispatched, in-review, changes-requested, ready, or merged. The lead's Stop hook won't let the lead end its turn while any row needs it.
 > Type: normal items have a spec and plan. Quick items have the title prefix `[quick]` (no spec or plan, a short handoff). PRs adopted by `orch-sweep` have the prefix `[pr]`.
 
-Next ID: 0021
+Next ID: 0022
 
 ## Active
 
@@ -16,13 +16,15 @@ Next ID: 0021
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | human: P1–P3 (editor distribution, private repo name, BeCreative licence) before T4 | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0013 | TAB for stringed instruments | planned (t4 docs; t1 #77, t2 #74, t3 #84 merged) | child 0017-impl-r1-fix2 (#85 writes the String TAB README; T4 = remaining docs after it merges) | codex/gpt-6.1-sol |  |  |  |  | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md |  | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
-| 0017 | Release pepperscore 0.5.0 (CHANGELOG, version) | changes-requested | child 0017-impl-r1-fix2 (docs for merged #84) | codex/gpt-6.1-sol | orch/0017-release-0-5-0 | https://github.com/pepperhorn/ph-scoreview/pull/85 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-5de38d86-837e74894e3847b8 | task `0017-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0017-impl-r1` |  |  | handoffs/2026-11-11-0017-release-0-5-0--codex-to-lead.md (@6ca54cc) | 2026-11-11 |
-| 0019 | [quick] CI validation step timeout 15 → 25 min, job 30 → 45 (S28) | in-review | review 0019-review-r1; human OK to merge on green | codex/gpt-6.1-sol | orch/0019-ci-validation-timeout | https://github.com/pepperhorn/ph-scoreview/pull/86 |  | task `0019-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0019-impl-r1` |  |  | handoffs/2026-11-11-0019-ci-validation-timeout--codex-to-lead.md (@7366227) | 2026-11-11 |
+| 0017 | Release pepperscore 0.5.0 (CHANGELOG, version) | ready (on hold) | review 0002-t3-review-r1 and child 0020 (human: release waits for the PDF button and a Firefox PDF fix) | codex/gpt-6.1-sol | orch/0017-release-0-5-0 | https://github.com/pepperhorn/ph-scoreview/pull/85 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-5de38d86-837e74894e3847b8 | task `0017-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0017-impl-r1` |  |  | handoffs/2026-11-11-0017-release-0-5-0--codex-to-lead.md (@6733f80) | 2026-11-11 |
+| 0020 | [quick] PDF export in Firefox: notation ~10× too large (S22) | dispatched | child 0020-impl-r1 | codex/gpt-6.1-sol | orch/0020-pdf-firefox-scale |  |  | task `0020-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0020-impl-r1` |  |  | handoffs/2026-11-11-0020-pdf-firefox-scale--lead-to-codex.md | 2026-11-11 |
+| 0021 | [quick] Cut CI minutes: docs-only skip, one run per PR push, reader only on PRs | dispatched | lead: delegate | codex/gpt-6.1-sol | orch/0021-ci-minutes |  |  |  |  |  | handoffs/2026-11-11-0021-ci-minutes--human-to-lead.md | 2026-11-11 |
 
 ## Done / closed
 
 | K | Title | PR | Merged | Notes |
 |---|---|---|---|---|
+| 0019 | [quick] CI validation timeout 15 → 25 min, job 30 → 45 (S28) | https://github.com/pepperhorn/ph-scoreview/pull/86 | 2026-11-11 | merged with human OK |
 | 0013-t3 | Violin and cello finger + position TAB (task of 0013) | https://github.com/pepperhorn/ph-scoreview/pull/84 | 2026-11-11 | merged; option D |
 | 0018 | [quick] Choir name variants and horn sounds (S26, S27) | https://github.com/pepperhorn/ph-scoreview/pull/82 | 2026-11-11 | 9d3c36e; ABC guide updated |
 | 0001-t4 | Pitch colours and toggle tile + PDF parity (task of 0001; closes 0002 AC8a) | https://github.com/pepperhorn/ph-scoreview/pull/81 | 2026-11-11 | 299d463; ci.yml poppler-utils (S21) |
@@ -74,13 +76,13 @@ Next ID: 0021
 | S19 | risk | Reader (webkit) flake: "Extra large note names keep clear of the count row" (gap −1.7 → −3.5) failed on PDF-only PR #71's push run, passed on its PR run | CI run 42740873297; `validation/reader.mjs` | S | medium (blocks merges) | PR #71 CI | new |
 | S20 | fix | `findTarget` returns null when the plugin's own overlay (e.g. a spotlight backdrop) covers the target centre; use `elementsFromPoint` and ignore hits inside `[data-ps-plugin]` — needed before 0003 T4 | `packages/pepperscore-editor/src/plugin/host.ts:33` | XS | high for T4 | PR #76 review r2 | done (0014, PR #79) |
 | S21 | ci | Install `poppler-utils` in the CI validate job so the PDF raster check runs in CI, not only locally | PR #78 review r2 | XS | medium | PR #78 review | done (0001-t4, PR #81) |
-| S22 | fix | Firefox PDF export: notation ~10× too large (offscreen layout root has no width/height, so Firefox returns identity CTM); give the root SVG explicit size before measuring — goes in 0002 T4 handoff | PR #78 review r3; `BROWSER=firefox node validation/pdf.mjs` | S | high before shipping PDF | PR #78 review | new |
+| S22 | fix | Firefox PDF export: notation ~10× too large (offscreen layout root has no width/height, so Firefox returns identity CTM); give the root SVG explicit size before measuring — goes in 0002 T4 handoff | PR #78 review r3; `BROWSER=firefox node validation/pdf.mjs` | S | high before shipping PDF | PR #78 review | accepted → 0020 |
 | S23 | fix | PDF annotations: TAB staves default to none when not passed; shadow offset drops multi-value `dy` | PR #78 review r3 | XS | low | PR #78 review | new |
 | S24 | fix | tabTuning mismatch warning always says "host": `PepperScore.tsx:495-497` passes host and reader-saved tunings through the same field | PR #80 review r2 | XS | low | PR #80 review | new |
 | S25 | fix | A "Bass" part with an explicit Acoustic Bass program shows the double-bass icon alongside bass-guitar TAB | PR #80 review r4 | XS | low | PR #80 review | new |
 | S26 | fix | Choir names missed by the voice-word pattern: "Soprano Solo"… "Bass Solo", slash staves "Soprano/Alto, Tenor/Bass", "Mezzo-Soprano", "Contralto" → Bass becomes bass guitar with TAB | `packages/pepperscore/src/lib/score.ts:130` (PR #80 r5) | XS | medium (hymns, solos) | PR #80 review | done (0018, PR #82) |
 | S27 | fix | `/horn/` gives English Horn, Basset Horn, Flugelhorn the French horn sound; should be GM 70 (cor anglais), clarinet, trumpet/flugelhorn | `packages/pepperscore/src/lib/score.ts:124` | XS | low | PR #80 review | done (0018, PR #82) |
-| S28 | ci | CI "Validation suite" step (timeout 15 min) takes ~12 min and times out on busy runs (PR #82 push run, two main runs) | `.github/workflows/ci.yml:41` | XS | high (false reds) | PR #82 review r2 | accepted → 0019 |
+| S28 | ci | CI "Validation suite" step (timeout 15 min) takes ~12 min and times out on busy runs (PR #82 push run, two main runs) | `.github/workflows/ci.yml:41` | XS | high (false reds) | PR #82 review r2 | done (0019, PR #86) |
 | S29 | fix | Fretless position-label pruning happens after Verovio layout, so a removed label can leave a neighbour one row higher than needed | PR #84 review r2 | S | low (cosmetic) | PR #84 review | new |
 | S30 | improvement | Fretless solver: add a position-continuity cost (prefer staying in position) to cut label density and I/II flips | 0013-t3 return handoff; PR #84 reviews | M | medium (readability) | PR #84 | new |
 | S1 | fix | Emit a mid-bar `<keySig>` only in layer 1; Verovio draws one per layer | `packages/pepperscore/src/lib/notation/document.ts:249` (probe: 2 layers → 3 keySig groups) | S | low today (ABC overlays are separate parts); matters for MIDI/multi-layer | PR #60 review r2 | done (0005, PR #63) |
@@ -89,6 +91,11 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-11 0021 new→dispatched — human: ph-scoreview is most of the Actions bill (~45 billed min/run; docs commits and duplicate push+PR runs); cancelled 3 redundant in-flight runs (main docs, #85 push+PR while release is on hold). Lead process: batch ledger commits, never wait on ci for docs-only commits
+2026-11-11 0020 new→dispatched — human: release also waits for a quick Firefox PDF fix (S22); runs in parallel with #83 (lib/pdf vs components)
+2026-11-11 0017 — human: 0.5.0 waits for the PDF button (#83); #85 held; human already ran npm login
+2026-11-11 0017 changes-requested→ready — 6733f80 merges main and adds violin/cello finger TAB to CHANGELOG/README (lead checked the docs-only delta against #84; no further review round); waiting on CI
+2026-11-11 0019 in-review→closed — CI green on 7366227, merged PR #86 (human OK)
 2026-11-11 0017 ready→changes-requested — #84 merged first, so CHANGELOG/README must describe violin/cello finger TAB; implementer merging main and updating docs
 2026-11-11 0013-t3 ready→merged — CI green on a77ca15, merged PR #84 per human
 2026-11-11 0002-t3 dispatched→in-review — PR #83 @3d90d5d; initial package +1,376 B gzip; chunking via reader static-graph grouping, finalizer guard unchanged; review r1
