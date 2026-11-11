@@ -40,6 +40,8 @@ A `%%MIDI program` (or MusicXML instrument sound) always wins. Without one, the 
 - **Instrument words beat voice words:** Alto Flute, Tenor Trombone, Baritone Horn, Soprano Recorder, Tenor Banjo, Baritone/Tenor Guitar keep their instruments.
 - **Voices:** Soprano/Alto/Tenor/Baritone alone, numbered or divisi ("Alto 2", "Soprano I div."), or with Voice/Vocal/Choir/Singer.
 - **Bass:** any name with "Bass" (Bass, Bass 1, Synth Bass) is **bass guitar** with 4-string TAB, unless the score has other voice parts and no guitar or drums (then it's a voice), or it says Voice/Choir. Electric/Acoustic/Fretless Bass and Bass Guitar are always bass guitar. Double Bass/Contrabass/Upright/String Bass are double bass (no TAB).
+- **More voice words:** Mezzo-Soprano, Contralto, Countertenor, "Soprano Solo", slash or & pairs ("Soprano/Alto", "Tenor & Bass") and plurals ("Basses") are voices. **Treble** is a voice only with a vocal hint or another choir word — "Treble, Bass" (piano staves) stays piano + bass guitar. Note "Bass Solo"/"Basses" count as voices even in a band; add `%%MIDI program` there.
+- **Horns:** English Horn/Cor Anglais, Basset Horn (clarinet sound), Flugelhorn/Flügelhorn (trumpet sound), Horn/French Horn.
 - **Letters:** S/A/T/B are voices only with at least three of them; a lone "A" means nothing.
 - **Ukulele** plays a nylon guitar sound with ukulele TAB.
 - Safest: add `%%MIDI program N` to every voice.
@@ -120,6 +122,7 @@ G, A, B, C | D4 |]
 
 ## Change log
 <!-- Newest first: YYYY-MM-DD — ledger item / PR — what changed for ABC authors -->
+- 2026-11-11 — 0018 / PR #82 — more choir names (Solo, slash/&, plurals, Mezzo, Contralto, Countertenor, Treble with context) and horn sounds.
 - 2026-11-11 — 0016 / PR #80 — part-name rules: bare "Bass" = bass guitar; Sax needs "Sax"; voice words only alone/numbered/hinted; ukulele sound. Existing files without `%%MIDI program`: "Bass" parts change from double bass to bass guitar (with TAB) unless in a choir; "Alto 1"-style parts become voices.
 - 2026-11-10 — 0012 / PR #75 — octave clefs now draw at the right octave (guitar `G,` on the second line) and generated TAB uses sounding pitch; the instrument switch keeps the "8". Known limit removed.
 - 2026-11-10 — known limit added (scale-to-song report) — octave clefs draw an octave high; fix tracked as 0012.
