@@ -40,3 +40,5 @@ npm run check && npm run build && npm run test:manifest && npm run test:validati
 
 ---
 ## Receiver ack
+
+Acknowledged 2026-11-11 (Codex). I will replace greedy event choices with bounded phrase-level position continuity, preserving held/tied strings, common chord positions, fixed notes and unsupported-note handling. I will add regression coverage, measure before/after violin and cello fixture labels and shifts, run the required verification, and return a draft PR. Ownership is limited to the listed solver/tests, validation/tab.mjs expectations, and my handoffs; no open questions. GBrain consulted: projects/scoreflow-music-reader (historical context; this dispatch and current code govern). Base 4311266 is an ancestor of HEAD 2c50a1e; clean T3 worktree switched to the requested branch.
