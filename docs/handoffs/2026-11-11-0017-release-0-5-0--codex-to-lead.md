@@ -8,7 +8,8 @@
 - **Worktree:** `/home/shaun/.t3/worktrees/ph-vexflow-view/t3-5de38d86-837e74894e3847b8`
 - **Base commit:** `e3772e6` (contains pinned `9d3c36e`)
 - **Receiver acknowledgement:** `b3b8db0`
-- **PR:** pending creation after verification
+- **Release/verification commit:** `035ddae` (only this handoff changes afterward)
+- **PR:** https://github.com/pepperhorn/ph-scoreview/pull/85 (draft; no watching/polling)
 - **Status:** closed
 
 ## Goal
