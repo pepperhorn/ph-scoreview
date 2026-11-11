@@ -26,6 +26,7 @@ const server = await createServer({ configFile: false, root, optimizeDeps: { inc
   } }] });
 await server.listen();
 const engine = process.env.BROWSER || 'chromium';
+assert.ok(['chromium', 'firefox', 'webkit'].includes(engine), `Unknown PDF browser: ${engine}`);
 const browser = await ({ chromium, firefox, webkit }[engine]).launch({ headless: true, ...(engine === 'chromium' ? { args: ['--no-sandbox'] } : {}) });
 try {
   const page = await browser.newPage();
@@ -35,6 +36,27 @@ try {
   page.setDefaultTimeout(60000);
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/pdf-spike`);
   await page.addStyleTag({content:readFileSync(join(root,'packages/pepperscore/dist/style.css'),'utf8').replace(/@import[^;]+;/g,'')});
+  // Match export's unsized offscreen host, including nested SVG parents. Firefox's
+  // nested SVG CTM omits its own viewBox; descendant content CTMs must survive.
+  const viewport = await page.evaluate(async () => {
+    const { flattenViewports } = await import('/packages/pepperscore/src/lib/pdf/normalize.ts');
+    const host = document.createElement('div');
+    host.style.cssText = 'position:absolute;left:-100000px;top:0';
+    host.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2100 2970"><svg data-level="outer" width="100%" height="100%" viewBox="0 0 21000 29700"><svg data-level="inner" x="100" y="200" width="1000" height="2000" viewBox="0 0 100 200"><path d="M 0 0 L 100 200"/></svg></svg></svg>';
+    document.body.append(host);
+    try {
+      const svg = host.firstElementChild, path = svg.querySelector('path');
+      const matrix = () => { const m = path.getScreenCTM(); return [m.a,m.b,m.c,m.d,m.e,m.f]; };
+      const before = matrix();
+      flattenViewports(svg);
+      return {before, after:matrix(), nested:svg.querySelectorAll('svg').length,
+        scales:Array.from(svg.querySelectorAll('[data-level]'),g=>g.transform.baseVal.consolidate().matrix.a)};
+    } finally { host.remove(); }
+  });
+  assert.equal(viewport.nested, 0);
+  assert.ok(viewport.before.every((value,i)=>Math.abs(value-viewport.after[i])<0.02), 'flattening preserves descendant content coordinates');
+  assert.ok(Math.abs(viewport.scales[0]-.1)<1e-6 && Math.abs(viewport.scales[1]-10)<1e-6, 'nested viewBox scales applied exactly once');
+  console.log(`PDF nested viewport transforms passed (${engine}).`);
   await assertPitchRasterParity(browser,page.url());
   if (!process.env.PITCH_PARITY_ONLY) {
   const composition = await page.evaluate(async () => {
@@ -416,7 +438,7 @@ try {
 }
 } finally { await browser.close(); await server.close(); }
 
-/** Compare actual Chromium screen pixels with Poppler pixels from the composed PDF. */
+/** Compare actual browser screen pixels with Poppler pixels from the composed PDF. */
 async function assertPitchRasterParity(browser, url) {
   const screen = await browser.newPage({viewport:{width:3300,height:2400},deviceScaleFactor:4});
   const directory=mkdtempSync(join(tmpdir(),'pitch-parity-'));
