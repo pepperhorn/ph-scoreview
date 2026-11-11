@@ -17,7 +17,7 @@ Next ID: 0019
 | 0013 | TAB for stringed instruments | dispatched (t3; t1 #77, t2 #74 merged) | child 0013-t3-impl-r1 | codex/gpt-6.1-sol | orch/0013-t3-fretless-tab |  |  | task `0013-t3-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0013-t3-impl-r1` | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md | handoffs/2026-11-11-0013-t3-fretless-tab--lead-to-codex.md | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
 | 0017 | Release pepperscore 0.5.0 (CHANGELOG, version) | planned | child 0018 (release after it merges) | lead |  |  |  |  |  |  |  | 2026-11-11 |
-| 0018 | [quick] Choir name variants and horn sounds (S26, S27) | changes-requested | child 0018-impl-r1-fix1 | codex/gpt-6.1-sol | orch/0018-choir-horn-names | https://github.com/pepperhorn/ph-scoreview/pull/82 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-09f66b85-9704b8dd5a4ecf97 | task `0018-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0018-impl-r1` |  |  | handoffs/2026-11-11-0018-choir-and-horn-names--codex-to-lead.md (@50d4eba) | 2026-11-11 |
+| 0018 | [quick] Choir name variants and horn sounds (S26, S27) | in-review | review 0018-review-r2 | codex/gpt-6.1-sol | orch/0018-choir-horn-names | https://github.com/pepperhorn/ph-scoreview/pull/82 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-09f66b85-9704b8dd5a4ecf97 | task `0018-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0018-impl-r1` |  |  | handoffs/2026-11-11-0018-choir-and-horn-names--codex-to-lead.md (@c2be5a3) | 2026-11-11 |
 
 ## Done / closed
 
@@ -84,6 +84,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-11 0018 changes-requested→in-review — Treble/umlaut/& fixes pushed c2be5a3 (683 tests); review r2
 2026-11-11 0002-t3 dispatched→blocked→dispatched — draft PR #83; blocked on build finalizer (lazy PDF moved runtime asset URLs into shared chunks) and outdated PDF-reserved tests; lead granted vite.config/finalize-dist/runtime files and the three test files; AC2 = no PDF engine in initial graph + lazy overlay, <~2 KB gz increase
 2026-11-11 0018 in-review→changes-requested — r1 approve (73-case probe) but lead asked to fix before release: "Treble, Bass" piano-staff names became voices; Flügelhorn umlaut; & and plural voice words
 2026-11-11 0018 dispatched→in-review — PR #82 @50d4eba (609 tests, full validation green); review r1
