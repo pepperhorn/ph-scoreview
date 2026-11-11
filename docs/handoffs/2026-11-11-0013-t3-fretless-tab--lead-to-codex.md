@@ -43,3 +43,5 @@ None. Escalate per AGENTS.md §7 (especially if a render path can't be covered).
 
 ---
 ## Receiver ack
+
+Acknowledged 2026-11-11: implement violin/cello four-line finger TAB with inline L/H, shared-position double stops, spelling-aware sounding-pitch solving, position directions, and substitution across worker probe/whole/chunk/PDF paths. Preserve fretted TAB and playback; change only the declared files and task handoffs. Base 299d463 is an ancestor and worktree was clean. No open questions. GBrain consulted: [default:projects/scoreflow-music-reader]; repo spec and merged T2 are authoritative.
