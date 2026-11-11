@@ -5,7 +5,7 @@
 - **Ledger:** 0020 (suggestion S22) — blocks the 0.5.0 release (human decision)
 - **Branch:** orch/0020-pdf-firefox-scale · **Worktree:** created by T3
 - **Base commit:** 10a018e
-- **Status:** open
+- **Status:** closed
 
 ## Goal
 In Firefox, exported PDFs draw the notation ~10× too large and off the page; Chromium is correct. Diagnosis from PR #78's review (`gh pr view 78 --comments`, r3): the export lays pages out in an offscreen element with no width/height (`packages/pepperscore/src/lib/pdf/compose.ts:20`, `export.ts:24`); Firefox then returns an identity transform (CTM) where Chromium returns the viewBox scale, and both the nested-viewport flattening and the outline-scale code depend on it. Likely fix: give the offscreen root SVG/host explicit physical width/height (from the paper size) before measuring, or compute the scale from viewBox/width attributes instead of the CTM. Repro: `BROWSER=firefox node validation/pdf.mjs` fails at "PDF contains full-size horizontal staff paths".
