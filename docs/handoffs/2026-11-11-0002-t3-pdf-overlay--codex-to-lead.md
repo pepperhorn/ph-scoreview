@@ -7,6 +7,7 @@
 - **Branch:** orch/0002-t3-pdf-overlay
 - **Worktree:** /home/shaun/.t3/worktrees/ph-vexflow-view/t3-d1cdc39d-46ddba0ee7ed626a
 - **Base:** fbf1f27d17572cbba0c3882a1f7164ee51c88d4f (required 299d463 is an ancestor)
+- **Verified implementation commit:** 9112ba9 (the subsequent merge incorporates only the supplied docs-only lead-answer commit 6a8f604; no later main source changes). The dispatch conflict was resolved by retaining the receiver ack, supplied lead answers and user-authorized reader scope. Ledger changes are inherited from the lead commit, not feature edits.
 - **Acknowledgement:** f6c1f48eb796ce5d5ef68ce74c443ae998018e1b
 - **PR:** https://github.com/pepperhorn/ph-scoreview/pull/83 (draft; no watching or polling)
 - **Port:** 5223 reserved; validation owns ephemeral servers; no persistent server
