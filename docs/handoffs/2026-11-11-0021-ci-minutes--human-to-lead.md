@@ -72,6 +72,8 @@ Moving CI to a self-hosted runner on our Coolify infrastructure (`runs-on: self-
 ---
 ## Receiver ack
 
+Codex (2026-11-11): I will restrict CI pushes to main, ignore docs/root Markdown/orchestration-only paths for push and PR events, key concurrency by PR number or ref, and skip reader jobs on main pushes while keeping PR and manual browser coverage. I will assess the optional validate container change and preserve Poppler. I own only `.github/workflows/ci.yml` and my 0021 handoffs; the ledger and docs-only CI waiting policy stay with the lead. I will validate locally, push `orch/0021-ci-minutes`, open a draft PR, and return without watching or polling it. No open questions. GBrain checked: `default:projects/scoreflow-music-reader` and `default:projects/scoreflow-music-reader/gotchas-abc-import`; no CI-specific guidance found.
+
 ---
 ## Lead notes (2026-11-11)
 - **Branch protection:** this private repo is on the free plan, so `main` has no branch protection or required checks (API returns 403 "Upgrade to GitHub Pro"). No required-check workaround is needed; don't add a "CI skipped" job.
