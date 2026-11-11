@@ -12,7 +12,7 @@ Next ID: 0022
 | K | Title | Status | Waiting on | Owner (provider/model) | Branch | PR | Worktree | T3 task/thread | Spec | Plan | Latest handoff | Updated |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 0001 | Composable player skins | planned (t5; t1–t4 merged) | child 0002-t3-impl-r1 (T5 shares README/SkinTest; dispatch when #0002-t3 merges) | codex/gpt-6.1-sol |  |  |  |  | specs/0001-composable-player-skins.md | plans/0001-composable-player-skins.md |  | 2026-11-10 |
-| 0002 | PDF export | changes-requested (t3; t1 #71, t2 #78 merged) | child 0002-t3-impl-r1-fix2 | codex/gpt-6.1-sol | orch/0002-t3-pdf-overlay | https://github.com/pepperhorn/ph-scoreview/pull/83 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-d1cdc39d-46ddba0ee7ed626a | task `0002-t3-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0002-t3-impl-r1` | specs/0002-pdf-export.md | plans/0002-pdf-export.md | handoffs/2026-11-11-0002-t3-pdf-overlay--codex-to-lead.md (@3d90d5d) | 2026-11-10 |
+| 0002 | PDF export | in-review (t3; t1 #71, t2 #78 merged) | review 0002-t3-review-r2 | codex/gpt-6.1-sol | orch/0002-t3-pdf-overlay | https://github.com/pepperhorn/ph-scoreview/pull/83 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-d1cdc39d-46ddba0ee7ed626a | task `0002-t3-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A1941fe92-59bb-4705-bee3-a66301cfb5de%3Adelegate-task%3A0002-t3-impl-r1` | specs/0002-pdf-export.md | plans/0002-pdf-export.md | handoffs/2026-11-11-0002-t3-pdf-overlay--codex-to-lead.md (@3a454d0) | 2026-11-10 |
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | human: P1–P3 (editor distribution, private repo name, BeCreative licence) before T4 | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0013 | TAB for stringed instruments | planned (t4 docs; t1 #77, t2 #74, t3 #84 merged) | child 0017-impl-r1-fix2 (#85 writes the String TAB README; T4 = remaining docs after it merges) | codex/gpt-6.1-sol |  |  |  |  | specs/0013-stringed-instrument-tab.md | plans/0013-stringed-instrument-tab.md |  | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
@@ -93,6 +93,7 @@ Last health scan: never
 
 ## Log
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-11 0002-t3 changes-requested→in-review — fixes pushed 3a454d0; review r2
 2026-11-11 0020 in-review→closed — r1 approve (firefox = chromium rasters; chromium unchanged), CI green (single PR run + push run, pre-0021), merged PR #87; reviewer installed webkit apt deps on the dev machine via sudo; S31, S32 logged
 2026-11-11 0021 dispatched→in-review — PR #88 @e2e9911 (push main only, paths-ignore, PR-number concurrency, reader PR-only, validate in Playwright container); review r1
 2026-11-11 0020 dispatched→in-review — PR #87 @62d7324 (chromium + firefox PDF pass, chromium rasters unchanged; webkit can't launch locally); review r1
