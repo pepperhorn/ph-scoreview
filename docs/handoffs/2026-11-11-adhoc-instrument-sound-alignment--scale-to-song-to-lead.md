@@ -144,3 +144,20 @@ npm run dev --workspace pepperscore-reader -- --host 0.0.0.0   # open a "Tuba" A
 - **Out-of-scope issues found:**
 - **Follow-ups:**
 - **For GBrain (lead to promote):**
+
+---
+## Update 2026-11-11 (scale-to-song, after reviewing 0.5.0)
+
+0.5.0 (0016, 0018) already covers Ukulele → 25, bare "Bass" → 34, Banjo
+106, French Horn 61, English Horn 70, Recorder 75, soprano sax 65, and the
+README numbering note (finding 5). **Still open:**
+
+- Finding 1 for name-only Tuba (59), Oboe (69), Harp (47), Harmonica (23),
+  Vibraphone (12), Xylophone (14), Organ/Hammond (17) and Fiddle (111):
+  they still play piano. A small extension of the program overrides in
+  `tab/string-instruments.ts` (~line 113) would do it.
+- Minor: name-only "Electric Guitar" plays the `guitar` voice (25, nylon)
+  rather than 28, and "Acoustic Guitar" rather than 26.
+- Finding 4 (`<midi-bank>` / `%%MIDI bank`): unchanged.
+
+Priority low: scale-to-song always emits `<midi-program>`.
