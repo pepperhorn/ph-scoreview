@@ -1,5 +1,6 @@
+import type { PdfCapture } from './PdfOverlay';
 import PitchColourTile from './PitchColourTile';
-import { pitchColourStyle } from '../lib/pitch-colours';
+import { pitchColourStyle, resolvePitchColours } from '../lib/pitch-colours';
 import { BAR_HEADER_ID, drawerExtras, resolveBar, warnUnknownBar } from '../lib/bar-items';
 import SkinBar from './SkinBar';
 import DrawerControls from './DrawerControls';
@@ -295,7 +296,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   }, [themeKey]);
   const bar = resolveBar(skin, preset, controls);
   const barKey = JSON.stringify(bar);
-  const chrome = useMemo(() => resolveChrome(preset, controls, bar), [preset, barKey, controls?.mixer, controls?.openFile, controls?.drawer, controls?.transport, controls?.viewToggle, controls?.zoom, controls?.tabToggle, controls?.instrumentSwitch, controls?.octaveTool]);
+  const chrome = useMemo(() => resolveChrome(preset, controls, bar), [preset, barKey, controls?.mixer, controls?.openFile, controls?.drawer, controls?.transport, controls?.viewToggle, controls?.zoom, controls?.tabToggle, controls?.instrumentSwitch, controls?.octaveTool, controls?.pdf]);
   /** A host clock always shows the playhead (ivories uses chrome="none" with a clock). */
   const playhead = chrome.playhead || Boolean(clock);
   const storage = useMemo(() => readerStorage(persist ?? (preset === 'full' ? 'pepperscore' : false)), [persist, preset]);
@@ -331,6 +332,17 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   const [octaveSelection, setOctaveSelection] = useState<OctaveSelection | null>(null);
   const [trackVolumes, setTrackVolumes] = useState<Record<string, number>>({});
   const [drawer, setDrawer] = useState(false);
+  const [pdfOpen, setPdfOpen] = useState(false);
+  const [PdfPanel, setPdfPanel] = useState<typeof import('./PdfOverlay').default | null>(null);
+  const [pdfLoadError, setPdfLoadError] = useState('');
+  useEffect(() => {
+    if (!pdfOpen || PdfPanel) return;
+    let active = true;
+    setPdfLoadError('');
+    void import('./PdfOverlay').then(module => { if (active) setPdfPanel(() => module.default); },
+      () => { if (active) setPdfLoadError('PDF options could not load. Reload the page to try again.'); });
+    return () => { active = false; };
+  }, [pdfOpen, PdfPanel]);
   const [mixer, setMixer] = useState(false);
   const [openDialog, setOpenDialog] = useState(false);
   const [pickerPartId, setPickerPartId] = useState<string | null>(null);
@@ -1321,7 +1333,8 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
       setDrawer(false); return;
     }
     if (event.key === 'Escape' && octaveOn && !openDialog) { setOctaveToolOn(false); return; }
-    if (pickerPartId || mixer || openDialog) return;
+    if (pdfOpen && event.key === 'Escape') { setPdfOpen(false); return; }
+    if (pdfOpen || pickerPartId || mixer || openDialog) return;
     const target = event.target as HTMLElement;
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
     // Space presses a focused button; keys inside the octave toolbar or a menu are theirs.
@@ -1827,6 +1840,9 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
   </div> : null;
   const octaveSelectionInfo = octaveOn && octaveSelection ? { count: octaveSelection.ids.length, partName: score.parts.find(part => part.id === octaveSelection.partId)?.name ?? '',
     outOfRange: octaveSelection.ids.filter(id => instrumentView.outOfRange.includes(id)).length } : null;
+  const pdfRevision = useMemo(() => ({}), [displayScore, prefs, renderHiddenIds, themeKey]);
+  const pdfSnapshot = (): PdfCapture => ({ score: displayScore, prefs, hiddenPartIds: renderHiddenIds, channel: channelRef.current,
+    pitchColours: skin?.pitchColours && prefs.pitchColours && rootRef.current ? resolvePitchColours(rootRef.current) : undefined });
   const headerElements: Partial<Record<HeaderControlId, React.ReactNode>> = {
     stop: clock ? null : <button className="icon-button stop-button" aria-label="Stop playback" title="Stop playback" onClick={() => { stop(true); viewportRef.current?.scrollTo({ top: 0, left: 0, behavior: 'smooth' }); }}><Square size={17} fill="currentColor"/></button>,
     play: clock ? null : <button className={`play-button ${loadingAudio ? 'is-loading' : ''}`} aria-label={playing || loadingAudio ? 'Pause playback' : 'Play score'} onClick={() => void play()}>{playing || loadingAudio ? <Pause size={17} fill="currentColor"/> : <Play size={17} fill="currentColor"/>}<span className="play-button-label">{loadingAudio ? 'Loading' : playing ? 'Pause' : 'Play'}</span></button>,
@@ -1857,6 +1873,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
         onPointerUp={event => releaseStaveScale(event.currentTarget)} onPointerCancel={event => releaseStaveScale(event.currentTarget)}/>
       <output className="header-stave-scale-value">{staveScalePercent}%</output>
     </label>,
+    pdf: chrome.pdf ? <button type="button" className="icon-button pdf-trigger" aria-label="Export PDF" title="Export PDF" aria-haspopup="dialog" aria-expanded={pdfOpen} disabled={!loaded} onClick={() => { setDrawer(false); setMoreOpen(false); setPdfOpen(true); }}><FileMusic className="pdf-trigger-icon" size={16}/><span className="pdf-trigger-label">PDF</span></button> : null,
     pitchColours: skin?.pitchColours ? <PitchColourTile on={!!prefs.pitchColours} toggle={() => update({ pitchColours: !prefs.pitchColours })}/> : null,
     noteNames: <button type="button" className="icon-button skin-note-names skin-annotation-toggle" aria-label="Note names" title="Note names" aria-pressed={prefs.names} onClick={() => update({ names: !prefs.names })}><Type size={18}/></button>,
     counts: <button type="button" className="icon-button skin-counts skin-annotation-toggle" aria-label="Counts" title="Counts" aria-pressed={prefs.counts} onClick={() => update({ counts: !prefs.counts })}><Hash size={18}/></button>,
@@ -1903,7 +1920,7 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     measure();
     return () => { observer.disconnect(); root.style.removeProperty('--ps-bottom-toolbar-h'); };
   }, [toolbarBar.length > 0, chrome.drawer]);
-  const renderControls = (tier: 'primary' | 'secondary') => HEADER_CONTROLS.filter(control => control.tier === tier && activeChrome[HEADER_CONTROL_GROUP[control.id]!] && headerElements[control.id]).map(control => <div key={control.id} className={`header-control header-control-${control.id}`} data-header-control={control.id}>{headerElements[control.id]}</div>);
+  const renderControls = (tier: 'primary' | 'secondary') => [...HEADER_CONTROLS, { id: 'pdf' as const, tier: 'secondary' as const }].filter(control => control.tier === tier && activeChrome[control.id === 'pdf' ? 'pdf' : HEADER_CONTROL_GROUP[control.id]!] && headerElements[control.id]).map(control => <div key={control.id} className={`header-control header-control-${control.id}`} data-header-control={control.id}>{headerElements[control.id]}</div>);
   const primaryControls = renderControls('primary');
   const secondaryControls = renderControls('secondary');
 
@@ -1935,6 +1952,13 @@ export default function PepperScore({ musicXml, file, scoreUrl, abc, chrome: pre
     {!showHeader && cornerPlay}
     {embedSwitchMenu}
 
+    {chrome.pdf && pdfOpen && (PdfPanel ? <PdfPanel paper={prefs.pdfPaper} onPaper={pdfPaper => update({ pdfPaper })}
+      snapshot={pdfSnapshot} revision={pdfRevision} font={prefs.notationFont} verovioBaseUrl={verovioBaseUrl} onClose={() => { setPdfOpen(false); rootRef.current?.focus({ preventScroll: true }); }}/>
+      : <div className="pdf-backdrop"><section className="pdf-panel" role="dialog" aria-modal="true" aria-label="Export PDF" tabIndex={-1} ref={focusOnMount}
+        onKeyDown={event => { if (event.key === 'Tab') { event.preventDefault(); const buttons = event.currentTarget.querySelectorAll<HTMLButtonElement>('button'); const next = document.activeElement === buttons[0] ? buttons[buttons.length - 1] : buttons[0]; next?.focus(); } }}>
+        <h2>Export PDF</h2><p role={pdfLoadError ? 'alert' : 'status'}>{pdfLoadError || 'Loading PDF options…'}</p>
+        <div className="pdf-actions"><button type="button" className="pdf-cancel" onClick={() => setPdfOpen(false)}>Cancel</button>{pdfLoadError && <button type="button" className="pdf-reload" onClick={() => window.history.go(0)}>Reload page</button>}</div>
+      </section></div>)}
     {chrome.mixer && mixer && <div className="mixer-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setMixer(false); }}>
       <section ref={focusOnMount} tabIndex={-1} className="mixer-panel" role="dialog" aria-modal="true" aria-label="Track mixer">
         <div className="mixer-heading"><div><SlidersHorizontal size={18}/><h2>Track mixer</h2></div><button className="icon-button" aria-label="Close track mixer" onClick={() => setMixer(false)}><X size={19}/></button></div>
