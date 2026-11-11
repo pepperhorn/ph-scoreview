@@ -4,6 +4,7 @@
 - **Type:** return
 - **Ledger:** 0023 · **Spec:** [0013](../specs/0013-stringed-instrument-tab.md)
 - **Dispatch:** [lead → codex](2026-11-11-0023-fretless-position-continuity--lead-to-codex.md)
+- **PR:** https://github.com/pepperhorn/ph-scoreview/pull/92 (draft)
 - **Branch:** `orch/0023-fretless-position-continuity`
 - **Worktree:** `/home/shaun/.t3/worktrees/ph-vexflow-view/t3-001d66c6-b63a40684cb553da`
 - **Base:** `2c50a1e` (includes required ancestor `4311266`)
