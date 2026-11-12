@@ -5,7 +5,7 @@
 > Waiting on: `child <taskId>` · `review <taskId>` · `ci` · `human: <why>` · `lead: <next action>`. Set it on every status change. A row needs the lead when it starts with `lead`, or when it's empty and Status is dispatched, in-review, changes-requested, ready, or merged. The lead's Stop hook won't let the lead end its turn while any row needs it.
 > Type: normal items have a spec and plan. Quick items have the title prefix `[quick]` (no spec or plan, a short handoff). PRs adopted by `orch-sweep` have the prefix `[pr]`.
 
-Next ID: 0027
+Next ID: 0030
 
 ## Active
 
@@ -15,7 +15,10 @@ Next ID: 0027
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
 | 0024 | [quick] Self-hosted runner on t3box: ci.yml runs-on from CI_RUNS_ON var | merged | human: install runner on t3box + set CI_RUNS_ON (docs/guides/self-hosted-runner.md) | codex/gpt-6.1-sol | orch/0024-ci-runs-on-variable | https://github.com/pepperhorn/ph-scoreview/pull/89 |  | task `0024-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A9cbab5d4-201b-4809-8342-6c4ce4f87509` |  |  | handoffs/2026-11-11-0024-ci-runs-on-variable--lead-to-codex.md | 2026-11-11 |
 | 0025 | Editor via private GitHub Packages + licence tooling (0003 P1/P3) | merged | human: rotate licence key → send public JWK + re-signed demo key (quick PR swaps them); then npm login to GitHub Packages + publish | codex/gpt-6.1-sol | orch/0025-editor-github-packages | https://github.com/pepperhorn/ph-scoreview/pull/93 |  | task `0025-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A659e21e6-7e3f-4cec-809b-062024e53050` | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-11-0025-editor-github-packages--lead-to-codex.md | 2026-11-11 |
-| 0026 | [quick] Release pepperscore 0.5.1 (CHANGELOG + version) | merged | human: npm login, then npm publish -w pepperscore (0.5.1) | codex/gpt-6.1-sol | orch/0026-release-0-5-1 | https://github.com/pepperhorn/ph-scoreview/pull/95 |  | task `0026-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A0cb3c522-27fa-4e52-bc3d-5265e7f623e9%3Adelegate-task%3A94a5587b-c895-4207-ace1-a1a9a2136a02` |  |  | handoffs/2026-11-12-0026-release-0-5-1--lead-to-codex.md | 2026-11-12 |
+| 0026 | [quick] Release pepperscore 0.5.1 (CHANGELOG + version) | merged | human: npm publish -w pepperscore (0.5.1; login done) | codex/gpt-6.1-sol | orch/0026-release-0-5-1 | https://github.com/pepperhorn/ph-scoreview/pull/95 |  | task `0026-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A0cb3c522-27fa-4e52-bc3d-5265e7f623e9%3Adelegate-task%3A94a5587b-c895-4207-ace1-a1a9a2136a02` |  |  | handoffs/2026-11-12-0026-release-0-5-1--lead-to-codex.md | 2026-11-12 |
+| 0027 | CI image with Poppler baked in (S37; human go) | dispatched | lead: delegate | codex/gpt-6.1-sol | orch/0027-ci-image-poppler |  |  |  |  |  | handoffs/2026-11-12-0027-ci-image-poppler--lead-to-codex.md | 2026-11-12 |
+| 0028 | [quick] WebKit hairline outline on overlapping marks (S36) | dispatched | lead: delegate | claude/claude-sonnet-5-5 | orch/0028-webkit-overlap-outline |  |  |  |  |  | handoffs/2026-11-12-0028-webkit-overlap-outline--lead-to-claude.md | 2026-11-12 |
+| 0029 | [quick] Editor pack check in CI + prepublish guard (0025 follow-ups) | dispatched | lead: delegate | codex/gpt-6.1-sol | orch/0029-editor-pack-ci |  |  |  |  |  | handoffs/2026-11-12-0029-editor-pack-ci--lead-to-codex.md | 2026-11-12 |
 
 ## Done / closed
 
@@ -96,8 +99,8 @@ Next ID: 0027
 | S33 | fix | PDF dialog: first close returns focus to the reader, not the PDF button; focus from outside the reader can land behind any reader dialog (mixer too) | PR #83 review r2 | S | low | PR #83 review | new |
 | S34 | bug | WebKit: PDF overlay does not recover after an aborted lazy chunk + reload (validation/pdf.mjs:765 waits 60 s for "Paper size"); intermittent duplicate .pdf-trigger after reload | 0022 return handoff (/tmp/0022-baseline.log reproduces before the change) | S | medium (Safari users after a network blip) | 0022 | done → 0002-t4 |
 | S35 | efficiency | Fretless phrase DP: 2,000 four-note cello chords 0.19 s → 5.2 s (realistic parts <1 s); prune chord states / beam width; also document weights tied to candidate count, and chunked renders see less lookahead | PR #92 review r1 | S | low–medium (pathological scores) | 0023 | new |
-| S36 | bug | WebKit: overlapping reader marks (playing+transposed, chord transposed+note selected) leave a ~1-unit outline in the other mark's colour; scope playing selector to `.reader-note.is-playing .notehead[data-pitch]`, chord case needs a non-selector fix | PR #91 review r1 | S | low (hairline) | 0022 | new |
-| S37 | risk | CI validate job apt-installs poppler-utils each run; Ubuntu mirror DNS failures fail CI (PR #93, main ab759a8 on 2026-11-11). Bake poppler into a small derived image (ghcr) or cache the .debs; moot on t3box if pre-baked there | CI runs 43059869776, 43060590510 | S | medium (flaky red CI, wasted reruns) | 0025 | new |
+| S36 | bug | WebKit: overlapping reader marks (playing+transposed, chord transposed+note selected) leave a ~1-unit outline in the other mark's colour; scope playing selector to `.reader-note.is-playing .notehead[data-pitch]`, chord case needs a non-selector fix | PR #91 review r1 | S | low (hairline) | 0022 | accepted → 0028 |
+| S37 | risk | CI validate job apt-installs poppler-utils each run; Ubuntu mirror DNS failures fail CI (PR #93, main ab759a8 on 2026-11-11). Bake poppler into a small derived image (ghcr) or cache the .debs; moot on t3box if pre-baked there | CI runs 43059869776, 43060590510 | S | medium (flaky red CI, wasted reruns) | 0025 | accepted → 0027 |
 | S1 | fix | Emit a mid-bar `<keySig>` only in layer 1; Verovio draws one per layer | `packages/pepperscore/src/lib/notation/document.ts:249` (probe: 2 layers → 3 keySig groups) | S | low today (ABC overlays are separate parts); matters for MIDI/multi-layer | PR #60 review r2 | done (0005, PR #63) |
 
 Last health scan: never
@@ -105,6 +108,7 @@ Last health scan: never
 ## Log
 2026-11-11 human decisions — runner host t3box (0024 dispatched: CI_RUNS_ON variable; human installs runner, tailnet SSH blocks agents); 0003 P1 private GitHub Packages, P2 pepperhorn/pepperscore-pt (created), P3 rotate key now → 0025 dispatched
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-12 0027/0028/0029 proposed→dispatched — human go on S37 (CI image), S36 (WebKit overlap outline), 0025 follow-ups (pack check via test:pack, prepublish guard)
 2026-11-12 0026 ready→merged — CI green on cb8a0bf, merged PR #95; awaiting human publish
 2026-11-12 0026 in-review→ready — Claude r1 approve on cb8a0bf
 2026-11-12 0026 dispatched→in-review — PR #95 @cb8a0bf (0.5.1; reader pin bump approved by lead as release scope); Claude review r1
