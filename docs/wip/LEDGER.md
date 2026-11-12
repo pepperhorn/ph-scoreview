@@ -16,12 +16,12 @@ Next ID: 0030
 | 0024 | [quick] Self-hosted runner on t3box: ci.yml runs-on from CI_RUNS_ON var | merged | human: install runner on t3box + set CI_RUNS_ON (docs/guides/self-hosted-runner.md) | codex/gpt-6.1-sol | orch/0024-ci-runs-on-variable | https://github.com/pepperhorn/ph-scoreview/pull/89 |  | task `0024-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A9cbab5d4-201b-4809-8342-6c4ce4f87509` |  |  | handoffs/2026-11-11-0024-ci-runs-on-variable--lead-to-codex.md | 2026-11-11 |
 | 0025 | Editor via private GitHub Packages + licence tooling (0003 P1/P3) | merged | human: rotate licence key → send public JWK + re-signed demo key (quick PR swaps them); then npm login to GitHub Packages + publish | codex/gpt-6.1-sol | orch/0025-editor-github-packages | https://github.com/pepperhorn/ph-scoreview/pull/93 |  | task `0025-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A659e21e6-7e3f-4cec-809b-062024e53050` | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-11-0025-editor-github-packages--lead-to-codex.md | 2026-11-11 |
 | 0028 | [quick] WebKit hairline outline on overlapping marks (S36) | in-review | review 0028-review-r1 | claude/claude-sonnet-5-5 | orch/0028-webkit-overlap-outline | https://github.com/pepperhorn/ph-scoreview/pull/98 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-137c2ce6-5a91a9b6a86ef844 | task `0028-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A44b0f9aa-4a3d-465b-b246-3d005a91e94f%3Adelegate-task%3A0028-impl-r1` |  |  | handoffs/2026-11-12-0028-webkit-overlap-outline--claude-to-lead.md | 2026-11-12 |
-| 0029 | [quick] Editor pack check in CI + prepublish guard (0025 follow-ups) | ready | ci | codex/gpt-6.1-sol | orch/0029-editor-pack-ci | https://github.com/pepperhorn/ph-scoreview/pull/97 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-40df5bfc-ea5fbe6a2099e674 | task `0029-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A44b0f9aa-4a3d-465b-b246-3d005a91e94f%3Adelegate-task%3A0029-impl-r1` |  |  | handoffs/2026-11-12-0029-editor-pack-ci--codex-to-lead.md | 2026-11-12 |
 
 ## Done / closed
 
 | K | Title | PR | Merged | Notes |
 |---|---|---|---|---|
+| 0029 | [quick] Editor pack check in CI + prepublish guard | https://github.com/pepperhorn/ph-scoreview/pull/97 | 2026-11-12 | merged; test:pack runs editor check; prepublishOnly guard |
 | 0027 | CI image with Poppler baked in (S37) | https://github.com/pepperhorn/ph-scoreview/pull/96 | 2026-11-12 | merged 742f81b; switch-on: human makes ghcr package public → lead sets CI_IMAGE |
 | 0026 | [quick] Release pepperscore 0.5.1 (CHANGELOG + version) | https://github.com/pepperhorn/ph-scoreview/pull/95 | 2026-11-12 | published to npm 0.5.1 |
 | 0002-t4 | PDF large scores, browsers, docs (task of 0002; closes 0002 and S34) | https://github.com/pepperhorn/ph-scoreview/pull/94 | 2026-11-12 | 86bb9bf; lazy-import retry on Vite/native ESM |
@@ -109,6 +109,7 @@ Last health scan: never
 ## Log
 2026-11-11 human decisions — runner host t3box (0024 dispatched: CI_RUNS_ON variable; human installs runner, tailnet SSH blocks agents); 0003 P1 private GitHub Packages, P2 pepperhorn/pepperscore-pt (created), P3 rotate key now → 0025 dispatched
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-12 0029 ready→closed — CI green on 2d85bf3, merged PR #97 (quick lane)
 2026-11-12 0028 dispatched→in-review — PR #98 @648164b; marks set --ps-mark, marked pitch heads color:var(--ps-mark) (color/fill/stroke agree); assertMarkOverlapOutline fails on base WebKit, passes 3 engines; Codex review r1
 2026-11-12 0029 in-review→ready — Claude Opus r1 approve on 2d85bf3 (guard publish-only, pack unaffected, CI pack step ~3–3.5 min); merge on green (quick lane, scripts only)
 2026-11-12 0027 ready→closed — rerun green on 352032c, merged PR #96 (742f81b, human OK); ci-image publish run 43134570243; guide updated per review (one-way public, CI_IMAGE pins over Playwright bumps, auto-publish on merge)
