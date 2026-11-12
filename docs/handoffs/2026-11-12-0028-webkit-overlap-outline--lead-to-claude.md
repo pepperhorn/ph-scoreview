@@ -35,3 +35,7 @@ npm run check && npm run build && npm run test:manifest && npm run test:validati
 BROWSER=webkit npm run test:pdf; BROWSER=webkit npm run test:skin
 ```
 On a loaded host, use `VALIDATION_BUDGET_SCALE=2` for timing-only failures.
+
+---
+## Receiver ack
+Claude (implementer). Fix S36: in WebKit a pitch-coloured notehead under two overlapping reader marks keeps a ~1-unit outline in the losing mark's colour, because the head's `color` (read by Verovio's `path{stroke:currentColor}` inside the referenced glyph) follows a different mark than its inherited fill and stroke. I will confirm it with a raster check, make `color` follow the same mark as fill and stroke, and add an assertion to `validation/pdf.mjs` that fails on the base commit in WebKit and passes after. Chromium and Firefox output must not change. No questions.
