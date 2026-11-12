@@ -33,3 +33,13 @@ Merging this PR changes `.github/ci-image/**` on main, which re-runs the publish
 docker build -t ph-ci-test .github/ci-image && docker inspect ph-ci-test --format '{{json .Config.Labels}}'
 ```
 There are no runtime changes, so the project's full verify isn't needed.
+
+---
+## Receiver ack
+Codex acknowledges task 0030: check GitHub's Container registry documentation for
+repository linkage and GITHUB_TOKEN publishing on a user account, add source and
+description OCI labels to the CI Dockerfile, then build locally and inspect the
+labels. Only the owned Dockerfile, workflow if required by the docs, and task 0030
+handoffs may change. No PAT push or live package publication; the lead owns merge
+and the publish run after merge. No open scope questions. Full runtime validation
+is waived by this handoff.
