@@ -1,0 +1,29 @@
+name: Publish CI image
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/ci-image/**'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push
+        # Keep this tag in sync with the Dockerfile base and ci.yml fallback.
+        run: |
+          docker build -t ghcr.io/pepperhorn/ph-scoreview-ci:v1.63.0-noble .github/ci-image
+          docker push ghcr.io/pepperhorn/ph-scoreview-ci:v1.63.0-noble

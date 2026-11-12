@@ -37,3 +37,7 @@ npm ci && npm run check && npm run build
 docker build -t ph-ci-test .github/ci-image && docker run --rm ph-ci-test pdftoppm -v
 ```
 The project's full verify isn't needed (no runtime code changes).
+
+## Receiver ack
+
+Codex, 2026-11-12: I will add only the Poppler-derived Playwright image, its GHCR publisher, the two CI container/Poppler changes, and the new runner-guide CI image section. I will preserve the unset-variable MCR fallback, investigate registry authentication, run the requested local checks and image build, and return a committed handoff plus a draft PR. No publishing, repository-variable changes, ledger edits, or runtime changes. The worktree is clean, HEAD f1f24b0 contains base 7c2da17, and the branch is orch/0027-ci-image-poppler. GBrain search: projects/scoreflow-music-reader; no CI-specific guidance found. No scope questions.

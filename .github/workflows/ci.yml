@@ -22,7 +22,9 @@ jobs:
     timeout-minutes: 45
     # Match playwright-core so Chromium and its system libraries are already installed.
     container:
-      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      # Bump .github/ci-image/Dockerfile and ci-image.yml tags with this Playwright tag.
+      # CI_IMAGE must be publicly pullable (see the runner guide's CI image section).
+      image: ${{ vars.CI_IMAGE || 'mcr.microsoft.com/playwright:v1.63.0-noble' }}
       options: --ipc=host
     steps:
       - uses: actions/checkout@v4
@@ -35,8 +37,7 @@ jobs:
         run: npx playwright-core install chromium
       - name: Install Poppler for PDF raster validation
         run: |
-          apt-get update
-          apt-get install -y poppler-utils
+          command -v pdftoppm || (apt-get -o Acquire::Retries=5 update && apt-get -o Acquire::Retries=5 install -y poppler-utils)
       - name: Type check
         run: npm run check
       - name: Build
@@ -59,7 +60,9 @@ jobs:
     # apt on the runner (`--with-deps`, ~120 MB for WebKit or Firefox) has crawled at ~50 kB/s from the runner's mirror
     # and run into the job timeout. Keep the tag on the lockfile's playwright-core version.
     container:
-      image: mcr.microsoft.com/playwright:v1.63.0-noble
+      # Bump .github/ci-image/Dockerfile and ci-image.yml tags with this Playwright tag.
+      # CI_IMAGE must be publicly pullable (see the runner guide's CI image section).
+      image: ${{ vars.CI_IMAGE || 'mcr.microsoft.com/playwright:v1.63.0-noble' }}
       options: --ipc=host
     env:
       # Firefox refuses to start as root with another user's HOME (the container runs as root).
@@ -103,8 +106,7 @@ jobs:
           BROWSER: ${{ matrix.browser }}
       - name: Install Poppler for PDF raster validation
         run: |
-          apt-get update
-          apt-get install -y poppler-utils
+          command -v pdftoppm || (apt-get -o Acquire::Retries=5 update && apt-get -o Acquire::Retries=5 install -y poppler-utils)
       - name: PDF export (page model, vector composition, overlay, large score; chromium runs in the validate job)
         run: npm run test:pdf
         timeout-minutes: 12

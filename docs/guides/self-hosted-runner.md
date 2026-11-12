@@ -40,3 +40,25 @@ Check: `gh api repos/pepperhorn/ph-scoreview/actions/runners --jq '.runners[] | 
 - Run **one** runner instance at first. The Chromium validation is CPU-heavy, and parallel jobs (`validate` + 2× `reader`) queue one at a time. Add a second instance (`--name t3box-2`) if PR latency matters more than t3box load.
 - Disk: Playwright images and `_work` caches grow. Add `docker image prune -af --filter until=168h` to a weekly cron.
 - Never put the registration token in GBrain, docs or chat logs. It expires in an hour anyway.
+
+## CI image
+
+The default remains the public Playwright image above. To avoid installing Poppler on every CI run, `.github/ci-image/Dockerfile` adds `poppler-utils` to that image. The **Publish CI image** workflow (`ci-image.yml`) builds and pushes `ghcr.io/pepperhorn/ph-scoreview-ci:v1.63.0-noble` using `GITHUB_TOKEN`; it runs manually or when `.github/ci-image/**` changes on `main`.
+
+After merging the workflow, publish it and confirm the run succeeds:
+
+```bash
+gh workflow run ci-image.yml -R pepperhorn/ph-scoreview --ref main
+```
+
+Before switching, make the `ph-scoreview-ci` container package **public** in its GitHub package settings, then verify an anonymous pull succeeds. The image contains only Playwright and Poppler, with no repository files or secrets. CI deliberately pulls anonymously: its existing `contents: read` token cannot pull private GHCR packages, and supplying GitHub credentials to the default MCR registry is unnecessary. Private-image support would also need `packages: read` permission and conditional container credentials; that is outside this task's permitted `ci.yml` edits. See [GitHub's container-registry authentication guide](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
+
+Then switch both CI jobs (works on GitHub-hosted and self-hosted runners):
+
+```bash
+gh variable set CI_IMAGE -R pepperhorn/ph-scoreview --body 'ghcr.io/pepperhorn/ph-scoreview-ci:v1.63.0-noble'
+# Roll back to the public Playwright image and Poppler install fallback:
+gh variable delete CI_IMAGE -R pepperhorn/ph-scoreview
+```
+
+Keep the Playwright tags in `ci.yml`, `.github/ci-image/Dockerfile`, and `ci-image.yml` aligned with `playwright-core`. Publish the new tag before updating `CI_IMAGE`. Both jobs skip apt when `pdftoppm` is already present; otherwise they install Poppler with five apt retries.
