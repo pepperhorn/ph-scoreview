@@ -13,13 +13,13 @@ Next ID: 0031
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | human: key rotation + editor publish (0025 merged), then dispatch T4 in pepperhorn/pepperscore-pt | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
-| 0024 | [quick] Self-hosted runner on t3box: ci.yml runs-on from CI_RUNS_ON var | merged | ci (verification run 43183805870 on t3box; background watcher wakes lead) | codex/gpt-6.1-sol | orch/0024-ci-runs-on-variable | https://github.com/pepperhorn/ph-scoreview/pull/89 |  | task `0024-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A9cbab5d4-201b-4809-8342-6c4ce4f87509` |  |  | handoffs/2026-11-11-0024-ci-runs-on-variable--lead-to-codex.md | 2026-11-11 |
 | 0025 | Editor via private GitHub Packages + licence tooling (0003 P1/P3) | merged | human: rotate licence key → send public JWK + re-signed demo key (quick PR swaps them); then npm login to GitHub Packages + publish | codex/gpt-6.1-sol | orch/0025-editor-github-packages | https://github.com/pepperhorn/ph-scoreview/pull/93 |  | task `0025-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A659e21e6-7e3f-4cec-809b-062024e53050` | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-11-0025-editor-github-packages--lead-to-codex.md | 2026-11-11 |
 
 ## Done / closed
 
 | K | Title | PR | Merged | Notes |
 |---|---|---|---|---|
+| 0024 | [quick] Self-hosted runner switch (CI_RUNS_ON) | https://github.com/pepperhorn/ph-scoreview/pull/89 | 2026-11-12 | runner installed; t3box CPU lacks AVX2 → astro build SIGILL in test:pack; CI_RUNS_ON unset (repo public = free hosted minutes) |
 | 0030 | [quick] CI image source label (GHCR publish) | https://github.com/pepperhorn/ph-scoreview/pull/99 | 2026-11-12 | merged; ci-image publish green; switch-on: human makes package public → lead sets CI_IMAGE |
 | 0028 | [quick] WebKit hairline outline on overlapping marks (S36) | https://github.com/pepperhorn/ph-scoreview/pull/98 | 2026-11-12 | merged; --ps-mark drives pitch-head color; for 0.5.2 |
 | 0029 | [quick] Editor pack check in CI + prepublish guard | https://github.com/pepperhorn/ph-scoreview/pull/97 | 2026-11-12 | merged; test:pack runs editor check; prepublishOnly guard |
@@ -104,6 +104,7 @@ Next ID: 0031
 | S37 | risk | CI validate job apt-installs poppler-utils each run; Ubuntu mirror DNS failures fail CI (PR #93, main ab759a8 on 2026-11-11). Bake poppler into a small derived image (ghcr) or cache the .debs; moot on t3box if pre-baked there | CI runs 43059869776, 43060590510 | S | medium (flaky red CI, wasted reruns) | 0025 | done → 0027/0030 (human: make GHCR package public; lead: set CI_IMAGE) |
 | S38 | risk | Flaky validate: validation/skin.mjs:469 `.ps-toast-dismiss` click times out after toast was visible (toast likely auto-dismissed under CI load); PR #96 run 43130274360 | CI job 130892411022 | S | medium (red CI, reruns) | 0027 | new |
 | S39 | risk | Flaky WebKit reader job: validation/pdf.mjs:875 strict locator `.skin-reader .pdf-trigger` matches two buttons after reload/skin update (S34's intermittent duplicate trigger); wait for toolbar state, target visible control | PR #98 CI job 130912106066; Codex review r1 | S | medium (red CI) | 0028 | new |
+| S40 | infra | t3box runner (registered to ph-scoreview, now idle): either deregister, or re-register for private repos with heavy CI (pepperhorn-platform, chordcards, new-rangesevents, ggr ~100 runs/30 d). User account → one runner registration per repo; check each toolchain runs on x86-64-v2 (no AVX2) | run 43183805870; CPU i7-3610QM | M | high (private-repo minutes) | 0024 | new |
 | S1 | fix | Emit a mid-bar `<keySig>` only in layer 1; Verovio draws one per layer | `packages/pepperscore/src/lib/notation/document.ts:249` (probe: 2 layers → 3 keySig groups) | S | low today (ABC overlays are separate parts); matters for MIDI/multi-layer | PR #60 review r2 | done (0005, PR #63) |
 
 Last health scan: never
@@ -111,6 +112,7 @@ Last health scan: never
 ## Log
 2026-11-11 human decisions — runner host t3box (0024 dispatched: CI_RUNS_ON variable; human installs runner, tailnet SSH blocks agents); 0003 P1 private GitHub Packages, P2 pepperhorn/pepperscore-pt (created), P3 rotate key now → 0025 dispatched
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-12 0024 merged→closed — t3box run 43183805870: reader firefox/webkit green, validate red (astro build Illegal instruction; no AVX2); CI_RUNS_ON deleted; fork-PR approval stays all_external_contributors
 2026-11-12 0024 — runner installed on t3box by lead (service online), CI_RUNS_ON set, fork-PR approval = all external contributors (repo now public); verification run 43183805870
 2026-11-12 0030 merged→closed — ci-image.yml publish green after merge (label sufficed); package still private (anon pull UNAUTHORIZED)
 2026-11-12 0028 ready→closed — WebKit rerun green on 648164b, merged PR #98 (quick lane)

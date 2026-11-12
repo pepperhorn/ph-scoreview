@@ -38,7 +38,8 @@ Check: `gh api repos/pepperhorn/ph-scoreview/actions/runners --jq '.runners[] | 
 ## Status (2026-11-12)
 
 - Installed by the lead over Tailscale SSH (root) with `t3box-runner.sh`: `ghrunner` user in the docker group, service `actions.runner.pepperhorn-ph-scoreview.t3box`, Poppler on the host, weekly prune in `/etc/cron.d/ghrunner-prune`. t3box: 8 cores, 14 GB RAM.
-- `CI_RUNS_ON` set. `CI_IMAGE` not set yet (ghcr package not anonymously pullable).
+- **`CI_RUNS_ON` unset again (2026-11-12).** Verification run 43183805870: both reader jobs passed on t3box (~15 min each), but `test:pack` crashed with `Illegal instruction` (exit 132) in `astro build` inside the fresh-from-npm Astro host. t3box is an i7-3610QM (Ivy Bridge: AVX, no AVX2/BMI2/FMA), so some native binary the pack smoke installs needs x86-64-v3. Also: one runner serialises the three jobs (52 min wall clock vs ~19 min hosted), and the repo is now public, so hosted minutes are free. Leave this repo on GitHub-hosted runners; t3box suits private repos whose toolchains run on x86-64-v2.
+- `CI_IMAGE` not set yet (ghcr package not anonymously pullable).
 - **The repo is now public.** Fork PR workflows require approval for all external contributors (`actions/permissions/fork-pr-contributor-approval` = `all_external_contributors`), so no outside code reaches t3box unreviewed. Never approve a fork PR's workflow run without reading the diff, including `.github/`.
 
 ## Notes
