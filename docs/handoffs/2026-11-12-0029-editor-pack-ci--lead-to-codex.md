@@ -27,3 +27,9 @@ Two follow-ups from 0025 (#93), before the editor is published to GitHub Package
 npm ci && npm run check && npm run build && npm run test:manifest && npm run test:pack
 rm -rf packages/pepperscore-editor/dist && npm publish --dry-run -w @pepperhorn/pepperscore-editor; npm run build -w @pepperhorn/pepperscore-editor && npm publish --dry-run -w @pepperhorn/pepperscore-editor
 ```
+
+---
+## Receiver ack
+I will chain the existing core and editor pack checks through root `test:pack`, preserve the standalone editor command, and add an editor-only prepublish guard rejecting missing or stale dist/index.js, dist/index.d.ts and dist/style.css. I will change only the owned scripts/package script fields and 0029 handoffs, measure editor pack overhead against the 12-minute CI budget, verify publish dry-runs with missing, stale and rebuilt output, and return a committed handoff plus draft PR. No real publish or CI workflow edits. No open questions.
+
+Context lookup: GBrain `default:projects/scoreflow-music-reader` (historical project context) and `default:projects/scoreflow-music-reader/gotchas-abc-import` (root npm ci guidance); repository handoff is authoritative for this task.
