@@ -1,6 +1,6 @@
 # Self-hosted CI runner (t3box)
 
-Ledger 0024. ph-scoreview CI runs on a self-hosted GitHub Actions runner on **t3box** (tailnet `100.91.168.52`) to stop paying for GitHub-hosted Linux minutes. The job images are unchanged: `validate` and `reader` run in `mcr.microsoft.com/playwright:v1.63.0-noble`, so the runner needs Docker.
+Ledger 0024. ph-scoreview CI runs on a self-hosted GitHub Actions runner on **t3box** (tailnet `100.91.168.52`) to stop paying for GitHub-hosted Linux minutes. `validate` and `reader` run in a container (`mcr.microsoft.com/playwright:v1.63.0-noble`, or the CI image below when `CI_IMAGE` is set), so the runner needs Docker.
 
 ## Switch
 
@@ -45,13 +45,13 @@ Check: `gh api repos/pepperhorn/ph-scoreview/actions/runners --jq '.runners[] | 
 
 The default remains the public Playwright image above. To avoid installing Poppler on every CI run, `.github/ci-image/Dockerfile` adds `poppler-utils` to that image. The **Publish CI image** workflow (`ci-image.yml`) builds and pushes `ghcr.io/pepperhorn/ph-scoreview-ci:v1.63.0-noble` using `GITHUB_TOKEN`; it runs manually or when `.github/ci-image/**` changes on `main`.
 
-After merging the workflow, publish it and confirm the run succeeds:
+Merging a change under `.github/ci-image/**` publishes the image automatically. To republish by hand:
 
 ```bash
 gh workflow run ci-image.yml -R pepperhorn/ph-scoreview --ref main
 ```
 
-Before switching, make the `ph-scoreview-ci` container package **public** in its GitHub package settings, then verify an anonymous pull succeeds. The image contains only Playwright and Poppler, with no repository files or secrets. CI deliberately pulls anonymously: its existing `contents: read` token cannot pull private GHCR packages, and supplying GitHub credentials to the default MCR registry is unnecessary. Private-image support would also need `packages: read` permission and conditional container credentials; that is outside this task's permitted `ci.yml` edits. See [GitHub's container-registry authentication guide](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
+Before switching, make the `ph-scoreview-ci` container package **public** in its GitHub package settings (**one-way**: GitHub can't make a public package private again; done 2026-11-12 with the human's OK), then verify an anonymous pull succeeds. The image contains only Playwright and Poppler, with no repository files or secrets. CI deliberately pulls anonymously: its existing `contents: read` token cannot pull private GHCR packages, and supplying GitHub credentials to the default MCR registry is unnecessary. Private-image support would also need `packages: read` permission and conditional container credentials; that is outside this task's permitted `ci.yml` edits. See [GitHub's container-registry authentication guide](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
 
 Then switch both CI jobs (works on GitHub-hosted and self-hosted runners):
 
@@ -61,4 +61,4 @@ gh variable set CI_IMAGE -R pepperhorn/ph-scoreview --body 'ghcr.io/pepperhorn/p
 gh variable delete CI_IMAGE -R pepperhorn/ph-scoreview
 ```
 
-Keep the Playwright tags in `ci.yml`, `.github/ci-image/Dockerfile`, and `ci-image.yml` aligned with `playwright-core`. Publish the new tag before updating `CI_IMAGE`. Both jobs skip apt when `pdftoppm` is already present; otherwise they install Poppler with five apt retries.
+Keep the Playwright tags in `ci.yml`, `.github/ci-image/Dockerfile`, and `ci-image.yml` aligned with `playwright-core`. **`CI_IMAGE` overrides the tag in `ci.yml`**: a Playwright bump must also bump the Dockerfile tag, publish the new image, and re-set `CI_IMAGE` to the new tag, or CI keeps running the old browsers. Both jobs skip apt when `pdftoppm` is already present; otherwise they install Poppler with five apt retries.
