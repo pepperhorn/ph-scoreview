@@ -13,7 +13,7 @@ Next ID: 0031
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 0003 | Teaching layer (part 1: goal picker and setup tour) | planned (t4–t6; t1 #68, t2 #69, t3 #76 merged) | human: key rotation + editor publish (0025 merged), then dispatch T4 in pepperhorn/pepperscore-pt | codex/gpt-6.1-sol |  |  |  |  | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md |  | 2026-11-10 |
 | 0015 | PDF overlay templates (stamping, PepperHorn stamp schema v1) | specced (draft) | human: shared stamp schema v1 in pepperhorn-platform first (handoff sent) | lead |  |  |  |  | specs/0015-pdf-overlay-templates.md |  | handoffs/2026-11-11-adhoc-stamp-template-schema-v1--pepperscore-to-pepperhorn-platform.md | 2026-11-11 |
-| 0024 | [quick] Self-hosted runner on t3box: ci.yml runs-on from CI_RUNS_ON var | merged | human: install runner on t3box + set CI_RUNS_ON (docs/guides/self-hosted-runner.md) | codex/gpt-6.1-sol | orch/0024-ci-runs-on-variable | https://github.com/pepperhorn/ph-scoreview/pull/89 |  | task `0024-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A9cbab5d4-201b-4809-8342-6c4ce4f87509` |  |  | handoffs/2026-11-11-0024-ci-runs-on-variable--lead-to-codex.md | 2026-11-11 |
+| 0024 | [quick] Self-hosted runner on t3box: ci.yml runs-on from CI_RUNS_ON var | merged | lead: verify first t3box run 43183805870, then close | codex/gpt-6.1-sol | orch/0024-ci-runs-on-variable | https://github.com/pepperhorn/ph-scoreview/pull/89 |  | task `0024-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A9cbab5d4-201b-4809-8342-6c4ce4f87509` |  |  | handoffs/2026-11-11-0024-ci-runs-on-variable--lead-to-codex.md | 2026-11-11 |
 | 0025 | Editor via private GitHub Packages + licence tooling (0003 P1/P3) | merged | human: rotate licence key → send public JWK + re-signed demo key (quick PR swaps them); then npm login to GitHub Packages + publish | codex/gpt-6.1-sol | orch/0025-editor-github-packages | https://github.com/pepperhorn/ph-scoreview/pull/93 |  | task `0025-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A659e21e6-7e3f-4cec-809b-062024e53050` | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-11-0025-editor-github-packages--lead-to-codex.md | 2026-11-11 |
 
 ## Done / closed
@@ -111,6 +111,7 @@ Last health scan: never
 ## Log
 2026-11-11 human decisions — runner host t3box (0024 dispatched: CI_RUNS_ON variable; human installs runner, tailnet SSH blocks agents); 0003 P1 private GitHub Packages, P2 pepperhorn/pepperscore-pt (created), P3 rotate key now → 0025 dispatched
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-12 0024 — runner installed on t3box by lead (service online), CI_RUNS_ON set, fork-PR approval = all external contributors (repo now public); verification run 43183805870
 2026-11-12 0030 merged→closed — ci-image.yml publish green after merge (label sufficed); package still private (anon pull UNAUTHORIZED)
 2026-11-12 0028 ready→closed — WebKit rerun green on 648164b, merged PR #98 (quick lane)
 2026-11-12 0030 ready→merged — CI green on 4922908, merged PR #99; publish awaits human GHCR access step

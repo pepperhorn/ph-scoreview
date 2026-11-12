@@ -35,6 +35,12 @@ cd ~ghrunner/actions-runner && sudo ./svc.sh install ghrunner && sudo ./svc.sh s
 
 Check: `gh api repos/pepperhorn/ph-scoreview/actions/runners --jq '.runners[] | {name,status,labels:[.labels[].name]}'` should show `t3box` `online`.
 
+## Status (2026-11-12)
+
+- Installed by the lead over Tailscale SSH (root) with `t3box-runner.sh`: `ghrunner` user in the docker group, service `actions.runner.pepperhorn-ph-scoreview.t3box`, Poppler on the host, weekly prune in `/etc/cron.d/ghrunner-prune`. t3box: 8 cores, 14 GB RAM.
+- `CI_RUNS_ON` set. `CI_IMAGE` not set yet (ghcr package not anonymously pullable).
+- **The repo is now public.** Fork PR workflows require approval for all external contributors (`actions/permissions/fork-pr-contributor-approval` = `all_external_contributors`), so no outside code reaches t3box unreviewed. Never approve a fork PR's workflow run without reading the diff, including `.github/`.
+
 ## Notes
 - The repo is private, so fork PRs can't run code on t3box. Don't make the repo public while this runner is attached. If it ever goes public, require approval for outside contributors first.
 - Run **one** runner instance at first. The Chromium validation is CPU-heavy, and parallel jobs (`validate` + 2× `reader`) queue one at a time. Add a second instance (`--name t3box-2`) if PR latency matters more than t3box load.
