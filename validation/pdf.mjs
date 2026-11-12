@@ -81,6 +81,7 @@ try {
   assert.ok(Math.abs(viewport.scales[0]-.1)<1e-6 && Math.abs(viewport.scales[1]-10)<1e-6, 'nested viewBox scales applied exactly once');
   console.log(`PDF nested viewport transforms passed (${engine}).`);
   await assertPitchRasterParity(browser,page.url());
+  await assertMarkOverlapOutline(browser,page.url());
   if (!process.env.PITCH_PARITY_ONLY) {
   const composition = await page.evaluate(async () => {
     const { composePdf } = await import('/packages/pepperscore/src/lib/pdf/compose.ts');
@@ -547,6 +548,82 @@ async function assertPitchRasterParity(browser, url) {
       }
     }
   } finally {await screen.close();rmSync(directory,{recursive:true,force:true});}
+}
+/**
+ * Overlapping reader marks: the glyph's `currentColor` (the notehead `color`) must follow the same mark as its fill and stroke.
+ * Verovio's `path{stroke:currentColor}` reaches WebKit's referenced glyph, so a head whose `color` follows a different mark than its
+ * stroke keeps a hairline in that other mark's colour. Chromium and Firefox ignore `color` there, so the raster is the same in all three.
+ */
+async function assertMarkOverlapOutline(browser, url) {
+  const screen = await browser.newPage({viewport:{width:3300,height:2400},deviceScaleFactor:4});
+  try {
+    await screen.goto(url);
+    await screen.addStyleTag({content:readFileSync(join(root,'packages/pepperscore/dist/style.css'),'utf8').replace(/@import[^;]+;/g,'')});
+    await screen.evaluate(async()=>{
+      const {parseAbc}=await import('/packages/pepperscore/src/lib/import.ts');
+      const {engravePages}=await import('/packages/pepperscore/src/lib/pdf/engrave.ts');
+      const {findAnnotationNote}=await import('/packages/pepperscore/src/lib/render.ts');
+      const {tagPitchColours,pitchColourStyle}=await import('/packages/pepperscore/src/lib/pitch-colours.ts');
+      const {CRF_PITCH_COLOURS}=await import('/packages/pepperscore/src/lib/skin.ts');
+      const score=await parseAbc('X:1\nM:4/4\nL:1/4\nK:C\n[CE] D F G |');score.title='';
+      const options={paper:'a4',maxBars:4,files:{module:new URL('/node_modules/verovio/dist/verovio-module.mjs',location.href).href,toolkit:new URL('/node_modules/verovio/dist/verovio.mjs',location.href).href}};
+      const pages=await engravePages({data:score.document.engravingText},options,new AbortController().signal);
+      const svg=new DOMParser().parseFromString(pages.pages[0],'image/svg+xml').documentElement;
+      document.body.replaceChildren();document.body.style.cssText='margin:0;background:white';
+      const reader=document.createElement('div');reader.className='pepperscore';reader.setAttribute('data-ps-pitch-colours','');reader.style.cssText='width:3000px;background:white';
+      Object.entries(pitchColourStyle(CRF_PITCH_COLOURS)).forEach(([key,value])=>reader.style.setProperty(key,value));
+      // Far-apart mark colours, so a mixed-up one is plain to see in a failure's screenshot.
+      for(const [name,value] of Object.entries({'--ps-playback':'#0000ff','--ps-cursor':'#00c8c8','--ps-selection':'#00a000','--ps-transposed':'#ff0000','--ps-out-of-range':'#ff00ff'}))reader.style.setProperty(name,value);
+      svg.style.cssText='display:block;width:3000px;height:auto';const system=document.createElement('div');system.className='score-system';system.append(svg);reader.append(system);document.body.append(reader);
+      const byId=new Map(Array.from(svg.querySelectorAll('[id]'),element=>[element.id,element]));
+      for(const part of score.parts)for(const measure of part.measures)for(const event of measure.notes){const element=findAnnotationNote(byId,score,event);if(element){tagPitchColours(element,event,part);element.classList.add('reader-note');}}
+      window.overlap={svg};
+    });
+    const marks=['is-playing','ps-cursor','ps-selection','ps-transposed','ps-out-of-range'];
+    // A lone note takes both marks; in a chord the marks sit on the .chord and `inner` marks one .note inside it.
+    const cases=[
+      ...marks.slice(1).map(other=>({name:`note playing + ${other}`,outer:['is-playing',other]})),
+      {name:'note selected + transposed',outer:['ps-selection','ps-transposed']},
+      {name:'note transposed + out of range',outer:['ps-transposed','ps-out-of-range']},
+      {name:'chord playing + transposed',chord:true,outer:['is-playing','ps-transposed']},
+      {name:'chord transposed + note selected',chord:true,outer:['ps-transposed'],inner:['ps-selection']},
+      {name:'chord selected + note transposed',chord:true,outer:['ps-selection'],inner:['ps-transposed']},
+      {name:'chord out of range + note selected',chord:true,outer:['ps-out-of-range'],inner:['ps-selection']},
+    ];
+    const pad=4;
+    for(const c of cases){
+      const heads=await screen.evaluate(([c,marks])=>{
+        const {svg}=window.overlap;
+        for(const element of svg.querySelectorAll('.reader-note,.note'))element.classList.remove(...marks);
+        for(const head of svg.querySelectorAll('.notehead'))head.style.removeProperty('color');
+        const target=c.chord?svg.querySelector('.chord'):Array.from(svg.querySelectorAll('.reader-note')).find(element=>!element.classList.contains('chord'));
+        target.classList.add(...c.outer);
+        const noteheads=Array.from(target.querySelectorAll('.notehead[data-pitch]'));
+        if(c.inner)noteheads[0].closest('.note').classList.add(...c.inner);
+        return noteheads.map(head=>{const r=head.getBoundingClientRect(),t=getComputedStyle(head);return {x:r.x,y:r.y,width:r.width,height:r.height,color:t.color,stroke:t.stroke,fill:t.fill};});
+      },[c,marks]);
+      assert.ok(heads.length>0,`${c.name}: noteheads found`);
+      for(const [index,head] of heads.entries())assert.ok(head.color===head.stroke && head.fill===head.stroke,`${c.name} head ${index}: glyph currentColor ${head.color}, stroke ${head.stroke} and fill ${head.fill} must agree`);
+      // The raster as drawn, then with every head's currentColor forced to its stroke: the same picture when nothing leaks.
+      const shoot=()=>Promise.all(heads.map(async head=>{
+        const png=await screen.screenshot({clip:{x:head.x-pad,y:head.y-pad,width:head.width+2*pad,height:head.height+2*pad},animations:'disabled'});
+        return screen.evaluate(async bytes=>{
+          const bitmap=await createImageBitmap(new Blob([new Uint8Array(bytes)],{type:'image/png'}));
+          const canvas=document.createElement('canvas');canvas.width=bitmap.width;canvas.height=bitmap.height;
+          const context=canvas.getContext('2d');context.drawImage(bitmap,0,0);return Array.from(context.getImageData(0,0,canvas.width,canvas.height).data);
+        },Array.from(png));
+      }));
+      const drawn=await shoot();
+      await screen.evaluate(()=>{for(const head of window.overlap.svg.querySelectorAll('.notehead[data-pitch]'))head.style.color=getComputedStyle(head).stroke;});
+      const forced=await shoot();
+      await screen.evaluate(()=>{for(const head of window.overlap.svg.querySelectorAll('.notehead[data-pitch]'))head.style.removeProperty('color');});
+      for(const [index,pixels] of drawn.entries()){
+        let off=0;for(let i=0;i<pixels.length;i++)if(Math.abs(pixels[i]-forced[index][i])>16)off++;
+        assert.equal(off,0,`${c.name} head ${index}: ${off} channel values differ from the same head with currentColor = stroke`);
+      }
+    }
+    console.log(`Mark overlap outline: ${cases.length} overlapping-mark cases draw no foreign-colour outline (${browser.browserType().name()}).`);
+  } finally {await screen.close();}
 }
 function outlineProfile(image,box,fill) {
   const pixel=(x,y)=>Array.from(image.pixels.slice((y*image.width+x)*image.channels,(y*image.width+x)*image.channels+3));

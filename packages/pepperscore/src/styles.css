@@ -488,11 +488,15 @@
 .pepperscore[data-ps-pitch-colours] .notehead[data-pitch="A"]{fill:var(--ps-pitch-a);stroke:var(--ps-pitch-outline,rgba(0,0,0,.65));stroke-width:18;paint-order:stroke fill}
 .pepperscore[data-ps-pitch-colours] .notehead[data-pitch="A#"]{fill:var(--ps-pitch-a-sharp);stroke:var(--ps-pitch-outline,rgba(0,0,0,.65));stroke-width:18;paint-order:stroke fill}
 .pepperscore[data-ps-pitch-colours] .notehead[data-pitch="B"]{fill:var(--ps-pitch-b);stroke:var(--ps-pitch-outline,rgba(0,0,0,.65));stroke-width:18;paint-order:stroke fill}
-.pepperscore[data-ps-pitch-colours] .is-playing .notehead[data-pitch]{color:var(--ps-playback,#b87218);fill:inherit;stroke:inherit;stroke-width:inherit}
-.pepperscore[data-ps-pitch-colours] .ps-cursor .notehead[data-pitch]{color:var(--ps-cursor,var(--ps-playback,#2f6fed));fill:inherit;stroke:inherit;stroke-width:inherit}
-.pepperscore[data-ps-pitch-colours] .ps-selection .notehead[data-pitch]{color:var(--ps-selection,#2f6a9a);fill:inherit;stroke:inherit;stroke-width:inherit}
-.pepperscore[data-ps-pitch-colours] .ps-transposed .notehead[data-pitch]{color:var(--ps-transposed,#d9741c);fill:inherit;stroke:inherit;stroke-width:inherit}
-.pepperscore[data-ps-pitch-colours] .ps-out-of-range .notehead[data-pitch]{color:var(--ps-out-of-range,#c62828);fill:inherit;stroke:inherit;stroke-width:inherit}
+/* A marked head's currentColor (WebKit paints Verovio's `path{stroke:currentColor}` inside the referenced glyph) must come from the same mark as its
+   inherited fill and stroke: the nearest marked ancestor, and on one element the same winner as the mark rules at the top of this file. `color` cannot
+   be set on the marks themselves (every engraved path strokes with currentColor), so each mark exports its colour as --ps-mark, which inherits the same way. */
+.pepperscore[data-ps-pitch-colours] .score-system svg .reader-note.is-playing{--ps-mark:var(--ps-playback,#b87218)}
+.pepperscore[data-ps-pitch-colours] .score-system svg .ps-cursor{--ps-mark:var(--ps-cursor,var(--ps-playback,#2f6fed))}
+.pepperscore[data-ps-pitch-colours] .score-system svg .ps-selection{--ps-mark:var(--ps-selection,#2f6a9a)}
+.pepperscore[data-ps-pitch-colours] .score-system svg .ps-transposed{--ps-mark:var(--ps-transposed,#d9741c)}
+.pepperscore[data-ps-pitch-colours] .score-system svg .ps-out-of-range{--ps-mark:var(--ps-out-of-range,#c62828)}
+.pepperscore[data-ps-pitch-colours] .reader-note.is-playing .notehead[data-pitch],.pepperscore[data-ps-pitch-colours] .ps-cursor .notehead[data-pitch],.pepperscore[data-ps-pitch-colours] .ps-selection .notehead[data-pitch],.pepperscore[data-ps-pitch-colours] .ps-transposed .notehead[data-pitch],.pepperscore[data-ps-pitch-colours] .ps-out-of-range .notehead[data-pitch]{color:var(--ps-mark);fill:inherit;stroke:inherit;stroke-width:inherit}
 .pepperscore .ps-pitch-colour-tile{width:36px;height:36px;flex:none;padding:0;border:0;border-radius:7px;background:var(--ps-pitch-c);opacity:.45;box-shadow:none}
 .pepperscore .ps-pitch-colour-tile[aria-pressed="true"]{opacity:1;box-shadow:0 0 0 2px var(--ps-accent,#345642)}
 .pepperscore .ps-pitch-colour-tile svg{width:100%;height:100%}
