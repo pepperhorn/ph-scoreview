@@ -22,6 +22,7 @@ const knownVariables = new Set([
   ...Object.keys(CRF_PITCH_COLOURS).map(pitch => '--ps-pitch-' + pitch.toLowerCase().replace('#', '-sharp')),
   '--ps-pitch-outline', '--ps-pitch-letter', '--ps-pitch-letter-outline',
   '--ps-bottom-toolbar-h', '--ps-cursor', '--ps-selection', '--ps-transposed', '--ps-out-of-range',
+  '--ps-mark', // internal: the winning reader mark's colour, set on marked notes and read by their pitch-coloured heads
   '--ps-note-name-scale', '--ps-count-scale', '--ps-subdivision-scale', '--ps-chord-symbol-scale',
 ]);
 for (const file of stylesheetFiles) postcss.parse(readFileSync(`${root}/${file}`, 'utf8')).walkRules(rule => {
