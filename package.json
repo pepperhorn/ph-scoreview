@@ -48,7 +48,7 @@
     "test:clock": "node validation/clock.mjs",
     "test:clock-contract": "node validation/clock-contract.mjs",
     "test:clock-embed": "node validation/clock-embed.mjs",
-    "test:pack": "node scripts/pack-smoke.mjs",
+    "test:pack": "node scripts/pack-smoke.mjs && node scripts/pack-editor.mjs",
     "pack:local": "node scripts/pack-local.mjs",
     "test:pepperscore": "npm run test -w pepperscore",
     "test:editor": "npm run test -w @pepperhorn/pepperscore-editor",
