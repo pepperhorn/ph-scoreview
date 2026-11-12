@@ -5,7 +5,7 @@
 > Waiting on: `child <taskId>` · `review <taskId>` · `ci` · `human: <why>` · `lead: <next action>`. Set it on every status change. A row needs the lead when it starts with `lead`, or when it's empty and Status is dispatched, in-review, changes-requested, ready, or merged. The lead's Stop hook won't let the lead end its turn while any row needs it.
 > Type: normal items have a spec and plan. Quick items have the title prefix `[quick]` (no spec or plan, a short handoff). PRs adopted by `orch-sweep` have the prefix `[pr]`.
 
-Next ID: 0030
+Next ID: 0031
 
 ## Active
 
@@ -16,6 +16,7 @@ Next ID: 0030
 | 0024 | [quick] Self-hosted runner on t3box: ci.yml runs-on from CI_RUNS_ON var | merged | human: install runner on t3box + set CI_RUNS_ON (docs/guides/self-hosted-runner.md) | codex/gpt-6.1-sol | orch/0024-ci-runs-on-variable | https://github.com/pepperhorn/ph-scoreview/pull/89 |  | task `0024-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A9cbab5d4-201b-4809-8342-6c4ce4f87509` |  |  | handoffs/2026-11-11-0024-ci-runs-on-variable--lead-to-codex.md | 2026-11-11 |
 | 0025 | Editor via private GitHub Packages + licence tooling (0003 P1/P3) | merged | human: rotate licence key → send public JWK + re-signed demo key (quick PR swaps them); then npm login to GitHub Packages + publish | codex/gpt-6.1-sol | orch/0025-editor-github-packages | https://github.com/pepperhorn/ph-scoreview/pull/93 |  | task `0025-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A51c1bb6f-63bb-41c0-a9cd-7cbd193eebe7%3Adelegate-task%3A659e21e6-7e3f-4cec-809b-062024e53050` | specs/0003-teaching-layer.md | plans/0003-teaching-layer.md | handoffs/2026-11-11-0025-editor-github-packages--lead-to-codex.md | 2026-11-11 |
 | 0028 | [quick] WebKit hairline outline on overlapping marks (S36) | in-review | review 0028-review-r1 | claude/claude-sonnet-5-5 | orch/0028-webkit-overlap-outline | https://github.com/pepperhorn/ph-scoreview/pull/98 | /home/shaun/.t3/worktrees/ph-vexflow-view/t3-137c2ce6-5a91a9b6a86ef844 | task `0028-impl-r1` / childThread `thread:delegated-task:command%3Amcp%3A44b0f9aa-4a3d-465b-b246-3d005a91e94f%3Adelegate-task%3A0028-impl-r1` |  |  | handoffs/2026-11-12-0028-webkit-overlap-outline--claude-to-lead.md | 2026-11-12 |
+| 0030 | [quick] CI image: source label so GITHUB_TOKEN can create the GHCR package | dispatched | lead: delegate | codex/gpt-6.1-sol | orch/0030-ci-image-source-label |  |  |  |  |  | handoffs/2026-11-12-0030-ci-image-source-label--lead-to-codex.md | 2026-11-12 |
 
 ## Done / closed
 
@@ -109,6 +110,7 @@ Last health scan: never
 ## Log
 2026-11-11 human decisions — runner host t3box (0024 dispatched: CI_RUNS_ON variable; human installs runner, tailnet SSH blocks agents); 0003 P1 private GitHub Packages, P2 pepperhorn/pepperscore-pt (created), P3 rotate key now → 0025 dispatched
 <!-- One line per status change, newest first: YYYY-MM-DD NNNN old→new — note -->
+2026-11-12 0030 proposed→dispatched — ci-image publish on main denied at manifest (new GHCR package, user account); add image.source label
 2026-11-12 0029 ready→closed — CI green on 2d85bf3, merged PR #97 (quick lane)
 2026-11-12 0028 dispatched→in-review — PR #98 @648164b; marks set --ps-mark, marked pitch heads color:var(--ps-mark) (color/fill/stroke agree); assertMarkOverlapOutline fails on base WebKit, passes 3 engines; Codex review r1
 2026-11-12 0029 in-review→ready — Claude Opus r1 approve on 2d85bf3 (guard publish-only, pack unaffected, CI pack step ~3–3.5 min); merge on green (quick lane, scripts only)
